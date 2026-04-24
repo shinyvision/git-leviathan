@@ -423,8 +423,8 @@ impl ToastManager {
     }
 
     fn snap_overflow_reflow_positions(&mut self) {
-        // Snap reflowed toasts so only the entering toast and the overflowed
-        // exit animate when the stack is already full.
+        // When the stack is already full, snap the reflowed toasts into place so
+        // only the entering toast and the overflowed exit animate.
         for toast in &mut self.active {
             toast.current_bottom_offset = toast.target_bottom_offset;
         }

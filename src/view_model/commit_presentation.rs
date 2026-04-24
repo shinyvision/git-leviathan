@@ -5,6 +5,7 @@ pub struct BranchLabel {
     pub name: String,
     pub kind: BranchLabelKind,
     pub lane_color: usize,
+    /// For remote-kind labels, the remote this branch belongs to (e.g. "origin").
     pub remote_name: Option<String>,
     /// For local-kind labels, the configured upstream ref if any
     /// (e.g. "origin/other-branch"). Used to merge a renamed remote into the
@@ -31,6 +32,8 @@ pub struct BranchDisplayRow {
     pub has_remote: bool,
     pub is_current: bool,
     pub is_tag: bool,
+    /// Remote this branch exists on, if any (e.g. "origin"). Populated from
+    /// the remote-kind label; None when no remote counterpart.
     pub remote_name: Option<String>,
     /// Short branch name on the remote side (e.g. "other-branch"). Differs
     /// from `name` when a local branch tracks a remote of a different name.
@@ -45,5 +48,6 @@ pub struct CommitPresentation {
     /// Pre-computed display rows (merged local/remote/tag labels).
     /// Avoids recomputing branch_display_rows() on every frame.
     pub branch_display_rows: Vec<BranchDisplayRow>,
+    /// Relative time string shown in the commit list (e.g. "1 hour ago")
     pub relative_time: Option<String>,
 }

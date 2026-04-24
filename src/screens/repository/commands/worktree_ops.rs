@@ -98,11 +98,13 @@ mod tests {
             vec![RefChoice::LocalBranch("main".into())],
             String::new(),
         );
+        // Simulate a submit-in-flight.
         state.submitting = true;
         assert!(state.error.is_none());
 
+        // Mimic the handler's Err branch:
         state.submitting = false;
-        state.error = Some("worktree path exists".to_string());
+        state.error = Some(format!("{}", "worktree path exists"));
 
         assert!(!state.submitting);
         assert_eq!(state.error.as_deref(), Some("worktree path exists"));

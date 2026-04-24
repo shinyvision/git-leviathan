@@ -2,6 +2,7 @@ use crate::services::{GitError, RepoSnapshot};
 
 use super::read::RepoRead;
 
+/// Staged/unstaged working-tree mutations.
 pub trait WorkingTreeOps: RepoRead {
     fn stage_file(&self, path: &str) -> Result<RepoSnapshot, GitError>;
     fn stage_all_dirty_changes(&self) -> Result<RepoSnapshot, GitError>;

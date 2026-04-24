@@ -21,6 +21,8 @@ use super::layout::{
 };
 use super::{BRANCH_LABEL_INSET_X, BRANCH_POPOUT_RADIUS};
 
+// ─── Color helpers ────────────────────────────────────────────────────────────
+
 pub fn branch_stack_background(row: &BranchDisplayRow) -> Color {
     if row.is_tag {
         Color {
@@ -63,6 +65,8 @@ fn branch_stack_text_color(row: &BranchDisplayRow) -> Color {
     }
 }
 
+// ─── Icon composition ─────────────────────────────────────────────────────────
+
 fn branch_stack_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'static, Message>> {
     let mut icons = Vec::new();
 
@@ -96,6 +100,8 @@ fn branch_stack_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'stat
 
     icons
 }
+
+// ─── Row content (text + icons) ───────────────────────────────────────────────
 
 fn branch_row_content_exact_inner(
     row_data: &BranchDisplayRow,
@@ -148,6 +154,8 @@ fn branch_stack_row_content_exact(
     branch_row_content_exact_inner(row_data, trailing_cover_w, max_text_width, color, color)
 }
 
+// ─── Pill widget ──────────────────────────────────────────────────────────────
+
 /// A single styled label pill at the inline truncation limit.
 /// `max_text_width` is the maximum pixel width available for the branch name
 /// text, accounting for all layout context.
@@ -176,6 +184,8 @@ fn branch_stack_label(
     })
     .into()
 }
+
+// ─── Click wiring ─────────────────────────────────────────────────────────────
 
 pub(super) fn branch_checkout_message(row_data: &BranchDisplayRow) -> Option<Message> {
     if row_data.is_tag {
@@ -227,6 +237,8 @@ fn clickable_branch_label(
         },
     }
 }
+
+// ─── Overflow badge + empty fallback ──────────────────────────────────────────
 
 fn extra_pill_badge(
     count: usize,
@@ -284,6 +296,8 @@ fn empty_cell(bg: Color, commit_idx: usize) -> Element<'static, Message> {
         )))
         .into()
 }
+
+// ─── Cell entry point ─────────────────────────────────────────────────────────
 
 pub fn branch_label_cell<'a>(
     display_rows: &'a [BranchDisplayRow],

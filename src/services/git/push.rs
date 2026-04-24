@@ -6,14 +6,15 @@ use crate::services::git_error::GitError;
 
 pub enum PushOutcome {
     Pushed,
-    /// Current branch has no upstream; UI should prompt for a remote-tracking
-    /// name and call `push_and_set_upstream`. `remote_name` prefers "origin",
-    /// else the first remote.
+    /// Current branch has no upstream configured. UI should prompt for a
+    /// remote-tracking name and call `push_and_set_upstream`.
     NeedsUpstream {
+        /// Short name of the current local branch.
         branch_name: String,
+        /// Remote the push would target (prefers "origin", else first remote).
         remote_name: String,
     },
-    /// Push rejected because local tip is behind the remote.
+    /// Current branch tip is behind its remote counterpart; push was rejected.
     BehindRemote {
         branch_name: String,
         remote_name: String,

@@ -2,6 +2,7 @@ use crate::services::{CherryPickOutcome, GitError, RepoSnapshot, ResetMode};
 
 use super::read::RepoRead;
 
+/// Commit-rewriting operations (cherry-pick, squash, reword, reset).
 pub trait CommitOps: RepoRead {
     fn reset_current_branch_to_commit(
         &self,

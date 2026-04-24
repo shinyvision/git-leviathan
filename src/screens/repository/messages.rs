@@ -20,6 +20,7 @@ use super::panels::sidebar::SidebarAction;
 
 #[derive(Debug, Clone)]
 pub enum RepositoryMessage {
+    // Panel actions
     Sidebar(SidebarAction),
     Center(CenterAction),
     Detail(DetailAction),
@@ -115,6 +116,8 @@ pub enum RepositoryMessage {
         result: Result<LoadedRepo, GitError>,
     },
 
+    /// Commit search overlay (Ctrl+F over the graph view).
     CommitSearch(CommitSearchMessage),
+    /// Open commit search overlay (from toolbar search button).
     OpenCommitSearch,
 }

@@ -36,7 +36,6 @@ pub(crate) fn init_test_repo(prefix: &str) -> (TempRepo, Repository) {
     fs::create_dir_all(&path).expect("failed to create temp repo dir");
 
     let repo = Repository::init(&path).expect("failed to init temp repo");
-    configure_test_signature(&repo);
     write_file(&path, "tracked.txt", "base\n");
     commit_all(&repo, "base");
 
@@ -52,18 +51,7 @@ pub(crate) fn init_bare_test_repo(prefix: &str) -> (TempRepo, Repository) {
     options.initial_head("main");
 
     let repo = Repository::init_opts(&path, &options).expect("failed to init bare temp repo");
-    configure_test_signature(&repo);
     (TempRepo { path }, repo)
-}
-
-pub(crate) fn configure_test_signature(repo: &Repository) {
-    let mut config = repo.config().expect("failed to open repo config");
-    config
-        .set_str("user.name", "Git Leviathan Test")
-        .expect("failed to set user.name");
-    config
-        .set_str("user.email", "test@example.invalid")
-        .expect("failed to set user.email");
 }
 
 pub(crate) fn write_file(repo_path: &Path, relative_path: &str, contents: &str) {

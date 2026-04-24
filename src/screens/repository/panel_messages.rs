@@ -1,19 +1,23 @@
 //! Panel-specific message types for decoupled architecture.
 //!
-//! Each panel returns intentions via its message type. `mod.rs` coordinates
-//! and creates Tasks based on these intentions.
+//! Each panel returns intentions via its message type.
+//! `mod.rs` coordinates and creates Tasks based on these intentions.
 
 #[derive(Debug, Clone)]
 pub enum CenterAction {
     CommitSelected(usize),
+    /// Tracked for multi-select clicks (Ctrl/Shift etc.).
     ModifiersChanged(iced::keyboard::Modifiers),
     NavigateUp,
     NavigateDown,
+    /// Single click — double-click gate applies.
     BranchLabelClicked {
         branch_name: String,
         is_remote_only: bool,
     },
+    /// Double-click confirmed — checkout.
     BranchLabelPressed(String),
+    /// Double-click confirmed — checkout.
     RemoteBranchLabelPressed(String),
     BranchLabelRightClicked {
         branch_name: String,
@@ -33,10 +37,10 @@ pub enum CenterAction {
         source_branch: String,
         target_branch: String,
     },
-    /// Rebase the checked-out branch onto another ref. `target_ref` is what
-    /// gets handed to `git rebase` — a local shorthand or `"<remote>/<branch>"`
-    /// for remote targets. `target_display` is the human-readable label shown
-    /// in toasts.
+    /// Rebase the checked-out branch onto another ref.
+    /// `target_ref` is what gets handed to `git rebase` — a local shorthand
+    /// or `"<remote>/<branch>"` for remote targets. `target_display` is the
+    /// human-readable label shown in toasts.
     BranchRebaseRequested {
         source_branch: String,
         target_ref: String,
@@ -49,7 +53,9 @@ pub enum CenterAction {
     },
     ResetParentHoverChanged { commit_hash: String, hovered: bool },
     ResetSubmenuHoverChanged(bool),
+    /// Hover-open timer fired (opens submenu if parent still hovered).
     ResetOpenTimer(u64),
+    /// Hover-close timer fired (closes submenu if neither hovered).
     ResetCloseTimer(u64),
     ResetToCommitRequested {
         commit_hash: String,
@@ -70,6 +76,7 @@ pub enum CenterAction {
     CherryPickRequested { commit_hash: String },
     StashCreateRequested,
     StashApplyRequested { stash_index: usize },
+    /// Toolbar uses stash_index 0; commit context menu uses the actual index.
     StashPopRequested { stash_index: usize },
     StashDeleteRequested {
         stash_index: usize,
@@ -126,6 +133,7 @@ pub enum DetailAction {
     CommitConfirmed,
     AbortMergeConfirmed,
     CommitFileClicked { commit_idx: usize, path: String },
+    /// File in the merged (multi-commit) diff.
     MergedFileClicked { path: String },
     CloseDirtyFileDiff,
     CommitMessageAction(iced::widget::text_editor::Action),
@@ -136,6 +144,7 @@ pub enum DetailAction {
     RewordCanceled,
     RewordConfirmed,
     RewordMessageAction(iced::widget::text_editor::Action),
+    /// Copy full hash to clipboard and flash tooltip.
     CopyCommitShaRequested(String),
     /// Parent-commit hash clicked — select that commit in the graph,
     /// scrolling/loading more commits as needed.
@@ -171,7 +180,9 @@ pub enum DiffPanelAction {
     DiffSelectionEnd {
         canvas_id: crate::widgets::diff_canvas::DiffCanvasId,
     },
+    /// Clear any active selection (e.g. file change).
     DiffSelectionCleared,
+    /// Gutter "hot spot" click (e.g. a conflict hunk checkbox).
     /// `meta` is an opaque u64 provided by the row — for conflict buffers
     /// this is the hunk index.
     DiffGutterClicked {
@@ -179,10 +190,14 @@ pub enum DiffPanelAction {
         row: usize,
         meta: u64,
     },
+    /// Ctrl+C — copy current selection to clipboard.
     DiffCopyRequested,
+    /// Keeps the sticky gutter in sync with content scroll.
     DiffContentScrolled {
         viewport: iced::widget::scrollable::Viewport,
     },
+    /// Shift+wheel over the diff — scroll horizontally by `delta_lines`,
+    /// suppressing the default vertical scroll.
     DiffShiftWheel { delta_lines: f32 },
     NavigateFileUp,
     NavigateFileDown,
@@ -198,6 +213,7 @@ pub enum DiffPanelAction {
     ConflictOutputScrolled {
         viewport: iced::widget::scrollable::Viewport,
     },
+    /// Shift+wheel over a conflict buffer — scroll horizontally, suppressing vertical scroll.
     ConflictShiftWheel {
         target: super::panels::diff::ConflictScrollTarget,
         delta_lines: f32,
@@ -250,6 +266,7 @@ pub enum DiffPanelAction {
         ours_content: Option<String>,
         theirs_content: Option<String>,
     },
+    /// Text-buffer search message targeting the currently active search bar.
     /// `DiffPanel` tracks which canvas owns the search; screen-layer dispatch
     /// just needs to know a widget message arrived.
     TextSearch(crate::widgets::search_widget::SearchWidgetMessage),
@@ -285,10 +302,13 @@ pub enum OverlayPanelAction {
     AddRemotePullUrlChanged(String),
     AddRemotePushUrlChanged(String),
     AddRemoteConfirmed,
+    /// Set upstream (first push): remote-branch name input.
     SetUpstreamInput(String),
     SetUpstreamConfirmed,
     SetUpstreamCanceled,
+    /// Push behind remote: pull (fast-forward).
     PushBehindPullRequested,
+    /// Push behind remote: force push.
     PushBehindForcePushRequested,
     PushBehindCanceled,
     ForcePushConfirmed,
@@ -296,9 +316,12 @@ pub enum OverlayPanelAction {
     CreateTagHereInput(String),
     CreateTagHereConfirmed,
     CreateTagHereCanceled,
+    /// Also deletes from any remotes holding the tag.
     DeleteTagConfirmed,
     DeleteTagCanceled,
+    /// Cherry pick: immediately commit.
     CherryPickImmediateConfirmed,
+    /// Cherry pick: apply changes without committing.
     CherryPickStagedConfirmed,
     CherryPickCanceled,
     CreateWorktreeOpen {
@@ -311,6 +334,7 @@ pub enum OverlayPanelAction {
     CreateWorktreeBranchNameChanged(String),
     CreateWorktreeWorkingDirChanged(String),
     CreateWorktreeBrowseRequested,
+    /// Folder picker resolved (Some = picked, None = cancelled).
     CreateWorktreeBrowseResolved(Option<std::path::PathBuf>),
     CreateWorktreeConfirmed,
     WorktreeRemoveRequested {

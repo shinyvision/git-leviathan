@@ -2,9 +2,13 @@ use super::helpers::spawn_git_command;
 use super::{checkout, GitService};
 use crate::services::git_error::GitError;
 
-/// Rebase the currently checked-out branch onto `target_ref` (a local branch
-/// shorthand or remote tracking ref, as git rebase expects). On conflict the
-/// rebase is aborted and `GitError::Other` carries git's stderr.
+/// Rebase the currently checked-out branch onto `target_ref`.
+///
+/// `target_ref` is the argument handed to `git rebase` — a local branch
+/// shorthand (`"main"`) or a remote tracking ref (`"origin/main"`).
+///
+/// On conflict the rebase is aborted and `GitError::Other` returned with
+/// the git stderr so the caller can surface it as a toast.
 pub(super) fn rebase_current_onto(
     service: &mut GitService,
     source_branch: &str,
@@ -50,8 +54,8 @@ pub(super) fn rebase_current_onto(
         return Ok(());
     }
 
-    // On failure abort so the worktree is left clean, then surface the
-    // original stderr to the caller.
+    // Conflict (or other failure) — abort so the worktree is left clean, then
+    // surface the original stderr to the caller.
     let detail = rebase_output_detail(&output);
 
     if service.repo.state() != git2::RepositoryState::Clean {

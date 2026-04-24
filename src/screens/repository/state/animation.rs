@@ -1,7 +1,9 @@
 //! Network-op timer state (push/pull "in flight" indicators).
 //!
-//! Overlay slide animations live with the overlay manager since they are owned
-//! by the dialog lifecycle, not the repository data.
+//! Phase 8 scope bundles this under `state/` so every piece of screen-local
+//! time-driven state has one home. Overlay slide animations live with the
+//! overlay manager since they are owned by the dialog lifecycle, not the
+//! repository data.
 
 use std::time::Instant;
 

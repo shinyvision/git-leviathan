@@ -286,6 +286,8 @@ const WINDOWS_GUIDE: InstallGuide = InstallGuide {
     link_url: "https://git-scm.com/download/win",
 };
 
+// ─── Table ────────────────────────────────────────────────────────────────────
+
 fn install_table(rows: &'static [InstallRow], flashed: Option<&str>) -> Element<'static, Message> {
     let border_color = theme::BORDER;
 
@@ -411,6 +413,8 @@ fn horizontal_divider(color: Color) -> Element<'static, Message> {
         })
         .into()
 }
+
+// ─── Buttons ──────────────────────────────────────────────────────────────────
 
 fn copy_button(command: String, flashed: bool) -> Element<'static, Message> {
     let icon_color = if flashed {

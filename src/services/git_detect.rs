@@ -176,6 +176,7 @@ pub fn resolve_primary_and_active(
             .canonicalize()
             .map_err(|e| GitError::Other(format!("canonicalize primary '{}': {e}", primary_workdir.display())))?
     } else {
+        // Primary repo: workdir() is the workdir itself.
         let workdir = repo
             .workdir()
             .ok_or_else(|| GitError::Other("bare repository has no workdir".to_string()))?

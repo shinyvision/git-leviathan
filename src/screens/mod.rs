@@ -6,4 +6,4 @@ pub mod screen_trait;
 pub use blank::{BlankMessage, BlankScreen};
 pub use no_git::NoGitScreen;
 pub use repository::RepositoryScreen;
-pub use screen_trait::Screen;
+pub use screen_trait::{Screen, ToolbarCtx};

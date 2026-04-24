@@ -2,6 +2,7 @@ use crate::services::{GitError, RepoSnapshot, StashApplyOutcome};
 
 use super::read::RepoRead;
 
+/// Stash lifecycle operations.
 pub trait StashOps: RepoRead {
     fn create_stash(&self) -> Result<RepoSnapshot, GitError>;
     fn apply_stash(&self, index: usize) -> Result<StashApplyOutcome, GitError>;

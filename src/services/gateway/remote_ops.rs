@@ -2,9 +2,10 @@ use crate::services::{GitError, RepoSnapshot};
 
 use super::read::RepoRead;
 
-/// Push outcome seen by the gateway layer. Unlike the lower-level `PushOutcome`,
-/// the success arm already carries the post-push snapshot so the caller gets
-/// one message regardless of what the push needed.
+/// Outcome of a push attempt as seen by the gateway layer. Differs from the
+/// lower-level `PushOutcome` by already folding the post-push reload snapshot
+/// into the success arm — the caller gets one message regardless of what the
+/// push needed.
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)] // Pushed carries RepoSnapshot; boxing would churn gateway + presenter call sites.
 pub enum PushGatewayOutcome {
@@ -19,11 +20,12 @@ pub enum PushGatewayOutcome {
     },
 }
 
+/// Network-facing operations (fetch, push, pull, remote management).
 pub trait RemoteOps: RepoRead {
-    /// Fetches all configured remotes. Does NOT return repository data —
-    /// callers follow up with `load_refs_snapshot`. The split keeps the reload
-    /// signal scoped to ref-consuming components instead of spraying a
-    /// full-repo snapshot.
+    /// Perform the network fetch for all configured remotes. Does NOT return
+    /// repository data — follow up with `load_refs_snapshot`. Splitting the
+    /// halves is deliberate: keeps the "reload" signal scoped to the
+    /// components that consume refs instead of spraying a full-repo snapshot.
     fn fetch_remotes(&self) -> Result<(), GitError>;
     fn push_current_branch(&self) -> Result<PushGatewayOutcome, GitError>;
     fn push_and_set_upstream(

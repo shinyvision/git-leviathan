@@ -122,7 +122,9 @@ fn resize_handle_view(is_resizing: bool) -> Element<'static, Message> {
 /// the section title, before the collapse indicator). Open enum: add variants
 /// as new section affordances land.
 enum HeaderTrailing {
+    /// Just the count badge (default for non-interactive sections).
     CountOnly,
+    /// Count badge when idle; `+` button on hover that fires the given action.
     HoverAddButton(OverlayPanelAction),
 }
 

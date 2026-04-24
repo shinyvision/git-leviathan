@@ -1,6 +1,8 @@
-//! Projects raw service snapshots into UI-ready view models. Injected into
-//! `RepositoryScreen` as `Arc<dyn Presenter>` so tests can swap in a fake.
-//! The default implementation is pure and synchronous.
+//! Presenter: projects raw service snapshots into UI-ready view models.
+//!
+//! Injected into `RepositoryScreen` as `Arc<dyn Presenter>` so tests can swap
+//! in a fake. The default implementation runs synchronously and is pure: same
+//! inputs always produce the same outputs.
 
 pub mod default;
 pub mod projection;

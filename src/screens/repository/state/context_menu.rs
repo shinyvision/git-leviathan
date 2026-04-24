@@ -8,6 +8,7 @@ use iced::Point;
 #[derive(Debug, Clone)]
 pub struct ContextMenuState {
     pub branch_name: String,
+    /// For tag rows: remote names known to hold this tag. Empty for non-tag.
     pub tag_remote_names: Vec<String>,
     /// For tag rows: name of the first configured remote (for "Push tag to
     /// {remote}" menu entry). None if no remote configured.
@@ -44,6 +45,7 @@ pub(in crate::screens::repository) struct ResetHoverTracker {
     pub(in crate::screens::repository) close_gen: u64,
 }
 
+/// State for commit context menu (right-clicking a commit).
 #[derive(Debug, Clone)]
 pub struct CommitContextMenuState {
     pub commit_idx: usize,
@@ -55,12 +57,14 @@ pub struct CommitContextMenuState {
     pub selected_hashes: Vec<String>,
 }
 
+/// State for dirty file context menu (right-clicking an uncommitted-changes file row).
 #[derive(Debug, Clone)]
 pub struct DirtyFileContextMenuState {
     pub path: String,
     pub position: Point,
 }
 
+/// State for the worktree context menu (right-clicking a worktree sidebar entry).
 #[derive(Debug, Clone)]
 pub struct WorktreeContextMenuState {
     pub path: std::path::PathBuf,

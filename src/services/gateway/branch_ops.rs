@@ -2,6 +2,8 @@ use crate::services::{BranchMergeOutcome, GitError, RemoteCheckoutOutcome, RepoS
 
 use super::read::RepoRead;
 
+/// Branch-level mutations. Super-trait on `RepoRead` since every branch op
+/// needs to hand back a post-op snapshot.
 pub trait BranchOps: RepoRead {
     fn checkout_branch(&self, branch_name: &str) -> Result<RepoSnapshot, GitError>;
     fn checkout_remote_branch(&self, branch_name: &str) -> Result<RemoteCheckoutOutcome, GitError>;

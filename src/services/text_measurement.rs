@@ -45,7 +45,9 @@ impl TextMeasureRequest {
 pub struct TextMeasureResult {
     pub width: f32,
     pub height: f32,
+    /// Number of lines after wrapping (1 for single-line).
     pub line_count: usize,
+    /// Baseline offset from top in pixels.
     pub baseline: f32,
 }
 
@@ -105,8 +107,7 @@ impl TextMeasurementService {
 
         let (size, _) = graphics_text::measure(&buffer);
         let line_count = buffer.layout_runs().count();
-
-        // Approximate: typical fonts sit the baseline ~80% down from the top.
+        // Approximate — typically 80% of font size from top.
         let baseline = request.font_size * 0.8;
 
         TextMeasureResult {
@@ -153,9 +154,12 @@ impl Default for TextMeasurementService {
     }
 }
 
-// Float keys use `f32::to_bits()` so `HashMap` can hash them directly.
-type WidthKey = (String, u8, u32);
-type TruncKey = (String, u32, u8, u32);
+// Global measurement cache. Avoids acquiring the font system write lock on
+// every frame for the same (text, font_family, font_size) key. Floats are
+// stored as `f32::to_bits()` so they can be used as HashMap keys.
+
+type WidthKey = (String, u8, u32); // (text, font_family_discriminant, font_size_bits)
+type TruncKey = (String, u32, u8, u32); // (text, max_width_bits, font_family_discriminant, font_size_bits)
 
 static WIDTH_CACHE: LazyLock<RwLock<HashMap<WidthKey, f32>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -168,8 +172,8 @@ fn font_family_key(f: FontFamily) -> u8 {
     }
 }
 
-/// Cached single-line width measurement. Avoids re-acquiring the font-system
-/// write lock for repeat inputs.
+/// Measure a single line of text, using a global cache to avoid repeated
+/// font-system write-lock acquisitions for the same inputs.
 pub fn cached_measure_width(text: &str, font_family: FontFamily, font_size: f32) -> f32 {
     let key = (
         text.to_string(),
@@ -190,8 +194,8 @@ pub fn cached_measure_width(text: &str, font_family: FontFamily, font_size: f32)
     w
 }
 
-/// Truncate `name` with a trailing ellipsis so it fits within `max_width`
-/// pixels. Cached by `(name, max_width)`.
+/// Truncate `name` to fit within `max_width` pixels (with "…" if needed),
+/// caching the result so we never recompute the same truncation.
 pub fn cached_truncate_name(name: &str, max_width: f32) -> String {
     let font_size = crate::theme::FONT_SM;
     let key = (
@@ -212,6 +216,7 @@ pub fn cached_truncate_name(name: &str, max_width: f32) -> String {
     truncated
 }
 
+/// Uncached truncation logic (binary search with font measurement).
 fn truncate_name_uncached(name: &str, max_width: f32) -> String {
     if max_width <= 0.0 {
         return String::new();
@@ -316,7 +321,7 @@ mod tests {
             "This is a very long text that should wrap",
             FontFamily::Default,
             12.0,
-            50.0,
+            50.0, // Very narrow to force wrapping
         );
 
         assert!(
@@ -324,7 +329,7 @@ mod tests {
             "wrapped text should have equal or more lines"
         );
         assert!(
-            wrapped.width <= 50.0 + 1.0,
+            wrapped.width <= 50.0 + 1.0, // Allow small tolerance
             "wrapped text width should respect max_width"
         );
     }

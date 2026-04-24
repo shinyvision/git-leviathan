@@ -56,6 +56,7 @@ pub(super) fn on_key_pressed(
     key: keyboard::Key,
     modifiers: keyboard::Modifiers,
 ) -> Option<Task<Message>> {
+    // Ctrl+C on an active diff selection → copy.
     if modifiers.control()
         && matches!(&key, keyboard::Key::Character(c) if c.as_str() == "c")
         && screen.panels.diff.is_active()

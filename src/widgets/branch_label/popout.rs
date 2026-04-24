@@ -24,6 +24,8 @@ use super::BRANCH_POPOUT_RADIUS;
 /// Height of popout rows — matches inline label pill height (5px + 11px + 5px + 1px + 1px).
 const BRANCH_POPOUT_ROW_H: f32 = 24.0;
 
+// ─── Row colors ───────────────────────────────────────────────────────────────
+
 fn branch_popout_text_color(row: &BranchDisplayRow) -> Color {
     palette::tint(palette::lane_color(row.lane_color), 0.4, 0.6)
 }
@@ -56,6 +58,8 @@ fn branch_popout_row_radius(index: usize, row_count: usize) -> border::Radius {
         border::Radius::default()
     }
 }
+
+// ─── Row content ──────────────────────────────────────────────────────────────
 
 fn branch_popout_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'static, Message>> {
     let mut icons = Vec::new();
@@ -111,6 +115,8 @@ fn branch_popout_row_content(
         .align_y(iced::Alignment::Center)
         .into()
 }
+
+// ─── The popout panel ─────────────────────────────────────────────────────────
 
 /// A floating panel containing one row per `BranchDisplayRow`.
 /// `max_name_len` controls how many characters are shown before truncation;

@@ -1,6 +1,8 @@
 //! Git-operation result dispatch. Every non-panel `RepositoryMessage` variant
-//! lands here; each family of operations has its own submodule mirroring the
-//! segregated gateway traits.
+//! lands here. Each family of operations has its own submodule (mirrors the
+//! segregated gateway traits introduced in Phase 3); this file owns the
+//! top-level routing that maps an incoming `RepositoryMessage` to the right
+//! handler.
 //!
 //! Panel-scoped messages (`Sidebar`, `Center`, `Detail`, `DiffPanel`,
 //! `CommitSearch`, `OverlayPanel`) are intentionally NOT routed through here —
@@ -57,11 +59,13 @@ pub(in crate::screens::repository) fn focus_swap_to_worktree(
     )
 }
 
+/// Dispatches a non-panel `RepositoryMessage` to its category handler.
 pub(in crate::screens::repository) fn dispatch_result(
     screen: &mut RepositoryScreen,
     msg: RepositoryMessage,
 ) -> Task<Message> {
     match msg {
+        // Panel messages are routed in mod.rs and never reach here.
         RepositoryMessage::Sidebar(_)
         | RepositoryMessage::Center(_)
         | RepositoryMessage::Detail(_)

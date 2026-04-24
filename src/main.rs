@@ -7,6 +7,7 @@ mod screens;
 mod services;
 mod style;
 mod theme;
+mod plugin;
 mod toast;
 mod utils;
 mod view_model;

@@ -1,4 +1,7 @@
-//! Shared button / editor styles for the detail panel. The generic
+//! Shared button / editor styles for the detail panel.
+//!
+//! Extracted so dirty-files, reword, and single-commit views can reuse the
+//! same palette without duplicating the style builders. The generic
 //! palette→style mapping lives in `overlays::widgets::palette_button_style`;
 //! these wrappers pick the right palette for each tone.
 

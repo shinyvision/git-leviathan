@@ -347,7 +347,7 @@ impl<'a, 'b> overlay::Overlay<Message, Theme, iced::Renderer> for DropdownOverla
     }
 }
 
-// Composition helpers
+// ─── Composition helpers ─────────────────────────────────────────────────────
 //
 // These build the three standard pieces of a dropdown:
 //   • `dropdown_trigger`  — the closed/open button (chevron on the right).

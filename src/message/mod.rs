@@ -12,6 +12,7 @@ pub use screen::{ScreenMessage, ScreenRouted};
 pub use toast::ToastMessage;
 
 use crate::core::TabId;
+use crate::plugin::PluginMessage;
 use crate::screens::blank::BlankMessage;
 use crate::screens::no_git::NoGitMessage;
 use crate::screens::repository::RepositoryMessage;
@@ -22,6 +23,7 @@ pub enum Message {
     App(AppMessage),
     Screen(ScreenRouted),
     Toast(ToastMessage),
+    Plugin(PluginMessage),
 }
 
 impl Message {

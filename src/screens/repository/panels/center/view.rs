@@ -152,11 +152,14 @@ pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Mess
         let row_count = rows.len();
         let has_truncated = any_name_truncated(rows);
         let (panel_rows, max_name_len) = if row_count <= 1 {
+            // No overflow — only open if a name is actually truncated.
             if !has_truncated {
                 return None;
             }
+            // Show the trigger row(s) with the full name (usize::MAX → no clip).
             (rows, usize::MAX)
         } else {
+            // Overflow popout: all rows, generous name limit.
             (rows, usize::MAX)
         };
 
@@ -452,6 +455,7 @@ fn message_cell<'a>(
         .height(Length::Fill)
         .align_y(iced::alignment::Vertical::Center);
 
+    // Wrap the button in a MouseArea to capture click events on press (mouse down)
     let commit_button = button(centered)
         .style(move |_: &Theme, _: button::Status| button::Style {
             background: Some(bg.into()),
@@ -682,6 +686,7 @@ pub fn commit_context_menu_width(
         .iter()
         .map(|l| cached_measure_width(l, FontFamily::Default, theme::FONT_SM))
         .fold(0.0_f32, f32::max);
+    // PADDING (4) + BUTTON_PADDING_X (10) on each side = 28
     max_w + 28.0
 }
 

@@ -1,3 +1,6 @@
+//! Diff panel action handler. Migrated out of `RepositoryScreen` as part of
+//! the Phase 5 completion.
+
 use iced::Task;
 
 use crate::message::{AppMessage, Message};

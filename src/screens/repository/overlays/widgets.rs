@@ -23,6 +23,9 @@ pub struct OverlayButtonPalette {
     pub hover_text: Color,
 }
 
+/// Builds a palette-colored `button::StyleFn` with optional disabled dim.
+/// Consolidates what used to be per-call-site `green_button_style` /
+/// `red_button_style` / `resolve_button_style` copies.
 pub fn palette_button_style(
     palette: OverlayButtonPalette,
     enabled: bool,

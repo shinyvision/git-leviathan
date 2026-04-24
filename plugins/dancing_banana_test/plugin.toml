@@ -1,0 +1,5 @@
+[plugin]
+id = "dancing_banana_test"
+name = "Dancing Banana"
+version = "0.1.0"
+api = 1

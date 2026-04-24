@@ -118,9 +118,10 @@ impl GitRepositoryGateway {
         self.with_service_unlocked(f)
     }
 
-    /// Opens a `GitService` without acquiring the operation lock. Read-only
-    /// callers (diff loading) must not block on long-running writers like
-    /// `fetch_and_reload`; git2 handles concurrent reads safely.
+    /// Opens a `GitService` without acquiring the operation lock.
+    ///
+    /// Read-only callers (diff loading) must not block on long-running writers
+    /// like `fetch_and_reload`. git2 handles concurrent reads safely.
     pub(super) fn with_service_unlocked<T>(
         &self,
         f: impl FnOnce(&mut GitService) -> Result<T, GitError>,
@@ -447,10 +448,12 @@ impl CommitOps for GitRepositoryGateway {
 
 impl RemoteOps for GitRepositoryGateway {
     fn fetch_remotes(&self) -> Result<(), GitError> {
-        // Network fetch under the writer lock; then refresh the tag→remotes
-        // cache via `git ls-remote --tags` OUTSIDE the lock. Holding the
-        // ls-remote calls under the writer lock scaled hold time by
-        // (num_remotes × round-trip) and starved file-watcher reload_refs.
+        // Phase 1 (write-lock): network fetch only.
+        // Phase 2 (no write-lock): `git ls-remote --tags` per remote to refresh
+        // the tag→remotes cache. Held under the writer lock in the past, this
+        // stretched lock-hold time by (num_remotes × round-trip) and caused
+        // file-watcher reload_refs tasks to pile up during the fetch; keep it
+        // strictly outside the writer lock so readers aren't starved.
         self.with_service(|service| service.fetch_all_refs())?;
         self.with_service_unlocked(|service| {
             self.refresh_tag_remotes_cache(service);
@@ -682,11 +685,14 @@ mod tests {
         );
     }
 
-    /// Compile-time check: a function taking `&impl BranchOps` cannot call
-    /// non-BranchOps methods (e.g. `create_stash` from `StashOps`).
+    /// Compile-time check: a function that takes `&impl BranchOps` must not be
+    /// able to call non-BranchOps methods. This is the ISP payoff — the
+    /// branch-ops dialogs depend on this trait only.
     #[allow(dead_code)]
     fn _branch_ops_compile_check<G: BranchOps>(g: &G) {
         let _ = g.abort_merge();
+        // The following would fail to compile:
+        //   let _ = g.create_stash(); // <- StashOps, not in scope
     }
 
     #[test]

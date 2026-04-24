@@ -15,10 +15,12 @@ use std::time::{Duration, Instant};
 use crate::{
     config::AppConfig,
     message::Message,
+    plugin::PluginHost,
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
     services::{detect_git, DefaultPresenter, GitStatus, Presenter, SettingsService},
     toast::ToastManager,
+    widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
 };
 
 use fetch_policy::FetchPolicy;
@@ -31,23 +33,38 @@ use tabs::TabManager;
 const FETCH_DEBOUNCE_AFTER_TAB_SWITCH: Duration = Duration::from_secs(3);
 
 pub struct App {
-    tabs: TabManager,
-    blank_screen: BlankScreen,
-    no_git_screen: Option<NoGitScreen>,
-    toasts: ToastManager,
-    last_animation_tick: Option<Instant>,
-    fetch: FetchPolicy,
+    pub(super) tabs: TabManager,
+    pub(super) blank_screen: BlankScreen,
+    pub(super) no_git_screen: Option<NoGitScreen>,
+    pub(super) toasts: ToastManager,
+    pub(super) last_animation_tick: Option<Instant>,
+    pub(super) fetch: FetchPolicy,
     /// Handle to the most recent file-watcher-driven `reload_refs_task`.
     /// File-watcher events during a git op tend to arrive in bursts (e.g.
     /// every packfile write during `git fetch`); if one reload is already in
     /// flight, the next burst aborts it and starts a fresh one so only the
     /// latest snapshot ever reaches the main thread.
-    reload_refs_abort: Option<iced::task::Handle>,
+    pub(super) reload_refs_abort: Option<iced::task::Handle>,
+    pub(super) plugin_host: PluginHost,
+    /// Authoritative slot registry for the main bar. Built once at startup
+    /// from built-ins + plugin contributions; `view` walks it each frame.
+    pub(super) main_bar_registry: MainBarRegistry,
 }
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         let presenter: Arc<dyn Presenter> = Arc::new(DefaultPresenter::new());
+        let mut plugin_host = PluginHost::new();
+        plugin_host.load_from_default_dirs();
+
+        let mut main_bar_registry = MainBarRegistry::new();
+        main_bar_builtins::register_all(&mut main_bar_registry);
+        // Plugin contributions run after built-ins so plugins can remove
+        // or replace built-in slots. Legacy `add_main_bar_button` buttons
+        // land on the right; new `main_bar.{add,remove,replace}` ops run
+        // in source order across all plugins.
+        plugin_host.register_main_bar_slots(&mut main_bar_registry);
+
         let mut app = App {
             tabs: TabManager::new(presenter),
             blank_screen: BlankScreen::new(),
@@ -56,6 +73,8 @@ impl App {
             last_animation_tick: None,
             fetch: FetchPolicy::new(),
             reload_refs_abort: None,
+            plugin_host,
+            main_bar_registry,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -77,6 +96,7 @@ impl App {
         }
 
         let task = app.load_initial_repos();
+        app.sync_repository_to_plugins();
         (app, task)
     }
 
@@ -105,9 +125,37 @@ impl App {
             Message::App(am) => self.update_app(am),
             Message::Screen(routed) => self.update_screen(routed),
             Message::Toast(tm) => self.update_toast(tm),
+            Message::Plugin(pm) => self.update_plugin(pm),
         };
+        self.sync_repository_to_plugins();
         self.reset_animation_clock_if_idle();
         task
+    }
+
+    /// Push the active tab's branch refs into every plugin's
+    /// `leviathan.repository` and fire `BranchChanged` when they differ
+    /// from the last sync. Called at the end of `update` — the plugin
+    /// host short-circuits on unchanged state so the common path is a
+    /// cheap hash compare.
+    ///
+    /// The refs slice is cloned into a local `Vec` so we can drop the
+    /// borrow on `self.tabs` before re-borrowing `self.plugin_host`
+    /// mutably; the list is small (<= a few dozen entries on typical
+    /// repos) so the clone is cheap.
+    fn sync_repository_to_plugins(&mut self) {
+        let (repo_name, current_branch, refs) = self
+            .tabs
+            .active_screen()
+            .map(|screen| {
+                (
+                    screen.repo_name().to_string(),
+                    screen.current_branch().to_string(),
+                    screen.branch_refs().to_vec(),
+                )
+            })
+            .unwrap_or_else(|| (String::new(), String::new(), Vec::new()));
+        self.plugin_host
+            .sync_repository(&repo_name, &current_branch, &refs);
     }
 
     pub fn view(&self) -> Element<'_, Message> {

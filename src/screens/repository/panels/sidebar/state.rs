@@ -32,6 +32,7 @@ impl SidebarPanel {
         self.filter_query = q;
     }
 
+    /// Defaults applied when a repo has no persisted sidebar state yet.
     pub(in crate::screens::repository) fn default_expanded() -> HashSet<SidebarSectionKind> {
         let mut s = HashSet::new();
         s.insert(SidebarSectionKind::Local);
@@ -107,6 +108,9 @@ impl SidebarPanel {
     }
 }
 
+/// User intentions surfaced by the sidebar view. Screen-level `update`
+/// routes `RepositoryMessage::Sidebar(SidebarAction)` straight into
+/// `SidebarPanel::update`.
 #[derive(Debug, Clone)]
 pub enum SidebarAction {
     SectionToggled(usize),

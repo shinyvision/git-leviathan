@@ -13,12 +13,11 @@ pub use messages::RepositoryMessage;
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::{
     core::TabId,
     message::{AppMessage, Message},
-    screens::screen_trait::Screen,
+    screens::screen_trait::{Screen, ToolbarCtx},
     services::{presenter::Presenter, GitError, SettingsService, COMMIT_LOAD_LIMIT},
     view_model::SidebarSectionKind,
 };
@@ -124,6 +123,21 @@ impl RepositoryScreen {
             input: InputState::new(),
             merged_diff: MergedDiffCache::new(),
         }
+    }
+
+    /// Branch refs (local + remote) from the latest snapshot. Exposed so
+    /// `App::sync_repository_to_plugins` can rebuild the plugin-host
+    /// `leviathan.repository` tables without reaching into screen internals.
+    pub(crate) fn branch_refs(&self) -> &[crate::services::RepoRef] {
+        self.data.snapshot.branch_refs()
+    }
+
+    pub(crate) fn repo_name(&self) -> &str {
+        self.data.snapshot.repo_name()
+    }
+
+    pub(crate) fn current_branch(&self) -> &str {
+        self.data.snapshot.current_branch()
     }
 
     pub fn initial_load_task(&self, tab_id: TabId) -> Task<Message> {
@@ -384,8 +398,8 @@ impl Screen for RepositoryScreen {
         RepositoryScreen::subscription(self)
     }
 
-    fn toolbar(&self, now: Option<Instant>) -> Option<Element<'_, Message>> {
-        Some(view::toolbar(self, now))
+    fn toolbar<'a>(&'a self, ctx: &ToolbarCtx<'a>) -> Option<Element<'a, Message>> {
+        Some(view::toolbar(self, ctx))
     }
 
     fn tick_animation(&mut self, dt_ms: f32) -> Option<Task<Message>> {

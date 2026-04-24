@@ -18,7 +18,8 @@ pub(crate) struct GatewayFleet {
     active_path: PathBuf,
     gateways: HashMap<PathBuf, SharedRepositoryGateway>,
     /// Retained for snapshot projection after focus swaps and worktree CRUD
-    /// results — passed to the active gateway when projecting per-workdir state.
+    /// results — passed to the active gateway when projecting per-workdir
+    /// state (see Task 7+ of the worktrees rollout).
     #[allow(dead_code)]
     presenter: Arc<dyn Presenter>,
 }
@@ -80,6 +81,7 @@ impl GatewayFleet {
         }))
     }
 
+    /// Requires `ensure(path)` first — errors if the path isn't cached.
     pub(crate) fn swap_active(&mut self, path: PathBuf) -> Result<(), GitError> {
         if !self.gateways.contains_key(&path) {
             return Err(GitError::Other(format!(

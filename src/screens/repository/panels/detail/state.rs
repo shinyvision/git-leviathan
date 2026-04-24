@@ -26,7 +26,9 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     pub(in crate::screens::repository) multi_commits: Vec<&'a Commit>,
     pub(in crate::screens::repository) merged_diff: Option<&'a MergedCommitDiffResult>,
     pub(in crate::screens::repository) reword: Option<RewordViewModel<'a>>,
+    /// Whether the selected commit can be reworded (on first-parent chain from HEAD).
     pub(in crate::screens::repository) reword_allowed: bool,
+    /// Number of commits that would be rebased if the selected commit were reworded.
     pub(in crate::screens::repository) reword_descendant_count: usize,
     /// Whether to show the "Copied" tooltip next to the commit SHA chip.
     pub(in crate::screens::repository) copied_sha_flash: bool,

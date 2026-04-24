@@ -1,6 +1,15 @@
-//! Bumps `graph_revision` when a new `ProjectionSignature` differs from the
-//! last-seen one, so the canvas tile cache survives file-watcher cascades that
-//! re-project the same graph.
+//! Graph-revision bump decision based on `ProjectionSignature` equality.
+//!
+//! Each new projection carries a signature hash over the inputs that affect
+//! graph rendering. Consumers (one per repository screen) keep a
+//! [`SignatureTracker`] that compares the incoming signature against the
+//! last-seen one: when they differ the tracked `graph_revision` bumps, so
+//! the canvas tile cache is invalidated. When they match the cache survives,
+//! which matters for file-watcher cascades that project the same graph
+//! repeatedly.
+//!
+//! Lives under `services/presenter/` so the signature lifecycle is owned by
+//! the module that produces the signatures, not scattered across screen state.
 
 use crate::core::RepoVersion;
 use crate::view_model::ProjectionSignature;

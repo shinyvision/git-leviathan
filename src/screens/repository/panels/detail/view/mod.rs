@@ -435,6 +435,7 @@ fn truncate_path_for_width(path: &str, max_width: f32) -> TruncatedPath {
     let font_size = theme::FONT_SM;
     let (dir_part, file_part) = split_path(path);
 
+    // Measure full combined width
     let full_width = cached_measure_width(path, FontFamily::Default, font_size);
     if full_width <= max_width {
         return TruncatedPath {
@@ -447,6 +448,7 @@ fn truncate_path_for_width(path: &str, max_width: f32) -> TruncatedPath {
     let separator_width = cached_measure_width("/", FontFamily::Default, font_size);
     let ellipsis_width = cached_measure_width("…", FontFamily::Default, font_size);
 
+    // If even filename barely fits, show only filename
     let min_needed = file_width + separator_width + ellipsis_width;
     if max_width <= min_needed {
         if file_width <= max_width {

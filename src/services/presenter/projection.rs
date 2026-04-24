@@ -130,6 +130,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         repo_name: _,
         current_branch: _,
         worktrees: _,
+        branch_refs,
     } = projection;
 
     LoadedRefs {
@@ -144,6 +145,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         fast_forward_candidates,
         signature,
         has_more_commits,
+        branch_refs,
     }
 }
 
@@ -202,6 +204,12 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         .iter()
         .filter(|stash| !absorbed_stash_hashes.contains(&stash.hash))
         .flat_map(|stash| std::iter::once(stash.hash.clone()).chain(stash.index_hash.clone()))
+        .collect();
+
+    let branch_refs: Vec<RepoRef> = refs
+        .iter()
+        .filter(|r| !matches!(r.kind, RepoRefKind::Tag))
+        .cloned()
         .collect();
 
     let has_dirty_changes = dirty.as_ref().is_some_and(DirtySnapshot::has_changes);
@@ -294,6 +302,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         default_remote_name,
         fast_forward_candidates,
         worktrees: worktrees.clone(),
+        branch_refs,
     }
 }
 
@@ -1938,8 +1947,8 @@ mod tests {
         assert_eq!(labels[0].remote_name.as_deref(), Some("origin"));
     }
 
-    /// Snapshot regression: deterministic fork-shaped repo, projected, with
-    /// its output pinned to detect incidental graph/sidebar changes.
+    /// Fixture snapshot regression: build a deterministic repo with a
+    /// branch fork, project it, and lock down the shape of the result.
     #[test]
     fn fixture_repo_projects_stable_sidebar_and_graph() {
         use crate::services::{
@@ -2045,27 +2054,25 @@ mod tests {
         let primary_path = PathBuf::from("/tmp/primary");
         let wt_path = PathBuf::from("/tmp/wt");
 
-        let snapshot = RepoSnapshot {
-            worktrees: vec![
-                WorktreeInfo {
-                    path: primary_path,
-                    branch_name: "main".into(),
-                    head_hash: "abc".into(),
-                    is_primary: true,
-                    is_locked: false,
-                    is_prunable: false,
-                },
-                WorktreeInfo {
-                    path: wt_path.clone(),
-                    branch_name: "feature-x".into(),
-                    head_hash: "def".into(),
-                    is_primary: false,
-                    is_locked: false,
-                    is_prunable: false,
-                },
-            ],
-            ..Default::default()
-        };
+        let mut snapshot = RepoSnapshot::default();
+        snapshot.worktrees = vec![
+            WorktreeInfo {
+                path: primary_path,
+                branch_name: "main".into(),
+                head_hash: "abc".into(),
+                is_primary: true,
+                is_locked: false,
+                is_prunable: false,
+            },
+            WorktreeInfo {
+                path: wt_path.clone(),
+                branch_name: "feature-x".into(),
+                head_hash: "def".into(),
+                is_primary: false,
+                is_locked: false,
+                is_prunable: false,
+            },
+        ];
 
         use crate::view_model::SidebarSectionKind;
         let sections =

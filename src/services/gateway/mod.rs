@@ -18,10 +18,12 @@ pub use stash_ops::StashOps;
 pub use tag_ops::TagOps;
 pub use working_tree_ops::WorkingTreeOps;
 
-/// Composed super-trait for callers that need full repo access. Narrow callers
-/// depend on the segregated sub-traits instead. `RepoRead` is listed explicitly
-/// even though every sub-trait already requires it, to document that every
-/// full repo is readable.
+/// Composed super-trait. Any caller that needs full repo access asks for
+/// `&impl Repository`; any caller that needs only a slice asks for the narrow
+/// trait instead. Blanket impl means no manual wiring — any type that
+/// implements each segregated trait automatically implements this. `RepoRead`
+/// is named explicitly even though each sub-trait already requires it; the
+/// redundancy documents the fact that full repos are always readable.
 pub trait Repository:
     RepoRead + BranchOps + WorkingTreeOps + GitWorktreeOps
     + CommitOps + RemoteOps + StashOps + TagOps

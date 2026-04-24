@@ -13,6 +13,7 @@ use std::path::Path;
 use crate::{
     core::{Commit, RepoVersion, WorktreeInfo},
     services::presenter::signature::SignatureTracker,
+    services::RepoRef,
     view_model::{
         CommitPresentation, GraphRow, LoadedRefs, LoadedRepo, RepositoryProjection, SidebarSection,
     },
@@ -30,6 +31,9 @@ pub(in crate::screens::repository) struct RepositorySnapshot {
     default_remote_name: Option<String>,
     fast_forward_candidates: HashSet<String>,
     worktrees: Vec<WorktreeInfo>,
+    /// Local + remote branch refs. Read by `App::sync_repository_to_plugins`
+    /// to populate the plugin-host `leviathan.repository` tables.
+    branch_refs: Vec<RepoRef>,
     tracker: SignatureTracker,
 }
 
@@ -47,6 +51,7 @@ impl RepositorySnapshot {
             default_remote_name: None,
             fast_forward_candidates: HashSet::new(),
             worktrees: Vec::new(),
+            branch_refs: Vec::new(),
             tracker: SignatureTracker::new(),
         }
     }
@@ -63,6 +68,7 @@ impl RepositorySnapshot {
         self.sidebar_sections.clear();
         self.fast_forward_candidates.clear();
         self.worktrees.clear();
+        self.branch_refs.clear();
         self.tracker = SignatureTracker::new();
     }
 
@@ -98,6 +104,7 @@ impl RepositorySnapshot {
             fast_forward_candidates,
             signature,
             has_more_commits: _,
+            branch_refs,
         } = refs;
 
         self.tracker.observe(signature);
@@ -110,6 +117,7 @@ impl RepositorySnapshot {
         self.head_hash = head_hash;
         self.default_remote_name = default_remote_name;
         self.fast_forward_candidates = fast_forward_candidates;
+        self.branch_refs = branch_refs;
 
         commit_diff_states
     }
@@ -131,6 +139,7 @@ impl RepositorySnapshot {
             default_remote_name,
             fast_forward_candidates,
             worktrees,
+            branch_refs,
         } = projection;
 
         self.commits = commits;
@@ -144,6 +153,7 @@ impl RepositorySnapshot {
         self.default_remote_name = default_remote_name;
         self.fast_forward_candidates = fast_forward_candidates;
         self.worktrees = worktrees;
+        self.branch_refs = branch_refs;
 
         commit_diff_states
     }
@@ -178,6 +188,13 @@ impl RepositorySnapshot {
 
     pub(in crate::screens::repository) fn current_branch(&self) -> &str {
         &self.current_branch
+    }
+
+    /// Local + remote branch refs from the latest projection. Exposed
+    /// crate-wide so `App::sync_repository_to_plugins` can rebuild the
+    /// plugin-host `leviathan.repository` tables without re-reading libgit2.
+    pub(crate) fn branch_refs(&self) -> &[RepoRef] {
+        &self.branch_refs
     }
 
     pub(in crate::screens::repository) fn head_hash(&self) -> Option<&str> {

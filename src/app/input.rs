@@ -1,4 +1,4 @@
-//! Keyboard-input dispatch for `App`.
+//! Keyboard-input dispatch for `App`. Extracted from `update.rs` in Phase 9.
 
 use iced::{keyboard, Task};
 
@@ -28,7 +28,11 @@ impl App {
             if self.tabs.is_empty() {
                 return Task::none();
             }
+            let was_fetching = self.fetch.is_fetching();
             self.fetch.cancel();
+            if was_fetching {
+                self.plugin_host.fire_event("FetchEnd");
+            }
             let screen_task = self.tabs.activate_tab(target);
             let debounce_task = self.fetch.schedule_debounced(FETCH_DEBOUNCE_AFTER_TAB_SWITCH);
             return Task::batch(vec![screen_task, debounce_task]);

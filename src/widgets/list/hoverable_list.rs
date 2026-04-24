@@ -71,17 +71,25 @@ impl<Msg> HoverableListItem<Msg> {
 
 #[derive(Clone, Copy)]
 pub struct HoverableListStyle {
+    /// Fixed height of each row.
     pub row_height: f32,
+    /// Vertical space between rows.
     pub row_spacing: f32,
     /// Outer padding around the entire list (inside the border).
     pub outer_padding: f32,
+    /// Horizontal inset applied to each row's content.
     pub row_padding_x: f32,
+    /// Panel border.
     pub border_color: Color,
     pub border_radius: f32,
     pub border_width: f32,
+    /// Panel background (behind rows).
     pub background: Color,
+    /// Optional drop shadow.
     pub shadow: Option<Shadow>,
+    /// Idle row background.
     pub row_bg_idle: Color,
+    /// Row background when hovered.
     pub row_bg_hover: Color,
 }
 

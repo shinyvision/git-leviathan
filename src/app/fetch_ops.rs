@@ -1,6 +1,7 @@
 //! App-level fetch orchestration: kicking off user/auto fetches and
 //! file-watcher-driven refs reloads. Works on top of `FetchPolicy` (which
 //! owns the single-slot state) by wiring it to the active-tab screen.
+//! Extracted from `update.rs` in Phase 9.
 
 use iced::Task;
 
@@ -40,6 +41,7 @@ impl App {
         };
         let task = self.fetch.start(screen.fetch_task());
         self.tabs.persist_most_recent_if_needed(tab_id);
+        self.plugin_host.fire_event("FetchStart");
         task
     }
 

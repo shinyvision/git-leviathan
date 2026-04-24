@@ -326,6 +326,7 @@ mod tests {
     fn anchor_itself_is_inclusive() {
         let commits = sample_commits();
         let mut s = CommitSearch::new();
+        // Anchor at 2 (Refactor LOGIN util) matches. Should select idx 2, not 4.
         s.set_query("login".into(), &commits, 2);
         assert_eq!(s.current_match_idx(), Some(2));
     }
@@ -401,6 +402,7 @@ mod tests {
         s.set_query("alice".into(), &commits, 0);
         assert_eq!(s.matches(), &[0, 3]);
 
+        // New commit inserted at the top → all indices shift by +1.
         let mut shifted = commits.clone();
         shifted.insert(0, mk("fff666", "New dirty work", "Bob"));
         s.recompute_matches(&shifted, Some(0));

@@ -1,7 +1,9 @@
-//! Pure painting primitives for the commit graph: geometry math (curve
-//! sampling, dotted-line placement), the per-row drawing loop, and commit-dot
-//! decorations. Independent of Iced's `Program` trait; callers (`program.rs`)
-//! invoke `draw_graph_rows` into an existing canvas `Frame`.
+//! Pure painting primitives for the commit graph.
+//!
+//! This module owns the geometry math (curve sampling, dotted-line placement),
+//! the per-row drawing loop, and the commit dot decorations. It is independent
+//! of Iced's `Program` trait; callers (`program.rs`) invoke `draw_graph_rows`
+//! into an existing canvas `Frame`.
 use iced::{
     alignment,
     widget::canvas::{self, path::Arc, Frame, Path, Stroke},

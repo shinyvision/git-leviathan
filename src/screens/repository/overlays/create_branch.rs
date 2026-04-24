@@ -21,6 +21,7 @@ pub(crate) struct State {
     pub commit_idx: usize,
     pub commit_hash: String,
     pub branch_name_input: String,
+    /// Whether the input field needs focus after animation completes.
     pub needs_focus: bool,
 }
 

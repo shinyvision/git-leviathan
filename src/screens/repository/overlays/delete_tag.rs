@@ -12,6 +12,8 @@ use super::widgets::{
 #[derive(Debug, Clone)]
 pub(crate) struct State {
     pub tag_name: String,
+    /// Remotes that hold this tag — deleted automatically alongside the local
+    /// tag after confirmation.
     pub tag_remote_names: Vec<String>,
 }
 

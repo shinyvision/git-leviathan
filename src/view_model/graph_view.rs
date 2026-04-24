@@ -16,9 +16,12 @@ pub struct GraphSegment {
     pub to_lane: f32,
 }
 
+/// Graph rendering data for one commit row.
 #[derive(Debug, Clone)]
 pub struct GraphRow {
+    /// Segments for the upper half of the row (from top to commit dot).
     pub upper: Vec<GraphSegment>,
+    /// Segments for the lower half of the row (from commit dot to bottom).
     pub lower: Vec<GraphSegment>,
     /// Dotted upper-half segments used for the dirty commit's future path.
     pub dotted_upper: Vec<GraphSegment>,
@@ -26,7 +29,9 @@ pub struct GraphRow {
     pub dotted_lower: Vec<GraphSegment>,
     /// Dotted merge arms used by synthetic dirty merge rows.
     pub dotted_connectors: Vec<GraphSegment>,
+    /// Lane index where the commit dot appears.
     pub commit_lane: usize,
+    /// Author initials displayed inside the avatar circle (e.g. "RS").
     pub author_initials: String,
     /// True for merge commits — drawn as a solid filled dot with no initials.
     pub is_merge: bool,
@@ -41,6 +46,7 @@ pub struct GraphRow {
     pub is_stash: bool,
 }
 
+/// Full projection of a repository snapshot ready to feed the UI.
 #[derive(Debug, Clone)]
 pub struct RepositoryProjection {
     pub commits: Vec<Commit>,
@@ -58,6 +64,10 @@ pub struct RepositoryProjection {
     pub default_remote_name: Option<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<crate::core::WorktreeInfo>,
+    /// Local + remote branch refs (tags filtered out). Kept on the
+    /// projection so the plugin-host `leviathan.repository` tables can be
+    /// rebuilt without re-running libgit2 on every sync.
+    pub branch_refs: Vec<crate::services::RepoRef>,
 }
 
 /// Hash over the inputs that determine the rendered graph. Two snapshots with

@@ -3,6 +3,7 @@ use iced::advanced::widget::{Operation, Widget};
 use iced::advanced::{layout, mouse, renderer, Clipboard, Layout, Shell};
 use iced::{Element, Event, Length, Point, Rectangle, Size};
 
+/// Hover status for styling, similar to button::Status
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoverStatus {
     Idle,
@@ -17,6 +18,9 @@ impl HoverStatus {
 
 type StyleFn<'a, Theme> = Box<dyn Fn(&Theme, HoverStatus) -> iced::widget::container::Style + 'a>;
 
+/// A widget that provides hover styling for any content.
+/// Computes hover state fresh each frame like Button does.
+/// For visual-only hovers (background/border changes).
 pub struct Hoverable<'a, Message, Theme, Renderer> {
     content: Element<'a, Message, Theme, Renderer>,
     style: StyleFn<'a, Theme>,
@@ -138,6 +142,7 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
+        // Compute hover fresh each frame, exactly like Button does
         let is_hovered = cursor.is_over(layout.bounds());
         let status = if is_hovered {
             HoverStatus::Hovered
@@ -147,6 +152,7 @@ where
 
         let style = (self.style)(theme, status);
 
+        // Draw container background
         if let Some(background) = style.background {
             renderer.fill_quad(
                 renderer::Quad {
@@ -158,6 +164,7 @@ where
             );
         }
 
+        // Draw content
         self.content.as_widget().draw(
             &tree.children[0],
             renderer,
@@ -182,6 +189,13 @@ where
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HoverableSwap - For content-swapping hovers (revealing buttons on hover)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Widget that swaps content based on hover state.
+/// Stores hover state internally, renders `hover_content` when hovered,
+/// `idle_content` otherwise.
 pub struct HoverableSwap<'a, Message, Theme, Renderer> {
     idle_content: Element<'a, Message, Theme, Renderer>,
     hover_content: Element<'a, Message, Theme, Renderer>,
@@ -237,6 +251,7 @@ where
     }
 
     fn size(&self) -> Size<Length> {
+        // Use max of both contents so layout is stable
         let idle_size = self.idle_content.as_widget().size();
         let hover_size = self.hover_content.as_widget().size();
         Size::new(
@@ -260,6 +275,7 @@ where
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
+        // Layout both children
         let idle_node =
             self.idle_content
                 .as_widget_mut()
@@ -269,14 +285,17 @@ where
                 .as_widget_mut()
                 .layout(&mut tree.children[1], renderer, limits);
 
+        // Use larger of the two as our size
         let size = Size::new(
             idle_node.size().width.max(hover_node.size().width),
             idle_node.size().height.max(hover_node.size().height),
         );
 
+        // Reposition children to fill our bounds (at origin)
         let idle_node = idle_node.move_to(Point::ORIGIN);
         let hover_node = hover_node.move_to(Point::ORIGIN);
 
+        // Store both layouts
         layout::Node::with_children(size, vec![idle_node, hover_node])
     }
 
@@ -290,6 +309,7 @@ where
         let state: &HoverableSwapState = tree.state.downcast_ref();
         let children: Vec<_> = layout.children().collect();
 
+        // Only operate on visible child
         if state.is_hovered {
             self.hover_content.as_widget_mut().operate(
                 &mut tree.children[1],
@@ -322,9 +342,11 @@ where
         let bounds = layout.bounds();
         let children: Vec<_> = layout.children().collect();
 
+        // Update hover state based on cursor
         let _was_hovered = state.is_hovered;
         state.is_hovered = cursor.is_over(bounds);
 
+        // Forward event to currently visible child
         if state.is_hovered {
             self.hover_content.as_widget_mut().update(
                 &mut tree.children[1],
@@ -394,8 +416,10 @@ where
         let bounds = layout.bounds();
         let children: Vec<_> = layout.children().collect();
 
+        // Compute fresh hover check (in case UI moved under cursor)
         let is_hovered = cursor.is_over(bounds);
 
+        // Choose style and content based on hover
         let (style, content, child_tree, child_layout) = if is_hovered {
             (
                 (self.style_hover)(theme),
@@ -412,6 +436,7 @@ where
             )
         };
 
+        // Draw background
         if let Some(background) = style.background {
             renderer.fill_quad(
                 renderer::Quad {
@@ -423,6 +448,7 @@ where
             );
         }
 
+        // Draw content
         content.as_widget().draw(
             child_tree,
             renderer,
@@ -447,6 +473,7 @@ where
     }
 }
 
+/// Convenience function to wrap with hover content swap
 pub fn hoverable_swap<'a, Message, Theme, Renderer>(
     idle_content: impl Into<Element<'a, Message, Theme, Renderer>>,
     hover_content: impl Into<Element<'a, Message, Theme, Renderer>>,

@@ -10,8 +10,10 @@ use crate::view_model::{
 use super::projection;
 use super::Presenter;
 
-/// Runs projection synchronously on the calling thread. Shared via `Arc` in
-/// production; tests may swap in a fake via the `Presenter` trait.
+/// Default presenter: runs projection synchronously on the calling thread.
+///
+/// Used in production by `App` (shared via `Arc`). Tests may swap in a fake
+/// via the `Presenter` trait.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct DefaultPresenter;
 

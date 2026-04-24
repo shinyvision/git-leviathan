@@ -32,6 +32,7 @@ pub const SIGN_WIDTH: f32 = 16.0;
 
 pub const CANVAS_ID: CanvasId = CanvasId(1);
 
+// Legacy re-exports for existing call sites.
 pub use text::{
     CanvasId as DiffCanvasId, SelectionMode, TextCanvasData as DiffCanvasData,
     TextPosition as DiffPosition, TextSelection as DiffSelection,

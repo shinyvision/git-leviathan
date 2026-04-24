@@ -3,9 +3,11 @@ use crate::services::{
     RepoSnapshot, WorkingTreeDiffResult,
 };
 
-/// Read-only view of the repository. Segregated so read-only callers (diff
-/// panel, sidebar) don't pull in write methods, and used as the super-trait
-/// for every write trait since mutators re-read state after acting.
+/// Read-only view of the repository.
+///
+/// Segregated so that callers (e.g. diff panel, sidebar) that only need reads
+/// don't get a dependency on write methods. Also serves as the super-trait for
+/// every write trait — every mutator wants to re-read state after acting.
 pub trait RepoRead: Send + Sync {
     fn load_repo(&self, commit_limit: usize) -> Result<RepoSnapshot, GitError>;
     fn load_refs_snapshot(&self, commit_limit: usize) -> Result<RefsSnapshot, GitError>;

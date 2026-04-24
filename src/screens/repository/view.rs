@@ -71,7 +71,7 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
 
 pub(in crate::screens::repository) fn toolbar<'a>(
     screen: &'a RepositoryScreen,
-    fetch_started_at: Option<std::time::Instant>,
+    ctx: &crate::screens::ToolbarCtx<'a>,
 ) -> Element<'a, Message> {
     let branch_action = if screen.panels.diff.is_active() {
         None
@@ -90,14 +90,15 @@ pub(in crate::screens::repository) fn toolbar<'a>(
             }
         })
     };
-    let main_bar = chrome::main_bar_view(
+    let slot_ctx = chrome::SlotCtx::new(
         screen.data.snapshot.repo_name(),
         screen.data.snapshot.current_branch(),
-        fetch_started_at,
+        ctx.now,
         screen.data.animation.push_started_at(),
         screen.data.animation.pull_started_at(),
         branch_action,
     );
+    let main_bar = chrome::main_bar_view(ctx.main_bar_registry, &slot_ctx);
     screen.overlay_manager.toolbar_overlay(main_bar, &screen.data)
 }
 

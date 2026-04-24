@@ -75,6 +75,7 @@ impl ActiveDialog {
     }
 }
 
+/// Dependencies needed to spawn git tasks from dialog confirmations.
 pub(crate) struct DialogCtx {
     pub repository: SharedRepositoryGateway,
     pub primary_repository: SharedRepositoryGateway,
@@ -87,8 +88,11 @@ pub(crate) struct DialogCtx {
 /// remaining side-effects (focus change, list-scroll restore) so the overlay
 /// layer never reaches across into sibling panels.
 pub(crate) enum DialogDispatch {
+    /// Plain task — may be `Task::none()` for local-only state changes.
     Task(Task<Message>),
+    /// Cancel path: caller must reset `focused_panel` to Center.
     CancelCloseFocus,
+    /// Opened a new dialog that requires restoring center-list scroll.
     RestoreCenterListScroll,
 }
 
@@ -120,6 +124,7 @@ impl OverlayManager {
         self.active = Some(dialog);
     }
 
+    /// Close the active dialog (if any) and reset animation state.
     pub(crate) fn close(&mut self) {
         self.active = None;
         self.slide_offset = 0.0;
@@ -170,6 +175,7 @@ impl OverlayManager {
     }
 
     pub(crate) fn tick_animation(&mut self, delta_ms: f32) -> Option<Task<Message>> {
+        // AddRemote runs on its own clock — check before the shared decay.
         if let Some(ActiveDialog::AddRemote(state)) = &self.active {
             if state.is_animation_done() {
                 if state.direction == add_remote::Direction::Opening && state.needs_focus {
@@ -185,6 +191,7 @@ impl OverlayManager {
             }
         }
 
+        // CreateWorktree runs on its own clock — parallel to AddRemote.
         if let Some(ActiveDialog::CreateWorktree(state)) = &self.active {
             if state.is_animation_done() {
                 if state.direction == create_worktree::Direction::Opening && state.needs_focus {
@@ -241,6 +248,7 @@ impl OverlayManager {
         spawn_discard_task(target, ctx)
     }
 
+    /// Checks whether deleting a branch is safe (can't delete HEAD locally).
     pub(crate) fn can_confirm_branch_delete(
         &self,
         current_branch: &str,
@@ -279,6 +287,8 @@ impl OverlayManager {
             ActiveDialog::DeleteTag(state) => delete_tag::view(state, slide),
             ActiveDialog::CherryPick(_) => cherry_pick_confirm::view(slide),
             ActiveDialog::RemoveWorktree(state) => remove_worktree::view(state, slide),
+            // AddRemote and CreateWorktree render as side panels via overlay_layers(),
+            // not in the toolbar row.
             ActiveDialog::AddRemote(_) => return main_bar,
             ActiveDialog::CreateWorktree(_) => return main_bar,
         };
@@ -1103,6 +1113,7 @@ mod tests {
             stash_index: 0,
             display_name: "WIP".into(),
         }));
+        // slide_offset was OVERLAY_ENTER_OFFSET after open.
         let before = m.slide_offset;
         let task = m.tick_animation(1.0);
         assert!((before - m.slide_offset - OVERLAY_SLIDE_SPEED_PX_PER_MS).abs() < 1e-4);
@@ -1130,10 +1141,12 @@ mod tests {
             branch_name_input: String::new(),
             needs_focus: true,
         }));
+        // Drive slide_offset to 0 in one big tick → first tick emits focus.
         let first = m.tick_animation(1000.0);
         assert!(first.is_some(), "focus task expected on animation end");
         assert_eq!(m.slide_offset, 0.0);
 
+        // Second tick finds slide already at 0 → no re-emit.
         let second = m.tick_animation(16.0);
         assert!(
             second.is_none(),

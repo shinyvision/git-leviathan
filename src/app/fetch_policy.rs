@@ -1,6 +1,8 @@
-//! Single-slot remote-fetch orchestration. The app only ever runs one
-//! user-driven remote fetch at a time; this struct owns the in-flight slot,
-//! its abort handle, and the Ctrl+Tab post-switch debounce handle.
+//! `FetchPolicy` — single-slot remote-fetch orchestration.
+//!
+//! Extracted from `App` in Phase 9. The app only ever runs one user-driven
+//! remote fetch at a time; this struct owns the in-flight slot, its abort
+//! handle, and the Ctrl+Tab post-switch debounce handle.
 
 use std::time::{Duration, Instant};
 

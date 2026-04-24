@@ -1,0 +1,5 @@
+[plugin]
+id = "repository_info"
+name = "Repository Info (Lua)"
+version = "0.1.0"
+api = 1

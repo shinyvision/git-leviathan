@@ -1,0 +1,5 @@
+[plugin]
+id = "file_explorer"
+name = "File Explorer"
+version = "0.1.0"
+api = 1

@@ -23,8 +23,9 @@ pub struct RepoSnapshot {
     /// don't have to synchronously call libgit2's `graph_descendant_of`.
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<WorktreeInfo>,
-    /// Worktree directory this snapshot reflects. Empty only for bare repos
-    /// (no workdir) or pre-load.
+    /// Which worktree directory this snapshot reflects. Empty when the repo
+    /// is bare (no workdir) or until populated; see Task 8 of the worktrees
+    /// rollout. For non-bare repos, the empty path is only seen pre-load.
     #[allow(dead_code)]
     pub active_worktree_path: PathBuf,
 }
@@ -46,8 +47,9 @@ pub struct RefsSnapshot {
     pub default_remote_name: Option<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<WorktreeInfo>,
-    /// Worktree directory this snapshot reflects. Empty only for bare repos
-    /// (no workdir) or pre-load.
+    /// Which worktree directory this snapshot reflects. Empty when the repo
+    /// is bare (no workdir) or until populated; see Task 8 of the worktrees
+    /// rollout. For non-bare repos, the empty path is only seen pre-load.
     pub active_worktree_path: PathBuf,
 }
 

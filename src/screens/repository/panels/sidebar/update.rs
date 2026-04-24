@@ -217,8 +217,10 @@ pub(super) fn update(
         }
         SidebarAction::WorktreeEntryPressed { path } => {
             if panel.register_worktree_click(&path) {
+                // Double-click → focus swap.
                 super::super::super::commands::focus_swap_to_worktree(ctx, path)
             } else {
+                // Single-click → pending-focus to the worktree's branch head commit.
                 let branch_name = ctx
                     .data
                     .snapshot

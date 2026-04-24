@@ -4,7 +4,7 @@ use crate::services::{GitError, RepoSnapshot, WorktreeInfo};
 
 use super::read::RepoRead;
 
-/// Real git-worktree operations; distinct from `WorkingTreeOps` (staging/dirty).
+/// Real git-worktree operations. Distinct from `WorkingTreeOps` (staging/dirty).
 pub trait GitWorktreeOps: RepoRead {
     #[allow(dead_code)]
     fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>, GitError>;

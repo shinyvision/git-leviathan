@@ -16,6 +16,8 @@ use crate::view_model::{BranchDisplayRow, BranchLabel, BranchLabelKind};
 pub const BRANCH_POPOUT_RADIUS: f32 = 6.0;
 pub const BRANCH_LABEL_INSET_X: u16 = 6;
 
+// ─── Container IDs ────────────────────────────────────────────────────────────
+
 pub fn branch_popout_trigger_id() -> iced::widget::Id {
     iced::widget::Id::new("branch-popout-trigger")
 }
@@ -27,6 +29,8 @@ pub fn branch_popout_panel_id() -> iced::widget::Id {
 pub fn branch_popout_content_id() -> iced::widget::Id {
     iced::widget::Id::new("branch-popout-content")
 }
+
+// ─── Label grouping ───────────────────────────────────────────────────────────
 
 fn can_merge_into_row(row: &BranchDisplayRow, label: &BranchLabel) -> bool {
     row.name == label.name && row.is_tag == matches!(label.kind, BranchLabelKind::Tag)

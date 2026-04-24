@@ -2,6 +2,7 @@ use crate::services::{GitError, RepoSnapshot};
 
 use super::read::RepoRead;
 
+/// Tag create/delete/push and the tag→remotes cache lookup.
 pub trait TagOps: RepoRead {
     fn create_tag(&self, tag_name: &str, target_hash: &str) -> Result<RepoSnapshot, GitError>;
     fn delete_tag(&self, tag_name: &str) -> Result<RepoSnapshot, GitError>;

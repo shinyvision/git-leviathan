@@ -19,6 +19,7 @@ pub(crate) struct State {
     pub branch_name: String,
     pub is_remote: bool,
     pub new_branch_input: String,
+    /// Whether the input field needs focus after animation completes.
     pub needs_focus: bool,
     /// Remote name for display (e.g. "origin"). Not used for the git op.
     pub remote_name: Option<String>,

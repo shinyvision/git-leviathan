@@ -514,7 +514,8 @@ fn compute_intra_line_diffs(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeD
     result
 }
 
-/// Returns `(start_a, start_b, length)`.
+/// Find longest common substring between two strings.
+/// Returns (start_a, start_b, length)
 #[allow(clippy::needless_range_loop)] // DP fill uses both i (row) and j (col) to index sibling arrays.
 fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
     if a.is_empty() || b.is_empty() {
@@ -553,9 +554,10 @@ fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
     (best_a, best_b, best_len)
 }
 
-/// Returns `(deletion_segments, addition_segments)` with highlight segments
-/// framing the changed portions around the longest common substring.
+/// Compute intra-line diff segments for a deletion/addition pair.
+/// Returns (deletion_segments, addition_segments) with highlight for changed portions.
 fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<DiffSegment>) {
+    // Find longest common substring
     let (lcs_a, lcs_b, lcs_len) = longest_common_substring(deletion, addition);
 
     if lcs_len == 0 {
@@ -665,8 +667,9 @@ mod tests {
     #[test]
     fn compute_line_diff_brackets_shared_middle_with_highlights_on_sides() {
         let (del, add) = compute_line_diff("let x = 1;", "let y = 1;");
-        // Shared Deletion/Addition segment covers the longest common chunk;
-        // each side also has a Highlight segment framing the differing part.
+        // Deletion: highlight("let ") + shared... but "let " is part of shared + ... complicated.
+        // Assert: the shared Deletion/Addition segment covers the longest common chunk
+        // and at least one side has DeletionHighlight/AdditionHighlight framing the change.
         let shared_del: Vec<_> = del
             .iter()
             .filter(|s| s.kind == SegmentKind::Deletion)

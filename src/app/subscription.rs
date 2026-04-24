@@ -1,6 +1,10 @@
-//! Assembles the app-level `Subscription<Message>` from iced window/keyboard
-//! events, the active screen's own subscription, the file watcher, periodic
-//! fetch/animation ticks, and a SIGINT/SIGTERM stream.
+//! `SubscriptionBuilder` — assembles the app-level `Subscription<Message>` from
+//! iced window/keyboard events, the active screen's own subscription, the
+//! file watcher, periodic fetch/animation ticks, and a SIGINT/SIGTERM stream.
+//!
+//! Extracted from `App` in Phase 9. Kept a single function rather than a
+//! type because it has no state of its own — subscriptions are built fresh
+//! on every view pass.
 
 use std::time::Duration;
 
@@ -60,6 +64,8 @@ pub fn build(app: &App) -> Subscription<Message> {
         .map(|s| s.subscription())
         .unwrap_or(Subscription::none());
 
+    let plugin_sub = crate::plugin::ui::screen::subscription(&app.plugin_host);
+
     let sigterm_sub = Subscription::run(sigterm_stream);
 
     let mut subs = vec![
@@ -67,6 +73,7 @@ pub fn build(app: &App) -> Subscription<Message> {
         fetch_tick_sub,
         animation_tick_sub,
         screen_sub,
+        plugin_sub,
         sigterm_sub,
     ];
     subs.extend(file_watcher_subs);

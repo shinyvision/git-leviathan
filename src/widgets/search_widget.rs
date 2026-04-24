@@ -383,6 +383,8 @@ fn vertical_divider<'a, Msg: 'a>() -> Element<'a, Msg> {
     .into()
 }
 
+// --- Text-buffer search helper ----------------------------------------------
+
 /// A match location within a row-based text buffer. `col_end` is exclusive.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextMatch {
@@ -494,7 +496,7 @@ mod tests {
         assert_eq!(w.current_match(), Some(1));
         assert_eq!(w.go_next(), Some(3));
         assert_eq!(w.go_next(), Some(5));
-        assert_eq!(w.go_next(), Some(1));
+        assert_eq!(w.go_next(), Some(1)); // wraps
         assert_eq!(w.go_previous(), Some(5));
     }
 

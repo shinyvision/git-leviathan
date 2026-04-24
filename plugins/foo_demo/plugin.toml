@@ -1,0 +1,5 @@
+[plugin]
+id = "foo_demo"
+name = "Foo Demo"
+version = "0.1.0"
+api = 1

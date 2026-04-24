@@ -266,27 +266,6 @@ fn squash_commits_inner(
     result
 }
 
-fn format_squash_message(commits: &[git2::Commit]) -> String {
-    let max_lines = 5;
-    if commits.len() <= max_lines {
-        commits
-            .iter()
-            .map(|c| c.summary().unwrap_or("(no summary)"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    } else {
-        let mut lines: Vec<String> = commits[..max_lines]
-            .iter()
-            .map(|c| c.summary().unwrap_or("(no summary)").to_string())
-            .collect();
-        lines.push(format!(
-            "Squashed {} more commits",
-            commits.len() - max_lines
-        ));
-        lines.join("\n")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::super::GitService;
@@ -330,5 +309,26 @@ mod tests {
                 .map(|e| (e.path().map(str::to_string), e.status()))
                 .collect::<Vec<_>>(),
         );
+    }
+}
+
+fn format_squash_message(commits: &[git2::Commit]) -> String {
+    let max_lines = 5;
+    if commits.len() <= max_lines {
+        commits
+            .iter()
+            .map(|c| c.summary().unwrap_or("(no summary)"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        let mut lines: Vec<String> = commits[..max_lines]
+            .iter()
+            .map(|c| c.summary().unwrap_or("(no summary)").to_string())
+            .collect();
+        lines.push(format!(
+            "Squashed {} more commits",
+            commits.len() - max_lines
+        ));
+        lines.join("\n")
     }
 }

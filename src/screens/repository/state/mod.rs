@@ -225,14 +225,17 @@ impl RepositoryData {
         self.cache.apply_result(self.snapshot.commits(), result);
     }
 
+    /// Hash-at-idx lookup. Thin coordinator over `snapshot + index`.
     pub(in crate::screens::repository) fn commit_hash(&self, idx: usize) -> Option<String> {
         self.index.commit_hash(self.snapshot.commits(), idx)
     }
 
+    /// Hash → idx lookup. Thin coordinator over `snapshot + index`.
     pub(in crate::screens::repository) fn commit_index_for_hash(&self, hash: &str) -> Option<usize> {
         self.index.index_for_hash(self.snapshot.commits(), hash)
     }
 
+    /// Branch name → idx lookup. Thin coordinator over `snapshot + index`.
     pub(in crate::screens::repository) fn commit_index_for_branch(
         &self,
         branch_name: &str,
@@ -242,10 +245,13 @@ impl RepositoryData {
             .index_for_branch(self.snapshot.commit_presentations(), branch_name, is_remote)
     }
 
+    /// Thin coordinator over `snapshot + cache`.
     pub(in crate::screens::repository) fn commit_needs_diff(&self, idx: usize) -> bool {
         self.cache.commit_needs_diff(idx, self.snapshot.commits())
     }
 
+    /// If the commit at `idx` is a stash entry, returns its
+    /// (stash_index, display_name).
     pub(in crate::screens::repository) fn stash_info_for_commit(
         &self,
         idx: usize,

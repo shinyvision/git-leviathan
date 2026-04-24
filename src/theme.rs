@@ -72,7 +72,7 @@ pub const TEXT_MUTED: Color = Color {
     g: 0.251,
     b: 0.302,
     a: 1.0,
-}; // #3c404d
+}; // #3c404d — darker than TEXT_DIM
 pub const TEXT_ACTIVE_BRANCH: Color = Color {
     r: 0.376,
     g: 0.847,
@@ -157,49 +157,49 @@ pub const LANE_COLORS: [Color; 8] = [
         g: 0.878,
         b: 0.878,
         a: 1.0,
-    },
+    }, // 0 – cyan
     Color {
         r: 0.200,
         g: 0.480,
         b: 1.000,
         a: 1.0,
-    },
+    }, // 1 – blue
     Color {
         r: 0.580,
         g: 0.200,
         b: 1.000,
         a: 1.0,
-    },
+    }, // 2 – purple
     Color {
         r: 0.920,
         g: 0.100,
         b: 0.920,
         a: 1.0,
-    },
+    }, // 3 – magenta
     Color {
         r: 1.000,
         g: 0.200,
         b: 0.200,
         a: 1.0,
-    },
+    }, // 4 – red
     Color {
         r: 1.000,
         g: 0.500,
         b: 0.100,
         a: 1.0,
-    },
+    }, // 5 – orange
     Color {
         r: 0.950,
         g: 0.850,
         b: 0.050,
         a: 1.0,
-    },
+    }, // 6 – yellow
     Color {
         r: 0.150,
         g: 0.850,
         b: 0.250,
         a: 1.0,
-    },
+    }, // 7 – green
 ];
 
 pub const LANE_WIDTH: f32 = 26.0;
@@ -215,9 +215,9 @@ pub const TAB_HEIGHT: u16 = 34;
 pub const TOOLBAR_HEIGHT: u16 = 50;
 pub const STATUS_BAR_HEIGHT: u16 = 20;
 
-/// Buttons that share a row with a `text_input` (e.g. the folder picker's
-/// "Browse" button) should use `INPUT_HEIGHT` so the row aligns without
-/// per-callsite tweaks.
+// Single source of truth for text_input vertical padding. Buttons that sit on
+// the same row as an input (e.g. the "Browse" folder picker) should use
+// `INPUT_HEIGHT` so the row aligns without tweaking per-callsite.
 pub const INPUT_PADDING: Padding = Padding {
     top: 7.0,
     right: 8.0,

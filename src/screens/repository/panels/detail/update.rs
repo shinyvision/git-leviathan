@@ -1,3 +1,6 @@
+//! Detail panel action handler. Migrated out of `RepositoryScreen` as part of
+//! the Phase 5 completion.
+
 use iced::{clipboard, Point, Task};
 
 use crate::{core::CommitKind, message::Message};

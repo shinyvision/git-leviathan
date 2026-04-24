@@ -1,6 +1,9 @@
-//! Owns the open repository tabs and their `RepositoryScreen`s: open, close,
-//! activate (with hibernate/rehydrate), circular Ctrl+Tab navigation, and
-//! the "most recent repo" bookkeeping persisted via the settings DB.
+//! `TabManager` — owns the open repository tabs and their `RepositoryScreen`s.
+//!
+//! Pulled out of `App` in Phase 9. Everything tab-lifecycle-shaped lives here:
+//! open, close, activate (with hibernate/rehydrate), circular Ctrl+Tab
+//! navigation, and the "most recent repo" bookkeeping that persists across
+//! app restarts via the settings DB.
 
 use std::collections::HashMap;
 use std::path::PathBuf;

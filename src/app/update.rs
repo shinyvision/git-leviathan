@@ -1,10 +1,11 @@
-//! Top-level update dispatchers for `App`. Individual handler methods live
-//! in sibling modules (`input`, `commands`, `fetch_ops`, `animation`); this
-//! file only routes.
+//! Top-level update dispatchers for `App`. Extracted from `mod.rs` in Phase 9.
+//! Individual handler methods live in sibling modules (`input`, `commands`,
+//! `fetch_ops`, `animation`); this file only routes.
 
 use iced::Task;
 
 use crate::message::{AppMessage, Message, ScreenMessage, ScreenRouted, ToastMessage};
+use crate::plugin::PluginMessage;
 use crate::screens::repository::RepositoryMessage;
 use crate::screens::Screen;
 use crate::services::detect_git;
@@ -12,6 +13,45 @@ use crate::services::detect_git;
 use super::{commands::open_url, App};
 
 impl App {
+    pub(super) fn update_plugin(&mut self, msg: PluginMessage) -> Task<Message> {
+        match msg {
+            PluginMessage::SlotClicked { plugin_id, slot_id } => {
+                self.plugin_host.dispatch_slot_click(&plugin_id, &slot_id);
+            }
+            PluginMessage::Event {
+                plugin_id,
+                screen_id,
+                event,
+                value,
+            } => {
+                self.plugin_host
+                    .dispatch_event(&plugin_id, &screen_id, &event, value);
+            }
+            PluginMessage::SplitDragBegin {
+                split_key,
+                divider_index,
+                child_count,
+                is_vertical,
+                limits,
+            } => {
+                self.plugin_host.split_drag_begin(
+                    &split_key,
+                    divider_index,
+                    child_count,
+                    is_vertical,
+                    limits,
+                );
+            }
+            PluginMessage::SplitDragged { x, y } => {
+                self.plugin_host.split_drag_moved(x, y);
+            }
+            PluginMessage::SplitDragReleased => {
+                self.plugin_host.split_drag_released();
+            }
+        }
+        Task::none()
+    }
+
     pub(super) fn update_app(&mut self, msg: AppMessage) -> Task<Message> {
         match msg {
             AppMessage::NoOp => Task::none(),
@@ -78,6 +118,7 @@ impl App {
             }
             AppMessage::FetchCompleted { tab_id, result } => {
                 self.fetch.on_completed();
+                self.plugin_host.fire_event("FetchEnd");
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
                     return screen.update(RepositoryMessage::FetchFinished(result));
                 }

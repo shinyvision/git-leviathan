@@ -148,6 +148,7 @@ impl State {
         if !any_ancestor_exists {
             return false;
         }
+        // Target, if it exists, must be empty.
         if target.exists() {
             let is_empty = target
                 .read_dir()
@@ -202,11 +203,14 @@ mod tests {
 
         s.set_working_dir("/elsewhere".into());
         s.set_branch_name("feat-3".into());
+        // User-edited dir should STICK, not re-derive.
         assert_eq!(s.working_dir, "/elsewhere");
     }
 
     #[test]
     fn can_submit_requires_ref_branch_name_and_dir() {
+        // Use a real tmpdir as default_dir_prefix so can_submit's
+        // parent-exists check is satisfied.
         let tmp = std::env::temp_dir();
         let prefix = tmp.to_string_lossy().to_string();
         let mut s = State::new(

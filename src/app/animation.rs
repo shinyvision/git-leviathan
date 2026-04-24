@@ -2,6 +2,7 @@
 //! whenever any active component is animating (see `subscription.rs`); this
 //! module spreads the tick across the toast manager and the active screen,
 //! and resets the idle-clock when nothing is animating.
+//! Extracted from `update.rs` in Phase 9.
 
 use std::time::Instant;
 

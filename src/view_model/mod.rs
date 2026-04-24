@@ -1,6 +1,8 @@
-//! UI projections of `core` domain types. Produced by `services::presenter`
-//! from service-layer snapshots; consumed by screens and widgets. No
-//! git-specific logic lives here — only the structures the UI renders from.
+//! UI projections of `core` domain types.
+//!
+//! Produced by `services::presenter` from service-layer snapshots. Consumed
+//! by screens and widgets. No git-specific logic lives here — only the
+//! structures the UI renders from.
 
 pub mod commit_presentation;
 pub mod diff_view;
