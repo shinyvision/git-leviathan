@@ -3,6 +3,7 @@ pub mod gateway;
 pub mod git;
 pub mod git_detect;
 pub mod git_error;
+pub mod migrations;
 pub mod presenter;
 pub mod settings;
 pub mod snapshot;

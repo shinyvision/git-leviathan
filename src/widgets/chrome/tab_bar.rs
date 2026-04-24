@@ -1,6 +1,6 @@
 use iced::{
     widget::{button, container, row, text},
-    Border, Element, Length, Padding, Theme,
+    Border, Element, Length, Padding, Point, Theme,
 };
 
 use crate::{
@@ -8,11 +8,22 @@ use crate::{
     core::TabId,
     message::{AppMessage, Message},
     style, theme,
-    widgets::primitives::hoverable::hoverable_swap,
+    widgets::primitives::{
+        hoverable::{hoverable_swap, Hoverable, HoverStatus},
+        DraggableTab,
+    },
     widgets::shared::horizontal_space,
 };
 
-pub fn tab_bar_view(tabs: Vec<(TabId, String)>, active_tab_id: TabId) -> Element<'static, Message> {
+pub fn tab_bar_view(
+    tabs: Vec<(TabId, String)>,
+    active_tab_id: TabId,
+    press_origin: Option<(TabId, Point)>,
+    dragging: Option<TabId>,
+) -> Element<'static, Message> {
+    let any_drag_active = dragging.is_some();
+    let pressed_tab = press_origin.map(|(id, _)| id);
+
     let mut items: Vec<Element<'static, Message>> = vec![button(
         container(assets::tab_icon(assets::PLUS, theme::TEXT_DIM))
             .align_y(iced::alignment::Vertical::Center)
@@ -35,6 +46,8 @@ pub fn tab_bar_view(tabs: Vec<(TabId, String)>, active_tab_id: TabId) -> Element
 
     for (tab_id, name) in tabs {
         let is_active = tab_id == active_tab_id;
+        let is_dragging_this = dragging == Some(tab_id);
+        let is_pressed_this = pressed_tab == Some(tab_id);
 
         let folder_icon: Element<'static, Message> = container(assets::tab_icon(
             assets::FOLDER,
@@ -79,29 +92,55 @@ pub fn tab_bar_view(tabs: Vec<(TabId, String)>, active_tab_id: TabId) -> Element
             |_| iced::widget::container::Style::default(),
         );
 
-        let tab = button(
-            container(
-                row![
-                    folder_icon,
-                    text(name).size(theme::FONT_SM).style(if is_active {
-                        style::primary_text
-                    } else {
-                        style::secondary_text
-                    }),
-                    close_centered,
-                ]
-                .spacing(4)
-                .align_y(iced::Alignment::Center),
-            )
-            .height(Length::Fill)
-            .align_y(iced::alignment::Vertical::Center),
+        let inner = container(
+            row![
+                folder_icon,
+                text(name).size(theme::FONT_SM).style(if is_active {
+                    style::primary_text
+                } else {
+                    style::secondary_text
+                }),
+                close_centered,
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center),
         )
-        .style(style::tab_button(is_active))
+        .height(Length::Fill)
         .padding(Padding::from([0, 10]))
-        .height(Length::Fixed(theme::TAB_HEIGHT as f32))
-        .on_press(Message::App(AppMessage::TabSelected(tab_id)));
+        .align_y(iced::alignment::Vertical::Center);
 
-        items.push(tab.into());
+        let visual: Element<'static, Message> = Hoverable::new(inner, move |_: &Theme, status: HoverStatus| {
+            let bg = if is_active || status.is_hovered() {
+                theme::BG_HOVER
+            } else {
+                theme::BG_BASE
+            };
+            iced::widget::container::Style {
+                background: Some(bg.into()),
+                border: Border {
+                    color: theme::BORDER,
+                    width: 1.0,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            }
+        })
+        .into();
+
+        let tab_container: Element<'static, Message> = container(visual)
+            .height(Length::Fixed(theme::TAB_HEIGHT as f32))
+            .into();
+
+        let draggable: Element<'static, Message> = DraggableTab::new(
+            tab_container,
+            tab_id,
+            is_pressed_this,
+            is_dragging_this,
+            any_drag_active,
+        )
+        .into();
+
+        items.push(draggable);
     }
 
     items.push(horizontal_space().into());
@@ -122,4 +161,3 @@ pub fn tab_bar_view(tabs: Vec<(TabId, String)>, active_tab_id: TabId) -> Element
         .style(style::toolbar_container)
         .into()
 }
-

@@ -1,5 +1,5 @@
 use iced::{
-    widget::{button, container, text},
+    widget::{container, text},
     Border, Theme,
 };
 
@@ -83,32 +83,3 @@ pub fn sidebar_container(_: &Theme) -> container::Style {
     }
 }
 
-pub fn tab_button(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
-    move |_: &Theme, status: button::Status| {
-        let bg = if is_active {
-            theme::BG_HOVER
-        } else {
-            match status {
-                button::Status::Hovered | button::Status::Pressed => theme::BG_HOVER,
-                _ => theme::BG_BASE,
-            }
-        };
-        let tc = if is_active {
-            theme::TEXT_PRIMARY
-        } else {
-            theme::TEXT_SECONDARY
-        };
-        let border_color = theme::BORDER;
-        button::Style {
-            background: Some(bg.into()),
-            text_color: tc,
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 0.0.into(),
-            },
-            shadow: Default::default(),
-            snap: false,
-        }
-    }
-}

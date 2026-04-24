@@ -33,7 +33,12 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
         .collect();
 
     let mut content_col = column![
-        chrome::tab_bar_view(tab_entries, app.tabs.active_tab_id()),
+        chrome::tab_bar_view(
+            tab_entries,
+            app.tabs.active_tab_id(),
+            app.tabs.press_origin(),
+            app.tabs.dragging(),
+        ),
     ]
     .spacing(0);
     if let Some(toolbar) =

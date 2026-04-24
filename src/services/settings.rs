@@ -1,25 +1,9 @@
 use rusqlite::{Connection, Result};
 use std::path::PathBuf;
 
-const DB_NAME: &str = "git_leviathan.db";
-const SCHEMA: &str = r#"
-    CREATE TABLE IF NOT EXISTS opened_repos (
-        path TEXT PRIMARY KEY,
-        opened_at INTEGER NOT NULL DEFAULT (unixepoch())
-    );
-    CREATE INDEX IF NOT EXISTS idx_opened_at ON opened_repos(opened_at);
-    CREATE TABLE IF NOT EXISTS app_state (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS repo_sidebar_sections (
-        repo_path TEXT NOT NULL,
-        section_kind TEXT NOT NULL,
-        expanded INTEGER NOT NULL,
-        PRIMARY KEY (repo_path, section_kind)
-    );
-"#;
+use super::migrations;
 
+const DB_NAME: &str = "git_leviathan.db";
 const MOST_RECENT_REPO_KEY: &str = "most_recent_repo";
 
 pub struct SettingsService {
@@ -29,30 +13,86 @@ pub struct SettingsService {
 impl SettingsService {
     pub fn new() -> Result<Self> {
         let db_path = Self::db_path()?;
-        let conn = Connection::open(db_path)?;
-        conn.execute_batch(SCHEMA)?;
+        let mut conn = Connection::open(db_path)?;
+        migrations::run(&mut conn)?;
         Ok(Self { conn })
+    }
+
+    fn densify_positions(conn: &Connection) -> Result<()> {
+        conn.execute(
+            "WITH ranked AS (
+                SELECT path, ROW_NUMBER() OVER (ORDER BY position ASC, path ASC) - 1 AS new_pos
+                FROM opened_repos
+            )
+            UPDATE opened_repos SET position = (
+                SELECT new_pos FROM ranked WHERE ranked.path = opened_repos.path
+            )",
+            [],
+        )?;
+        Ok(())
     }
 
     pub fn load_repos(&self) -> Result<Vec<String>> {
         let mut stmt = self
             .conn
-            .prepare("SELECT path FROM opened_repos ORDER BY opened_at DESC")?;
+            .prepare("SELECT path FROM opened_repos ORDER BY position ASC, path ASC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.collect()
     }
 
     pub fn add_repo(&self, path: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO opened_repos (path, opened_at) VALUES (?1, unixepoch())",
-            [path],
-        )?;
+        let tx = self.conn.unchecked_transaction()?;
+        let existing: Option<i64> = tx
+            .query_row(
+                "SELECT position FROM opened_repos WHERE path = ?1",
+                [path],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(pos) = existing {
+            tx.execute(
+                "UPDATE opened_repos SET position = position + 1 WHERE position < ?1",
+                [pos],
+            )?;
+            tx.execute(
+                "UPDATE opened_repos SET position = 0, opened_at = unixepoch() WHERE path = ?1",
+                [path],
+            )?;
+        } else {
+            tx.execute("UPDATE opened_repos SET position = position + 1", [])?;
+            tx.execute(
+                "INSERT INTO opened_repos (path, opened_at, position) VALUES (?1, unixepoch(), 0)",
+                [path],
+            )?;
+        }
+        Self::densify_positions(&tx)?;
+        tx.commit()?;
         Ok(())
     }
 
     pub fn remove_repo(&self, path: &str) -> Result<()> {
-        self.conn
-            .execute("DELETE FROM opened_repos WHERE path = ?1", [path])?;
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM opened_repos WHERE path = ?1", [path])?;
+        Self::densify_positions(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn set_repo_order(&self, paths: &[String]) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let offset = (paths.len() as i64) + 1;
+        tx.execute(
+            "UPDATE opened_repos SET position = position + ?1",
+            [offset],
+        )?;
+        for (i, path) in paths.iter().enumerate() {
+            tx.execute(
+                "UPDATE opened_repos SET position = ?1 WHERE path = ?2",
+                rusqlite::params![i as i64, path],
+            )?;
+        }
+        Self::densify_positions(&tx)?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -131,8 +171,8 @@ mod tests {
 
     fn temp_db() -> (SettingsService, NamedTempFile) {
         let temp = NamedTempFile::new().unwrap();
-        let conn = Connection::open(temp.path()).unwrap();
-        conn.execute_batch(SCHEMA).unwrap();
+        let mut conn = Connection::open(temp.path()).unwrap();
+        migrations::run(&mut conn).unwrap();
         (SettingsService { conn }, temp)
     }
 
@@ -199,4 +239,89 @@ mod tests {
         let repos = service.load_repos().unwrap();
         assert_eq!(repos.len(), 1);
     }
+
+    fn positions(service: &SettingsService) -> Vec<(String, i64)> {
+        let mut stmt = service
+            .conn
+            .prepare("SELECT path, position FROM opened_repos ORDER BY position ASC")
+            .unwrap();
+        stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+            .unwrap()
+            .collect::<Result<_>>()
+            .unwrap()
+    }
+
+    #[test]
+    fn positions_are_dense_after_add() {
+        let (service, _temp) = temp_db();
+        service.add_repo("/repo/a").unwrap();
+        service.add_repo("/repo/b").unwrap();
+        service.add_repo("/repo/c").unwrap();
+        let pos = positions(&service);
+        assert_eq!(pos, vec![
+            ("/repo/c".into(), 0),
+            ("/repo/b".into(), 1),
+            ("/repo/a".into(), 2),
+        ]);
+    }
+
+    #[test]
+    fn positions_are_dense_after_remove() {
+        let (service, _temp) = temp_db();
+        service.add_repo("/repo/a").unwrap();
+        service.add_repo("/repo/b").unwrap();
+        service.add_repo("/repo/c").unwrap();
+        service.add_repo("/repo/d").unwrap();
+        service.remove_repo("/repo/b").unwrap();
+        service.remove_repo("/repo/c").unwrap();
+        let pos = positions(&service);
+        let values: Vec<i64> = pos.iter().map(|(_, p)| *p).collect();
+        assert_eq!(values, vec![0, 1]);
+    }
+
+    #[test]
+    fn set_repo_order_writes_dense_positions() {
+        let (service, _temp) = temp_db();
+        service.add_repo("/repo/a").unwrap();
+        service.add_repo("/repo/b").unwrap();
+        service.add_repo("/repo/c").unwrap();
+        let new_order = vec!["/repo/a".to_string(), "/repo/c".to_string(), "/repo/b".to_string()];
+        service.set_repo_order(&new_order).unwrap();
+        let repos = service.load_repos().unwrap();
+        assert_eq!(repos, new_order);
+        let pos = positions(&service);
+        let values: Vec<i64> = pos.iter().map(|(_, p)| *p).collect();
+        assert_eq!(values, vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn set_repo_order_densifies_when_paths_missing() {
+        let (service, _temp) = temp_db();
+        service.add_repo("/repo/a").unwrap();
+        service.add_repo("/repo/b").unwrap();
+        service.add_repo("/repo/c").unwrap();
+        let partial = vec!["/repo/c".to_string(), "/repo/a".to_string()];
+        service.set_repo_order(&partial).unwrap();
+        let pos = positions(&service);
+        let values: Vec<i64> = pos.iter().map(|(_, p)| *p).collect();
+        assert_eq!(values, vec![0, 1, 2]);
+        let repos = service.load_repos().unwrap();
+        assert_eq!(repos[0], "/repo/c");
+        assert_eq!(repos[1], "/repo/a");
+    }
+
+    #[test]
+    fn readd_existing_moves_to_front_without_gaps() {
+        let (service, _temp) = temp_db();
+        service.add_repo("/repo/a").unwrap();
+        service.add_repo("/repo/b").unwrap();
+        service.add_repo("/repo/c").unwrap();
+        service.add_repo("/repo/a").unwrap();
+        let repos = service.load_repos().unwrap();
+        assert_eq!(repos, vec!["/repo/a", "/repo/c", "/repo/b"]);
+        let pos = positions(&service);
+        let values: Vec<i64> = pos.iter().map(|(_, p)| *p).collect();
+        assert_eq!(values, vec![0, 1, 2]);
+    }
+
 }
