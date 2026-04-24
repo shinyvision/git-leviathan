@@ -1,6 +1,9 @@
 use iced::{
     advanced::text::Shaping,
-    widget::{button, column, container, row, scrollable, text, text_editor, MouseArea, Stack},
+    widget::{
+        button, column, container, responsive, row, scrollable, text, text_editor, MouseArea,
+        Stack,
+    },
     Border, Color, Element, Length, Padding, Theme,
 };
 
@@ -57,6 +60,50 @@ pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Mess
         .width(Length::Fill)
         .style(style::header_container);
 
+    let commit_search_ref = screen.commit_search;
+
+    let list_scroll = scrollable(responsive(move |size| {
+        build_list_contents(&screen, graph_col_width, size.width)
+    }))
+    .id(center_list_scroll_id())
+    .height(Length::Fill)
+    .width(Length::Fill)
+    .on_scroll(|viewport| {
+        Message::repo(RepositoryMessage::Center(CenterAction::CenterListScrolled(
+            viewport,
+        )))
+    })
+    .direction(scrollable::Direction::Vertical(
+        scrollable::Scrollbar::new().width(5).scroller_width(5),
+    ))
+    .style(scrollbar_style);
+
+    let panel_content: Element<Message> = column![header_container, list_scroll]
+        .spacing(0)
+        .height(Length::Fill)
+        .into();
+
+    // Overlay the floating commit-search bar on top of the panel content so
+    // it sits in the top-right corner of the graph area.
+    let panel_with_search = commit_search::overlay_if_active(panel_content, commit_search_ref);
+
+    MouseArea::new(
+        container(panel_with_search)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(style::panel_container),
+    )
+    .on_press(Message::repo(RepositoryMessage::Center(
+        CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Center),
+    )))
+    .into()
+}
+
+fn build_list_contents<'a>(
+    screen: &CenterViewModel<'a>,
+    graph_col_width: f32,
+    viewport_w: f32,
+) -> Element<'a, Message> {
     let total_h = screen.commits.len() as f32 * ROW_H;
     let visible_range = visible_commit_range(
         screen.commits.len(),
@@ -99,9 +146,7 @@ pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Mess
     .spacing(0)
     .width(Length::Fixed(graph_col_width));
 
-    let msg_col_w =
-        (screen.center_list_viewport_w - theme::BRANCH_COL_WIDTH as f32 - graph_col_width)
-            .max(80.0);
+    let msg_col_w = (viewport_w - theme::BRANCH_COL_WIDTH as f32 - graph_col_width).max(80.0);
 
     let search_dimming = screen.commit_search.is_some_and(|s| s.is_dimming_active());
 
@@ -200,43 +245,9 @@ pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Mess
             .into(),
         None => container(list_row).width(Length::Fill).into(),
     };
-    let scrollable_content: Element<Message> = container(scrollable_content)
+    container(scrollable_content)
         .id(branch_popout_content_id())
-        .into();
-
-    let list_scroll = scrollable(scrollable_content)
-        .id(center_list_scroll_id())
-        .height(Length::Fill)
-        .width(Length::Fill)
-        .on_scroll(|viewport| {
-            Message::repo(RepositoryMessage::Center(CenterAction::CenterListScrolled(
-                viewport,
-            )))
-        })
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(5).scroller_width(5),
-        ))
-        .style(scrollbar_style);
-
-    let panel_content: Element<Message> = column![header_container, list_scroll]
-        .spacing(0)
-        .height(Length::Fill)
-        .into();
-
-    // Overlay the floating commit-search bar on top of the panel content so
-    // it sits in the top-right corner of the graph area.
-    let panel_with_search = commit_search::overlay_if_active(panel_content, screen.commit_search);
-
-    MouseArea::new(
-        container(panel_with_search)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(style::panel_container),
-    )
-    .on_press(Message::repo(RepositoryMessage::Center(
-        CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Center),
-    )))
-    .into()
+        .into()
 }
 
 fn visible_commit_range(

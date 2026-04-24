@@ -66,7 +66,6 @@ pub(in crate::screens::repository) const SIDEBAR_DOUBLE_CLICK_WINDOW: Duration =
 
 const VIEWPORT_CHANGE_EPSILON: f32 = 0.01;
 const DEFAULT_CENTER_VIEWPORT_H: f32 = 1400.0;
-const DEFAULT_CENTER_VIEWPORT_W: f32 = 450.0;
 
 pub(in crate::screens::repository) struct SidebarClickState {
     pub(in crate::screens::repository) branch_name: String,
@@ -100,7 +99,6 @@ pub(in crate::screens::repository) fn diff_content_scroll_id() -> iced::widget::
 pub(in crate::screens::repository) struct CenterListState {
     offset_y: f32,
     viewport_h: f32,
-    viewport_w: f32,
 }
 
 impl CenterListState {
@@ -108,21 +106,17 @@ impl CenterListState {
         Self {
             offset_y: 0.0,
             viewport_h: DEFAULT_CENTER_VIEWPORT_H,
-            viewport_w: DEFAULT_CENTER_VIEWPORT_W,
         }
     }
 
     pub(in crate::screens::repository) fn update(&mut self, viewport: scrollable::Viewport) -> bool {
         let next_offset_y = viewport.absolute_offset().y;
         let next_viewport_h = viewport.bounds().height.max(ROW_H);
-        let next_viewport_w = viewport.bounds().width;
         let changed = (self.offset_y - next_offset_y).abs() > VIEWPORT_CHANGE_EPSILON
-            || (self.viewport_h - next_viewport_h).abs() > VIEWPORT_CHANGE_EPSILON
-            || (self.viewport_w - next_viewport_w).abs() > VIEWPORT_CHANGE_EPSILON;
+            || (self.viewport_h - next_viewport_h).abs() > VIEWPORT_CHANGE_EPSILON;
 
         self.offset_y = next_offset_y;
         self.viewport_h = next_viewport_h;
-        self.viewport_w = next_viewport_w;
 
         changed
     }
@@ -133,10 +127,6 @@ impl CenterListState {
 
     pub(in crate::screens::repository) fn viewport_h(&self) -> f32 {
         self.viewport_h
-    }
-
-    pub(in crate::screens::repository) fn viewport_w(&self) -> f32 {
-        self.viewport_w
     }
 
     pub(in crate::screens::repository) fn is_near_bottom(&self, commit_count: usize) -> bool {
