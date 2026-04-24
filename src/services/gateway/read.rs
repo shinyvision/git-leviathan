@@ -1,6 +1,6 @@
 use crate::services::{
-    CommitDiffResult, ConflictResolutionResult, GitError, MergedCommitDiffResult, RefsSnapshot,
-    RepoSnapshot, WorkingTreeDiffResult,
+    CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature, GitError, MergedCommitDiffResult,
+    RefsSnapshot, RepoSnapshot, WorkingTreeDiffResult,
 };
 
 /// Read-only view of the repository. Segregated so read-only callers (diff
@@ -34,4 +34,9 @@ pub trait RepoRead: Send + Sync {
         &self,
         file_path: &str,
     ) -> Result<ConflictResolutionResult, GitError>;
+    fn compute_dirty_file_signature(
+        &self,
+        file_path: &str,
+        is_staged: bool,
+    ) -> DirtyDiffSignature;
 }

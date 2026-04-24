@@ -3,7 +3,9 @@
 
 use std::sync::Arc;
 
-use crate::services::{HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult};
+use crate::services::{
+    DirtyDiffSignature, HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult,
+};
 
 use super::{DiffLoadMode, DiffPanel, DiffPanelAction, SingleFileDiffView};
 
@@ -15,6 +17,7 @@ pub struct DirtyFileDiffState {
     pub old_highlighted: Option<Arc<HighlightedFile>>,
     pub new_highlighted: Option<Arc<HighlightedFile>>,
     pub selected_file_idx: usize,
+    pub last_signature: Option<DirtyDiffSignature>,
 }
 
 impl SingleFileDiffView for DirtyFileDiffState {
@@ -107,6 +110,7 @@ impl DiffPanel {
             old_highlighted: None,
             new_highlighted: None,
             selected_file_idx,
+            last_signature: None,
         });
         DiffPanelAction::LoadDirtyFileDiff { path, is_staged }
     }
@@ -114,6 +118,7 @@ impl DiffPanel {
     pub(in crate::screens::repository) fn sync_and_reload_dirty_diff_action(
         &mut self,
         dirty_commit: Option<&crate::core::Commit>,
+        compute_signature: impl FnOnce(&str, bool) -> DirtyDiffSignature,
     ) -> Option<DiffPanelAction> {
         let state = self.dirty_file_diff.as_ref()?;
         let path = state.file_path.clone();
@@ -132,6 +137,7 @@ impl DiffPanel {
             return None;
         }
 
+        let prior_is_staged = state.is_staged;
         if let Some(state) = self.dirty_file_diff.as_mut() {
             if state.is_staged && !in_staged && in_unstaged {
                 state.is_staged = false;
@@ -141,17 +147,32 @@ impl DiffPanel {
         }
 
         let state = self.dirty_file_diff.as_ref()?;
-        Some(DiffPanelAction::LoadDirtyFileDiff {
-            path: state.file_path.clone(),
-            is_staged: state.is_staged,
-        })
+        let path = state.file_path.clone();
+        let is_staged = state.is_staged;
+        let new_sig = compute_signature(&path, is_staged);
+
+        let bucket_flipped = prior_is_staged != is_staged;
+        if !bucket_flipped {
+            if let Some(prev) = state.last_signature.as_ref() {
+                if prev == &new_sig {
+                    return None;
+                }
+            }
+        }
+
+        Some(DiffPanelAction::LoadDirtyFileDiff { path, is_staged })
     }
 
     pub(in crate::screens::repository) fn on_dirty_diff_loaded(
         &mut self,
         result: Result<WorkingTreeDiffResult, crate::services::GitError>,
     ) -> Option<DiffPanelAction> {
-        super::on_diff_loaded(&mut self.dirty_file_diff, result)
+        let signature = result.as_ref().ok().and_then(|r| r.dirty_signature.clone());
+        let action = super::on_diff_loaded(&mut self.dirty_file_diff, result);
+        if let Some(state) = self.dirty_file_diff.as_mut() {
+            state.last_signature = signature;
+        }
+        action
     }
 
     pub(in crate::screens::repository) fn on_dirty_highlight_ready(

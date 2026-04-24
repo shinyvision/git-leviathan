@@ -111,17 +111,20 @@ pub(in crate::screens::repository) fn handle_repo_loaded(
 pub(in crate::screens::repository) fn sync_dirty_diff_after_reload(
     screen: &mut RepositoryScreen,
 ) -> Task<Message> {
-    let dirty_commit = screen
-        .data
-        .snapshot
-        .commits()
-        .first()
-        .filter(|c| c.kind == crate::core::CommitKind::Dirty);
-    let Some(action) = screen
-        .panels
-        .diff
-        .sync_and_reload_dirty_diff_action(dirty_commit)
-    else {
+    let repo = screen.fleet.active().clone();
+    let action = {
+        let dirty_commit = screen
+            .data
+            .snapshot
+            .commits()
+            .first()
+            .filter(|c| c.kind == crate::core::CommitKind::Dirty);
+        screen.panels.diff.sync_and_reload_dirty_diff_action(
+            dirty_commit,
+            |path, is_staged| repo.compute_dirty_file_signature(path, is_staged),
+        )
+    };
+    let Some(action) = action else {
         return Task::none();
     };
     screen.handle_diff_panel_action(action)

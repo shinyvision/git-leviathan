@@ -14,7 +14,8 @@ pub mod text_measurement;
 
 pub use gateway::{GitRepositoryGateway, PushGatewayOutcome, SharedRepositoryGateway};
 pub use git::working_tree_diff::{
-    DiffLineType, DiffSegment, SegmentKind, WorkingTreeDiffLine, WorkingTreeDiffResult,
+    DiffLineType, DiffSegment, DirtyDiffSignature, SegmentKind, WorkingTreeDiffLine,
+    WorkingTreeDiffResult,
 };
 pub use git::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,

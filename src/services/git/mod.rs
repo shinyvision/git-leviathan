@@ -108,6 +108,14 @@ impl GitService {
         working_tree_diff::load_working_tree_diff(self, file_path, is_staged)
     }
 
+    pub fn compute_dirty_file_signature(
+        &self,
+        file_path: &str,
+        is_staged: bool,
+    ) -> crate::services::DirtyDiffSignature {
+        working_tree_diff::compute_dirty_signature(&self.repo, file_path, is_staged)
+    }
+
     pub fn load_commit_file_diff(
         &self,
         commit_hash: &str,

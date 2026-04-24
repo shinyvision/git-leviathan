@@ -47,6 +47,13 @@ pub struct WorkingTreeDiffResult {
     pub lines: Vec<WorkingTreeDiffLine>,
     pub old_file_content: Option<String>,
     pub new_file_content: Option<String>,
+    pub dirty_signature: Option<DirtyDiffSignature>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DirtyDiffSignature {
+    pub left: Option<String>,
+    pub right: Option<String>,
 }
 
 pub(super) fn load_working_tree_diff(
@@ -74,7 +81,7 @@ pub(super) fn load_working_tree_diff(
             .map_err(|e| wrap_git2_error("create working tree diff", e))?
     };
 
-    process_git_diff(
+    let mut result = process_git_diff(
         diff,
         file_path,
         || {
@@ -91,7 +98,58 @@ pub(super) fn load_working_tree_diff(
                 content_from_workdir(repo, file_path)
             }
         },
-    )
+    )?;
+    result.dirty_signature = Some(compute_dirty_signature(repo, file_path, is_staged));
+    Ok(result)
+}
+
+pub(super) fn compute_dirty_signature(
+    repo: &git2::Repository,
+    file_path: &str,
+    is_staged: bool,
+) -> DirtyDiffSignature {
+    if is_staged {
+        let head = repo
+            .head()
+            .ok()
+            .and_then(|h| h.peel_to_commit().ok())
+            .and_then(|c| c.tree().ok())
+            .and_then(|t| t.get_path(Path::new(file_path)).ok())
+            .map(|e| e.id().to_string());
+        let index = repo
+            .index()
+            .ok()
+            .and_then(|i| i.get_path(Path::new(file_path), 0))
+            .map(|e| e.id.to_string());
+        DirtyDiffSignature {
+            left: head,
+            right: index,
+        }
+    } else {
+        let index = repo
+            .index()
+            .ok()
+            .and_then(|i| i.get_path(Path::new(file_path), 0))
+            .map(|e| e.id.to_string());
+        let workdir = repo
+            .workdir()
+            .map(|wd| wd.join(file_path))
+            .and_then(|p| std::fs::metadata(&p).ok())
+            .map(|m| {
+                let size = m.len();
+                let mtime = m
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0);
+                format!("{size}:{mtime}")
+            });
+        DirtyDiffSignature {
+            left: index,
+            right: workdir,
+        }
+    }
 }
 
 pub(super) fn load_commit_file_diff(
@@ -244,6 +302,7 @@ where
         lines: result_lines,
         old_file_content,
         new_file_content,
+        dirty_signature: None,
     })
 }
 
@@ -542,8 +601,9 @@ fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<D
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_intra_line_diffs, compute_line_diff, load_commit_file_diff, load_working_tree_diff,
-        longest_common_substring, DiffLineType, SegmentKind, WorkingTreeDiffLine,
+        compute_dirty_signature, compute_intra_line_diffs, compute_line_diff, load_commit_file_diff,
+        load_working_tree_diff, longest_common_substring, DiffLineType, SegmentKind,
+        WorkingTreeDiffLine,
     };
     use crate::services::{
         test_support::{commit_all, init_test_repo, write_file},
@@ -740,6 +800,61 @@ mod tests {
                 .map(|l| (l.line_type, l.content.clone()))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn dirty_signature_stable_when_content_unchanged() {
+        let (temp_repo, repo) = init_test_repo("diff_sig_stable");
+        write_file(&temp_repo.path, "tracked.txt", "hi\n");
+        commit_all(&repo, "seed");
+        write_file(&temp_repo.path, "tracked.txt", "hi\nmore\n");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        let sig_a = compute_dirty_signature(&service.repo, "tracked.txt", false);
+        let sig_b = compute_dirty_signature(&service.repo, "tracked.txt", false);
+        assert_eq!(sig_a, sig_b);
+    }
+
+    #[test]
+    fn dirty_signature_changes_when_workdir_file_edited() {
+        let (temp_repo, repo) = init_test_repo("diff_sig_workdir_edit");
+        write_file(&temp_repo.path, "tracked.txt", "one\n");
+        commit_all(&repo, "seed");
+        write_file(&temp_repo.path, "tracked.txt", "one\ntwo\n");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        let before = compute_dirty_signature(&service.repo, "tracked.txt", false);
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        write_file(&temp_repo.path, "tracked.txt", "one\ntwo\nthree\n");
+
+        let after = compute_dirty_signature(&service.repo, "tracked.txt", false);
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn dirty_signature_changes_when_index_updated() {
+        let (temp_repo, repo) = init_test_repo("diff_sig_index_change");
+        write_file(&temp_repo.path, "tracked.txt", "one\n");
+        commit_all(&repo, "seed");
+        write_file(&temp_repo.path, "tracked.txt", "one\ntwo\n");
+
+        let before = {
+            let service = GitService::open(temp_repo.path_str()).expect("open service");
+            compute_dirty_signature(&service.repo, "tracked.txt", true)
+        };
+
+        let mut index = repo.index().expect("open index");
+        index
+            .add_path(std::path::Path::new("tracked.txt"))
+            .expect("stage");
+        index.write().expect("write index");
+
+        let after = {
+            let service = GitService::open(temp_repo.path_str()).expect("open service");
+            compute_dirty_signature(&service.repo, "tracked.txt", true)
+        };
+        assert_ne!(before, after);
     }
 
     #[test]
