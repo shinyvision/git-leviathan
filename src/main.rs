@@ -28,11 +28,21 @@ fn main() -> iced::Result {
         .window(iced::window::Settings {
             size: iced::Size::new(1400.0, 900.0),
             min_size: Some(iced::Size::new(900.0, 600.0)),
-            platform_specific: iced::window::settings::PlatformSpecific {
-                application_id: "git-leviathan".to_string(),
-                ..Default::default()
-            },
+            platform_specific: platform_specific(),
             ..Default::default()
         })
         .run()
+}
+
+#[cfg(target_os = "linux")]
+fn platform_specific() -> iced::window::settings::PlatformSpecific {
+    iced::window::settings::PlatformSpecific {
+        application_id: "git-leviathan".to_string(),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn platform_specific() -> iced::window::settings::PlatformSpecific {
+    iced::window::settings::PlatformSpecific::default()
 }
