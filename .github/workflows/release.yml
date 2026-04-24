@@ -74,13 +74,31 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build release binary
-        run: cargo build --release --locked --target aarch64-apple-darwin
+      - name: Generate .icns from PNG
+        run: |
+          ICONSET=packaging/icons/git-leviathan.iconset
+          SRC=packaging/icons/git-leviathan.png
+          mkdir -p "$ICONSET"
+          sips -z 16 16     "$SRC" --out "$ICONSET/icon_16x16.png"
+          sips -z 32 32     "$SRC" --out "$ICONSET/icon_16x16@2x.png"
+          sips -z 32 32     "$SRC" --out "$ICONSET/icon_32x32.png"
+          sips -z 64 64     "$SRC" --out "$ICONSET/icon_32x32@2x.png"
+          sips -z 128 128   "$SRC" --out "$ICONSET/icon_128x128.png"
+          sips -z 256 256   "$SRC" --out "$ICONSET/icon_128x128@2x.png"
+          sips -z 256 256   "$SRC" --out "$ICONSET/icon_256x256.png"
+          sips -z 512 512   "$SRC" --out "$ICONSET/icon_256x256@2x.png"
+          sips -z 512 512   "$SRC" --out "$ICONSET/icon_512x512.png"
+          sips -z 1024 1024 "$SRC" --out "$ICONSET/icon_512x512@2x.png"
+          iconutil -c icns "$ICONSET" -o packaging/icons/git-leviathan.icns
+
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle --locked
+
+      - name: Build .app bundle
+        run: cargo bundle --release
 
       - name: Package tarball
         run: |
@@ -92,7 +110,7 @@ jobs:
           fi
           STAGE="git-leviathan-${VERSION}-aarch64-apple-darwin"
           mkdir -p "$STAGE"
-          cp target/aarch64-apple-darwin/release/git_leviathan "$STAGE/"
+          cp -R "target/release/bundle/osx/Git Leviathan.app" "$STAGE/"
           cp README.md LICENSE "$STAGE/"
           tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
           ls -la dist/

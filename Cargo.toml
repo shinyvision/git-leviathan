@@ -10,7 +10,7 @@ name = "git_leviathan"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.14", features = ["advanced", "canvas", "lazy", "svg", "tokio", "selector"] }
+iced = { version = "0.14", features = ["advanced", "canvas", "lazy", "svg", "tokio", "selector", "image"] }
 git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 tokio = { version = "1", features = ["time", "sync", "rt", "macros", "signal"] }
@@ -21,6 +21,18 @@ syntect = "5.3"
 two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
 dirs = "5"
 tempfile = "3"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[package.metadata.bundle]
+name = "Git Leviathan"
+identifier = "com.rachelsnijders.git-leviathan"
+icon = ["packaging/icons/git-leviathan.icns"]
+category = "public.app-category.developer-tools"
+short_description = "Git client built with Iced."
+long_description = "A native Git repository visualizer built with Rust and Iced."
+copyright = "2026 Rachel Snijders"
 
 [package.metadata.deb]
 name = "git-leviathan"
@@ -33,7 +45,13 @@ priority = "optional"
 assets = [
     ["target/release/git_leviathan", "usr/bin/", "755"],
     ["packaging/git-leviathan.desktop", "usr/share/applications/", "644"],
-    ["packaging/icons/git-leviathan.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["packaging/icons/hicolor/16x16/git-leviathan.png", "usr/share/icons/hicolor/16x16/apps/", "644"],
+    ["packaging/icons/hicolor/32x32/git-leviathan.png", "usr/share/icons/hicolor/32x32/apps/", "644"],
+    ["packaging/icons/hicolor/48x48/git-leviathan.png", "usr/share/icons/hicolor/48x48/apps/", "644"],
+    ["packaging/icons/hicolor/64x64/git-leviathan.png", "usr/share/icons/hicolor/64x64/apps/", "644"],
+    ["packaging/icons/hicolor/128x128/git-leviathan.png", "usr/share/icons/hicolor/128x128/apps/", "644"],
+    ["packaging/icons/hicolor/256x256/git-leviathan.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+    ["packaging/icons/hicolor/512x512/git-leviathan.png", "usr/share/icons/hicolor/512x512/apps/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -43,7 +61,13 @@ license = "MIT"
 assets = [
     { source = "target/release/git_leviathan", dest = "/usr/bin/git_leviathan", mode = "755" },
     { source = "packaging/git-leviathan.desktop", dest = "/usr/share/applications/git-leviathan.desktop", mode = "644" },
-    { source = "packaging/icons/git-leviathan.png", dest = "/usr/share/icons/hicolor/256x256/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/16x16/git-leviathan.png", dest = "/usr/share/icons/hicolor/16x16/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/32x32/git-leviathan.png", dest = "/usr/share/icons/hicolor/32x32/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/48x48/git-leviathan.png", dest = "/usr/share/icons/hicolor/48x48/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/64x64/git-leviathan.png", dest = "/usr/share/icons/hicolor/64x64/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/128x128/git-leviathan.png", dest = "/usr/share/icons/hicolor/128x128/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/256x256/git-leviathan.png", dest = "/usr/share/icons/hicolor/256x256/apps/git-leviathan.png", mode = "644" },
+    { source = "packaging/icons/hicolor/512x512/git-leviathan.png", dest = "/usr/share/icons/hicolor/512x512/apps/git-leviathan.png", mode = "644" },
 ]
 
 [package.metadata.generate-rpm.requires]
