@@ -24,9 +24,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - arch: x86_64
+          - arch: amd64
             runner: ubuntu-24.04
-          - arch: aarch64
+          - arch: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
@@ -55,9 +55,26 @@ jobs:
       - name: Build .rpm
         run: cargo generate-rpm
 
+      - name: Build portable tarball (extract to / for system-wide install)
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="${{ inputs.tag }}"
+            VERSION="${VERSION#v}"
+          fi
+          STAGE="git-leviathan-${VERSION}-linux-${{ matrix.arch }}"
+          ROOT="${STAGE}/usr"
+          install -Dm755 target/release/git_leviathan "${ROOT}/bin/git_leviathan"
+          install -Dm644 packaging/git-leviathan.desktop "${ROOT}/share/applications/git-leviathan.desktop"
+          for size in 16 32 48 64 128 256 512; do
+            install -Dm644 "packaging/icons/hicolor/${size}x${size}/git-leviathan.png" \
+              "${ROOT}/share/icons/hicolor/${size}x${size}/apps/git-leviathan.png"
+          done
+          mkdir -p dist
+          tar -czf "dist/${STAGE}.tar.gz" -C "$STAGE" usr
+
       - name: Collect artifacts
         run: |
-          mkdir -p dist
           cp target/debian/*.deb dist/
           cp target/generate-rpm/*.rpm dist/
           ls -la dist/
