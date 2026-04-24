@@ -127,11 +127,11 @@ impl<'a> Widget<Message, Theme, Renderer> for DraggableTab<'a> {
                     shell.publish(Message::App(AppMessage::TabDragHover(self.tab_id)));
                 }
             }
-            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                if self.is_pressed || self.is_dragging {
-                    shell.publish(Message::App(AppMessage::TabDragReleased));
-                    shell.capture_event();
-                }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                if self.is_pressed || self.is_dragging =>
+            {
+                shell.publish(Message::App(AppMessage::TabDragReleased));
+                shell.capture_event();
             }
             _ => {}
         }
