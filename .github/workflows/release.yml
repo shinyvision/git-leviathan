@@ -1,0 +1,159 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build (e.g. v0.1.0)"
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Linux ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: linux-${{ matrix.arch }}
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+
+      - name: Install cargo-deb and cargo-generate-rpm
+        run: |
+          cargo install cargo-deb --locked
+          cargo install cargo-generate-rpm --locked
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Build .deb
+        run: cargo deb --no-build
+
+      - name: Build .rpm
+        run: cargo generate-rpm
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          cp target/debian/*.deb dist/
+          cp target/generate-rpm/*.rpm dist/
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-${{ matrix.arch }}
+          path: dist/*
+
+  macos:
+    name: macOS arm64
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      - name: Package tarball
+        run: |
+          mkdir -p dist
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="${{ inputs.tag }}"
+            VERSION="${VERSION#v}"
+          fi
+          STAGE="git-leviathan-${VERSION}-aarch64-apple-darwin"
+          mkdir -p "$STAGE"
+          cp target/aarch64-apple-darwin/release/git_leviathan "$STAGE/"
+          cp README.md LICENSE "$STAGE/"
+          tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: dist/*
+
+  windows:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release --locked --target x86_64-pc-windows-msvc
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "${{ inputs.tag }}" }
+          $version = $tag -replace '^v', ''
+          $stage = "git-leviathan-$version-x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory -Force -Path dist, $stage | Out-Null
+          Copy-Item "target/x86_64-pc-windows-msvc/release/git_leviathan.exe" "$stage/"
+          Copy-Item README.md, LICENSE "$stage/"
+          Compress-Archive -Path $stage -DestinationPath "dist/$stage.zip"
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x86_64
+          path: dist/*
+
+  release:
+    name: Publish GitHub Release
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name != '' && github.ref_name || inputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: release-assets/*

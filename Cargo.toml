@@ -35,3 +35,16 @@ assets = [
     ["packaging/git-leviathan.desktop", "usr/share/applications/", "644"],
     ["packaging/icons/git-leviathan.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
 ]
+
+[package.metadata.generate-rpm]
+name = "git-leviathan"
+summary = "Git client built with Iced."
+license = "MIT"
+assets = [
+    { source = "target/release/git_leviathan", dest = "/usr/bin/git_leviathan", mode = "755" },
+    { source = "packaging/git-leviathan.desktop", dest = "/usr/share/applications/git-leviathan.desktop", mode = "644" },
+    { source = "packaging/icons/git-leviathan.png", dest = "/usr/share/icons/hicolor/256x256/apps/git-leviathan.png", mode = "644" },
+]
+
+[package.metadata.generate-rpm.requires]
+fontconfig = "*"
