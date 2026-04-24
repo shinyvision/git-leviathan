@@ -66,7 +66,12 @@ fn branch_popout_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'sta
     }
 
     if row.has_local || row.is_current {
-        icons.push(assets::icon(assets::LAPTOP, BRANCH_POPOUT_ICON_SIZE, color));
+        let icon_data = if row.worktree_path.is_some() {
+            assets::TREE
+        } else {
+            assets::LAPTOP
+        };
+        icons.push(assets::icon(icon_data, BRANCH_POPOUT_ICON_SIZE, color));
     }
     if row.has_remote {
         icons.push(assets::icon(assets::CLOUD, BRANCH_POPOUT_ICON_SIZE, color));
