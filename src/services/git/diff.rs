@@ -47,13 +47,7 @@ pub(super) fn load_merged_commit_file_diff(
     let old_content = || content_from_tree(&repo, oldest_parent_tree.as_ref(), file_path);
     let new_content = || content_from_tree(&repo, newest_tree.as_ref(), file_path);
 
-    super::working_tree_diff::process_git_diff_standalone(
-        diff,
-        file_path,
-        || new_content().unwrap_or_default(),
-        old_content,
-        new_content,
-    )
+    super::working_tree_diff::process_git_diff(diff, file_path, old_content, new_content)
 }
 
 fn parse_oid(hash: &str) -> Result<git2::Oid, GitError> {

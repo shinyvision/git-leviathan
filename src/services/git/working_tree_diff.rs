@@ -67,6 +67,9 @@ pub(super) fn load_working_tree_diff(
         repo.diff_tree_to_index(head_tree.as_ref(), None, Some(&mut opts))
             .map_err(|e| wrap_git2_error("create staged diff", e))?
     } else {
+        opts.include_untracked(true)
+            .recurse_untracked_dirs(true)
+            .show_untracked_content(true);
         repo.diff_index_to_workdir(None, Some(&mut opts))
             .map_err(|e| wrap_git2_error("create working tree diff", e))?
     };
@@ -74,7 +77,6 @@ pub(super) fn load_working_tree_diff(
     process_git_diff(
         diff,
         file_path,
-        || content_from_workdir(repo, file_path).unwrap_or_default(),
         || {
             if is_staged {
                 content_from_head(repo, file_path)
@@ -115,7 +117,6 @@ pub(super) fn load_commit_file_diff(
     process_git_diff(
         diff,
         file_path,
-        || content_from_tree(repo, tree.as_ref(), file_path).unwrap_or_default(),
         || content_from_tree(repo, parent_tree.as_ref(), file_path),
         || content_from_tree(repo, tree.as_ref(), file_path),
     )
@@ -141,71 +142,25 @@ pub(super) fn load_commit_file_diff_standalone(
         .diff_tree_to_tree(parent_tree.as_ref(), tree.as_ref(), Some(&mut opts))
         .map_err(|e| wrap_git2_error("create commit diff", e))?;
 
-    process_git_diff_standalone(
+    process_git_diff(
         diff,
         file_path,
-        || content_from_tree(&repo, tree.as_ref(), file_path).unwrap_or_default(),
         || content_from_tree(&repo, parent_tree.as_ref(), file_path),
         || content_from_tree(&repo, tree.as_ref(), file_path),
     )
 }
 
-fn process_git_diff<F, G, H>(
+pub(super) fn process_git_diff<G, H>(
     diff: git2::Diff<'_>,
     file_path: &str,
-    fallback_content: F,
     old_content_getter: G,
     new_content_getter: H,
 ) -> Result<WorkingTreeDiffResult, GitError>
 where
-    F: FnOnce() -> String,
-    G: FnOnce() -> Option<String>,
-    H: FnOnce() -> Option<String>,
-{
-    process_git_diff_inner(
-        diff,
-        file_path,
-        fallback_content,
-        old_content_getter,
-        new_content_getter,
-    )
-}
-
-pub(super) fn process_git_diff_standalone<F, G, H>(
-    diff: git2::Diff<'_>,
-    file_path: &str,
-    fallback_content: F,
-    old_content_getter: G,
-    new_content_getter: H,
-) -> Result<WorkingTreeDiffResult, GitError>
-where
-    F: FnOnce() -> String,
-    G: FnOnce() -> Option<String>,
-    H: FnOnce() -> Option<String>,
-{
-    process_git_diff_inner(
-        diff,
-        file_path,
-        fallback_content,
-        old_content_getter,
-        new_content_getter,
-    )
-}
-
-fn process_git_diff_inner<F, G, H>(
-    diff: git2::Diff<'_>,
-    file_path: &str,
-    fallback_content: F,
-    old_content_getter: G,
-    new_content_getter: H,
-) -> Result<WorkingTreeDiffResult, GitError>
-where
-    F: FnOnce() -> String,
     G: FnOnce() -> Option<String>,
     H: FnOnce() -> Option<String>,
 {
     let in_target_file = RefCell::new(false);
-    let found_file = RefCell::new(false);
     let lines: RefCell<Vec<WorkingTreeDiffLine>> = RefCell::new(Vec::new());
 
     diff.foreach(
@@ -216,11 +171,7 @@ where
                 .or_else(|| delta.old_file().path())
                 .map(|p| p.to_string_lossy().into_owned())
                 .unwrap_or_default();
-            let is_target = path == file_path;
-            *in_target_file.borrow_mut() = is_target;
-            if is_target {
-                *found_file.borrow_mut() = true;
-            }
+            *in_target_file.borrow_mut() = path == file_path;
             true
         },
         None,
@@ -281,33 +232,7 @@ where
     )
     .map_err(|e| wrap_git2_error("iterate diff", e))?;
 
-    let mut result_lines = lines.into_inner();
-    if !*found_file.borrow() {
-        result_lines.clear();
-        result_lines.push(WorkingTreeDiffLine {
-            line_type: DiffLineType::FileHeader,
-            content: format!("(new file) {}", file_path),
-            old_lineno: None,
-            new_lineno: None,
-            segments: vec![],
-        });
-
-        let full_content = fallback_content();
-        for (i, line) in full_content.lines().enumerate() {
-            let content = line.to_string();
-            result_lines.push(WorkingTreeDiffLine {
-                line_type: DiffLineType::Addition,
-                content: content.clone(),
-                old_lineno: None,
-                new_lineno: Some((i as u32) + 1),
-                segments: vec![DiffSegment {
-                    kind: SegmentKind::AdditionHighlight,
-                    text: content,
-                }],
-            });
-        }
-    }
-
+    let result_lines = lines.into_inner();
     let result_lines = normalize_eof_newline_changes(result_lines);
     let result_lines = compute_intra_line_diffs(result_lines);
 
@@ -764,6 +689,84 @@ mod tests {
             .lines
             .iter()
             .any(|line| line.line_type == DiffLineType::Addition && line.content == "omega"));
+    }
+
+    #[test]
+    fn unstaged_view_of_fully_staged_file_returns_empty_lines() {
+        let (temp_repo, repo) = init_test_repo("diff_unstaged_view_all_staged");
+        write_file(&temp_repo.path, "tracked.txt", "line1\nline2\nline3\n");
+        commit_all(&repo, "seed");
+        write_file(&temp_repo.path, "tracked.txt", "line1\nCHANGED\nline3\n");
+
+        let mut index = repo.index().expect("open index");
+        index
+            .add_path(std::path::Path::new("tracked.txt"))
+            .expect("stage tracked.txt");
+        index.write().expect("write index");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        let result = load_working_tree_diff(&service, "tracked.txt", false)
+            .expect("diff loads");
+
+        assert!(
+            result.lines.is_empty(),
+            "expected no diff lines for a fully-staged file viewed from the unstaged side, got {:?}",
+            result
+                .lines
+                .iter()
+                .map(|l| (l.line_type, l.content.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn staged_view_of_committed_file_returns_empty_lines() {
+        let (temp_repo, repo) = init_test_repo("diff_staged_view_committed");
+        write_file(&temp_repo.path, "tracked.txt", "one\ntwo\nthree\n");
+        commit_all(&repo, "seed");
+        write_file(&temp_repo.path, "tracked.txt", "one\nTWO\nthree\n");
+        commit_all(&repo, "tweak line 2");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        let result = load_working_tree_diff(&service, "tracked.txt", true)
+            .expect("diff loads");
+
+        assert!(
+            result.lines.is_empty(),
+            "expected empty staged diff once change is committed, got {:?}",
+            result
+                .lines
+                .iter()
+                .map(|l| (l.line_type, l.content.clone()))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn unstaged_view_of_untracked_file_still_shows_additions() {
+        let (temp_repo, _repo) = init_test_repo("diff_untracked_visible");
+        write_file(&temp_repo.path, "new.txt", "hello\nworld\n");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        let result = load_working_tree_diff(&service, "new.txt", false)
+            .expect("diff loads");
+
+        assert!(
+            result
+                .lines
+                .iter()
+                .any(|l| l.line_type == DiffLineType::Addition && l.content == "hello"),
+            "expected untracked file contents to appear as additions, got {:?}",
+            result
+                .lines
+                .iter()
+                .map(|l| (l.line_type, l.content.clone()))
+                .collect::<Vec<_>>()
+        );
+        assert!(result
+            .lines
+            .iter()
+            .any(|l| l.line_type == DiffLineType::Addition && l.content == "world"));
     }
 
     #[test]

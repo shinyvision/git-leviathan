@@ -111,9 +111,35 @@ impl DiffPanel {
         DiffPanelAction::LoadDirtyFileDiff { path, is_staged }
     }
 
-    pub(in crate::screens::repository) fn reload_dirty_diff_action(
-        &self,
+    pub(in crate::screens::repository) fn sync_and_reload_dirty_diff_action(
+        &mut self,
+        dirty_commit: Option<&crate::core::Commit>,
     ) -> Option<DiffPanelAction> {
+        let state = self.dirty_file_diff.as_ref()?;
+        let path = state.file_path.clone();
+
+        let Some(commit) = dirty_commit else {
+            self.close();
+            return None;
+        };
+
+        let in_conflicted = commit.conflicted_files.iter().any(|f| f.path == path);
+        let in_staged = commit.staged_files.iter().any(|f| f.path == path);
+        let in_unstaged = commit.unstaged_files.iter().any(|f| f.path == path);
+
+        if !in_conflicted && !in_staged && !in_unstaged {
+            self.close();
+            return None;
+        }
+
+        if let Some(state) = self.dirty_file_diff.as_mut() {
+            if state.is_staged && !in_staged && in_unstaged {
+                state.is_staged = false;
+            } else if !state.is_staged && !in_unstaged && in_staged {
+                state.is_staged = true;
+            }
+        }
+
         let state = self.dirty_file_diff.as_ref()?;
         Some(DiffPanelAction::LoadDirtyFileDiff {
             path: state.file_path.clone(),

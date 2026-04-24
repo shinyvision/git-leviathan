@@ -70,12 +70,7 @@ pub(super) fn on_refs_reloaded(
             );
             super::super::commit_search::refresh_matches(screen);
 
-            let reload_dirty_diff = screen
-                .panels
-                .diff
-                .reload_dirty_diff_action()
-                .map(|action| screen.handle_diff_panel_action(action))
-                .unwrap_or(Task::none());
+            let reload_dirty_diff = super::helpers::sync_dirty_diff_after_reload(screen);
 
             // Kick off a diff load for the (possibly re-anchored) selection
             // if its diff is not cached — otherwise the details panel sits
