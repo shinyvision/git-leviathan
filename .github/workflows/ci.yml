@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Required: tests must pass.
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: cargo test --locked
+
+  # Required aspirational gate. Flips from soft to strict once the warning
+  # count drops to zero (tracked in REFACTOR_LOG.md, Phase 10 acceptance).
+  clippy:
+    name: cargo clippy -D warnings
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: cargo clippy --locked --all-targets -- -D warnings
+
+  # Informational. Prints a bloat report so per-phase binary-size changes are visible.
+  bloat:
+    name: cargo bloat
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: cargo install cargo-bloat --locked
+      - name: bloat by crate
+        run: cargo bloat --release --crates --message-format=json > bloat-crates.json || true
+      - name: bloat top functions
+        run: cargo bloat --release -n 50 --message-format=json > bloat-funcs.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bloat-report
+          path: bloat-*.json
+
+  # Informational. cargo-udeps needs nightly.
+  udeps:
+    name: cargo-udeps
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: cargo install cargo-udeps --locked
+      - run: cargo +nightly udeps --all-targets
+
+  # Required: the metrics snapshot script must still run cleanly.
+  metrics:
+    name: metrics snapshot
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev python3
+      - run: bash metrics/capture.sh pr-snapshot
+      - name: validate JSON
+        run: python3 -c "import json; json.load(open('metrics/pr-snapshot.json'))"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: metrics-snapshot
+          path: metrics/pr-snapshot.json

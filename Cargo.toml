@@ -1,0 +1,38 @@
+[package]
+name = "git_leviathan"
+version = "0.1.0"
+edition = "2021"
+description = "Git client built with Iced."
+license = "MIT"
+
+[[bin]]
+name = "git_leviathan"
+path = "src/main.rs"
+
+[dependencies]
+iced = { version = "0.14", features = ["advanced", "canvas", "lazy", "svg", "tokio", "selector"] }
+git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+swash = "0.1.19"
+tokio = { version = "1", features = ["time", "sync", "rt", "macros", "signal"] }
+notify = { version = "7", features = ["macos_fsevent"] }
+rfd = "0.15"
+rusqlite = { version = "0.32", features = ["bundled"] }
+syntect = "5.3"
+two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
+dirs = "5"
+tempfile = "3"
+
+[package.metadata.deb]
+name = "git-leviathan"
+maintainer = "Rachel Snijders"
+copyright = "2026, Rachel Snijders"
+extended-description = "Git client built with Iced."
+depends = "$auto"
+section = "devel"
+priority = "optional"
+assets = [
+    ["target/release/git_leviathan", "usr/bin/", "755"],
+    ["packaging/git-leviathan.desktop", "usr/share/applications/", "644"],
+    ["packaging/icons/git-leviathan.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
+]

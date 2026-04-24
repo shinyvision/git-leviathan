@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Git Leviathan
+Comment=Git client
+Exec=git_leviathan
+Icon=git-leviathan
+StartupWMClass=git-leviathan
+Categories=Development;RevisionControl;
+Terminal=false

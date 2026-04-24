@@ -1,0 +1,289 @@
+//! Multi-commit merged-diff panel.
+//!
+//! Shown when 2+ commits are selected: lists the selected commits in a
+//! scrollable top section and renders the merged diff's file list below.
+
+use iced::{
+    widget::{column, container, responsive, row, scrollable, text},
+    Border, Color, Element, Length, Padding, Theme,
+};
+
+use crate::{
+    assets,
+    core::Commit,
+    message::Message,
+    services::text_measurement::{cached_measure_width, FontFamily},
+    style, theme,
+    utils::initials,
+    widgets::shared::{h_divider, horizontal_space, scrollbar_style},
+};
+
+use super::super::state::DetailViewModel;
+use super::file_row_view;
+
+pub(super) fn multi_commit_detail_panel_content<'a>(
+    screen: DetailViewModel<'a>,
+) -> Element<'a, Message> {
+    let width = screen.width;
+    let count = screen.multi_commits.len();
+
+    let count_bar = container(
+        text(format!("{} commits selected", count))
+            .size(theme::FONT_SM)
+            .style(style::secondary_text),
+    )
+    .padding(Padding::from([6, 10]))
+    .width(Length::Fill)
+    .align_x(iced::alignment::Horizontal::Center);
+
+    let heading = container(
+        text(format!("Viewing merged diff of {} commits", count))
+            .size(theme::FONT_MD)
+            .style(style::primary_text),
+    )
+    .padding(Padding {
+        top: 10.0,
+        right: 10.0,
+        bottom: 6.0,
+        left: 10.0,
+    });
+
+    let commit_count = count;
+    let multi_commits = screen.multi_commits;
+    let merged_diff = screen.merged_diff;
+    let active_diff_file_path = screen.active_diff_file_path;
+
+    let multi_commit_row_height: f32 = 42.0;
+    let commit_list_natural_height = commit_count as f32 * multi_commit_row_height;
+
+    let commit_and_file_sections = responsive(move |size| {
+        let max_commit_height = size.height / 3.0;
+        let commit_height = commit_list_natural_height.min(max_commit_height);
+        let remaining_height = (size.height - commit_height).max(0.0);
+
+        let hide_meta = size.width < 400.0;
+        // Row overhead: outer container padding (10 left + 20 right, incl. scrollbar gap)
+        //   + row padding (4 + 4) + spacing between 4 children (8 * 3)
+        //   + avatar (24) + fixed hash column estimate (60).
+        let summary_avail = (size.width - 5.0 - 8.0 - 24.0 - 24.0 - 60.0 - 5.0).max(50.0);
+        let commit_rows: Vec<Element<Message>> = multi_commits
+            .iter()
+            .map(|commit| multi_commit_row(commit, hide_meta, summary_avail))
+            .collect();
+
+        let cl = scrollable(
+            container(column(commit_rows).spacing(0).width(Length::Fill))
+                .width(Length::Fill)
+                .padding(Padding {
+                    top: 0.0,
+                    right: 10.0,
+                    bottom: 0.0,
+                    left: 0.0,
+                }),
+        )
+        .height(Length::Fixed(commit_height))
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(5).scroller_width(5),
+        ))
+        .style(scrollbar_style);
+
+        let cl_container = container(cl)
+            .width(Length::Fill)
+            .padding(Padding::from([0, 10]));
+
+        let (stats_elem, files_elem): (Element<Message>, Element<Message>) = if let Some(merged) =
+            merged_diff
+        {
+            let stats = row![
+                assets::sidebar_icon(assets::PENCIL, theme::TEXT_SECONDARY),
+                text(format!("{} modified", merged.modified_count))
+                    .size(theme::FONT_SM)
+                    .style(style::secondary_text),
+                text(format!("  + {} added", merged.added_count))
+                    .size(theme::FONT_SM)
+                    .style(|_: &Theme| text::Style {
+                        color: Some(theme::ACCENT_GREEN),
+                    }),
+                horizontal_space(),
+            ]
+            .padding(Padding::from([6, 10]))
+            .spacing(4)
+            .align_y(iced::Alignment::Center);
+
+            let file_rows: Vec<Element<Message>> = if merged.files.is_empty() {
+                vec![container(
+                    text("No file changes")
+                        .size(theme::FONT_SM)
+                        .style(style::dim_text),
+                )
+                .padding(Padding::from([6, 10]))
+                .into()]
+            } else {
+                merged
+                    .files
+                    .iter()
+                    .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width))
+                    .collect()
+            };
+
+            let files = scrollable(column(file_rows).spacing(0).width(Length::Fill))
+                .height(Length::Fill)
+                .direction(scrollable::Direction::Vertical(
+                    scrollable::Scrollbar::new().width(5).scroller_width(5),
+                ))
+                .style(scrollbar_style);
+
+            (stats.into(), files.into())
+        } else {
+            let loading = container(
+                text("Loading merged diff…")
+                    .size(theme::FONT_SM)
+                    .style(style::dim_text),
+            )
+            .padding(Padding::from([6, 10]))
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+            (
+                container(horizontal_space())
+                    .height(Length::Fixed(0.0))
+                    .into(),
+                loading.into(),
+            )
+        };
+
+        column![
+            cl_container,
+            h_divider(),
+            stats_elem,
+            h_divider(),
+            container(files_elem).height(Length::Fixed(remaining_height)),
+        ]
+        .spacing(0)
+        .height(Length::Fill)
+        .into()
+    });
+
+    let detail_col = column![
+        count_bar,
+        h_divider(),
+        heading,
+        h_divider(),
+        commit_and_file_sections,
+    ]
+    .spacing(0)
+    .height(Length::Fill);
+
+    container(detail_col)
+        .width(Length::Fixed(width))
+        .height(Length::Fill)
+        .style(style::panel_container)
+        .into()
+}
+
+fn truncate_summary(message: &str, available_width: f32) -> String {
+    let font_size = theme::FONT_SM;
+    let full_width = cached_measure_width(message, FontFamily::Default, font_size);
+    if full_width <= available_width {
+        return message.to_string();
+    }
+    let ellipsis_width = cached_measure_width("…", FontFamily::Default, font_size);
+    let available_for_text = available_width - ellipsis_width;
+    if available_for_text <= 0.0 {
+        return "…".to_string();
+    }
+    let mut low = 0usize;
+    let mut high = message.len();
+    let mut best_byte = 0usize;
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        let mut boundary = mid.min(message.len());
+        while boundary > 0 && !message.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        let substr = &message[..boundary];
+        let w = cached_measure_width(substr, FontFamily::Default, font_size);
+        if w <= available_for_text {
+            best_byte = boundary;
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    if best_byte == 0 {
+        "…".to_string()
+    } else {
+        format!("{}…", &message[..best_byte])
+    }
+}
+
+fn multi_commit_row<'a>(
+    commit: &'a Commit,
+    hide_meta: bool,
+    summary_avail: f32,
+) -> Element<'a, Message> {
+    let avatar = container(
+        text(initials(&commit.author))
+            .size(theme::FONT_XS)
+            .style(style::white_text),
+    )
+    .width(Length::Fixed(24.0))
+    .height(Length::Fixed(24.0))
+    .style(|_: &Theme| container::Style {
+        background: Some(Color::from_rgb(0.4, 0.3, 0.7).into()),
+        border: Border {
+            radius: 12.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .align_x(iced::alignment::Horizontal::Center)
+    .align_y(iced::alignment::Vertical::Center);
+
+    let (summary_raw, _) =
+        crate::screens::repository::panels::detail::split_commit_message(&commit.message);
+    let summary = truncate_summary(&summary_raw, summary_avail);
+
+    let middle: Element<'a, Message> = if hide_meta {
+        let date_only = commit
+            .date
+            .split(" @ ")
+            .next()
+            .unwrap_or(&commit.date)
+            .to_string();
+        column![
+            text(summary)
+                .size(theme::FONT_SM)
+                .style(style::primary_text),
+            text(date_only)
+                .size(theme::FONT_XS)
+                .style(style::secondary_text),
+        ]
+        .spacing(2)
+        .into()
+    } else {
+        column![
+            text(summary)
+                .size(theme::FONT_SM)
+                .style(style::primary_text),
+            text(format!("{} by {}", commit.date, commit.author))
+                .size(theme::FONT_XS)
+                .style(style::secondary_text),
+        ]
+        .spacing(2)
+        .into()
+    };
+
+    let hash = text(commit.short_hash.clone())
+        .size(theme::FONT_XS)
+        .style(|_: &Theme| text::Style {
+            color: Some(theme::ACCENT_BLUE),
+        });
+
+    row![avatar, middle, horizontal_space(), hash]
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .width(Length::Fill)
+        .padding(Padding::from([6, 4]))
+        .into()
+}

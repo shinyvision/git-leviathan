@@ -1,0 +1,324 @@
+//! Panel-specific message types for decoupled architecture.
+//!
+//! Each panel returns intentions via its message type. `mod.rs` coordinates
+//! and creates Tasks based on these intentions.
+
+#[derive(Debug, Clone)]
+pub enum CenterAction {
+    CommitSelected(usize),
+    ModifiersChanged(iced::keyboard::Modifiers),
+    NavigateUp,
+    NavigateDown,
+    BranchLabelClicked {
+        branch_name: String,
+        is_remote_only: bool,
+    },
+    BranchLabelPressed(String),
+    RemoteBranchLabelPressed(String),
+    BranchLabelRightClicked {
+        branch_name: String,
+        is_remote: bool,
+        has_remote: bool,
+        is_tag: bool,
+        remote_name: Option<String>,
+        /// Short branch name on the remote side, if it differs from
+        /// `branch_name` (happens when local tracks a renamed remote).
+        remote_branch_name: Option<String>,
+    },
+    BranchMergeRequested {
+        source_branch: String,
+        target_branch: String,
+    },
+    BranchFastForwardRequested {
+        source_branch: String,
+        target_branch: String,
+    },
+    /// Rebase the checked-out branch onto another ref. `target_ref` is what
+    /// gets handed to `git rebase` — a local shorthand or `"<remote>/<branch>"`
+    /// for remote targets. `target_display` is the human-readable label shown
+    /// in toasts.
+    BranchRebaseRequested {
+        source_branch: String,
+        target_ref: String,
+        target_display: String,
+    },
+    /// "Reset ... to this commit" parent item clicked — opens submenu.
+    ResetSubmenuRequested {
+        commit_idx: usize,
+        commit_hash: String,
+    },
+    ResetParentHoverChanged { commit_hash: String, hovered: bool },
+    ResetSubmenuHoverChanged(bool),
+    ResetOpenTimer(u64),
+    ResetCloseTimer(u64),
+    ResetToCommitRequested {
+        commit_hash: String,
+        mode: crate::services::ResetMode,
+    },
+    BranchDeleteRequested {
+        branch_name: String,
+        is_remote: bool,
+        has_remote: bool,
+        remote_name: Option<String>,
+    },
+    BranchRenameRequested {
+        branch_name: String,
+        is_remote: bool,
+        remote_name: Option<String>,
+    },
+    CommitRightClicked { commit_idx: usize },
+    CherryPickRequested { commit_hash: String },
+    StashCreateRequested,
+    StashApplyRequested { stash_index: usize },
+    StashPopRequested { stash_index: usize },
+    StashDeleteRequested {
+        stash_index: usize,
+        display_name: String,
+    },
+    CreateBranchHereRequested {
+        commit_idx: usize,
+        commit_hash: String,
+    },
+    CenterListScrolled(iced::widget::scrollable::Viewport),
+    BranchLabelTriggerEntered(usize),
+    BranchLabelTriggerBounds(Option<iced::Rectangle>),
+    BranchLabelPopoutBounds(Option<iced::Rectangle>),
+    BranchLabelContentBounds(Option<iced::Rectangle>),
+    CopyBranchName(String),
+    CloseContextMenu,
+    PanelFocused(super::state::FocusedPanel),
+    LoadMoreCommitsRequested,
+    PointerMoved(iced::Point),
+    PointerLeftWindow,
+    DetailResizeStarted,
+    ResizeReleased,
+    None,
+    SquashCommitsRequested {
+        indices: Vec<usize>,
+        hashes: Vec<String>,
+    },
+    CreateTagHereRequested { commit_hash: String },
+    PushTagRequested {
+        tag_name: String,
+        remote_name: String,
+    },
+    DeleteTagRequested {
+        tag_name: String,
+        tag_remote_names: Vec<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub enum DetailAction {
+    FileViewChanged(super::FileView),
+    DirtyFileClicked { path: String, is_staged: bool },
+    DirtyFileRightClicked(String),
+    StageFile(String),
+    StageAll,
+    UnstageFile(String),
+    UnstageAll,
+    MarkConflictResolved(String),
+    MarkAllConflictsResolved,
+    DiscardAllRequested,
+    DiscardFileRequested(String),
+    DiscardConfirmed,
+    DiscardCanceled,
+    CommitConfirmed,
+    AbortMergeConfirmed,
+    CommitFileClicked { commit_idx: usize, path: String },
+    MergedFileClicked { path: String },
+    CloseDirtyFileDiff,
+    CommitMessageAction(iced::widget::text_editor::Action),
+    RewordStarted {
+        hash: String,
+        original_message: String,
+    },
+    RewordCanceled,
+    RewordConfirmed,
+    RewordMessageAction(iced::widget::text_editor::Action),
+    CopyCommitShaRequested(String),
+    /// Parent-commit hash clicked — select that commit in the graph,
+    /// scrolling/loading more commits as needed.
+    ParentCommitPressed(String),
+    /// Timer expired — remove the "Copied" flash tooltip.
+    ClearCopyShaFlash,
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub enum DiffPanelAction {
+    /// Begin a text selection in one of the diff canvases. `canvas_id`
+    /// identifies which buffer (diff, conflict ours/theirs/output).
+    /// `viewport_rect` is the scrollable viewport in window coords —
+    /// captured here so auto-scroll ticks can measure off-canvas cursor
+    /// distance from the window-level cursor position without relying on
+    /// clamped in-widget events.
+    DiffSelectionBegin {
+        canvas_id: crate::widgets::diff_canvas::DiffCanvasId,
+        row: usize,
+        col: usize,
+        viewport_rect: iced::Rectangle,
+        /// Canvas data captured at drag start so the auto-scroll tick can
+        /// re-hit-test the cursor against new scroll positions and extend
+        /// the selection as the viewport scrolls.
+        data: std::sync::Arc<crate::widgets::diff_canvas::DiffCanvasData>,
+    },
+    DiffSelectionExtend {
+        canvas_id: crate::widgets::diff_canvas::DiffCanvasId,
+        row: usize,
+        col: usize,
+    },
+    DiffSelectionEnd {
+        canvas_id: crate::widgets::diff_canvas::DiffCanvasId,
+    },
+    DiffSelectionCleared,
+    /// `meta` is an opaque u64 provided by the row — for conflict buffers
+    /// this is the hunk index.
+    DiffGutterClicked {
+        canvas_id: crate::widgets::diff_canvas::DiffCanvasId,
+        row: usize,
+        meta: u64,
+    },
+    DiffCopyRequested,
+    DiffContentScrolled {
+        viewport: iced::widget::scrollable::Viewport,
+    },
+    DiffShiftWheel { delta_lines: f32 },
+    NavigateFileUp,
+    NavigateFileDown,
+    ConflictHunkSideToggled {
+        hunk_idx: usize,
+        side: super::panels::diff::ConflictSide,
+    },
+    ConflictSideAllToggled(super::panels::diff::ConflictSide),
+    ConflictBufferScrolled {
+        side: super::panels::diff::ConflictSide,
+        viewport: iced::widget::scrollable::Viewport,
+    },
+    ConflictOutputScrolled {
+        viewport: iced::widget::scrollable::Viewport,
+    },
+    ConflictShiftWheel {
+        target: super::panels::diff::ConflictScrollTarget,
+        delta_lines: f32,
+    },
+    ConflictResolutionSaveRequested,
+    DirtyFileHighlightReady {
+        file_path: String,
+        is_staged: bool,
+        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+    },
+    CommitFileHighlightReady {
+        commit_hash: String,
+        file_path: String,
+        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+    },
+    MergedFileHighlightReady {
+        file_path: String,
+        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+    },
+    ConflictHighlightReady {
+        ours: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+        theirs: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+    },
+    LoadCommitFileDiff { commit_hash: String, path: String },
+    LoadDirtyFileDiff { path: String, is_staged: bool },
+    LoadConflictResolution { path: String },
+    LoadMergedFileDiff { hashes: Vec<String>, path: String },
+    RunDirtyHighlight {
+        file_path: String,
+        is_staged: bool,
+        old_content: Option<String>,
+        new_content: Option<String>,
+    },
+    RunCommitHighlight {
+        commit_hash: String,
+        file_path: String,
+        old_content: Option<String>,
+        new_content: Option<String>,
+    },
+    RunMergedHighlight {
+        file_path: String,
+        old_content: Option<String>,
+        new_content: Option<String>,
+    },
+    RunConflictHighlight {
+        file_path: String,
+        ours_content: Option<String>,
+        theirs_content: Option<String>,
+    },
+    /// `DiffPanel` tracks which canvas owns the search; screen-layer dispatch
+    /// just needs to know a widget message arrived.
+    TextSearch(crate::widgets::search_widget::SearchWidgetMessage),
+    /// Cursor entered a buffer canvas. Updates the hover tracker so the
+    /// shared text-search bar re-renders on top of the new buffer; matches
+    /// recompute silently (no scroll or re-select).
+    CanvasHoverEntered(crate::widgets::diff_canvas::DiffCanvasId),
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub enum OverlayPanelAction {
+    ConflictNewBranchInput(String),
+    ConflictCreateBranch,
+    ConflictResetLocal,
+    ConflictCancel,
+    BranchDeleteConfirmed,
+    BranchDeleteAllConfirmed,
+    BranchDeleteCanceled,
+    StashDeleteConfirmed,
+    StashDeleteCanceled,
+    BranchRenameConfirmed,
+    BranchRenameCanceled,
+    RenameNewBranchInput(String),
+    CreateBranchHereConfirmed,
+    CreateBranchHereCanceled,
+    CreateBranchHereInput(String),
+    DiscardConfirmed,
+    DiscardCanceled,
+    AddRemoteOpen,
+    AddRemoteClose,
+    AddRemoteNameChanged(String),
+    AddRemotePullUrlChanged(String),
+    AddRemotePushUrlChanged(String),
+    AddRemoteConfirmed,
+    SetUpstreamInput(String),
+    SetUpstreamConfirmed,
+    SetUpstreamCanceled,
+    PushBehindPullRequested,
+    PushBehindForcePushRequested,
+    PushBehindCanceled,
+    ForcePushConfirmed,
+    ForcePushCanceled,
+    CreateTagHereInput(String),
+    CreateTagHereConfirmed,
+    CreateTagHereCanceled,
+    DeleteTagConfirmed,
+    DeleteTagCanceled,
+    CherryPickImmediateConfirmed,
+    CherryPickStagedConfirmed,
+    CherryPickCanceled,
+    CreateWorktreeOpen {
+        available_refs: Vec<super::overlays::create_worktree::RefChoice>,
+        default_dir_prefix: String,
+    },
+    CreateWorktreeClose,
+    CreateWorktreeReferenceChanged(super::overlays::create_worktree::RefChoice),
+    CreateWorktreeDropdownToggled,
+    CreateWorktreeBranchNameChanged(String),
+    CreateWorktreeWorkingDirChanged(String),
+    CreateWorktreeBrowseRequested,
+    CreateWorktreeBrowseResolved(Option<std::path::PathBuf>),
+    CreateWorktreeConfirmed,
+    WorktreeRemoveRequested {
+        path: std::path::PathBuf,
+        branch_name: String,
+        is_active: bool,
+    },
+    WorktreeRemoveConfirmed,
+    WorktreeRemoveCanceled,
+    None,
+}

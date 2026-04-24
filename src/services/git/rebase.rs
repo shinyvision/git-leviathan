@@ -1,0 +1,92 @@
+use super::helpers::spawn_git_command;
+use super::{checkout, GitService};
+use crate::services::git_error::GitError;
+
+/// Rebase the currently checked-out branch onto `target_ref` (a local branch
+/// shorthand or remote tracking ref, as git rebase expects). On conflict the
+/// rebase is aborted and `GitError::Other` carries git's stderr.
+pub(super) fn rebase_current_onto(
+    service: &mut GitService,
+    source_branch: &str,
+    target_ref: &str,
+) -> Result<(), GitError> {
+    let source_branch = source_branch.trim();
+    let target_ref = target_ref.trim();
+
+    if source_branch.is_empty() || target_ref.is_empty() {
+        return Err(GitError::EmptyBranchName);
+    }
+    if source_branch == target_ref {
+        return Err(GitError::Other(format!(
+            "cannot rebase '{}' onto itself",
+            source_branch
+        )));
+    }
+    if service.repo.state() != git2::RepositoryState::Clean {
+        return Err(GitError::Other(
+            "finish the current repository operation before rebasing".to_string(),
+        ));
+    }
+    if checkout::workdir_has_changes(service)? {
+        return Err(GitError::Other(
+            "commit or stash your changes before rebasing".to_string(),
+        ));
+    }
+
+    let current = checkout::current_branch_name(service)
+        .ok_or_else(|| GitError::Other("HEAD is detached; cannot rebase".to_string()))?;
+    if current != source_branch {
+        return Err(GitError::Other(format!(
+            "expected '{}' to be checked out, but '{}' is",
+            source_branch, current
+        )));
+    }
+
+    let repo_dir = repo_command_dir_str(service)?;
+
+    let output = spawn_git_command(&repo_dir, &["rebase", target_ref], "rebase")?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    // On failure abort so the worktree is left clean, then surface the
+    // original stderr to the caller.
+    let detail = rebase_output_detail(&output);
+
+    if service.repo.state() != git2::RepositoryState::Clean {
+        let abort = spawn_git_command(&repo_dir, &["rebase", "--abort"], "rebase --abort");
+        if let Err(e) = abort {
+            return Err(GitError::Other(format!(
+                "rebase of '{}' onto '{}' failed ({}); additionally failed to spawn git rebase --abort: {}",
+                source_branch, target_ref, detail, e
+            )));
+        }
+    }
+
+    Err(GitError::Other(format!(
+        "rebase of '{}' onto '{}' failed: {}",
+        source_branch, target_ref, detail
+    )))
+}
+
+fn repo_command_dir_str(service: &GitService) -> Result<String, GitError> {
+    service
+        .repo
+        .workdir()
+        .or_else(|| service.repo.path().parent())
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
+}
+
+fn rebase_output_detail(output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return stdout;
+    }
+    format!("git exited with status {}", output.status)
+}
