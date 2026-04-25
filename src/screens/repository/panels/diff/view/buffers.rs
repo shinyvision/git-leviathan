@@ -115,7 +115,7 @@ pub(super) fn conflict_buffer_panel<'a>(
 
     let rows = build_conflict_side_rows(result, selections, side, highlighted.as_deref());
     let char_w = diff_char_width();
-    let data = conflict_canvas::build_canvas_data(rows, char_w, conflict_canvas::GUTTER_WIDTH_SIDE);
+    let data = conflict_canvas::build_side_canvas_data(rows, char_w);
     let data_for_min = data.clone();
     let canvas_id = canvas_id_for_side(side);
 
@@ -174,8 +174,7 @@ pub(super) fn output_buffer_panel<'a>(
 
     let rows = build_conflict_output_rows(result, selections);
     let char_w = diff_char_width();
-    let data =
-        conflict_canvas::build_canvas_data(rows, char_w, conflict_canvas::GUTTER_WIDTH_OUTPUT);
+    let data = conflict_canvas::build_output_canvas_data(rows, char_w);
     let data_for_min = data.clone();
 
     let body = conflict_scrolled_canvas(
@@ -229,7 +228,7 @@ fn conflict_scrolled_canvas(
 ) -> Element<'static, Message> {
     let data_for_canvas = data.clone();
     let view = iced::widget::responsive(move |size| {
-        let gutter_w = data_for_canvas.gutter_width;
+        let gutter_w = data_for_canvas.gutter_width();
         let inner_viewport = iced::Size::new(
             (size.width - gutter_w - CONFLICT_SCROLLBAR_WIDTH).max(0.0),
             (size.height - CONFLICT_SCROLLBAR_WIDTH).max(0.0),
@@ -237,15 +236,8 @@ fn conflict_scrolled_canvas(
 
         let min_width = min_buffer_width.max(inner_viewport.width);
         let mut effective_data = data_for_canvas.clone();
-        if effective_data.content_width < min_width {
-            effective_data = Arc::new(TextCanvasData {
-                rows: effective_data.rows.clone(),
-                row_offsets: effective_data.row_offsets.clone(),
-                total_height: effective_data.total_height,
-                content_width: min_width,
-                char_width: effective_data.char_width,
-                gutter_width: effective_data.gutter_width,
-            });
+        if effective_data.content_width() < min_width {
+            effective_data = Arc::new(effective_data.with_content_width(min_width));
         }
 
         let content = conflict_content_canvas(

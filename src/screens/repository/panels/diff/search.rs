@@ -209,11 +209,7 @@ impl DiffPanel {
         } else {
             self.diff_scroll_y
         };
-        // row_offsets has len = rows + 1; find first row whose top is >= scroll_y.
-        data.row_offsets
-            .iter()
-            .position(|&y| y >= scroll_y)
-            .unwrap_or(0)
+        data.first_row_at_or_below(scroll_y)
     }
 
     /// Apply the current match as a text selection on the canvas the search
@@ -252,10 +248,9 @@ impl DiffPanel {
         let Some(data) = self.build_canvas_data_for(canvas_id) else {
             return Task::none();
         };
-        let y = data.row_offsets.get(row).copied().unwrap_or(0.0);
-        // 3-row breadcrumb above so the match isn't flush against the gutter
-        // border — a pure `y` would pin the match to the very top edge.
-        let target_y = (y - 3.0 * crate::widgets::diff_canvas::CONTENT_LINE_HEIGHT).max(0.0);
+        let y = data.row_top_y(row);
+        let target_y =
+            (y - crate::widgets::diff_canvas::search_scroll_breadcrumb_offset()).max(0.0);
         let current_x = match canvas_id {
             _ if canvas_id == crate::widgets::diff_canvas::CANVAS_ID => self.diff_scroll_x,
             _ => 0.0,

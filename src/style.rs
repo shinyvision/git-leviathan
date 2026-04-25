@@ -1,9 +1,28 @@
 use iced::{
     widget::{container, text},
-    Border, Theme,
+    Border, Color, Theme,
 };
 
 use crate::theme;
+
+pub fn iced_theme() -> iced::Theme {
+    iced::Theme::custom(
+        "leviathan".to_string(),
+        iced::theme::Palette {
+            background: theme::BG_BASE,
+            text: theme::TEXT_PRIMARY,
+            primary: theme::ACCENT_BLUE,
+            success: theme::ACCENT_GREEN,
+            danger: Color {
+                r: 0.858,
+                g: 0.243,
+                b: 0.243,
+                a: 1.0,
+            },
+            warning: theme::ACCENT_ORANGE,
+        },
+    )
+}
 
 pub fn dim_text(_: &Theme) -> text::Style {
     text::Style {

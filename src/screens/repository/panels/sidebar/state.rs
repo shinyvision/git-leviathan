@@ -5,7 +5,7 @@ use crate::view_model::{SidebarSection, SidebarSectionKind};
 
 use super::super::super::state::{SidebarClickState, SIDEBAR_DOUBLE_CLICK_WINDOW};
 
-pub struct SidebarPanel {
+pub(in crate::screens::repository) struct SidebarPanel {
     pub(super) last_click: Option<SidebarClickState>,
     pub(super) last_worktree_click: Option<SidebarClickState>, // separate slot for worktree double-click
     expanded_sections: HashSet<SidebarSectionKind>,

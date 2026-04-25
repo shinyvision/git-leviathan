@@ -238,22 +238,3 @@ pub const FONT_LG: f32 = 14.0;
 pub const MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 
 pub const FONT_DIFF: f32 = 13.0;
-
-pub fn iced_theme() -> iced::Theme {
-    iced::Theme::custom(
-        "leviathan".to_string(),
-        iced::theme::Palette {
-            background: BG_BASE,
-            text: TEXT_PRIMARY,
-            primary: ACCENT_BLUE,
-            success: ACCENT_GREEN,
-            danger: Color {
-                r: 0.858,
-                g: 0.243,
-                b: 0.243,
-                a: 1.0,
-            },
-            warning: ACCENT_ORANGE,
-        },
-    )
-}

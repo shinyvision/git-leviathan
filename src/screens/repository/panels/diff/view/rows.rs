@@ -186,25 +186,13 @@ pub(in crate::screens::repository) fn build_conflict_rows_for_canvas(
     let char_w = diff_char_width();
     if canvas_id == CANVAS_ID_OURS {
         let rows = build_conflict_side_rows(result, selections, ConflictSide::Ours, ours_hl);
-        Some(conflict_canvas::build_canvas_data(
-            rows,
-            char_w,
-            conflict_canvas::GUTTER_WIDTH_SIDE,
-        ))
+        Some(conflict_canvas::build_side_canvas_data(rows, char_w))
     } else if canvas_id == CANVAS_ID_THEIRS {
         let rows = build_conflict_side_rows(result, selections, ConflictSide::Theirs, theirs_hl);
-        Some(conflict_canvas::build_canvas_data(
-            rows,
-            char_w,
-            conflict_canvas::GUTTER_WIDTH_SIDE,
-        ))
+        Some(conflict_canvas::build_side_canvas_data(rows, char_w))
     } else if canvas_id == CANVAS_ID_OUTPUT {
         let rows = build_conflict_output_rows(result, selections);
-        Some(conflict_canvas::build_canvas_data(
-            rows,
-            char_w,
-            conflict_canvas::GUTTER_WIDTH_OUTPUT,
-        ))
+        Some(conflict_canvas::build_output_canvas_data(rows, char_w))
     } else {
         None
     }

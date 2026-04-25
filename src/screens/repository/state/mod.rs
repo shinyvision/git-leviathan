@@ -40,9 +40,10 @@ use super::commit_search::CommitSearch;
 
 pub(in crate::screens::repository) use animation::AnimationState;
 pub(in crate::screens::repository) use commit_index::CommitIndex;
-pub use context_menu::{
-    CommitContextMenuState, ContextMenuState, DirtyFileContextMenuState, ResetSubmenuState,
+pub(in crate::screens::repository) use context_menu::{
+    CommitContextMenuState, DirtyFileContextMenuState, ResetSubmenuState,
 };
+pub use context_menu::ContextMenuState;
 pub(in crate::screens::repository) use diff_cache::DiffCache;
 pub(crate) use gateway_fleet::GatewayFleet;
 pub(in crate::screens::repository) use merged_diff::MergedDiffCache;
