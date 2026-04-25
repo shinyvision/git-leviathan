@@ -56,27 +56,8 @@ impl App {
                 self.tabs.close_tab(tab_id);
                 Task::none()
             }
-            AppMessage::TabPressed(tab_id, cursor) => {
-                self.tabs.on_tab_pressed(tab_id, cursor);
-                Task::none()
-            }
-            AppMessage::TabDragCursorMoved(cursor) => {
-                self.tabs.on_drag_cursor_moved(cursor);
-                Task::none()
-            }
-            AppMessage::TabDragHover(target) => {
-                self.tabs.on_drag_hover(target);
-                Task::none()
-            }
-            AppMessage::TabDragReleased => {
-                if let Some(tab_id) = self.tabs.on_drag_released() {
-                    if tab_id == self.tabs.active_tab_id() {
-                        return Task::none();
-                    }
-                    let screen_task = self.tabs.select(tab_id);
-                    let fetch_task = self.try_start_fetch();
-                    return Task::batch(vec![screen_task, fetch_task]);
-                }
+            AppMessage::TabsReordered(order) => {
+                self.tabs.reorder(order);
                 Task::none()
             }
             AppMessage::TabOpened { tab_id, result } => self.handle_tab_opened(tab_id, result),

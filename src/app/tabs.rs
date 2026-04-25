@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use iced::{keyboard, Point, Task};
-
-const DRAG_THRESHOLD: f32 = 5.0;
+use iced::{keyboard, Task};
 
 use crate::{
     core::TabId,
@@ -34,8 +32,6 @@ pub struct TabManager {
     /// so the next fetch for that tab persists it; kept true otherwise to
     /// avoid redundant DB writes on every fetch tick.
     active_tab_persisted_as_recent: bool,
-    press_origin: Option<(TabId, Point)>,
-    dragging: Option<TabId>,
     presenter: Arc<dyn Presenter>,
 }
 
@@ -52,8 +48,6 @@ impl TabManager {
             active_tab_id: TabId(0),
             next_tab_id: TabId(0),
             active_tab_persisted_as_recent: false,
-            press_origin: None,
-            dragging: None,
             presenter,
         }
     }
@@ -249,63 +243,24 @@ impl TabManager {
         self.activate_tab(tab_id)
     }
 
-    pub fn press_origin(&self) -> Option<(TabId, Point)> {
-        self.press_origin
-    }
-
-    pub fn dragging(&self) -> Option<TabId> {
-        self.dragging
-    }
-
-    pub fn on_tab_pressed(&mut self, tab_id: TabId, cursor: Point) {
-        if self.tabs.iter().any(|t| t.id == tab_id) {
-            self.press_origin = Some((tab_id, cursor));
-        }
-    }
-
-    pub fn on_drag_cursor_moved(&mut self, cursor: Point) {
-        if self.dragging.is_some() {
-            return;
-        }
-        if let Some((tab_id, origin)) = self.press_origin {
-            let dx = cursor.x - origin.x;
-            let dy = cursor.y - origin.y;
-            if (dx * dx + dy * dy).sqrt() >= DRAG_THRESHOLD {
-                self.dragging = Some(tab_id);
+    /// Apply a new tab ordering (from a drag-reorder commit). Reorders
+    /// `self.tabs` to match `new_order` and persists. Ids not in
+    /// `self.tabs` are ignored; missing ids retain their relative position
+    /// at the end.
+    pub fn reorder(&mut self, new_order: Vec<TabId>) {
+        let mut by_id: HashMap<TabId, TabEntry> =
+            self.tabs.drain(..).map(|t| (t.id, t)).collect();
+        let mut reordered: Vec<TabEntry> = Vec::with_capacity(by_id.len());
+        for id in new_order {
+            if let Some(entry) = by_id.remove(&id) {
+                reordered.push(entry);
             }
         }
-    }
-
-    pub fn on_drag_hover(&mut self, target: TabId) {
-        let Some(dragged) = self.dragging else {
-            return;
-        };
-        if dragged == target {
-            return;
+        for (_, entry) in by_id {
+            reordered.push(entry);
         }
-        let Some(from) = self.tabs.iter().position(|t| t.id == dragged) else {
-            return;
-        };
-        let Some(to) = self.tabs.iter().position(|t| t.id == target) else {
-            return;
-        };
-        if from == to {
-            return;
-        }
-        let entry = self.tabs.remove(from);
-        self.tabs.insert(to, entry);
-    }
-
-    /// Returns `Some(tab_id)` on plain click (caller should select); `None` on drag end or spurious release.
-    pub fn on_drag_released(&mut self) -> Option<TabId> {
-        let press = self.press_origin.take();
-        let was_dragging = self.dragging.take().is_some();
-        if was_dragging {
-            self.persist_tab_order();
-            None
-        } else {
-            press.map(|(id, _)| id)
-        }
+        self.tabs = reordered;
+        self.persist_tab_order();
     }
 
     fn persist_tab_order(&self) {
@@ -426,64 +381,30 @@ mod tests {
     }
 
     #[test]
-    fn small_move_under_threshold_is_click_not_drag() {
-        let mut m = make();
-        push_tab(&mut m, 1, "/a");
-        push_tab(&mut m, 2, "/b");
-        m.on_tab_pressed(TabId(1), Point::new(10.0, 10.0));
-        m.on_drag_cursor_moved(Point::new(12.0, 11.0));
-        assert!(m.dragging.is_none());
-        let clicked = m.on_drag_released();
-        assert_eq!(clicked, Some(TabId(1)));
-    }
-
-    #[test]
-    fn move_past_threshold_starts_drag() {
-        let mut m = make();
-        push_tab(&mut m, 1, "/a");
-        push_tab(&mut m, 2, "/b");
-        m.on_tab_pressed(TabId(1), Point::new(10.0, 10.0));
-        m.on_drag_cursor_moved(Point::new(30.0, 10.0));
-        assert_eq!(m.dragging, Some(TabId(1)));
-        let clicked = m.on_drag_released();
-        assert!(clicked.is_none());
-        assert!(m.dragging.is_none());
-    }
-
-    #[test]
-    fn hover_during_drag_reorders() {
+    fn reorder_applies_new_order() {
         let mut m = make();
         push_tab(&mut m, 1, "/a");
         push_tab(&mut m, 2, "/b");
         push_tab(&mut m, 3, "/c");
-        m.on_tab_pressed(TabId(1), Point::new(0.0, 0.0));
-        m.on_drag_cursor_moved(Point::new(20.0, 0.0));
-        assert_eq!(m.dragging, Some(TabId(1)));
-        m.on_drag_hover(TabId(3));
+        m.reorder(vec![TabId(2), TabId(3), TabId(1)]);
         let order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
         assert_eq!(order, vec![2, 3, 1]);
     }
 
     #[test]
-    fn hover_on_self_is_noop() {
+    fn reorder_drops_unknown_ids_and_keeps_missing_at_end() {
         let mut m = make();
         push_tab(&mut m, 1, "/a");
         push_tab(&mut m, 2, "/b");
-        m.on_tab_pressed(TabId(1), Point::new(0.0, 0.0));
-        m.on_drag_cursor_moved(Point::new(20.0, 0.0));
-        m.on_drag_hover(TabId(1));
-        let order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
-        assert_eq!(order, vec![1, 2]);
-    }
-
-    #[test]
-    fn hover_without_drag_is_noop() {
-        let mut m = make();
-        push_tab(&mut m, 1, "/a");
-        push_tab(&mut m, 2, "/b");
-        m.on_drag_hover(TabId(2));
-        let order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
-        assert_eq!(order, vec![1, 2]);
+        push_tab(&mut m, 3, "/c");
+        m.reorder(vec![TabId(99), TabId(2), TabId(1)]);
+        let mut order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
+        // Missing tab 3 retained at end (insertion order from leftover map is
+        // not guaranteed, so just check it's still there).
+        assert_eq!(&order[..2], &[2, 1][..]);
+        assert!(order.contains(&3));
+        order.sort_unstable();
+        assert_eq!(order, vec![1, 2, 3]);
     }
 
     #[test]

@@ -3,7 +3,6 @@
 //! routing to an individual screen.
 
 use iced::keyboard;
-use iced::Point;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -27,10 +26,7 @@ pub enum AppMessage {
     },
     TabSelected(TabId),
     TabClosed(TabId),
-    TabPressed(TabId, Point),
-    TabDragCursorMoved(Point),
-    TabDragHover(TabId),
-    TabDragReleased,
+    TabsReordered(Vec<TabId>),
     AnimationTick(Instant),
     /// A repository's files changed on disk; carries the owning tab id.
     RepoFilesChanged(TabId),

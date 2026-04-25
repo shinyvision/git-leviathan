@@ -9,6 +9,7 @@ pub mod palette;
 pub mod primitives;
 pub mod search_widget;
 pub mod shared;
+pub mod tab_bar;
 pub mod text;
 
 pub use crate::theme::ROW_H;
