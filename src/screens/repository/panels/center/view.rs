@@ -33,7 +33,7 @@ use super::state::CenterViewModel;
 const COMMIT_LIST_OVERSCAN_ROWS: usize = 10;
 
 pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Message> {
-    let graph_col_width = screen.num_lanes as f32 * theme::LANE_WIDTH + 20.0;
+    let graph_col_width = crate::widgets::graph::graph_column_width(screen.num_lanes);
 
     let header = row![
         container(

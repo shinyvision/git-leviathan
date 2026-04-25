@@ -203,6 +203,7 @@ pub const LANE_COLORS: [Color; 8] = [
 ];
 
 pub const LANE_WIDTH: f32 = 26.0;
+pub const GRAPH_COL_GUTTER: f32 = 20.0;
 pub const ROW_H: f32 = 34.0;
 pub const AVATAR_RADIUS: f32 = 10.0;
 pub const TURN_RADIUS: f32 = 15.0;

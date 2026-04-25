@@ -128,8 +128,14 @@ impl ResizeState {
     pub(in crate::screens::repository) fn effective_layout(
         &self,
         window_width: f32,
+        num_lanes: usize,
     ) -> EffectiveLayout {
-        effective_layout(window_width, self.sidebar_width, self.detail_width)
+        effective_layout(
+            window_width,
+            self.sidebar_width,
+            self.detail_width,
+            num_lanes,
+        )
     }
 }
 
@@ -143,10 +149,12 @@ fn effective_layout(
     window_width: f32,
     sidebar_pref: f32,
     detail_pref: f32,
+    num_lanes: usize,
 ) -> EffectiveLayout {
     let sidebar_default = crate::theme::SIDEBAR_WIDTH as f32;
     let detail_default = crate::theme::DETAIL_PANEL_WIDTH as f32;
-    let min_center = crate::theme::MIN_CENTER_WIDTH;
+    let min_center = crate::theme::MIN_CENTER_WIDTH
+        + crate::widgets::graph::graph_lanes_width(num_lanes);
 
     let sidebar_floor = sidebar_default.min(sidebar_pref);
     let detail_floor = detail_default.min(detail_pref);
@@ -246,7 +254,7 @@ mod tests {
 
     #[test]
     fn effective_layout_keeps_preferences_when_window_fits() {
-        let layout = effective_layout(1600.0, 300.0, 600.0);
+        let layout = effective_layout(1600.0, 300.0, 600.0, 0);
         assert_eq!(
             layout,
             EffectiveLayout::SideBySide {
@@ -258,7 +266,7 @@ mod tests {
 
     #[test]
     fn effective_layout_at_default_sum_keeps_defaults() {
-        let layout = effective_layout(1210.0, 240.0, 510.0);
+        let layout = effective_layout(1210.0, 240.0, 510.0, 0);
         assert_eq!(
             layout,
             EffectiveLayout::SideBySide {
@@ -270,7 +278,7 @@ mod tests {
 
     #[test]
     fn effective_layout_distributes_shrink_by_slack_share() {
-        let layout = effective_layout(1300.0, 300.0, 600.0);
+        let layout = effective_layout(1300.0, 300.0, 600.0, 0);
         assert_eq!(
             layout,
             EffectiveLayout::SideBySide {
@@ -282,7 +290,7 @@ mod tests {
 
     #[test]
     fn effective_layout_panel_with_more_slack_shrinks_more() {
-        let layout = effective_layout(1400.0, 250.0, 700.0);
+        let layout = effective_layout(1400.0, 250.0, 700.0, 0);
         match layout {
             EffectiveLayout::SideBySide { sidebar, detail } => {
                 assert!((sidebar - 249.5).abs() < 0.01);
@@ -294,25 +302,40 @@ mod tests {
 
     #[test]
     fn effective_layout_stacks_when_slack_insufficient() {
-        let layout = effective_layout(1100.0, 240.0, 510.0);
+        let layout = effective_layout(1100.0, 240.0, 510.0, 0);
         assert_eq!(layout, EffectiveLayout::Stacked { sidebar: 240.0 });
     }
 
     #[test]
     fn effective_layout_shrinks_sidebar_when_stacked_and_narrow() {
-        let layout = effective_layout(600.0, 400.0, 510.0);
+        let layout = effective_layout(600.0, 400.0, 510.0, 0);
         assert_eq!(layout, EffectiveLayout::Stacked { sidebar: 240.0 });
     }
 
     #[test]
     fn effective_layout_respects_below_default_preference() {
-        let layout = effective_layout(800.0, 200.0, 510.0);
+        let layout = effective_layout(800.0, 200.0, 510.0, 0);
         assert_eq!(layout, EffectiveLayout::Stacked { sidebar: 200.0 });
     }
 
     #[test]
     fn effective_layout_stacks_when_overflow_exceeds_slack() {
-        let layout = effective_layout(1100.0, 280.0, 530.0);
+        let layout = effective_layout(1100.0, 280.0, 530.0, 0);
         assert_eq!(layout, EffectiveLayout::Stacked { sidebar: 280.0 });
+    }
+
+    #[test]
+    fn effective_layout_more_lanes_force_stack_at_window_that_fits_few_lanes() {
+        let few_lanes = effective_layout(1300.0, 240.0, 510.0, 2);
+        assert_eq!(
+            few_lanes,
+            EffectiveLayout::SideBySide {
+                sidebar: 240.0,
+                detail: 510.0
+            }
+        );
+
+        let many_lanes = effective_layout(1300.0, 240.0, 510.0, 20);
+        assert_eq!(many_lanes, EffectiveLayout::Stacked { sidebar: 240.0 });
     }
 }

@@ -56,7 +56,10 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
 }
 
 fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a, Message> {
-    let layout = screen.data.resize.effective_layout(size.width);
+    let layout = screen
+        .data
+        .resize
+        .effective_layout(size.width, screen.data.snapshot.num_lanes());
     let (orientation, sidebar_width, detail_width) = match layout {
         EffectiveLayout::SideBySide { sidebar, detail } => {
             (DetailOrientation::Vertical, sidebar, detail)
