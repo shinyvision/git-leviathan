@@ -19,6 +19,8 @@ const APP_ICON_PNG: &[u8] = include_bytes!("../packaging/icons/git-leviathan.png
 use app::App;
 
 fn main() -> iced::Result {
+    configure_wgpu_backend();
+
     iced::application(App::new, App::update, App::view)
         .title(|_: &App| "Git Leviathan".to_string())
         .subscription(App::subscription)
@@ -48,3 +50,13 @@ fn platform_specific() -> iced::window::settings::PlatformSpecific {
 fn platform_specific() -> iced::window::settings::PlatformSpecific {
     iced::window::settings::PlatformSpecific::default()
 }
+
+#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+fn configure_wgpu_backend() {
+    if std::env::var_os("WGPU_BACKEND").is_none() {
+        std::env::set_var("WGPU_BACKEND", "vulkan");
+    }
+}
+
+#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+fn configure_wgpu_backend() {}
