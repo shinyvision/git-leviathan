@@ -21,6 +21,17 @@ pub fn h_divider<'a>() -> Element<'a, Message> {
         .into()
 }
 
+pub fn v_divider<'a>() -> Element<'a, Message> {
+    container(Space::new().height(Length::Fill))
+        .width(Length::Fixed(1.0))
+        .height(Length::Fill)
+        .style(|_: &Theme| container::Style {
+            background: Some(theme::DIVIDER.into()),
+            ..Default::default()
+        })
+        .into()
+}
+
 pub fn list_vertical_spacer(height: f32) -> Element<'static, Message> {
     container(Space::new().width(Length::Fill))
         .width(Length::Fill)

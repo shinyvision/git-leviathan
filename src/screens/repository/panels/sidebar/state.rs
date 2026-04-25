@@ -130,7 +130,9 @@ pub enum SidebarAction {
         path: std::path::PathBuf,
         branch_name: String,
     },
-    ResizeStarted,
+    ResizeStarted {
+        effective_width: f32,
+    },
     Focused,
     FilterChanged(String),
 }

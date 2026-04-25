@@ -15,142 +15,47 @@ use crate::{
     services::text_measurement::{cached_measure_width, FontFamily},
     style, theme,
     utils::initials,
-    widgets::shared::{h_divider, horizontal_space, scrollbar_style},
+    services::git::MergedCommitDiffResult,
+    widgets::shared::{h_divider, horizontal_space, scrollbar_style, v_divider},
 };
 
 use super::super::state::DetailViewModel;
+use super::super::DetailOrientation;
 use super::file_row_view;
 
 pub(super) fn multi_commit_detail_panel_content<'a>(
     screen: DetailViewModel<'a>,
 ) -> Element<'a, Message> {
+    if matches!(screen.orientation, DetailOrientation::Horizontal) {
+        return multi_commit_detail_panel_horizontal(screen);
+    }
+
     let width = screen.width;
     let count = screen.multi_commits.len();
-
-    let count_bar = container(
-        text(format!("{} commits selected", count))
-            .size(theme::FONT_SM)
-            .style(style::secondary_text),
-    )
-    .padding(Padding::from([6, 10]))
-    .width(Length::Fill)
-    .align_x(iced::alignment::Horizontal::Center);
-
-    let heading = container(
-        text(format!("Viewing merged diff of {} commits", count))
-            .size(theme::FONT_MD)
-            .style(style::primary_text),
-    )
-    .padding(Padding {
-        top: 10.0,
-        right: 10.0,
-        bottom: 6.0,
-        left: 10.0,
-    });
-
-    let commit_count = count;
     let multi_commits = screen.multi_commits;
     let merged_diff = screen.merged_diff;
     let active_diff_file_path = screen.active_diff_file_path;
 
     let multi_commit_row_height: f32 = 42.0;
-    let commit_list_natural_height = commit_count as f32 * multi_commit_row_height;
+    let commit_list_natural_height = count as f32 * multi_commit_row_height;
 
     let commit_and_file_sections = responsive(move |size| {
         let max_commit_height = size.height / 3.0;
         let commit_height = commit_list_natural_height.min(max_commit_height);
         let remaining_height = (size.height - commit_height).max(0.0);
 
-        let hide_meta = size.width < 400.0;
-        // Row overhead: outer container padding (10 left + 20 right, incl. scrollbar gap)
-        //   + row padding (4 + 4) + spacing between 4 children (8 * 3)
-        //   + avatar (24) + fixed hash column estimate (60).
-        let summary_avail = (size.width - 5.0 - 8.0 - 24.0 - 24.0 - 60.0 - 5.0).max(50.0);
-        let commit_rows: Vec<Element<Message>> = multi_commits
-            .iter()
-            .map(|commit| multi_commit_row(commit, hide_meta, summary_avail))
-            .collect();
+        let commit_list = scrollable_commit_rows(
+            &multi_commits,
+            size.width,
+            Length::Fixed(commit_height),
+        );
 
-        let cl = scrollable(
-            container(column(commit_rows).spacing(0).width(Length::Fill))
-                .width(Length::Fill)
-                .padding(Padding {
-                    top: 0.0,
-                    right: 10.0,
-                    bottom: 0.0,
-                    left: 0.0,
-                }),
-        )
-        .height(Length::Fixed(commit_height))
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(5).scroller_width(5),
-        ))
-        .style(scrollbar_style);
-
-        let cl_container = container(cl)
+        let cl_container = container(commit_list)
             .width(Length::Fill)
             .padding(Padding::from([0, 10]));
 
-        let (stats_elem, files_elem): (Element<Message>, Element<Message>) = if let Some(merged) =
-            merged_diff
-        {
-            let stats = row![
-                assets::sidebar_icon(assets::PENCIL, theme::TEXT_SECONDARY),
-                text(format!("{} modified", merged.modified_count))
-                    .size(theme::FONT_SM)
-                    .style(style::secondary_text),
-                text(format!("  + {} added", merged.added_count))
-                    .size(theme::FONT_SM)
-                    .style(|_: &Theme| text::Style {
-                        color: Some(theme::ACCENT_GREEN),
-                    }),
-                horizontal_space(),
-            ]
-            .padding(Padding::from([6, 10]))
-            .spacing(4)
-            .align_y(iced::Alignment::Center);
-
-            let file_rows: Vec<Element<Message>> = if merged.files.is_empty() {
-                vec![container(
-                    text("No file changes")
-                        .size(theme::FONT_SM)
-                        .style(style::dim_text),
-                )
-                .padding(Padding::from([6, 10]))
-                .into()]
-            } else {
-                merged
-                    .files
-                    .iter()
-                    .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width))
-                    .collect()
-            };
-
-            let files = scrollable(column(file_rows).spacing(0).width(Length::Fill))
-                .height(Length::Fill)
-                .direction(scrollable::Direction::Vertical(
-                    scrollable::Scrollbar::new().width(5).scroller_width(5),
-                ))
-                .style(scrollbar_style);
-
-            (stats.into(), files.into())
-        } else {
-            let loading = container(
-                text("Loading merged diff…")
-                    .size(theme::FONT_SM)
-                    .style(style::dim_text),
-            )
-            .padding(Padding::from([6, 10]))
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-            (
-                container(horizontal_space())
-                    .height(Length::Fixed(0.0))
-                    .into(),
-                loading.into(),
-            )
-        };
+        let (stats_elem, files_elem) =
+            merged_stats_and_files(merged_diff, active_diff_file_path, width);
 
         column![
             cl_container,
@@ -165,9 +70,9 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
     });
 
     let detail_col = column![
-        count_bar,
+        count_bar(count),
         h_divider(),
-        heading,
+        heading(count),
         h_divider(),
         commit_and_file_sections,
     ]
@@ -179,6 +84,175 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
         .height(Length::Fill)
         .style(style::panel_container)
         .into()
+}
+
+fn multi_commit_detail_panel_horizontal<'a>(
+    screen: DetailViewModel<'a>,
+) -> Element<'a, Message> {
+    let width = screen.width;
+    let count = screen.multi_commits.len();
+    let multi_commits = screen.multi_commits;
+    let merged_diff = screen.merged_diff;
+    let active_diff_file_path = screen.active_diff_file_path;
+
+    let commit_list = responsive(move |size| {
+        scrollable_commit_rows(&multi_commits, size.width, Length::Fill)
+    });
+
+    let commit_list_container = container(commit_list)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding::from([0, 10]));
+
+    let left_col = column![
+        count_bar(count),
+        h_divider(),
+        heading(count),
+        h_divider(),
+        commit_list_container
+    ]
+    .spacing(0)
+    .height(Length::Fill)
+    .width(Length::FillPortion(3));
+
+    let (stats_elem, files_elem) =
+        merged_stats_and_files(merged_diff, active_diff_file_path, width);
+
+    let right_col = column![stats_elem, h_divider(), files_elem]
+        .spacing(0)
+        .height(Length::Fill)
+        .width(Length::FillPortion(2));
+
+    container(row![left_col, v_divider(), right_col].spacing(0))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(style::panel_container)
+        .into()
+}
+
+fn count_bar<'a>(count: usize) -> Element<'a, Message> {
+    container(
+        text(format!("{} commits selected", count))
+            .size(theme::FONT_SM)
+            .style(style::secondary_text),
+    )
+    .padding(Padding::from([6, 10]))
+    .width(Length::Fill)
+    .align_x(iced::alignment::Horizontal::Center)
+    .into()
+}
+
+fn heading<'a>(count: usize) -> Element<'a, Message> {
+    container(
+        text(format!("Viewing merged diff of {} commits", count))
+            .size(theme::FONT_MD)
+            .style(style::primary_text),
+    )
+    .padding(Padding {
+        top: 10.0,
+        right: 10.0,
+        bottom: 6.0,
+        left: 10.0,
+    })
+    .into()
+}
+
+fn scrollable_commit_rows<'a>(
+    multi_commits: &[&'a Commit],
+    available_width: f32,
+    height: Length,
+) -> Element<'a, Message> {
+    let hide_meta = available_width < 400.0;
+    // Row overhead: outer container padding (10 left + 20 right, incl. scrollbar gap)
+    //   + row padding (4 + 4) + spacing between 4 children (8 * 3)
+    //   + avatar (24) + fixed hash column estimate (60).
+    let summary_avail = (available_width - 5.0 - 8.0 - 24.0 - 24.0 - 60.0 - 5.0).max(50.0);
+    let commit_rows: Vec<Element<Message>> = multi_commits
+        .iter()
+        .map(|commit| multi_commit_row(commit, hide_meta, summary_avail))
+        .collect();
+
+    scrollable(
+        container(column(commit_rows).spacing(0).width(Length::Fill))
+            .width(Length::Fill)
+            .padding(Padding {
+                top: 0.0,
+                right: 10.0,
+                bottom: 0.0,
+                left: 0.0,
+            }),
+    )
+    .height(height)
+    .direction(scrollable::Direction::Vertical(
+        scrollable::Scrollbar::new().width(5).scroller_width(5),
+    ))
+    .style(scrollbar_style)
+    .into()
+}
+
+fn merged_stats_and_files<'a>(
+    merged_diff: Option<&'a MergedCommitDiffResult>,
+    active_diff_file_path: Option<&'a str>,
+    width: f32,
+) -> (Element<'a, Message>, Element<'a, Message>) {
+    let Some(merged) = merged_diff else {
+        let loading = container(
+            text("Loading merged diff…")
+                .size(theme::FONT_SM)
+                .style(style::dim_text),
+        )
+        .padding(Padding::from([6, 10]))
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+        return (
+            container(horizontal_space())
+                .height(Length::Fixed(0.0))
+                .into(),
+            loading.into(),
+        );
+    };
+
+    let stats = row![
+        assets::sidebar_icon(assets::PENCIL, theme::TEXT_SECONDARY),
+        text(format!("{} modified", merged.modified_count))
+            .size(theme::FONT_SM)
+            .style(style::secondary_text),
+        text(format!("  + {} added", merged.added_count))
+            .size(theme::FONT_SM)
+            .style(|_: &Theme| text::Style {
+                color: Some(theme::ACCENT_GREEN),
+            }),
+        horizontal_space(),
+    ]
+    .padding(Padding::from([6, 10]))
+    .spacing(4)
+    .align_y(iced::Alignment::Center);
+
+    let file_rows: Vec<Element<Message>> = if merged.files.is_empty() {
+        vec![container(
+            text("No file changes")
+                .size(theme::FONT_SM)
+                .style(style::dim_text),
+        )
+        .padding(Padding::from([6, 10]))
+        .into()]
+    } else {
+        merged
+            .files
+            .iter()
+            .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width))
+            .collect()
+    };
+
+    let files = scrollable(column(file_rows).spacing(0).width(Length::Fill))
+        .height(Length::Fill)
+        .direction(scrollable::Direction::Vertical(
+            scrollable::Scrollbar::new().width(5).scroller_width(5),
+        ))
+        .style(scrollbar_style);
+
+    (stats.into(), files.into())
 }
 
 fn truncate_summary(message: &str, available_width: f32) -> String {

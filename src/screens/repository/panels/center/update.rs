@@ -555,7 +555,7 @@ pub(in crate::screens::repository) fn update(
             ctx.input.last_pointer_position = Some(position);
             ctx.data.branch_popout.pointer_moved(position);
             let resize = &mut ctx.data.resize;
-            if !(resize.sidebar_resizing || resize.detail_resizing) {
+            if !resize.any_resizing() {
                 return Task::none();
             }
             if resize.sidebar_resizing {
@@ -564,6 +564,9 @@ pub(in crate::screens::repository) fn update(
             if resize.detail_resizing {
                 resize.handle_detail(position.x.floor());
             }
+            if resize.detail_height_resizing {
+                resize.handle_detail_height(position.y.floor());
+            }
             Task::none()
         }
         CenterAction::PointerLeftWindow => {
@@ -571,14 +574,25 @@ pub(in crate::screens::repository) fn update(
             ctx.data.resize.stop_all();
             Task::none()
         }
-        CenterAction::DetailResizeStarted => {
+        CenterAction::DetailResizeStarted { effective_width } => {
             ctx.data.resize.stop_sidebar();
             let pointer_x = ctx
                 .input
                 .last_pointer_position
                 .map(|p| p.x.floor())
                 .unwrap_or(0.0);
-            ctx.data.resize.start_detail(pointer_x);
+            ctx.data.resize.start_detail(pointer_x, effective_width);
+            Task::none()
+        }
+        CenterAction::DetailHeightResizeStarted => {
+            ctx.data.resize.stop_sidebar();
+            ctx.data.resize.stop_detail();
+            let pointer_y = ctx
+                .input
+                .last_pointer_position
+                .map(|p| p.y.floor())
+                .unwrap_or(0.0);
+            ctx.data.resize.start_detail_height(pointer_y);
             Task::none()
         }
         CenterAction::ResizeReleased => {

@@ -1,8 +1,10 @@
-//! Screen-level view composition. Builds the sidebar/center/detail row, the
-//! toolbar branch-action wiring, and the overlay layers stack.
+//! Screen-level view composition. Builds the sidebar/center/detail row
+//! (side-by-side on wide windows) or the stacked column layout (narrow
+//! windows), the toolbar branch-action wiring, and the overlay layers stack.
 
 use iced::{
-    widget::{container, row, MouseArea},
+    mouse,
+    widget::{column, container, mouse_area, responsive, row, MouseArea},
     Element, Length, Padding, Theme,
 };
 
@@ -16,14 +18,60 @@ use crate::{
 use super::panel_messages::CenterAction;
 use super::panels::center::view as center_view;
 use super::panels::detail::view as detail_view;
+use super::panels::detail::DetailOrientation;
 use super::panels::{self};
+use super::state::EffectiveLayout;
 use super::{RepositoryMessage, RepositoryScreen};
 
 pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element<'_, Message> {
+    if screen.panels.diff.is_conflict_fullscreen() {
+        let center_graph = screen.panels.center.view_with(&panels::center::CenterViewCtx {
+            data: &screen.data,
+            selection: &screen.data.selection,
+            dirty_commit_message: &screen.panels.detail.dirty_commit_message,
+            commit_search: screen.data.commit_search.as_ref(),
+            branch_popout: &screen.data.branch_popout,
+        });
+        let center = screen.panels.diff.view_or_passthrough(center_graph);
+        return container(center)
+            .style(|_: &Theme| container::Style {
+                background: Some(theme::BG_BASE.into()),
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into();
+    }
+
+    let body = responsive(move |size| build_body(screen, size));
+
+    container(body)
+        .style(|_: &Theme| container::Style {
+            background: Some(theme::BG_BASE.into()),
+            ..Default::default()
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a, Message> {
+    let layout = screen.data.resize.effective_layout(size.width);
+    let (orientation, sidebar_width, detail_width) = match layout {
+        EffectiveLayout::SideBySide { sidebar, detail } => {
+            (DetailOrientation::Vertical, sidebar, detail)
+        }
+        EffectiveLayout::Stacked { sidebar } => (
+            DetailOrientation::Horizontal,
+            sidebar,
+            screen.data.resize.detail_width,
+        ),
+    };
+
     let sidebar = screen.panels.sidebar.view(&panels::sidebar::SidebarViewCtx {
         sections: screen.data.snapshot.sidebar_sections(),
         commit_count: screen.data.snapshot.commits().len(),
-        width: screen.data.resize.sidebar_width,
+        width: sidebar_width,
         is_resizing: screen.data.resize.sidebar_resizing,
         active_worktree_path: screen.fleet.active_path(),
     });
@@ -36,17 +84,6 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
     });
     let center = screen.panels.diff.view_or_passthrough(center_graph);
 
-    if screen.panels.diff.is_conflict_fullscreen() {
-        return container(center)
-            .style(|_: &Theme| container::Style {
-                background: Some(theme::BG_BASE.into()),
-                ..Default::default()
-            })
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into();
-    }
-
     let detail = screen
         .panels
         .detail
@@ -55,17 +92,46 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
             selection: &screen.data.selection,
             active_diff_file_path: screen.panels.diff.active_diff_file_path(),
             merged_diff: screen.merged_diff.result(),
+            orientation,
+            width: detail_width,
         });
 
-    let body = row![sidebar, center, detail].height(Length::Fill);
+    match orientation {
+        DetailOrientation::Vertical => row![sidebar, center, detail].height(Length::Fill).into(),
+        DetailOrientation::Horizontal => {
+            let splitter = detail_height_splitter(screen.data.resize.detail_height_resizing);
+            let detail_pane = container(detail)
+                .width(Length::Fill)
+                .height(Length::Fixed(screen.data.resize.detail_height));
+            column![
+                row![sidebar, center].height(Length::Fill).width(Length::Fill),
+                splitter,
+                detail_pane,
+            ]
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .into()
+        }
+    }
+}
 
-    container(body)
-        .style(|_: &Theme| container::Style {
-            background: Some(theme::BG_BASE.into()),
-            ..Default::default()
-        })
+fn detail_height_splitter(is_resizing: bool) -> Element<'static, Message> {
+    let handle = container(horizontal_space())
         .width(Length::Fill)
-        .height(Length::Fill)
+        .height(Length::Fixed(5.0))
+        .style(move |_: &Theme| container::Style {
+            background: if is_resizing {
+                Some(theme::ACCENT_BLUE.into())
+            } else {
+                Some(theme::BORDER.into())
+            },
+            ..Default::default()
+        });
+    mouse_area(handle)
+        .on_press(Message::repo(RepositoryMessage::Center(
+            CenterAction::DetailHeightResizeStarted,
+        )))
+        .interaction(mouse::Interaction::ResizingVertically)
         .into()
 }
 

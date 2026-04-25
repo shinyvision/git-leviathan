@@ -210,6 +210,9 @@ pub const TURN_RADIUS: f32 = 15.0;
 pub const SIDEBAR_WIDTH: u16 = 240;
 pub const BRANCH_COL_WIDTH: u16 = 185;
 pub const DETAIL_PANEL_WIDTH: u16 = 510;
+pub const DETAIL_PANEL_HEIGHT: u16 = 320;
+
+pub const MIN_CENTER_WIDTH: f32 = 460.0;
 
 pub const TAB_HEIGHT: u16 = 34;
 pub const TOOLBAR_HEIGHT: u16 = 50;

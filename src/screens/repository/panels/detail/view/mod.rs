@@ -31,7 +31,7 @@ use crate::{
     utils::{initials, split_path},
     widgets::{
         primitives::hoverable::{hoverable_swap, HoverStatus, Hoverable},
-        shared::{h_divider, horizontal_space, scrollbar_style},
+        shared::{h_divider, horizontal_space, scrollbar_style, v_divider},
     },
 };
 
@@ -40,8 +40,11 @@ use super::super::super::{
     FileView, RepositoryMessage,
 };
 use super::state::DetailViewModel;
+use super::DetailOrientation;
 
-use dirty_files_view::{dirty_detail_panel_content, DirtyFileSection};
+use dirty_files_view::{
+    dirty_detail_panel_content, dirty_detail_panel_content_horizontal, DirtyFileSection,
+};
 
 const DIRTY_FILE_ROW_HEIGHT: f32 = theme::ROW_H;
 
@@ -62,17 +65,28 @@ pub fn dirty_file_context_menu(
 }
 
 pub fn detail_panel_view(screen: DetailViewModel<'_>) -> Element<'_, Message> {
-    let resize_handle = resize_handle_view(screen.is_resizing);
-    let panel_content = detail_panel_content(screen);
-
-    MouseArea::new(row![resize_handle, panel_content])
-        .on_press(Message::repo(RepositoryMessage::Center(
-            CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Detail),
-        )))
-        .into()
+    match screen.orientation {
+        DetailOrientation::Vertical => {
+            let resize_handle = resize_handle_view(screen.is_resizing, screen.width);
+            let panel_content = detail_panel_content(screen);
+            MouseArea::new(row![resize_handle, panel_content])
+                .on_press(Message::repo(RepositoryMessage::Center(
+                    CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Detail),
+                )))
+                .into()
+        }
+        DetailOrientation::Horizontal => {
+            let panel_content = detail_panel_content(screen);
+            MouseArea::new(panel_content)
+                .on_press(Message::repo(RepositoryMessage::Center(
+                    CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Detail),
+                )))
+                .into()
+        }
+    }
 }
 
-fn resize_handle_view(is_resizing: bool) -> Element<'static, Message> {
+fn resize_handle_view(is_resizing: bool, effective_width: f32) -> Element<'static, Message> {
     let handle = container(horizontal_space())
         .width(Length::Fixed(5.0))
         .height(Length::Fill)
@@ -87,33 +101,39 @@ fn resize_handle_view(is_resizing: bool) -> Element<'static, Message> {
 
     mouse_area(handle)
         .on_press(Message::repo(RepositoryMessage::Center(
-            CenterAction::DetailResizeStarted,
+            CenterAction::DetailResizeStarted { effective_width },
         )))
         .interaction(iced::mouse::Interaction::ResizingHorizontally)
         .into()
 }
 
 fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
+    let orientation = screen.orientation;
     let width = screen.width;
     if !screen.multi_commits.is_empty() {
         return multi_commit_view::multi_commit_detail_panel_content(screen);
     }
     let Some(commit) = screen.commit else {
-        return container(
+        let base = container(
             text("Loading repository…")
                 .size(theme::FONT_LG)
                 .style(style::dim_text),
         )
-        .width(Length::Fixed(width))
         .height(Length::Fill)
         .align_x(iced::alignment::Horizontal::Center)
         .align_y(iced::alignment::Vertical::Center)
-        .style(style::panel_container)
-        .into();
+        .style(style::panel_container);
+        return match orientation {
+            DetailOrientation::Vertical => base.width(Length::Fixed(width)).into(),
+            DetailOrientation::Horizontal => base.width(Length::Fill).into(),
+        };
     };
 
     if commit.kind == CommitKind::Dirty {
-        return dirty_detail_panel_content(screen, commit);
+        return match orientation {
+            DetailOrientation::Vertical => dirty_detail_panel_content(screen, commit),
+            DetailOrientation::Horizontal => dirty_detail_panel_content_horizontal(screen, commit),
+        };
     }
 
     let hash_label = if commit.kind == CommitKind::Stash {
@@ -358,25 +378,46 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
         ))
         .style(scrollbar_style);
 
-    let detail_col = column![
-        hash_bar,
-        h_divider(),
-        commit_msg,
-        author_row,
-        h_divider(),
-        stats_row,
-        view_toggle_row,
-        h_divider(),
-        file_list,
-    ]
-    .spacing(0)
-    .height(Length::Fill);
+    match orientation {
+        DetailOrientation::Vertical => {
+            let detail_col = column![
+                hash_bar,
+                h_divider(),
+                commit_msg,
+                author_row,
+                h_divider(),
+                stats_row,
+                view_toggle_row,
+                h_divider(),
+                file_list,
+            ]
+            .spacing(0)
+            .height(Length::Fill);
 
-    container(detail_col)
-        .width(Length::Fixed(width))
-        .height(Length::Fill)
-        .style(style::panel_container)
-        .into()
+            container(detail_col)
+                .width(Length::Fixed(width))
+                .height(Length::Fill)
+                .style(style::panel_container)
+                .into()
+        }
+        DetailOrientation::Horizontal => {
+            let left_col = column![hash_bar, h_divider(), commit_msg, author_row,]
+                .spacing(0)
+                .height(Length::Fill)
+                .width(Length::FillPortion(3));
+
+            let right_col = column![stats_row, view_toggle_row, h_divider(), file_list,]
+                .spacing(0)
+                .height(Length::Fill)
+                .width(Length::FillPortion(2));
+
+            container(row![left_col, v_divider(), right_col].spacing(0))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(style::panel_container)
+                .into()
+        }
+    }
 }
 
 fn parent_hash_column<'a>(commit: &'a Commit) -> Element<'a, Message> {
