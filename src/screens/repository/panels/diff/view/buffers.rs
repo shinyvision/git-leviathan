@@ -246,6 +246,7 @@ fn conflict_scrolled_canvas(
             selection,
             inner_viewport,
             CONFLICT_SCROLLBAR_WIDTH,
+            scroll_offset_y,
         );
 
         let scroll_id = match variant {

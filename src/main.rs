@@ -20,6 +20,7 @@ use app::App;
 
 fn main() -> iced::Result {
     configure_wgpu_backend();
+    configure_libgit2_caches();
 
     iced::application(App::new, App::update, App::view)
         .title(|_: &App| "Git Leviathan".to_string())
@@ -60,3 +61,10 @@ fn configure_wgpu_backend() {
 
 #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 fn configure_wgpu_backend() {}
+
+fn configure_libgit2_caches() {
+    unsafe {
+        let _ = git2::opts::set_mwindow_size(8 * 1024 * 1024);
+        let _ = git2::opts::set_mwindow_mapped_limit(64 * 1024 * 1024);
+    }
+}

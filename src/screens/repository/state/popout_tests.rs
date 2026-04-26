@@ -33,8 +33,6 @@ fn sample_commit(hash: &str) -> Commit {
         message: "message".to_string(),
         author: "author".to_string(),
         date: "today".to_string(),
-        parent_hash: "parent".to_string(),
-        first_parent_hash: None,
         parent_hashes: vec![],
         is_merge_in_progress: false,
         conflicted_files: vec![],

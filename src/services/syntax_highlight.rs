@@ -1,7 +1,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use iced::Color;
 use syntect::easy::HighlightLines;
@@ -9,8 +9,8 @@ use syntect::highlighting::{FontStyle, ThemeSet};
 use syntect::parsing::syntax_definition::{Pattern, SyntaxDefinition};
 use syntect::parsing::{Scope, SyntaxSet, SyntaxSetBuilder};
 
-static SYNTAX_SERVICE: LazyLock<SyntaxHighlightService> =
-    LazyLock::new(SyntaxHighlightService::new);
+static SYNTAX_SERVICE: LazyLock<RwLock<Option<Arc<SyntaxHighlightService>>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 /// Skip real highlighting above this size; fall back to plain spans.
 /// Syntect's Oniguruma regexes blow up on very large or pathological files.
@@ -131,7 +131,7 @@ impl SyntaxHighlightService {
 
     pub fn highlight(&self, code: &str, file_extension: &str) -> HighlightedFile {
         if code.len() > MAX_HIGHLIGHT_BYTES {
-            return plain_highlighted_file(code);
+            return empty_highlighted_file();
         }
 
         let syntax = self.get_syntax_for_code(code, file_extension);
@@ -142,7 +142,7 @@ impl SyntaxHighlightService {
 
         for (line_count, line) in code.lines().enumerate() {
             if line_count >= MAX_HIGHLIGHT_LINES {
-                return plain_highlighted_file(code);
+                return empty_highlighted_file();
             }
 
             let line_start = spans.len() as u32;
@@ -281,33 +281,38 @@ impl HighlightedFile {
     }
 }
 
-fn plain_highlighted_file(code: &str) -> HighlightedFile {
-    let mut spans = Vec::new();
-    let mut line_ranges = Vec::new();
-    for line in code.lines() {
-        let start = spans.len() as u32;
-        spans.push(SyntaxHighlightedSpan {
-            text: line.to_string(),
-            style: SyntaxStyle::default(),
-        });
-        let end = spans.len() as u32;
-        line_ranges.push((start, end));
-        spans.push(SyntaxHighlightedSpan {
-            text: "\n".to_string(),
-            style: SyntaxStyle::default(),
-        });
+fn empty_highlighted_file() -> HighlightedFile {
+    HighlightedFile {
+        spans: Vec::new(),
+        line_ranges: Vec::new(),
     }
-    if spans.is_empty() {
-        spans.push(SyntaxHighlightedSpan {
-            text: code.to_string(),
-            style: SyntaxStyle::default(),
-        });
-    }
-    HighlightedFile { spans, line_ranges }
 }
 
-pub fn get_syntax_service() -> &'static SyntaxHighlightService {
-    &SYNTAX_SERVICE
+pub fn get_syntax_service() -> Arc<SyntaxHighlightService> {
+    if let Ok(guard) = SYNTAX_SERVICE.read() {
+        if let Some(svc) = guard.as_ref() {
+            return Arc::clone(svc);
+        }
+    }
+    let mut guard = SYNTAX_SERVICE
+        .write()
+        .expect("syntax service lock poisoned");
+    if let Some(svc) = guard.as_ref() {
+        return Arc::clone(svc);
+    }
+    let svc = Arc::new(SyntaxHighlightService::new());
+    *guard = Some(Arc::clone(&svc));
+    svc
+}
+
+pub fn release_syntax_caches() {
+    if let Ok(mut guard) = SYNTAX_SERVICE.write() {
+        *guard = None;
+    }
+    if let Ok(mut cache) = HIGHLIGHT_CACHE.lock() {
+        cache.map.clear();
+        cache.order.clear();
+    }
 }
 
 /// Highlight a whole file, reusing a cached result when the `(content_hash, extension)`
@@ -418,12 +423,11 @@ mod tests {
     }
 
     #[test]
-    fn oversized_file_falls_back_to_plain_spans() {
+    fn oversized_file_returns_empty_highlight() {
         let huge = "x".repeat(MAX_HIGHLIGHT_BYTES + 1);
         let file = highlight_file(&huge, "rs");
-        let line = file.line(1);
-        assert_eq!(line.len(), 1);
-        assert!(line[0].style.color.is_none());
+        assert!(file.line(1).is_empty());
+        assert_eq!(file.line_count(), 0);
     }
 
     #[test]

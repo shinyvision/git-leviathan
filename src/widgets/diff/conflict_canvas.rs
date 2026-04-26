@@ -338,6 +338,7 @@ pub fn conflict_content_canvas(
     selection: Option<TextSelection>,
     viewport: iced::Size,
     bottom_pad: f32,
+    scroll_y: f32,
 ) -> Element<'static, Message> {
     text::content_canvas(
         canvas_id,
@@ -345,6 +346,7 @@ pub fn conflict_content_canvas(
         selection,
         viewport,
         bottom_pad,
+        scroll_y,
         diff_panel_callbacks(),
     )
 }

@@ -429,7 +429,12 @@ fn parent_hash_column<'a>(commit: &'a Commit) -> Element<'a, Message> {
     let label = text(label_text).size(theme::FONT_XS).style(style::dim_text);
 
     let hashes_row: Element<'a, Message> = if commit.parent_hashes.is_empty() {
-        text(&commit.parent_hash)
+        let fallback = if commit.kind == crate::core::CommitKind::Dirty {
+            "HEAD"
+        } else {
+            ""
+        };
+        text(fallback)
             .size(theme::FONT_SM)
             .style(|_: &Theme| text::Style {
                 color: Some(theme::ACCENT_BLUE),

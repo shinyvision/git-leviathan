@@ -141,6 +141,8 @@ impl RepositoryScreen {
     pub fn hibernate(&mut self) {
         self.data.hibernate();
         self.merged_diff.reset();
+        crate::services::release_syntax_caches();
+        crate::services::release_text_caches();
     }
 
     pub fn is_hibernated(&self) -> bool {

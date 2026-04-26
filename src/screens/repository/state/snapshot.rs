@@ -222,7 +222,7 @@ impl RepositorySnapshot {
                 return Some(count);
             }
             let commit = self.commits.iter().find(|c| c.hash == current)?;
-            let parent = commit.first_parent_hash.clone()?;
+            let parent = commit.parent_hashes.first().cloned()?;
             current = parent;
             count += 1;
             if count > self.commits.len() + 1 {

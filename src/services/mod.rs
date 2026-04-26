@@ -31,7 +31,10 @@ pub use snapshot::{
     CommitSnapshot, DirtySnapshot, RefsSnapshot, RepoRef, RepoRefKind, RepoSnapshot, StashSnapshot,
 };
 pub use syntax_highlight::{
-    file_extension_from_path, highlight_file, HighlightedFile, SyntaxHighlightedSpan, SyntaxStyle,
+    file_extension_from_path, highlight_file, release_syntax_caches, HighlightedFile,
+    SyntaxHighlightedSpan, SyntaxStyle,
 };
-pub use text_measurement::{cached_measure_width, cached_truncate_name, FontFamily};
+pub use text_measurement::{
+    cached_measure_width, cached_truncate_name, release_text_caches, FontFamily,
+};
 pub use crate::core::WorktreeInfo;

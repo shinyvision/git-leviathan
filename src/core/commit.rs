@@ -31,9 +31,6 @@ pub struct Commit {
     pub message: String,
     pub author: String,
     pub date: String,
-    pub parent_hash: String,
-    /// Full hash of the first parent (used for first-parent traversal).
-    pub first_parent_hash: Option<String>,
     /// Full hashes of all parents, in order. Empty for root/dirty commits.
     pub parent_hashes: Vec<String>,
     pub is_merge_in_progress: bool,

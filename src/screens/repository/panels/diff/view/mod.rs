@@ -152,6 +152,7 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
                 selection,
                 inner_viewport,
                 DIFF_SCROLLBAR_WIDTH,
+                scroll_y,
             );
             let scroller = scrollable(content)
                 .id(diff_content_scroll_id())
