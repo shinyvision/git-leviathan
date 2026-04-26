@@ -410,7 +410,7 @@ pub fn find_text_matches(data: &TextCanvasData, needle: &str) -> Vec<TextMatch> 
     let n_len = needle_chars.len();
     let mut out = Vec::new();
 
-    for (row_idx, row) in data.rows.iter().enumerate() {
+    for (row_idx, row) in data.rows().iter().enumerate() {
         if !row.selectable() {
             continue;
         }

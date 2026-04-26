@@ -62,12 +62,12 @@ pub trait CanvasRow: std::fmt::Debug + Send + Sync {
 /// share via `Arc`.
 #[derive(Debug)]
 pub struct TextCanvasData {
-    pub rows: Vec<Arc<dyn CanvasRow>>,
-    pub row_offsets: Vec<f32>,
-    pub total_height: f32,
-    pub content_width: f32,
-    pub char_width: f32,
-    pub gutter_width: f32,
+    pub(in crate::widgets::text) rows: Vec<Arc<dyn CanvasRow>>,
+    pub(in crate::widgets::text) row_offsets: Vec<f32>,
+    pub(in crate::widgets::text) total_height: f32,
+    pub(in crate::widgets::text) content_width: f32,
+    pub(in crate::widgets::text) char_width: f32,
+    pub(in crate::widgets::text) gutter_width: f32,
 }
 
 impl TextCanvasData {
@@ -91,6 +91,40 @@ impl TextCanvasData {
             content_width,
             char_width,
             gutter_width,
+        }
+    }
+
+    pub fn first_row_at_or_below(&self, scroll_y: f32) -> usize {
+        self.row_offsets
+            .iter()
+            .position(|&y| y >= scroll_y)
+            .unwrap_or(0)
+    }
+
+    pub fn row_top_y(&self, row: usize) -> f32 {
+        self.row_offsets.get(row).copied().unwrap_or(0.0)
+    }
+
+    pub fn content_width(&self) -> f32 {
+        self.content_width
+    }
+
+    pub fn gutter_width(&self) -> f32 {
+        self.gutter_width
+    }
+
+    pub fn rows(&self) -> &[Arc<dyn CanvasRow>] {
+        &self.rows
+    }
+
+    pub fn with_content_width(&self, content_width: f32) -> Self {
+        Self {
+            rows: self.rows.clone(),
+            row_offsets: self.row_offsets.clone(),
+            total_height: self.total_height,
+            content_width,
+            char_width: self.char_width,
+            gutter_width: self.gutter_width,
         }
     }
 }

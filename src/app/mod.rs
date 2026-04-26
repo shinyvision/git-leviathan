@@ -163,7 +163,7 @@ impl App {
     }
 
     pub fn theme(&self) -> iced::Theme {
-        crate::theme::iced_theme()
+        crate::style::iced_theme()
     }
 
     pub fn subscription(&self) -> Subscription<Message> {

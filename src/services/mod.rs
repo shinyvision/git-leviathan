@@ -3,6 +3,7 @@ pub mod gateway;
 pub mod git;
 pub mod git_detect;
 pub mod git_error;
+pub mod migrations;
 pub mod presenter;
 pub mod settings;
 pub mod snapshot;
@@ -13,7 +14,8 @@ pub mod text_measurement;
 
 pub use gateway::{GitRepositoryGateway, PushGatewayOutcome, SharedRepositoryGateway};
 pub use git::working_tree_diff::{
-    DiffLineType, DiffSegment, SegmentKind, WorkingTreeDiffLine, WorkingTreeDiffResult,
+    DiffLineType, DiffSegment, DirtyDiffSignature, SegmentKind, WorkingTreeDiffLine,
+    WorkingTreeDiffResult,
 };
 pub use git::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,
@@ -29,7 +31,10 @@ pub use snapshot::{
     CommitSnapshot, DirtySnapshot, RefsSnapshot, RepoRef, RepoRefKind, RepoSnapshot, StashSnapshot,
 };
 pub use syntax_highlight::{
-    file_extension_from_path, highlight_file, HighlightedFile, SyntaxHighlightedSpan, SyntaxStyle,
+    file_extension_from_path, highlight_file, release_syntax_caches, HighlightedFile,
+    SyntaxHighlightedSpan, SyntaxStyle,
 };
-pub use text_measurement::{cached_measure_width, cached_truncate_name, FontFamily};
+pub use text_measurement::{
+    cached_measure_width, cached_truncate_name, release_text_caches, FontFamily,
+};
 pub use crate::core::WorktreeInfo;

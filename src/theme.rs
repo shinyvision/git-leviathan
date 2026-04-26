@@ -203,6 +203,7 @@ pub const LANE_COLORS: [Color; 8] = [
 ];
 
 pub const LANE_WIDTH: f32 = 26.0;
+pub const GRAPH_COL_GUTTER: f32 = 20.0;
 pub const ROW_H: f32 = 34.0;
 pub const AVATAR_RADIUS: f32 = 10.0;
 pub const TURN_RADIUS: f32 = 15.0;
@@ -210,6 +211,9 @@ pub const TURN_RADIUS: f32 = 15.0;
 pub const SIDEBAR_WIDTH: u16 = 240;
 pub const BRANCH_COL_WIDTH: u16 = 185;
 pub const DETAIL_PANEL_WIDTH: u16 = 510;
+pub const DETAIL_PANEL_HEIGHT: u16 = 320;
+
+pub const MIN_CENTER_WIDTH: f32 = 460.0;
 
 pub const TAB_HEIGHT: u16 = 34;
 pub const TOOLBAR_HEIGHT: u16 = 50;
@@ -234,22 +238,3 @@ pub const FONT_LG: f32 = 14.0;
 pub const MONO: iced::Font = iced::Font::with_name("JetBrains Mono");
 
 pub const FONT_DIFF: f32 = 13.0;
-
-pub fn iced_theme() -> iced::Theme {
-    iced::Theme::custom(
-        "leviathan".to_string(),
-        iced::theme::Palette {
-            background: BG_BASE,
-            text: TEXT_PRIMARY,
-            primary: ACCENT_BLUE,
-            success: ACCENT_GREEN,
-            danger: Color {
-                r: 0.858,
-                g: 0.243,
-                b: 0.243,
-                a: 1.0,
-            },
-            warning: ACCENT_ORANGE,
-        },
-    )
-}

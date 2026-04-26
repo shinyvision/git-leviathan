@@ -144,7 +144,7 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
         let gutter_data = data.clone();
         let body_content = iced::widget::responsive(move |size| {
             let inner_viewport = iced::Size::new(
-                (size.width - diff_canvas::GUTTER_WIDTH).max(0.0),
+                diff_canvas::available_content_width(size.width),
                 size.height,
             );
             let content = diff_content_canvas(
@@ -152,6 +152,7 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
                 selection,
                 inner_viewport,
                 DIFF_SCROLLBAR_WIDTH,
+                scroll_y,
             );
             let scroller = scrollable(content)
                 .id(diff_content_scroll_id())

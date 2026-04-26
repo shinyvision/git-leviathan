@@ -24,11 +24,19 @@ use crate::{
     },
 };
 
-pub const CONTENT_LINE_HEIGHT: f32 = DEFAULT_CONTENT_LINE_HEIGHT;
+const CONTENT_LINE_HEIGHT: f32 = DEFAULT_CONTENT_LINE_HEIGHT;
 pub const HUNK_HEADER_HEIGHT: f32 = 28.0; // content + 8px top spacing
-pub const GUTTER_WIDTH: f32 = 90.0;
+const GUTTER_WIDTH: f32 = 90.0;
 pub const LINE_NUM_WIDTH: f32 = 40.0;
 pub const SIGN_WIDTH: f32 = 16.0;
+
+pub fn available_content_width(total_width: f32) -> f32 {
+    (total_width - GUTTER_WIDTH).max(0.0)
+}
+
+pub fn search_scroll_breadcrumb_offset() -> f32 {
+    3.0 * CONTENT_LINE_HEIGHT
+}
 
 pub const CANVAS_ID: CanvasId = CanvasId(1);
 
@@ -342,6 +350,7 @@ pub fn diff_content_canvas(
     selection: Option<TextSelection>,
     viewport: iced::Size,
     bottom_pad: f32,
+    scroll_y: f32,
 ) -> Element<'static, Message> {
     text::content_canvas(
         CANVAS_ID,
@@ -349,6 +358,7 @@ pub fn diff_content_canvas(
         selection,
         viewport,
         bottom_pad,
+        scroll_y,
         diff_panel_callbacks(),
     )
 }

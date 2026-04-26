@@ -258,8 +258,6 @@ mod tests {
             message: msg.to_string(),
             author: author.to_string(),
             date: String::new(),
-            parent_hash: String::new(),
-            first_parent_hash: None,
             parent_hashes: vec![],
             is_merge_in_progress: false,
             conflicted_files: vec![],

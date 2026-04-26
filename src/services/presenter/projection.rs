@@ -474,13 +474,6 @@ fn project_commit(snapshot: &CommitSnapshot) -> Commit {
         message: snapshot.message.clone(),
         author: snapshot.author_name.clone(),
         date: format_date(snapshot.authored_at, snapshot.authored_offset_minutes),
-        parent_hash: snapshot
-            .parent_hashes
-            .iter()
-            .map(|hash| short_hash(hash))
-            .collect::<Vec<_>>()
-            .join(", "),
-        first_parent_hash: snapshot.parent_hashes.first().cloned(),
         parent_hashes: snapshot.parent_hashes.clone(),
         is_merge_in_progress: false,
         conflicted_files: vec![],
@@ -497,12 +490,6 @@ fn project_stash_commit(snapshot: &CommitSnapshot, stash_index: usize) -> Commit
         message: stash_display_name(&snapshot.message),
         author: snapshot.author_name.clone(),
         date: format_date(snapshot.authored_at, snapshot.authored_offset_minutes),
-        parent_hash: snapshot
-            .parent_hashes
-            .first()
-            .map(|hash| short_hash(hash))
-            .unwrap_or_default(),
-        first_parent_hash: snapshot.parent_hashes.first().cloned(),
         parent_hashes: snapshot.parent_hashes.clone(),
         is_merge_in_progress: false,
         conflicted_files: vec![],
@@ -542,8 +529,6 @@ fn project_dirty_commit(snapshot: DirtySnapshot) -> (Commit, CommitDiffState) {
         message: "WIP".to_string(),
         author: "Working Tree".to_string(),
         date: "uncommitted changes".to_string(),
-        parent_hash: "HEAD".to_string(),
-        first_parent_hash: None,
         parent_hashes: parent_hashes.clone(),
         is_merge_in_progress,
         conflicted_files,

@@ -137,9 +137,20 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
             theme::BG_PANEL,
         );
 
+        let viewport_h = if self.viewport_h > 0.0 {
+            self.viewport_h
+        } else {
+            bounds.height
+        };
+        let view_top = self.scroll_y;
+        let view_bot = self.scroll_y + viewport_h;
         for (idx, row) in self.data.rows.iter().enumerate() {
-            let y = offs[idx];
-            row.draw_content(frame, y, content_w, char_width);
+            let y_top = offs[idx];
+            let y_bot = offs[idx + 1];
+            if y_bot < view_top || y_top > view_bot {
+                continue;
+            }
+            row.draw_content(frame, y_top, content_w, char_width);
         }
 
         if let Some(sel) = &self.selection {
@@ -160,8 +171,7 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
                     let sx = col_to_pixel(from, char_width);
                     let ex = if idx < end.row {
                         CONTENT_PAD_X
-                            + (char_count as f32 * char_width)
-                                .max((to - from) as f32 * char_width)
+                            + (char_count as f32 * char_width).max((to - from) as f32 * char_width)
                             + char_width * 0.5
                     } else {
                         col_to_pixel(to, char_width)
@@ -330,6 +340,7 @@ pub fn content_canvas<Msg: 'static + Clone>(
     selection: Option<TextSelection>,
     viewport: iced::Size,
     bottom_pad: f32,
+    scroll_y: f32,
     callbacks: CanvasCallbacks<Msg>,
 ) -> Element<'static, Msg> {
     let w = data.content_width.max(viewport.width).max(1.0);
@@ -339,7 +350,7 @@ pub fn content_canvas<Msg: 'static + Clone>(
         selection,
         canvas_id,
         mode: PaintMode::Content,
-        scroll_y: 0.0,
+        scroll_y,
         viewport_w: viewport.width,
         viewport_h: viewport.height,
         callbacks,
@@ -399,4 +410,3 @@ where
         })
         .into()
 }
-

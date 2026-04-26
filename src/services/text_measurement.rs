@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{LazyLock, RwLock};
 
 use iced::advanced::graphics::text::{self as graphics_text, cosmic_text};
@@ -161,10 +161,75 @@ impl Default for TextMeasurementService {
 type WidthKey = (String, u8, u32); // (text, font_family_discriminant, font_size_bits)
 type TruncKey = (String, u32, u8, u32); // (text, max_width_bits, font_family_discriminant, font_size_bits)
 
-static WIDTH_CACHE: LazyLock<RwLock<HashMap<WidthKey, f32>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
-static TRUNC_CACHE: LazyLock<RwLock<HashMap<TruncKey, String>>> =
-    LazyLock::new(|| RwLock::new(HashMap::new()));
+const WIDTH_CACHE_CAPACITY: usize = 4096;
+const TRUNC_CACHE_CAPACITY: usize = 2048;
+
+struct LruCache<K: std::hash::Hash + Eq + Clone, V> {
+    map: HashMap<K, V>,
+    order: VecDeque<K>,
+    capacity: usize,
+}
+
+impl<K: std::hash::Hash + Eq + Clone, V: Clone> LruCache<K, V> {
+    fn new(capacity: usize) -> Self {
+        Self {
+            map: HashMap::new(),
+            order: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn get(&mut self, key: &K) -> Option<V> {
+        let hit = self.map.get(key).cloned();
+        if hit.is_some() {
+            if let Some(pos) = self.order.iter().position(|k| k == key) {
+                let k = self.order.remove(pos).unwrap();
+                self.order.push_back(k);
+            }
+        }
+        hit
+    }
+
+    fn insert(&mut self, key: K, value: V) {
+        if self.map.contains_key(&key) {
+            if let Some(pos) = self.order.iter().position(|k| k == &key) {
+                let k = self.order.remove(pos).unwrap();
+                self.order.push_back(k);
+            }
+            self.map.insert(key, value);
+            return;
+        }
+        while self.order.len() >= self.capacity {
+            if let Some(evict) = self.order.pop_front() {
+                self.map.remove(&evict);
+            } else {
+                break;
+            }
+        }
+        self.order.push_back(key.clone());
+        self.map.insert(key, value);
+    }
+}
+
+static WIDTH_CACHE: LazyLock<RwLock<LruCache<WidthKey, f32>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(WIDTH_CACHE_CAPACITY)));
+static TRUNC_CACHE: LazyLock<RwLock<LruCache<TruncKey, String>>> =
+    LazyLock::new(|| RwLock::new(LruCache::new(TRUNC_CACHE_CAPACITY)));
+
+/// Drop measurement LRUs. iced 0.14 pins cosmic-text to 0.15 with the
+/// `shape-run-cache` feature off, so there is no shape-run cache to trim
+/// on the iced FontSystem; the wgpu glyph atlas still releases on the
+/// next frame once the diff widget tree drops.
+pub fn release_text_caches() {
+    if let Ok(mut cache) = WIDTH_CACHE.write() {
+        cache.map.clear();
+        cache.order.clear();
+    }
+    if let Ok(mut cache) = TRUNC_CACHE.write() {
+        cache.map.clear();
+        cache.order.clear();
+    }
+}
 
 fn font_family_key(f: FontFamily) -> u8 {
     match f {
@@ -180,8 +245,8 @@ pub fn cached_measure_width(text: &str, font_family: FontFamily, font_size: f32)
         font_family_key(font_family),
         font_size.to_bits(),
     );
-    if let Ok(cache) = WIDTH_CACHE.read() {
-        if let Some(&w) = cache.get(&key) {
+    if let Ok(mut cache) = WIDTH_CACHE.write() {
+        if let Some(w) = cache.get(&key) {
             return w;
         }
     }
@@ -204,9 +269,9 @@ pub fn cached_truncate_name(name: &str, max_width: f32) -> String {
         font_family_key(FontFamily::Default),
         font_size.to_bits(),
     );
-    if let Ok(cache) = TRUNC_CACHE.read() {
+    if let Ok(mut cache) = TRUNC_CACHE.write() {
         if let Some(truncated) = cache.get(&key) {
-            return truncated.clone();
+            return truncated;
         }
     }
     let truncated = truncate_name_uncached(name, max_width);

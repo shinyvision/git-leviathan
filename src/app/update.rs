@@ -96,6 +96,10 @@ impl App {
                 self.tabs.close_tab(tab_id);
                 Task::none()
             }
+            AppMessage::TabsReordered(order) => {
+                self.tabs.reorder(order);
+                Task::none()
+            }
             AppMessage::TabOpened { tab_id, result } => self.handle_tab_opened(tab_id, result),
             AppMessage::AnimationTick(timestamp) => self.handle_animation_tick(timestamp),
             AppMessage::RepoFilesChanged(tab_id) => self.reload_refs_for_tab(tab_id),

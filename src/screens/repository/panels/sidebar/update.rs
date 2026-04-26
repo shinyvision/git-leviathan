@@ -260,8 +260,8 @@ pub(super) fn update(
             );
             Task::none()
         }
-        SidebarAction::ResizeStarted => {
-            ctx.data.resize.start_sidebar();
+        SidebarAction::ResizeStarted { effective_width } => {
+            ctx.data.resize.start_sidebar(effective_width);
             ctx.data.resize.stop_detail();
             Task::none()
         }

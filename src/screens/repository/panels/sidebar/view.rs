@@ -86,7 +86,7 @@ pub(super) fn view<'a>(panel: &'a SidebarPanel, ctx: &SidebarViewCtx<'a>) -> Ele
         .height(Length::Fill)
         .style(style::sidebar_container);
 
-    let resize_handle = resize_handle_view(is_resizing);
+    let resize_handle = resize_handle_view(is_resizing, sidebar_width);
 
     MouseArea::new(row![sidebar_container, resize_handle])
         .on_press(sidebar_msg(SidebarAction::Focused))
@@ -97,7 +97,7 @@ fn sidebar_msg(action: SidebarAction) -> Message {
     Message::repo(RepositoryMessage::Sidebar(action))
 }
 
-fn resize_handle_view(is_resizing: bool) -> Element<'static, Message> {
+fn resize_handle_view(is_resizing: bool, effective_width: f32) -> Element<'static, Message> {
     use iced::widget::mouse_area;
 
     let handle = container(horizontal_space())
@@ -113,7 +113,9 @@ fn resize_handle_view(is_resizing: bool) -> Element<'static, Message> {
         });
 
     mouse_area(handle)
-        .on_press(sidebar_msg(SidebarAction::ResizeStarted))
+        .on_press(sidebar_msg(SidebarAction::ResizeStarted {
+            effective_width,
+        }))
         .interaction(iced::mouse::Interaction::ResizingHorizontally)
         .into()
 }

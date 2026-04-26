@@ -3,9 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::services::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,
-    CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, GitError, GitService,
-    MergedCommitDiffResult, PushOutcome, RefsSnapshot, RemoteCheckoutOutcome, RepoSnapshot,
-    ResetMode, StashApplyOutcome, WorkingTreeDiffResult, WorktreeInfo, COMMIT_LOAD_LIMIT,
+    CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature, GitError,
+    GitService, MergedCommitDiffResult, PushOutcome, RefsSnapshot, RemoteCheckoutOutcome,
+    RepoSnapshot, ResetMode, StashApplyOutcome, WorkingTreeDiffResult, WorktreeInfo,
+    COMMIT_LOAD_LIMIT,
 };
 
 use super::branch_ops::BranchOps;
@@ -187,6 +188,17 @@ impl RepoRead for GitRepositoryGateway {
         file_path: &str,
     ) -> Result<ConflictResolutionResult, GitError> {
         self.with_service_unlocked(|service| service.load_conflict_resolution(file_path))
+    }
+
+    fn compute_dirty_file_signature(
+        &self,
+        file_path: &str,
+        is_staged: bool,
+    ) -> DirtyDiffSignature {
+        self.with_service_unlocked(|service| {
+            Ok(service.compute_dirty_file_signature(file_path, is_staged))
+        })
+        .unwrap_or_default()
     }
 }
 

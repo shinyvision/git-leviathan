@@ -144,7 +144,14 @@ impl DiffPanel {
         self.merged_file_diff = None;
         self.diff_selection = None;
         self.diff_scroll_y = 0.0;
+        self.diff_scroll_x = 0.0;
+        self.diff_viewport_rect = None;
+        self.diff_drag_canvas_data = None;
+        self.diff_last_click = None;
+        self.hovered_canvas = None;
         self.text_search = None;
+        crate::services::release_syntax_caches();
+        crate::services::release_text_caches();
     }
 
     pub(in crate::screens::repository) fn navigate_file(

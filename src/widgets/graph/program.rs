@@ -12,7 +12,7 @@ use iced::{
 use crate::core::RepoVersion;
 use crate::message::Message;
 use crate::screens::repository::{panel_messages::CenterAction, RepositoryMessage};
-use crate::theme::{LANE_WIDTH, ROW_H};
+use crate::theme::ROW_H;
 use crate::view_model::GraphRow;
 
 use super::cache::{FullGraphState, TILE_ROWS};
@@ -175,7 +175,7 @@ pub fn full_graph_widget<'a>(
     visible_row_start: usize,
     visible_row_end: usize,
 ) -> Element<'a, Message> {
-    let width = num_lanes as f32 * LANE_WIDTH + 20.0;
+    let width = super::graph_column_width(num_lanes);
     let height = rows.len() as f32 * ROW_H;
     Canvas::new(FullGraphProgram {
         rows,

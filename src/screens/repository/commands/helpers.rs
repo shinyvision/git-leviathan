@@ -104,11 +104,33 @@ pub(in crate::screens::repository) fn handle_repo_loaded(
     );
     commit_search::refresh_matches(screen);
 
-    if let Some(task) = try_resolve_pending_focus(screen) {
-        return task;
-    }
+    let reload_dirty_diff = sync_dirty_diff_after_reload(screen);
 
-    load_selected_commit_diff_task(screen)
+    let primary = try_resolve_pending_focus(screen).unwrap_or_else(Task::none);
+    let load_selected = load_selected_commit_diff_task(screen);
+    Task::batch(vec![primary, load_selected, reload_dirty_diff])
+}
+
+pub(in crate::screens::repository) fn sync_dirty_diff_after_reload(
+    screen: &mut RepositoryScreen,
+) -> Task<Message> {
+    let repo = screen.fleet.active().clone();
+    let action = {
+        let dirty_commit = screen
+            .data
+            .snapshot
+            .commits()
+            .first()
+            .filter(|c| c.kind == crate::core::CommitKind::Dirty);
+        screen.panels.diff.sync_and_reload_dirty_diff_action(
+            dirty_commit,
+            |path, is_staged| repo.compute_dirty_file_signature(path, is_staged),
+        )
+    };
+    let Some(action) = action else {
+        return Task::none();
+    };
+    screen.handle_diff_panel_action(action)
 }
 
 /// If the currently selected commit needs its diff loaded, produce a task

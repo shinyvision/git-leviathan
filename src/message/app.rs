@@ -26,6 +26,7 @@ pub enum AppMessage {
     },
     TabSelected(TabId),
     TabClosed(TabId),
+    TabsReordered(Vec<TabId>),
     AnimationTick(Instant),
     /// A repository's files changed on disk; carries the owning tab id.
     RepoFilesChanged(TabId),

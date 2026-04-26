@@ -31,9 +31,9 @@ pub struct ContextMenuState {
 
 /// State for the Reset submenu shown when user clicks "Reset ... to this commit".
 #[derive(Debug, Clone)]
-pub struct ResetSubmenuState {
-    pub commit_hash: String,
-    pub position: Point,
+pub(in crate::screens::repository) struct ResetSubmenuState {
+    pub(in crate::screens::repository) commit_hash: String,
+    pub(in crate::screens::repository) position: Point,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -47,28 +47,28 @@ pub(in crate::screens::repository) struct ResetHoverTracker {
 
 /// State for commit context menu (right-clicking a commit).
 #[derive(Debug, Clone)]
-pub struct CommitContextMenuState {
-    pub commit_idx: usize,
-    pub commit_hash: String,
-    pub position: Point,
-    pub stash_index: Option<usize>,
-    pub stash_display_name: Option<String>,
-    pub selected_indices: Vec<usize>,
-    pub selected_hashes: Vec<String>,
+pub(in crate::screens::repository) struct CommitContextMenuState {
+    pub(in crate::screens::repository) commit_idx: usize,
+    pub(in crate::screens::repository) commit_hash: String,
+    pub(in crate::screens::repository) position: Point,
+    pub(in crate::screens::repository) stash_index: Option<usize>,
+    pub(in crate::screens::repository) stash_display_name: Option<String>,
+    pub(in crate::screens::repository) selected_indices: Vec<usize>,
+    pub(in crate::screens::repository) selected_hashes: Vec<String>,
 }
 
 /// State for dirty file context menu (right-clicking an uncommitted-changes file row).
 #[derive(Debug, Clone)]
-pub struct DirtyFileContextMenuState {
-    pub path: String,
-    pub position: Point,
+pub(in crate::screens::repository) struct DirtyFileContextMenuState {
+    pub(in crate::screens::repository) path: String,
+    pub(in crate::screens::repository) position: Point,
 }
 
 /// State for the worktree context menu (right-clicking a worktree sidebar entry).
 #[derive(Debug, Clone)]
-pub struct WorktreeContextMenuState {
-    pub path: std::path::PathBuf,
-    pub branch_name: String,
-    pub is_active: bool,
-    pub position: Point,
+pub(in crate::screens::repository) struct WorktreeContextMenuState {
+    pub(in crate::screens::repository) path: std::path::PathBuf,
+    pub(in crate::screens::repository) branch_name: String,
+    pub(in crate::screens::repository) is_active: bool,
+    pub(in crate::screens::repository) position: Point,
 }

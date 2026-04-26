@@ -9,6 +9,7 @@ use super::super::super::{
     FileView,
 };
 use super::view as detail_view;
+use super::DetailOrientation;
 
 #[derive(Debug, Clone)]
 pub(in crate::screens::repository) struct DetailViewModel<'a> {
@@ -18,6 +19,7 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     pub(in crate::screens::repository) file_view: FileView,
     pub(in crate::screens::repository) width: f32,
     pub(in crate::screens::repository) is_resizing: bool,
+    pub(in crate::screens::repository) orientation: DetailOrientation,
     pub(in crate::screens::repository) current_branch: &'a str,
     pub(in crate::screens::repository) dirty_commit_message: &'a text_editor::Content,
     pub(in crate::screens::repository) active_diff_file_path: Option<&'a str>,
@@ -125,6 +127,8 @@ impl DetailPanel {
         selection: &SelectionState,
         active_diff_file_path: Option<&'a str>,
         merged_diff: Option<&'a MergedCommitDiffResult>,
+        orientation: DetailOrientation,
+        width: f32,
     ) -> DetailViewModel<'a> {
         let multi_commits: Vec<&'a Commit> = if selection.is_multi() {
             selection
@@ -154,8 +158,9 @@ impl DetailPanel {
             commit_diff_state: data.cache.state(selection.selected_commit()),
             commit_idx: selection.selected_commit(),
             file_view: selection.file_view(),
-            width: data.resize.detail_width,
+            width,
             is_resizing: data.resize.detail_resizing,
+            orientation,
             current_branch: data.snapshot.current_branch(),
             dirty_commit_message: &self.dirty_commit_message,
             active_diff_file_path,
@@ -174,12 +179,16 @@ impl DetailPanel {
         selection: &SelectionState,
         active_diff_file_path: Option<&'a str>,
         merged_diff: Option<&'a MergedCommitDiffResult>,
+        orientation: DetailOrientation,
+        width: f32,
     ) -> Element<'a, Message> {
         detail_view::detail_panel_view(self.detail_view_model(
             data,
             selection,
             active_diff_file_path,
             merged_diff,
+            orientation,
+            width,
         ))
     }
 }

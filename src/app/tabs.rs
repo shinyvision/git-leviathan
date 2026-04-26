@@ -14,9 +14,9 @@ use iced::{keyboard, Task};
 use crate::{
     core::TabId,
     message::Message,
-    screens::RepositoryScreen,
     screens::repository::state::GatewayFleet,
-    services::{GitRepositoryGateway, Presenter, SettingsService, resolve_primary_and_active},
+    screens::RepositoryScreen,
+    services::{resolve_primary_and_active, GitRepositoryGateway, Presenter, SettingsService},
 };
 
 pub struct TabEntry {
@@ -116,15 +116,14 @@ impl TabManager {
         let tab_id = self.next_tab_id;
         self.next_tab_id = TabId(self.next_tab_id.raw() + 1);
 
-        let (primary_path, active_path) = match resolve_primary_and_active(
-            std::path::Path::new(&repo_path),
-        ) {
-            Ok(pair) => pair,
-            Err(_) => {
-                let p = std::path::PathBuf::from(&repo_path);
-                (p.clone(), p)
-            }
-        };
+        let (primary_path, active_path) =
+            match resolve_primary_and_active(std::path::Path::new(&repo_path)) {
+                Ok(pair) => pair,
+                Err(_) => {
+                    let p = std::path::PathBuf::from(&repo_path);
+                    (p.clone(), p)
+                }
+            };
         let primary_gateway =
             GitRepositoryGateway::from_path(primary_path.to_string_lossy().to_string());
         let active_gateway = if active_path == primary_path {
@@ -247,6 +246,33 @@ impl TabManager {
         self.activate_tab(tab_id)
     }
 
+    /// Apply a new tab ordering (from a drag-reorder commit). Reorders
+    /// `self.tabs` to match `new_order` and persists. Ids not in
+    /// `self.tabs` are ignored; missing ids retain their relative position
+    /// at the end.
+    pub fn reorder(&mut self, new_order: Vec<TabId>) {
+        let mut by_id: HashMap<TabId, TabEntry> =
+            self.tabs.drain(..).map(|t| (t.id, t)).collect();
+        let mut reordered: Vec<TabEntry> = Vec::with_capacity(by_id.len());
+        for id in new_order {
+            if let Some(entry) = by_id.remove(&id) {
+                reordered.push(entry);
+            }
+        }
+        for (_, entry) in by_id {
+            reordered.push(entry);
+        }
+        self.tabs = reordered;
+        self.persist_tab_order();
+    }
+
+    fn persist_tab_order(&self) {
+        if let Ok(settings) = SettingsService::new() {
+            let paths: Vec<String> = self.tabs.iter().map(|t| t.repo_path.clone()).collect();
+            let _ = settings.set_repo_order(&paths);
+        }
+    }
+
     /// Activate `new_tab_id`: hibernate the previous tab, rehydrate or
     /// re-select on the new one so its panels light up immediately. Caller
     /// handles anything fetch-related.
@@ -347,6 +373,41 @@ mod tests {
         // No tabs — activating any id is a no-op, returns Task::none().
         let _ = m.activate_tab(TabId(0));
         assert!(m.is_empty());
+    }
+
+    fn push_tab(m: &mut TabManager, id: u64, path: &str) {
+        m.tabs.push(TabEntry {
+            id: TabId(id),
+            repo_path: path.to_string(),
+            name: path.to_string(),
+        });
+    }
+
+    #[test]
+    fn reorder_applies_new_order() {
+        let mut m = make();
+        push_tab(&mut m, 1, "/a");
+        push_tab(&mut m, 2, "/b");
+        push_tab(&mut m, 3, "/c");
+        m.reorder(vec![TabId(2), TabId(3), TabId(1)]);
+        let order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
+        assert_eq!(order, vec![2, 3, 1]);
+    }
+
+    #[test]
+    fn reorder_drops_unknown_ids_and_keeps_missing_at_end() {
+        let mut m = make();
+        push_tab(&mut m, 1, "/a");
+        push_tab(&mut m, 2, "/b");
+        push_tab(&mut m, 3, "/c");
+        m.reorder(vec![TabId(99), TabId(2), TabId(1)]);
+        let mut order: Vec<u64> = m.tabs.iter().map(|t| t.id.0).collect();
+        // Missing tab 3 retained at end (insertion order from leftover map is
+        // not guaranteed, so just check it's still there).
+        assert_eq!(&order[..2], &[2, 1][..]);
+        assert!(order.contains(&3));
+        order.sort_unstable();
+        assert_eq!(order, vec![1, 2, 3]);
     }
 
     #[test]

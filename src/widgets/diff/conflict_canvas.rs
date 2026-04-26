@@ -30,8 +30,8 @@ use crate::{
 
 pub const CONTENT_LINE_HEIGHT: f32 = DEFAULT_CONTENT_LINE_HEIGHT;
 
-pub const GUTTER_WIDTH_SIDE: f32 = 86.0;
-pub const GUTTER_WIDTH_OUTPUT: f32 = 56.0;
+const GUTTER_WIDTH_SIDE: f32 = 86.0;
+const GUTTER_WIDTH_OUTPUT: f32 = 56.0;
 
 const CHECKBOX_X: f32 = 6.0;
 const CHECKBOX_SIZE: f32 = 14.0;
@@ -295,7 +295,21 @@ pub fn side_for_canvas_id(id: CanvasId) -> Option<ConflictSide> {
     }
 }
 
-pub fn build_canvas_data(
+pub fn build_side_canvas_data(
+    rows: Vec<ConflictRow>,
+    char_width: f32,
+) -> Arc<TextCanvasData> {
+    build_canvas_data(rows, char_width, GUTTER_WIDTH_SIDE)
+}
+
+pub fn build_output_canvas_data(
+    rows: Vec<ConflictRow>,
+    char_width: f32,
+) -> Arc<TextCanvasData> {
+    build_canvas_data(rows, char_width, GUTTER_WIDTH_OUTPUT)
+}
+
+fn build_canvas_data(
     rows: Vec<ConflictRow>,
     char_width: f32,
     gutter_width: f32,
@@ -324,6 +338,7 @@ pub fn conflict_content_canvas(
     selection: Option<TextSelection>,
     viewport: iced::Size,
     bottom_pad: f32,
+    scroll_y: f32,
 ) -> Element<'static, Message> {
     text::content_canvas(
         canvas_id,
@@ -331,6 +346,7 @@ pub fn conflict_content_canvas(
         selection,
         viewport,
         bottom_pad,
+        scroll_y,
         diff_panel_callbacks(),
     )
 }

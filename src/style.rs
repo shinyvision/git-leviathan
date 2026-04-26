@@ -1,9 +1,28 @@
 use iced::{
-    widget::{button, container, text},
-    Border, Theme,
+    widget::{container, text},
+    Border, Color, Theme,
 };
 
 use crate::theme;
+
+pub fn iced_theme() -> iced::Theme {
+    iced::Theme::custom(
+        "leviathan".to_string(),
+        iced::theme::Palette {
+            background: theme::BG_BASE,
+            text: theme::TEXT_PRIMARY,
+            primary: theme::ACCENT_BLUE,
+            success: theme::ACCENT_GREEN,
+            danger: Color {
+                r: 0.858,
+                g: 0.243,
+                b: 0.243,
+                a: 1.0,
+            },
+            warning: theme::ACCENT_ORANGE,
+        },
+    )
+}
 
 pub fn dim_text(_: &Theme) -> text::Style {
     text::Style {
@@ -83,32 +102,3 @@ pub fn sidebar_container(_: &Theme) -> container::Style {
     }
 }
 
-pub fn tab_button(is_active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
-    move |_: &Theme, status: button::Status| {
-        let bg = if is_active {
-            theme::BG_HOVER
-        } else {
-            match status {
-                button::Status::Hovered | button::Status::Pressed => theme::BG_HOVER,
-                _ => theme::BG_BASE,
-            }
-        };
-        let tc = if is_active {
-            theme::TEXT_PRIMARY
-        } else {
-            theme::TEXT_SECONDARY
-        };
-        let border_color = theme::BORDER;
-        button::Style {
-            background: Some(bg.into()),
-            text_color: tc,
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 0.0.into(),
-            },
-            shadow: Default::default(),
-            snap: false,
-        }
-    }
-}

@@ -97,7 +97,10 @@ pub enum CenterAction {
     LoadMoreCommitsRequested,
     PointerMoved(iced::Point),
     PointerLeftWindow,
-    DetailResizeStarted,
+    DetailResizeStarted {
+        effective_width: f32,
+    },
+    DetailHeightResizeStarted,
     ResizeReleased,
     None,
     SquashCommitsRequested {
