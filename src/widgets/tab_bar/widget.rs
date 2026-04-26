@@ -320,7 +320,11 @@ where
                     .into_iter()
                     .map(|(_, l, r)| (l, r))
                     .collect();
-                let changed = state.drag.on_cursor_moved(pos, &slots);
+                let now_inst = Instant::now();
+                let TabBarState { drag, tracker } = &mut *state;
+                let changed = drag.on_cursor_moved(pos, &slots, |k| {
+                    tracker.is_animating_key(k, now_inst)
+                });
                 if changed {
                     shell.invalidate_layout();
                     shell.request_redraw();
@@ -351,6 +355,27 @@ where
                 let working = state.drag.working_order().map(|s| s.to_vec());
                 let sim = self.simulated_positions(working.as_deref(), layout);
                 state.tracker.settle(&sim, *now);
+
+                if state.drag.is_dragging() {
+                    if let Some(cur) = state.drag.cursor() {
+                        let working2 = state.drag.working_order().map(|s| s.to_vec());
+                        let slots: Vec<(f32, f32)> = self
+                            .working_slots(working2.as_deref(), layout)
+                            .into_iter()
+                            .map(|(_, l, r)| (l, r))
+                            .collect();
+                        let TabBarState { drag, tracker } = &mut *state;
+                        let now_copy = *now;
+                        let changed = drag.on_cursor_moved(cur, &slots, |k| {
+                            tracker.is_animating_key(k, now_copy)
+                        });
+                        if changed {
+                            shell.invalidate_layout();
+                            shell.request_redraw();
+                        }
+                    }
+                }
+
                 if state.tracker.is_animating(*now) {
                     shell.request_redraw();
                 }

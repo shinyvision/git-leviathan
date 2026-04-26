@@ -56,7 +56,12 @@ impl<K: Copy + Eq + Hash> DragState<K> {
         self.initial_order = Some(current_order.to_vec());
     }
 
-    pub fn on_cursor_moved(&mut self, cursor: Point, slot_bounds: &[(f32, f32)]) -> bool {
+    pub fn on_cursor_moved(
+        &mut self,
+        cursor: Point,
+        slot_bounds: &[(f32, f32)],
+        is_animating: impl Fn(K) -> bool,
+    ) -> bool {
         if self.press_origin.is_none() && self.dragging.is_none() {
             return false;
         }
@@ -74,21 +79,47 @@ impl<K: Copy + Eq + Hash> DragState<K> {
         let Some(dragged) = self.dragging else {
             return false;
         };
-        let Some(slot_idx) = pick_slot(cursor.x, slot_bounds) else {
-            return false;
-        };
         let Some(order) = self.working_order.as_mut() else {
             return false;
         };
-        if order.get(slot_idx).copied() == Some(dragged) {
-            return false;
-        }
         let Some(from) = order.iter().position(|k| *k == dragged) else {
             return false;
         };
-        let to = slot_idx.min(order.len().saturating_sub(1));
+        let Some(grab) = self.grab_offset else {
+            return false;
+        };
+        let Some(&(l, r)) = slot_bounds.get(from) else {
+            return false;
+        };
+        let dragged_w = r - l;
+        let dragged_center = cursor.x - grab + dragged_w * 0.5;
+
+        let mut to = from;
+        while to + 1 < slot_bounds.len() {
+            let (nl, nr) = slot_bounds[to + 1];
+            if dragged_center >= (nl + nr) * 0.5 {
+                to += 1;
+            } else {
+                break;
+            }
+        }
+        while to > 0 {
+            let (nl, nr) = slot_bounds[to - 1];
+            if dragged_center <= (nl + nr) * 0.5 {
+                to -= 1;
+            } else {
+                break;
+            }
+        }
         if from == to {
             return false;
+        }
+        let lo = from.min(to);
+        let hi = from.max(to);
+        for k in &order[lo..=hi] {
+            if *k != dragged && is_animating(*k) {
+                return false;
+            }
         }
         let entry = order.remove(from);
         order.insert(to, entry);
@@ -137,57 +168,12 @@ impl<K: Copy + Eq + Hash> DragState<K> {
     }
 }
 
-pub fn pick_slot(cursor_x: f32, slots: &[(f32, f32)]) -> Option<usize> {
-    let mut best: Option<(usize, f32)> = None;
-    for (i, &(left, right)) in slots.iter().enumerate() {
-        let center = (left + right) * 0.5;
-        let dist = (cursor_x - center).abs();
-        match best {
-            None => best = Some((i, dist)),
-            Some((_, best_dist)) if dist < best_dist => best = Some((i, dist)),
-            _ => {}
-        }
-    }
-    best.map(|(i, _)| i)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn pt(x: f32, y: f32) -> Point {
         Point::new(x, y)
-    }
-
-    #[test]
-    fn pick_slot_empty_returns_none() {
-        let slots: [(f32, f32); 0] = [];
-        assert_eq!(pick_slot(0.0, &slots), None);
-    }
-
-    #[test]
-    fn pick_slot_picks_closest_center() {
-        let slots = [(0.0, 100.0), (100.0, 200.0)];
-        assert_eq!(pick_slot(50.0, &slots), Some(0));
-        assert_eq!(pick_slot(150.0, &slots), Some(1));
-    }
-
-    #[test]
-    fn pick_slot_past_right_picks_last() {
-        let slots = [(0.0, 100.0), (100.0, 200.0)];
-        assert_eq!(pick_slot(500.0, &slots), Some(1));
-    }
-
-    #[test]
-    fn pick_slot_before_left_picks_first() {
-        let slots = [(50.0, 150.0), (150.0, 250.0)];
-        assert_eq!(pick_slot(-100.0, &slots), Some(0));
-    }
-
-    #[test]
-    fn pick_slot_equidistant_picks_lower_index() {
-        let slots = [(0.0, 100.0), (100.0, 200.0)];
-        assert_eq!(pick_slot(100.0, &slots), Some(0));
     }
 
     #[test]
@@ -215,7 +201,7 @@ mod tests {
     fn small_move_stays_a_click() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
-        s.on_cursor_moved(pt(12.0, 11.0), &SLOTS_2);
+        s.on_cursor_moved(pt(12.0, 11.0), &SLOTS_2, |_| false);
         assert!(!s.is_dragging());
         assert_eq!(s.on_released(), DragOutcome::Click(1));
     }
@@ -224,7 +210,7 @@ mod tests {
     fn move_past_threshold_starts_drag() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
-        s.on_cursor_moved(pt(30.0, 10.0), &SLOTS_2);
+        s.on_cursor_moved(pt(30.0, 10.0), &SLOTS_2, |_| false);
         assert!(s.is_dragging());
         // Released without reorder (cursor still in slot 0 = where tab 1 is).
         assert_eq!(s.on_released(), DragOutcome::None);
@@ -234,11 +220,11 @@ mod tests {
     fn drag_and_hover_swaps_working_order() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2, 3]);
-        s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_3);
+        s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_3, |_| false);
         // cursor at x=40 stays in slot 0, dragged tab already there: no swap.
         assert_eq!(s.working_order(), Some(&[1u32, 2, 3][..]));
         // cursor at x=130 — slot 2.
-        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3);
+        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3, |_| false);
         assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
         let outcome = s.on_released();
         assert_eq!(outcome, DragOutcome::Reorder(vec![2, 3, 1]));
@@ -249,14 +235,14 @@ mod tests {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2, 3]);
         // Drag 1 into slot 2. Order becomes [2, 3, 1].
-        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3);
+        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3, |_| false);
         assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
         // Cursor stays in slot 2; layout (children in caller order) unchanged.
         // Bug pre-fix: pick by tab key would say "target = tab 3 (now at slot
         // 2)" → swap back. With pick-by-slot, slot 2 already holds dragged →
         // no-op, regardless of how many cursor events arrive.
         for _ in 0..10 {
-            assert!(!s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3));
+            assert!(!s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3, |_| false));
         }
         assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
     }
@@ -265,7 +251,7 @@ mod tests {
     fn drag_then_release_without_swap_returns_none() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
-        s.on_cursor_moved(pt(30.0, 10.0), &SLOTS_2);
+        s.on_cursor_moved(pt(30.0, 10.0), &SLOTS_2, |_| false);
         assert_eq!(s.on_released(), DragOutcome::None);
     }
 
@@ -273,7 +259,7 @@ mod tests {
     fn release_clears_state() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
-        s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_2);
+        s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_2, |_| false);
         s.on_released();
         assert!(!s.is_dragging());
         assert!(s.cursor().is_none());
@@ -284,17 +270,51 @@ mod tests {
     #[test]
     fn cursor_moved_without_press_is_noop() {
         let mut s: DragState<u32> = DragState::new();
-        let changed = s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_2);
+        let changed = s.on_cursor_moved(pt(40.0, 10.0), &SLOTS_2, |_| false);
         assert!(!changed);
+    }
+
+    #[test]
+    fn swap_blocked_while_displaced_tab_still_animating() {
+        let mut s: DragState<u32> = DragState::new();
+        s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2, 3]);
+        // Cursor moves into slot 1: would displace tab 2. Tab 2 mid-animation → block.
+        let changed = s.on_cursor_moved(pt(80.0, 10.0), &SLOTS_3, |k| k == 2);
+        assert!(!changed);
+        assert_eq!(s.working_order(), Some(&[1u32, 2, 3][..]));
+        // Animation finishes → swap allowed.
+        let changed = s.on_cursor_moved(pt(80.0, 10.0), &SLOTS_3, |_| false);
+        assert!(changed);
+        assert_eq!(s.working_order(), Some(&[2u32, 1, 3][..]));
+    }
+
+    #[test]
+    fn small_over_large_does_not_flap() {
+        // Small tab (W=20) at index 0, large tab (W=200) at index 1.
+        // After swap, working layout becomes [Large(0..200), Small(200..220)].
+        // Cursor held static near old large center: must NOT flap back.
+        let mut s: DragState<u32> = DragState::new();
+        s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
+        // Grab offset = 10. Cursor at 120: dragged_center = 120 - 10 + 10 = 120.
+        // Initial slots [(0,20),(20,220)]. Slot 1 center = 120. 120>=120 → swap.
+        let slots_pre = [(0.0, 20.0), (20.0, 220.0)];
+        assert!(s.on_cursor_moved(pt(120.0, 10.0), &slots_pre, |_| false));
+        assert_eq!(s.working_order(), Some(&[2u32, 1][..]));
+        // Post-swap slots [Large(0..200), Small(200..220)].
+        let slots_post = [(0.0, 200.0), (200.0, 220.0)];
+        for _ in 0..10 {
+            assert!(!s.on_cursor_moved(pt(120.0, 10.0), &slots_post, |_| false));
+        }
+        assert_eq!(s.working_order(), Some(&[2u32, 1][..]));
     }
 
     #[test]
     fn reorder_round_trip_returns_none() {
         let mut s: DragState<u32> = DragState::new();
         s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
-        s.on_cursor_moved(pt(80.0, 10.0), &SLOTS_2);
+        s.on_cursor_moved(pt(80.0, 10.0), &SLOTS_2, |_| false);
         assert_eq!(s.working_order(), Some(&[2u32, 1][..]));
-        s.on_cursor_moved(pt(10.0, 10.0), &SLOTS_2);
+        s.on_cursor_moved(pt(10.0, 10.0), &SLOTS_2, |_| false);
         assert_eq!(s.working_order(), Some(&[1u32, 2][..]));
         assert_eq!(s.on_released(), DragOutcome::None);
     }

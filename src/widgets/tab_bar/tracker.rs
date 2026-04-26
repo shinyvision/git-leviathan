@@ -79,6 +79,13 @@ impl<K: Eq + Hash + Copy> PositionTracker<K> {
             elapsed_ms < DURATION_MS
         })
     }
+
+    pub fn is_animating_key(&self, key: K, now: Instant) -> bool {
+        self.animations.get(&key).is_some_and(|a| {
+            let elapsed_ms = now.duration_since(a.started_at).as_secs_f32() * 1000.0;
+            elapsed_ms < DURATION_MS
+        })
+    }
 }
 
 fn lerp(start: f32, end: f32, progress: f32) -> f32 {
