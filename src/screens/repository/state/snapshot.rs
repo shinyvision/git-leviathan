@@ -201,7 +201,7 @@ impl RepositorySnapshot {
         self.head_hash.as_deref()
     }
 
-    pub(in crate::screens::repository) fn default_remote_name(&self) -> Option<&str> {
+    pub(crate) fn default_remote_name(&self) -> Option<&str> {
         self.default_remote_name.as_deref()
     }
 

@@ -143,19 +143,37 @@ impl App {
     /// mutably; the list is small (<= a few dozen entries on typical
     /// repos) so the clone is cheap.
     fn sync_repository_to_plugins(&mut self) {
-        let (repo_name, current_branch, refs) = self
+        let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) = self
             .tabs
             .active_screen()
             .map(|screen| {
                 (
                     screen.repo_name().to_string(),
+                    screen.active_worktree_path().to_string_lossy().into_owned(),
                     screen.current_branch().to_string(),
+                    screen.head_hash().unwrap_or("").to_string(),
+                    screen.default_remote_name().unwrap_or("").to_string(),
                     screen.branch_refs().to_vec(),
                 )
             })
-            .unwrap_or_else(|| (String::new(), String::new(), Vec::new()));
-        self.plugin_host
-            .sync_repository(&repo_name, &current_branch, &refs);
+            .unwrap_or_else(|| {
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    Vec::new(),
+                )
+            });
+        self.plugin_host.sync_repository(
+            &repo_name,
+            &workdir_path,
+            &current_branch,
+            &head_hash,
+            &default_remote,
+            &refs,
+        );
     }
 
     pub fn view(&self) -> Element<'_, Message> {

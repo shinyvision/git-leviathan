@@ -3,6 +3,7 @@
 //! One submodule per namespace (SOLID single-responsibility):
 //! - `ui` — main-bar buttons, screen registration
 //! - `fs` — filesystem operations
+//! - `env` — process environment variables
 //! - `event` — `leviathan.api.create_autocmd` event subscription
 //!
 //! `install_all` mounts them on a fresh `leviathan` table. Callable state
@@ -16,6 +17,7 @@ use std::rc::Rc;
 
 use mlua::{Lua, RegistryKey};
 
+pub mod env;
 pub mod event;
 pub mod fs;
 pub mod repository;
@@ -93,11 +95,12 @@ pub fn install_all(lua: &Lua, build: Rc<RefCell<BuildState>>) -> mlua::Result<()
     ui::install(lua, Rc::clone(&build), &leviathan)?;
     event::install(lua, Rc::clone(&build), &leviathan)?;
     fs::install(lua, &leviathan)?;
+    env::install(lua, &leviathan)?;
 
     // Start with an empty repository snapshot so plugin code that touches
     // `leviathan.repository` at `init.lua` time (before the first sync)
     // never trips on `nil`. The host overwrites this on every sync.
-    leviathan.set("repository", repository::build_table(lua, "", "", &[])?)?;
+    leviathan.set("repository", repository::build_table(lua, "", "", "", "", "", &[])?)?;
 
     leviathan.set(
         "log",

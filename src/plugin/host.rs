@@ -350,13 +350,23 @@ impl PluginHost {
 /// produce the same table anyway. Cheap on typical repos (a few dozen
 /// refs); kept self-contained so the host doesn't depend on the
 /// projection-layer `ProjectionSignature`.
-fn compute_repo_hash(repo_name: &str, current_branch_name: &str, refs: &[RepoRef]) -> u64 {
+fn compute_repo_hash(
+    repo_name: &str,
+    workdir_path: &str,
+    current_branch_name: &str,
+    head_hash: &str,
+    default_remote_name: &str,
+    refs: &[RepoRef],
+) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
     let mut h = DefaultHasher::new();
     repo_name.hash(&mut h);
+    workdir_path.hash(&mut h);
     current_branch_name.hash(&mut h);
+    head_hash.hash(&mut h);
+    default_remote_name.hash(&mut h);
     refs.len().hash(&mut h);
     for r in refs {
         r.name.hash(&mut h);
@@ -711,10 +721,20 @@ impl PluginHost {
     pub fn sync_repository(
         &mut self,
         repo_name: &str,
+        workdir_path: &str,
         current_branch_name: &str,
+        head_hash: &str,
+        default_remote_name: &str,
         refs: &[RepoRef],
     ) {
-        let hash = compute_repo_hash(repo_name, current_branch_name, refs);
+        let hash = compute_repo_hash(
+            repo_name,
+            workdir_path,
+            current_branch_name,
+            head_hash,
+            default_remote_name,
+            refs,
+        );
         if self.last_repository_hash == Some(hash) {
             return;
         }
@@ -724,7 +744,10 @@ impl PluginHost {
             let table = match api::repository::build_table(
                 &plugin.lua,
                 repo_name,
+                workdir_path,
                 current_branch_name,
+                head_hash,
+                default_remote_name,
                 refs,
             ) {
                 Ok(t) => t,

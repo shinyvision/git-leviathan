@@ -140,6 +140,14 @@ impl RepositoryScreen {
         self.data.snapshot.current_branch()
     }
 
+    pub(crate) fn head_hash(&self) -> Option<&str> {
+        self.data.snapshot.head_hash()
+    }
+
+    pub(crate) fn default_remote_name(&self) -> Option<&str> {
+        self.data.snapshot.default_remote_name()
+    }
+
     pub fn initial_load_task(&self, tab_id: TabId) -> Task<Message> {
         let repo = self.fleet.active().clone();
         let presenter = self.presenter.clone();
