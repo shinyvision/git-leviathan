@@ -70,7 +70,10 @@ impl App {
                 }
                 Task::none()
             }
-            AppMessage::ShutdownRequested => std::process::exit(0),
+            AppMessage::ShutdownRequested => {
+                crate::services::kill_running_git_processes();
+                std::process::exit(0);
+            }
             AppMessage::KeyPressed(key, modifiers) => self.handle_key_pressed(key, modifiers),
             AppMessage::ModifiersChanged(modifiers) => {
                 if self.no_git_screen.is_some() || self.tabs.is_empty() {

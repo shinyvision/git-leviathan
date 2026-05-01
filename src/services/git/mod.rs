@@ -24,6 +24,7 @@ use crate::services::git::working_tree_diff::WorkingTreeDiffResult;
 use crate::{core::ChangedFile, services::git_error::GitError, services::RepoSnapshot};
 
 pub use checkout::ResetMode;
+pub use helpers::kill_running_git_processes;
 pub use conflict_resolution::{ConflictBlock, ConflictResolutionResult};
 pub use push::PushOutcome;
 
