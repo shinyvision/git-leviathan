@@ -1,106 +1,128 @@
-//! Plugin-contributed main-bar slots — widget-tree-based, widget-type
-//! agnostic.
+//! Region-agnostic prepared slot.
 //!
-//! The plugin hands us either an arbitrary widget tree or a function that
-//! returns one (same DSL used by plugin screens). The host hands the tree
-//! to [`widget_tree::build`] on every render, scoped as a main-bar slot so
-//! clickable widgets inside route to [`PluginMessage::SlotClicked`] and
-//! ultimately to the slot's `on_click` Lua fn.
-//!
-//! Dynamic (function-backed) slots share a `Rc<RefCell<Value>>` cache
-//! with the [`PluginHost`](crate::plugin::PluginHost). The host writes
-//! into the cache after every autocmd fire (and on initial load); the
-//! slot builder reads from it at render time. This keeps the builder
-//! closure `Fn + 'static` without needing Lua access inside, and keeps
-//! the view a pure function of whatever the last refresh produced.
-//!
-//! The host contributes zero opinions about the slot's look: shape,
-//! padding, border, colours, icon vs. text vs. icon-over-text — all
-//! declared in Lua.
+//! Plugin slot ops are resolved during plugin load into `PreparedSlot`
+//! values keyed by `(region, container, id)`. Per-region appliers in
+//! `crate::plugin::host` consume the ops and produce concrete slots
+//! (`MainBarSlot`, `TabBarSlot`, ...) using the region-specific
+//! `into_*` shims on `PreparedSlot`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use iced::Element;
 use serde_json::Value;
 
+use crate::message::Message;
 use crate::plugin::bridge::widget_tree::{self, BuildCtx, DispatchScope};
-use crate::widgets::chrome::main_bar::{MainBarSlot, Section};
+use crate::plugin::slots::Container;
+use crate::widgets::chrome::main_bar::{MainBarSlot, SlotCtx as MainBarSlotCtx};
+use crate::widgets::chrome::repo_region::{RepoPaneCtx, RepoPaneSlot};
+use crate::widgets::chrome::tab_bar_slots::{TabBarCtx, TabBarSlot};
 
-/// The source a prepared slot renders from.
-///
-/// `Dynamic` carries a shared cell the host mutates when plugin state
-/// might have changed; the slot builder just reads it. Starting value is
-/// whatever the host put there via the post-load refresh (usually the
-/// first evaluation of the plugin's widget fn).
 #[derive(Clone)]
 pub enum SlotWidget {
     Static(Value),
     Dynamic(Rc<RefCell<Value>>),
 }
 
-/// Slot spec the host keeps post-resolution. `plugin_root` is needed at
-/// render time so icon paths inside the tree resolve against the plugin's
-/// sandbox.
 #[derive(Clone)]
-pub struct PreparedMainBarSlot {
+pub struct PreparedSlot {
     pub plugin_id: String,
     pub id: String,
-    pub section: Section,
+    pub region: String,
+    pub container: Container,
     pub priority: i32,
     pub widget: SlotWidget,
     pub plugin_root: PathBuf,
 }
 
-/// One ordered hook op after resolution.
+#[allow(dead_code)]
 pub enum PreparedSlotOp {
-    Add(PreparedMainBarSlot),
-    Remove(String),
-    Replace(String, PreparedMainBarSlot),
+    Add(PreparedSlot),
+    Remove { region: String, container: Container, id: String },
+    /// Compat removal where the user did not specify a container (legacy
+    /// `main_bar.remove("id")`). The applier scans every container in the
+    /// region.
+    RemoveAnyContainer { region: String, id: String },
+    Replace { region: String, container: Container, id: String, spec: PreparedSlot },
 }
 
-/// Parse a section string ("left"/"center"/"right", case-insensitive).
-pub fn parse_section(raw: &str) -> Result<Section, String> {
-    match raw.to_ascii_lowercase().as_str() {
-        "left" => Ok(Section::Left),
-        "center" | "centre" => Ok(Section::Center),
-        "right" => Ok(Section::Right),
-        other => Err(format!("unknown section: {other:?} (want left/center/right)")),
-    }
-}
-
-impl PreparedMainBarSlot {
-    pub fn into_main_bar_slot(self) -> MainBarSlot {
-        let PreparedMainBarSlot {
-            plugin_id,
-            id,
-            section,
-            priority,
-            widget,
-            plugin_root,
-        } = self;
-
-        MainBarSlot::new(id.clone(), section, priority, move |_slot_ctx| {
-            // Slots don't use resizable_split, so split_states is empty.
-            // The HashMap is cheap — a `new()` allocates nothing until an
-            // item is inserted.
-            let empty_splits: HashMap<String, Vec<f32>> = HashMap::new();
-            let bc = BuildCtx {
-                plugin_id: &plugin_id,
-                scope: DispatchScope::MainBarSlot { slot_id: &id },
-                plugin_root: plugin_root.as_path(),
-                split_states: &empty_splits,
-                active_drag: None,
-            };
-            match &widget {
-                SlotWidget::Static(tree) => widget_tree::build(tree, &bc),
-                SlotWidget::Dynamic(cache) => {
-                    let guard = cache.borrow();
-                    widget_tree::build(&guard, &bc)
-                }
+impl PreparedSlot {
+    /// Render this slot through `widget_tree::build`. Used by every
+    /// per-region `into_*` shim — the resulting closure ignores its
+    /// region-typed ctx parameter and reads from the cached widget tree.
+    fn render(&self) -> Element<'static, Message> {
+        let empty_splits: HashMap<String, Vec<f32>> = HashMap::new();
+        let container_str = self.container.key();
+        let bc = BuildCtx {
+            plugin_id: &self.plugin_id,
+            scope: DispatchScope::Slot {
+                region: &self.region,
+                container: &container_str,
+                slot_id: &self.id,
+            },
+            plugin_root: self.plugin_root.as_path(),
+            split_states: &empty_splits,
+            active_drag: None,
+        };
+        match &self.widget {
+            SlotWidget::Static(tree) => widget_tree::build(tree, &bc),
+            SlotWidget::Dynamic(cache) => {
+                let guard = cache.borrow();
+                widget_tree::build(&guard, &bc)
             }
-        })
+        }
+    }
+
+    pub fn into_main_bar(self) -> MainBarSlot {
+        let container = self.container.clone();
+        let priority = self.priority;
+        let id = self.id.clone();
+        let prepared = self;
+        MainBarSlot {
+            id,
+            container,
+            priority,
+            builder: Box::new(move |_ctx: &MainBarSlotCtx<'_>| prepared.render()),
+        }
+    }
+
+    pub fn into_tab_bar(self) -> TabBarSlot {
+        let container = self.container.clone();
+        let priority = self.priority;
+        let id = self.id.clone();
+        let prepared = self;
+        TabBarSlot {
+            id,
+            container,
+            priority,
+            builder: Box::new(move |_ctx: &TabBarCtx<'_>| prepared.render()),
+        }
+    }
+
+    pub fn into_repo_pane(self) -> RepoPaneSlot {
+        let container = self.container.clone();
+        let priority = self.priority;
+        let id = self.id.clone();
+        let prepared = self;
+        RepoPaneSlot {
+            id,
+            container,
+            priority,
+            builder: Box::new(move |_ctx: &RepoPaneCtx<'_>| prepared.render()),
+        }
     }
 }
 
+pub fn parse_container(raw: &str) -> Container {
+    if let Some((pane, section)) = raw.split_once('.') {
+        Container::Pane {
+            pane: pane.to_string(),
+            section: section.to_string(),
+        }
+    } else {
+        Container::Section(raw.to_string())
+    }
+}

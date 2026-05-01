@@ -7,10 +7,12 @@
 
 #[derive(Debug, Clone)]
 pub enum PluginMessage {
-    /// A plugin-contributed main-bar slot (`main_bar.add`) was clicked.
-    /// The host's slot-handler map is keyed by `(plugin_id, slot_id)`.
+    /// A plugin-contributed slot was clicked. The host's slot-handler map
+    /// is keyed by `(plugin_id, region, container, slot_id)`.
     SlotClicked {
         plugin_id: String,
+        region: String,
+        container: String,
         slot_id: String,
     },
     /// A widget inside a plugin screen emitted an event (e.g. button press).

@@ -21,7 +21,7 @@ use iced::{
 use crate::{message::Message, style as shared_style, theme, widgets::shared::horizontal_space};
 
 use super::{
-    registry::MainBarRegistry,
+    registry::{iter_section, MainBarRegistry},
     slot::{Section, SlotCtx},
 };
 
@@ -57,8 +57,7 @@ fn render_section<'data>(
     section: Section,
     spacing: f32,
 ) -> Element<'data, Message> {
-    let items: Vec<Element<'data, Message>> = registry
-        .iter_section(section)
+    let items: Vec<Element<'data, Message>> = iter_section(registry, section)
         .map(|slot| (slot.builder)(ctx))
         .collect();
     row(items)

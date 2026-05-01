@@ -23,7 +23,10 @@ use super::panels::{self};
 use super::state::EffectiveLayout;
 use super::{RepositoryMessage, RepositoryScreen};
 
-pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element<'_, Message> {
+pub(in crate::screens::repository) fn view_with_repo_region<'a>(
+    screen: &'a RepositoryScreen,
+    registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+) -> Element<'a, Message> {
     if screen.panels.diff.is_conflict_fullscreen() {
         let center_graph = screen.panels.center.view_with(&panels::center::CenterViewCtx {
             data: &screen.data,
@@ -43,7 +46,7 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
             .into();
     }
 
-    let body = responsive(move |size| build_body(screen, size));
+    let body = responsive(move |size| build_body_with_region(screen, registry, size));
 
     container(body)
         .style(|_: &Theme| container::Style {
@@ -55,7 +58,44 @@ pub(in crate::screens::repository) fn view(screen: &RepositoryScreen) -> Element
         .into()
 }
 
-fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a, Message> {
+fn wrap_pane<'a>(
+    pane: crate::widgets::chrome::repo_region::Pane,
+    body: Element<'a, Message>,
+    registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+) -> Element<'a, Message> {
+    use crate::widgets::chrome::repo_region as rr;
+
+    let top_empty = rr::is_empty(registry, pane, rr::Section::Top);
+    let bottom_empty = rr::is_empty(registry, pane, rr::Section::Bottom);
+    if top_empty && bottom_empty {
+        return body;
+    }
+
+    let pane_ctx = rr::RepoPaneCtx::new();
+    let mut col = column![].spacing(0).width(Length::Fill).height(Length::Fill);
+    if !top_empty {
+        let items: Vec<Element<'a, Message>> = rr::iter(registry, pane, rr::Section::Top)
+            .map(|s| (s.builder)(&pane_ctx))
+            .collect();
+        col = col.push(iced::widget::column(items).spacing(0));
+    }
+    col = col.push(body);
+    if !bottom_empty {
+        let items: Vec<Element<'a, Message>> = rr::iter(registry, pane, rr::Section::Bottom)
+            .map(|s| (s.builder)(&pane_ctx))
+            .collect();
+        col = col.push(iced::widget::column(items).spacing(0));
+    }
+    col.into()
+}
+
+fn build_body_with_region<'a>(
+    screen: &'a RepositoryScreen,
+    registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+    size: iced::Size,
+) -> Element<'a, Message> {
+    use crate::widgets::chrome::repo_region as rr;
+
     let layout = screen
         .data
         .resize
@@ -71,7 +111,7 @@ fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a,
         ),
     };
 
-    let sidebar = screen.panels.sidebar.view(&panels::sidebar::SidebarViewCtx {
+    let sidebar_body = screen.panels.sidebar.view(&panels::sidebar::SidebarViewCtx {
         sections: screen.data.snapshot.sidebar_sections(),
         commit_count: screen.data.snapshot.commits().len(),
         width: sidebar_width,
@@ -85,9 +125,9 @@ fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a,
         commit_search: screen.data.commit_search.as_ref(),
         branch_popout: &screen.data.branch_popout,
     });
-    let center = screen.panels.diff.view_or_passthrough(center_graph);
+    let center_body = screen.panels.diff.view_or_passthrough(center_graph);
 
-    let detail = screen
+    let detail_body = screen
         .panels
         .detail
         .view_with(&panels::detail::DetailViewCtx {
@@ -98,6 +138,10 @@ fn build_body<'a>(screen: &'a RepositoryScreen, size: iced::Size) -> Element<'a,
             orientation,
             width: detail_width,
         });
+
+    let sidebar = wrap_pane(rr::Pane::Sidebar, sidebar_body, registry);
+    let center = wrap_pane(rr::Pane::Graph, center_body, registry);
+    let detail = wrap_pane(rr::Pane::Details, detail_body, registry);
 
     match orientation {
         DetailOrientation::Vertical => row![sidebar, center, detail].height(Length::Fill).into(),

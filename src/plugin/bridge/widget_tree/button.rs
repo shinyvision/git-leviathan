@@ -12,7 +12,7 @@
 //!
 //! `on_click` dispatches according to the current scope:
 //! - Screen → `PluginMessage::Event { plugin_id, screen_id, event, value }`
-//! - MainBarSlot → `PluginMessage::SlotClicked { plugin_id, slot_id }`
+//! - Slot → `PluginMessage::SlotClicked { plugin_id, region, container, slot_id }`
 //!
 //! Empty/absent `on_click` renders a non-interactive button (no on_press
 //! handler; iced disables hover highlight automatically).
@@ -66,12 +66,16 @@ pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Messag
                 event,
                 value,
             }),
-            DispatchScope::MainBarSlot { slot_id } => {
-                Message::Plugin(PluginMessage::SlotClicked {
-                    plugin_id,
-                    slot_id: slot_id.to_string(),
-                })
-            }
+            DispatchScope::Slot {
+                region,
+                container,
+                slot_id,
+            } => Message::Plugin(PluginMessage::SlotClicked {
+                plugin_id,
+                region: region.to_string(),
+                container: container.to_string(),
+                slot_id: slot_id.to_string(),
+            }),
         })
     };
 

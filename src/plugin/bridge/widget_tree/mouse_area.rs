@@ -1,6 +1,6 @@
 //! `{kind = "mouse_area", child, on_click?, value?}` — generic click
 //! target that wraps any child, routes clicks through the current
-//! dispatch scope (screen → `PluginMessage::Event`; main-bar slot →
+//! dispatch scope (screen → `PluginMessage::Event`; slot →
 //! `PluginMessage::SlotClicked`).
 
 use iced::{
@@ -37,12 +37,16 @@ pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Messag
                 event,
                 value,
             }),
-            DispatchScope::MainBarSlot { slot_id } => {
-                Message::Plugin(PluginMessage::SlotClicked {
-                    plugin_id,
-                    slot_id: slot_id.to_string(),
-                })
-            }
+            DispatchScope::Slot {
+                region,
+                container,
+                slot_id,
+            } => Message::Plugin(PluginMessage::SlotClicked {
+                plugin_id,
+                region: region.to_string(),
+                container: container.to_string(),
+                slot_id: slot_id.to_string(),
+            }),
         }
     };
     MouseArea::new(child)

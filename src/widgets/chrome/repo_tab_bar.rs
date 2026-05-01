@@ -5,7 +5,7 @@
 //! widget; this view only exposes selection and reorder commits.
 
 use iced::{
-    widget::{button, container},
+    widget::{button, container, row},
     Border, Element, Length, Padding, Theme,
 };
 
@@ -14,15 +14,17 @@ use crate::{
     core::TabId,
     message::{AppMessage, Message},
     style, theme,
+    widgets::chrome::tab_bar_slots::{self, TabBarCtx, TabBarRegistry},
     widgets::primitives::hoverable::hoverable_swap,
     widgets::tab_bar::{TabBar, TabItem},
 };
 
-pub fn tab_bar_view(
+pub fn tab_bar_view<'a>(
     tabs: Vec<(TabId, String)>,
     active_tab_id: TabId,
-) -> Element<'static, Message> {
-    let items: Vec<TabItem<'_, TabId, Message>> = tabs
+    registry: &'a TabBarRegistry,
+) -> Element<'a, Message> {
+    let items: Vec<TabItem<'a, TabId, Message>> = tabs
         .into_iter()
         .map(|(id, name)| {
             let is_active = id == active_tab_id;
@@ -32,9 +34,41 @@ pub fn tab_bar_view(
         })
         .collect();
 
+    let ctx = TabBarCtx::new();
+
+    let leading_empty = tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)
+        .next()
+        .is_none();
+    let trailing_empty = tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Right)
+        .next()
+        .is_none();
+
+    let leading: Element<'a, Message> = if leading_empty {
+        plus_button()
+    } else {
+        let plugin_items: Vec<Element<'a, Message>> =
+            tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)
+                .map(|slot| (slot.builder)(&ctx))
+                .collect();
+        row![row(plugin_items).align_y(iced::Alignment::Center), plus_button()]
+            .align_y(iced::Alignment::Center)
+            .into()
+    };
+    let trailing: Element<'a, Message> = if trailing_empty {
+        version_label()
+    } else {
+        let plugin_items: Vec<Element<'a, Message>> =
+            tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Right)
+                .map(|slot| (slot.builder)(&ctx))
+                .collect();
+        row![row(plugin_items).align_y(iced::Alignment::Center), version_label()]
+            .align_y(iced::Alignment::Center)
+            .into()
+    };
+
     TabBar::new(items, active_tab_id)
-        .leading_slot(plus_button())
-        .trailing_slot(version_label())
+        .leading_slot(leading)
+        .trailing_slot(trailing)
         .on_select(|id| Message::App(AppMessage::TabSelected(id)))
         .on_reorder(|order| Message::App(AppMessage::TabsReordered(order)))
         .into()

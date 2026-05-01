@@ -29,7 +29,10 @@ pub struct ScreenDef {
     pub update: RegistryKey,
 }
 
-/// Raw slot spec as captured from Lua during `init.lua` execution.
+/// Raw slot spec (region-scoped). Carries everything the host needs to
+/// place the slot in the right registry: a region name, a container key
+/// (chrome section, or "pane.section" for content regions), id,
+/// priority, widget, on_click.
 ///
 /// The `widget` is either a plugin-supplied widget tree (same DSL as
 /// plugin screens) serialised to `serde_json::Value`, or a Lua function
@@ -43,7 +46,8 @@ pub struct ScreenDef {
 /// dispatch through the main-bar-slot scope).
 pub struct RawSlotSpec {
     pub id: String,
-    pub section: String,
+    pub region: String,
+    pub container: String,
     pub priority: i32,
     pub widget: WidgetSource,
     pub on_click: Option<RegistryKey>,
@@ -67,8 +71,8 @@ pub enum WidgetSource {
 /// targets the already-added slot (not the other way around).
 pub enum RawSlotOp {
     Add(RawSlotSpec),
-    Remove(String),
-    Replace(String, RawSlotSpec),
+    Remove { region: String, container: String, id: String },
+    Replace { region: String, container: String, id: String, spec: RawSlotSpec },
 }
 
 /// One `leviathan.api.create_autocmd` subscription captured during init.
@@ -83,7 +87,8 @@ pub struct RawAutocmd {
 #[derive(Default)]
 pub struct BuildState {
     pub screens: HashMap<String, ScreenDef>,
-    /// Ordered hook operations from `leviathan.ui.main_bar.{add,remove,replace}`.
+    /// Ordered hook operations from `leviathan.ui.regions.*` (and the
+    /// back-compat `leviathan.ui.main_bar.{add,remove,replace}` shim).
     pub slot_ops: Vec<RawSlotOp>,
     /// Autocmd subscriptions from `leviathan.api.create_autocmd`.
     pub autocmds: Vec<RawAutocmd>,

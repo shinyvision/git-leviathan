@@ -393,6 +393,17 @@ impl RepositoryScreen {
     }
 }
 
+impl RepositoryScreen {
+    /// Render the repository view, passing in the plugin slot registry so that
+    /// top/bottom extension sections are populated. Called from `app/view.rs`.
+    pub fn view_with_repo_region<'a>(
+        &'a self,
+        registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+    ) -> iced::Element<'a, crate::message::Message> {
+        view::view_with_repo_region(self, registry)
+    }
+}
+
 impl Screen for RepositoryScreen {
     type Message = RepositoryMessage;
 
@@ -401,7 +412,13 @@ impl Screen for RepositoryScreen {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        view::view(self)
+        // Unreachable: `app::view::repository_view` calls
+        // `RepositoryScreen::view_with_repo_region` directly, bypassing
+        // the trait method. The repo screen needs the host's
+        // `RepoRegionRegistry` to render plugin slots, which the trait
+        // signature doesn't expose. Kept here only to satisfy the
+        // `Screen` trait contract.
+        iced::widget::text("").into()
     }
 
     fn subscription(&self) -> Subscription<Message> {

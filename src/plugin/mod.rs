@@ -14,6 +14,7 @@ pub mod api;
 pub mod bridge;
 pub mod host;
 pub mod message;
+pub mod slots;
 pub mod ui;
 
 pub use host::PluginHost;

@@ -52,12 +52,17 @@ use common::error_text;
 ///
 /// - `Screen` clicks emit `PluginMessage::Event { plugin_id, screen_id,
 ///   event, value }`. The plugin's `update(state, event, value)` sees them.
-/// - `MainBarSlot` clicks emit `PluginMessage::SlotClicked { plugin_id,
-///   slot_id }`. The slot's `on_click` Lua fn is invoked directly.
+/// - `Slot` clicks emit `PluginMessage::SlotClicked { plugin_id, region,
+///   container, slot_id }`. The slot's `on_click` Lua fn is invoked
+///   directly.
 #[derive(Clone, Copy)]
 pub enum DispatchScope<'a> {
     Screen { screen_id: &'a str },
-    MainBarSlot { slot_id: &'a str },
+    Slot {
+        region: &'a str,
+        container: &'a str,
+        slot_id: &'a str,
+    },
 }
 
 impl<'a> DispatchScope<'a> {
@@ -67,7 +72,11 @@ impl<'a> DispatchScope<'a> {
     pub fn storage_key(&self) -> String {
         match self {
             DispatchScope::Screen { screen_id } => format!("screen:{screen_id}"),
-            DispatchScope::MainBarSlot { slot_id } => format!("slot:{slot_id}"),
+            DispatchScope::Slot {
+                region,
+                container,
+                slot_id,
+            } => format!("slot:{region}:{container}:{slot_id}"),
         }
     }
 }
@@ -190,7 +199,11 @@ mod tests {
         let t = TestCtx::new();
         let ctx = BuildCtx {
             plugin_id: "p1",
-            scope: DispatchScope::MainBarSlot { slot_id: "plugin.p1.foo" },
+            scope: DispatchScope::Slot {
+                region: "main_bar",
+                container: "right",
+                slot_id: "plugin.p1.foo",
+            },
             plugin_root: &t.root,
             split_states: &t.splits,
             active_drag: None,

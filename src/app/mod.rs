@@ -21,6 +21,8 @@ use crate::{
     services::{detect_git, DefaultPresenter, GitStatus, Presenter, SettingsService},
     toast::ToastManager,
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
+    widgets::chrome::repo_region::RepoRegionRegistry,
+    widgets::chrome::tab_bar_slots::TabBarRegistry,
 };
 
 use fetch_policy::FetchPolicy;
@@ -49,6 +51,12 @@ pub struct App {
     /// Authoritative slot registry for the main bar. Built once at startup
     /// from built-ins + plugin contributions; `view` walks it each frame.
     pub(super) main_bar_registry: MainBarRegistry,
+    /// Authoritative slot registry for the tab bar. Plugin contributions
+    /// wired in Task 9; empty for now.
+    pub(super) tab_bar_registry: TabBarRegistry,
+    /// Authoritative slot registry for the repository region. Plugin
+    /// contributions wired in Task 11; consumed by the view in Task 12.
+    pub(super) repo_region_registry: RepoRegionRegistry,
 }
 
 impl App {
@@ -63,7 +71,13 @@ impl App {
         // or replace built-in slots. Legacy `add_main_bar_button` buttons
         // land on the right; new `main_bar.{add,remove,replace}` ops run
         // in source order across all plugins.
-        plugin_host.register_main_bar_slots(&mut main_bar_registry);
+        plugin_host.apply_main_bar_slots(&mut main_bar_registry);
+
+        let mut tab_bar_registry = TabBarRegistry::new();
+        plugin_host.apply_tab_bar_slots(&mut tab_bar_registry);
+
+        let mut repo_region_registry = RepoRegionRegistry::new();
+        plugin_host.apply_repo_region_slots(&mut repo_region_registry);
 
         let mut app = App {
             tabs: TabManager::new(presenter),
@@ -75,6 +89,8 @@ impl App {
             reload_refs_abort: None,
             plugin_host,
             main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.

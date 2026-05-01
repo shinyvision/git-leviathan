@@ -50,7 +50,7 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
         .collect();
 
     let mut content_col = column![
-        chrome::tab_bar_view(tab_entries, app.tabs.active_tab_id()),
+        chrome::tab_bar_view(tab_entries, app.tabs.active_tab_id(), &app.tab_bar_registry),
     ]
     .spacing(0);
     let ctx = ToolbarCtx {
@@ -62,7 +62,7 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
     {
         content_col = content_col.push(toolbar);
     }
-    content_col = content_col.push(screen.view());
+    content_col = content_col.push(screen.view_with_repo_region(&app.repo_region_registry));
 
     let content: Element<Message> = content_col.into();
 

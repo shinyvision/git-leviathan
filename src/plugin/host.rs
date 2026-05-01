@@ -21,12 +21,12 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 use serde::Deserialize;
 
 use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
-use crate::plugin::ui::main_bar_slots::{
-    parse_section, PreparedMainBarSlot, PreparedSlotOp, SlotWidget,
-};
+use crate::plugin::ui::main_bar_slots::{parse_container, PreparedSlot, PreparedSlotOp, SlotWidget};
 use crate::plugin::ui::split;
 use crate::services::RepoRef;
 use crate::widgets::chrome::main_bar::MainBarRegistry;
+use crate::widgets::chrome::repo_region::RepoRegionRegistry;
+use crate::widgets::chrome::tab_bar_slots::TabBarRegistry;
 
 pub const PLUGIN_API_VERSION: u32 = 1;
 
@@ -116,10 +116,8 @@ struct SplitDragInfo {
 
 pub struct PluginHost {
     plugins: HashMap<String, LoadedPlugin>,
-    /// Ordered hook operations from `main_bar.{add,remove,replace}`.
-    /// Preserved in plugin-load order so later plugins see the state
-    /// earlier plugins produced.
-    main_bar_slot_ops: Vec<PreparedSlotOp>,
+    /// Ordered hook operations across every region.
+    slot_ops: Vec<PreparedSlotOp>,
     active_screen: Option<(String, String)>,
     widget_tree: Option<serde_json::Value>,
     split_sizes: HashMap<String, Vec<f32>>,
@@ -145,7 +143,7 @@ impl PluginHost {
     pub fn new() -> Self {
         Self {
             plugins: HashMap::new(),
-            main_bar_slot_ops: Vec::new(),
+            slot_ops: Vec::new(),
             active_screen: None,
             widget_tree: None,
             split_sizes: HashMap::new(),
@@ -209,53 +207,22 @@ impl PluginHost {
             )
         };
 
-        // Resolve hook-API slot operations. Each `Add`/`Replace` carries an
-        // optional `on_click` RegistryKey — stash it in the plugin's
-        // slot-handler map before we move the RawSlotSpec into a
-        // PreparedMainBarSlot (which drops the key, keeping only the
-        // `has_handler` flag). Dynamic widgets are also split out here
-        // into `dynamic_widgets` so the host can re-invoke them on
-        // autocmd fire.
         let root = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
         let mut slot_handlers = HashMap::new();
         let mut dynamic_widgets = HashMap::new();
         for op in slot_ops {
-            match op {
-                RawSlotOp::Add(raw) => {
-                    match prepare_slot(
-                        &manifest.plugin.id,
-                        &root,
-                        raw,
-                        &mut slot_handlers,
-                        &mut dynamic_widgets,
-                    ) {
-                        Ok(prepared) => self.main_bar_slot_ops.push(PreparedSlotOp::Add(prepared)),
-                        Err(e) => eprintln!(
-                            "git_leviathan: plugin {} main_bar.add ignored: {e}",
-                            manifest.plugin.id
-                        ),
-                    }
-                }
-                RawSlotOp::Remove(id) => {
-                    self.main_bar_slot_ops.push(PreparedSlotOp::Remove(id));
-                }
-                RawSlotOp::Replace(id, raw) => {
-                    match prepare_slot(
-                        &manifest.plugin.id,
-                        &root,
-                        raw,
-                        &mut slot_handlers,
-                        &mut dynamic_widgets,
-                    ) {
-                        Ok(prepared) => self
-                            .main_bar_slot_ops
-                            .push(PreparedSlotOp::Replace(id, prepared)),
-                        Err(e) => eprintln!(
-                            "git_leviathan: plugin {} main_bar.replace ignored: {e}",
-                            manifest.plugin.id
-                        ),
-                    }
-                }
+            match prepare_op(
+                &manifest.plugin.id,
+                &root,
+                op,
+                &mut slot_handlers,
+                &mut dynamic_widgets,
+            ) {
+                Ok(prepared) => self.slot_ops.push(prepared),
+                Err(e) => eprintln!(
+                    "git_leviathan: plugin {} slot op ignored: {e}",
+                    manifest.plugin.id
+                ),
             }
         }
 
@@ -287,39 +254,92 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Populate `registry` with every ordered slot op this host collected.
-    /// Must be called after built-ins are in place so plugin removes and
-    /// replaces can target them.
-    pub fn register_main_bar_slots(&self, registry: &mut MainBarRegistry) {
-        for op in &self.main_bar_slot_ops {
+    /// Apply every collected `main_bar` op to a `MainBarRegistry`.
+    pub fn apply_main_bar_slots(&self, registry: &mut MainBarRegistry) {
+        for op in &self.slot_ops {
             match op {
-                PreparedSlotOp::Add(prepared) => {
-                    registry.add(prepared.clone().into_main_bar_slot());
+                PreparedSlotOp::Add(p) if p.region == "main_bar" => {
+                    registry.add(p.clone().into_main_bar());
                 }
-                PreparedSlotOp::Remove(id) => {
-                    let removed = registry.remove(id);
-                    if !removed {
+                PreparedSlotOp::Replace { region, id, spec, .. } if region == "main_bar" => {
+                    if !registry.replace(id, spec.clone().into_main_bar()) {
+                        eprintln!("git_leviathan: regions.replace_slot(main_bar, \"{id}\") — no such slot");
+                    }
+                }
+                PreparedSlotOp::Remove { region, id, .. } if region == "main_bar" => {
+                    if !registry.remove(id) {
+                        eprintln!("git_leviathan: regions.remove_slot(main_bar, \"{id}\") — no such slot");
+                    }
+                }
+                PreparedSlotOp::RemoveAnyContainer { region, id } if region == "main_bar" => {
+                    if !registry.remove(id) {
                         eprintln!("git_leviathan: main_bar.remove(\"{id}\") — no such slot");
                     }
                 }
-                PreparedSlotOp::Replace(id, prepared) => {
-                    let replaced = registry.replace(id, prepared.clone().into_main_bar_slot());
-                    if !replaced {
-                        eprintln!("git_leviathan: main_bar.replace(\"{id}\", …) — no such slot");
+                _ => {}
+            }
+        }
+    }
+
+    /// Apply every collected `repository` op to a `RepoRegionRegistry`.
+    pub fn apply_repo_region_slots(&self, registry: &mut RepoRegionRegistry) {
+        for op in &self.slot_ops {
+            match op {
+                PreparedSlotOp::Add(p) if p.region == "repository" => {
+                    registry.add(p.clone().into_repo_pane());
+                }
+                PreparedSlotOp::Replace { region, id, spec, .. } if region == "repository" => {
+                    if !registry.replace(id, spec.clone().into_repo_pane()) {
+                        eprintln!("git_leviathan: regions.replace_slot(repository, \"{id}\") — no such slot");
                     }
                 }
+                PreparedSlotOp::Remove { region, id, .. } if region == "repository" => {
+                    if !registry.remove(id) {
+                        eprintln!("git_leviathan: regions.remove_slot(repository, \"{id}\") — no such slot");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Apply every collected `tab_bar` op to a `TabBarRegistry`.
+    pub fn apply_tab_bar_slots(&self, registry: &mut TabBarRegistry) {
+        for op in &self.slot_ops {
+            match op {
+                PreparedSlotOp::Add(p) if p.region == "tab_bar" => {
+                    registry.add(p.clone().into_tab_bar());
+                }
+                PreparedSlotOp::Replace { region, id, spec, .. } if region == "tab_bar" => {
+                    if !registry.replace(id, spec.clone().into_tab_bar()) {
+                        eprintln!("git_leviathan: regions.replace_slot(tab_bar, \"{id}\") — no such slot");
+                    }
+                }
+                PreparedSlotOp::Remove { region, id, .. } if region == "tab_bar" => {
+                    if !registry.remove(id) {
+                        eprintln!("git_leviathan: regions.remove_slot(tab_bar, \"{id}\") — no such slot");
+                    }
+                }
+                _ => {}
             }
         }
     }
 
     /// Invoke a plugin's slot-click handler. Silently no-ops if the plugin
     /// is gone, the slot has no handler, or the Lua call errors.
-    pub fn dispatch_slot_click(&mut self, plugin_id: &str, slot_id: &str) {
+    pub fn dispatch_slot_click(
+        &mut self,
+        plugin_id: &str,
+        region: &str,
+        container: &str,
+        slot_id: &str,
+    ) {
+        let handler_key = format!("{region}:{container}:{slot_id}");
         let nav: Option<String> = {
             let Some(plugin) = self.plugins.get(plugin_id) else {
                 return;
             };
-            let Some(key) = plugin.slot_handlers.get(slot_id) else {
+            let Some(key) = plugin.slot_handlers.get(&handler_key) else {
                 return;
             };
             let func: Function = match plugin.lua.registry_value(key) {
@@ -379,31 +399,60 @@ fn compute_repo_hash(
     h.finish()
 }
 
-/// Resolve a raw slot spec into the form the registry renderer wants.
-///
-/// Parses the `section` string, stashes the slot's `on_click` (if any) in
-/// `handlers` keyed by the slot id, and splits dynamic widgets into a
-/// `(fn key, cache cell)` pair stored in `dynamic_widgets`. The static
-/// widget tree (or the cache Rc for dynamic slots) is carried on the
-/// returned `PreparedMainBarSlot` for the renderer.
+fn prepare_op(
+    plugin_id: &str,
+    plugin_root: &Path,
+    op: RawSlotOp,
+    handlers: &mut HashMap<String, RegistryKey>,
+    dynamic_widgets: &mut HashMap<String, (RegistryKey, Rc<RefCell<serde_json::Value>>)>,
+) -> Result<PreparedSlotOp, String> {
+    match op {
+        RawSlotOp::Add(raw) => {
+            let prepared = prepare_slot(plugin_id, plugin_root, raw, handlers, dynamic_widgets)?;
+            Ok(PreparedSlotOp::Add(prepared))
+        }
+        RawSlotOp::Remove { region, container, id } => {
+            if container.is_empty() {
+                Ok(PreparedSlotOp::RemoveAnyContainer { region, id })
+            } else {
+                Ok(PreparedSlotOp::Remove {
+                    region,
+                    container: parse_container(&container),
+                    id,
+                })
+            }
+        }
+        RawSlotOp::Replace { region, container, id, spec } => {
+            let prepared = prepare_slot(plugin_id, plugin_root, spec, handlers, dynamic_widgets)?;
+            Ok(PreparedSlotOp::Replace {
+                region,
+                container: parse_container(&container),
+                id,
+                spec: prepared,
+            })
+        }
+    }
+}
+
 fn prepare_slot(
     plugin_id: &str,
     plugin_root: &Path,
     raw: RawSlotSpec,
     handlers: &mut HashMap<String, RegistryKey>,
     dynamic_widgets: &mut HashMap<String, (RegistryKey, Rc<RefCell<serde_json::Value>>)>,
-) -> Result<PreparedMainBarSlot, String> {
+) -> Result<PreparedSlot, String> {
     let RawSlotSpec {
         id,
-        section,
+        region,
+        container,
         priority,
         widget,
         on_click,
     } = raw;
-
-    let section = parse_section(&section)?;
+    let container_parsed = parse_container(&container);
     if let Some(key) = on_click {
-        handlers.insert(id.clone(), key);
+        let handler_key = format!("{region}:{}:{id}", container_parsed.key());
+        handlers.insert(handler_key, key);
     }
     let widget = match widget {
         WidgetSource::Static(v) => SlotWidget::Static(v),
@@ -413,10 +462,11 @@ fn prepare_slot(
             SlotWidget::Dynamic(cache)
         }
     };
-    Ok(PreparedMainBarSlot {
+    Ok(PreparedSlot {
         plugin_id: plugin_id.to_string(),
         id,
-        section,
+        region,
+        container: container_parsed,
         priority,
         widget,
         plugin_root: plugin_root.to_path_buf(),
