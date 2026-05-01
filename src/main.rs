@@ -34,6 +34,7 @@ fn main() -> iced::Result {
             min_size: Some(iced::Size::new(900.0, 600.0)),
             icon: iced::window::icon::from_file_data(APP_ICON_PNG, None).ok(),
             platform_specific: platform_specific(),
+            exit_on_close_request: false,
             ..Default::default()
         })
         .run()

@@ -2,11 +2,70 @@
 //! subprocess invocation for the service layer. Uniform error classification
 //! via `wrap_git2_error`; callers should not re-roll their own boilerplate.
 
-use std::process::{Command, Output};
+use std::collections::HashSet;
+use std::process::{Command, Output, Stdio};
+use std::sync::{Mutex, OnceLock};
 
 use git2::{Branch, BranchType, Commit, ErrorClass, ErrorCode, Oid, Reference, Repository};
 
 use crate::services::git_error::GitError;
+
+/// PIDs of `git` subprocesses currently being awaited by `spawn_git_command`.
+/// On app shutdown the close handler calls `kill_running_git_processes` to
+/// SIGKILL anything still running so the process can exit immediately instead
+/// of blocking on a slow `git ls-remote` / `git push`.
+static RUNNING_GIT_PIDS: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+
+fn pid_set() -> &'static Mutex<HashSet<u32>> {
+    RUNNING_GIT_PIDS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn register_pid(pid: u32) {
+    if let Ok(mut set) = pid_set().lock() {
+        set.insert(pid);
+    }
+}
+
+fn unregister_pid(pid: u32) {
+    if let Ok(mut set) = pid_set().lock() {
+        set.remove(&pid);
+    }
+}
+
+/// Force-kill every git subprocess registered by `spawn_git_command`. Intended
+/// to be called once from the shutdown path; safe to call when none are
+/// running. Does not wait for the children to be reaped.
+pub fn kill_running_git_processes() {
+    let pids: Vec<u32> = match pid_set().lock() {
+        Ok(set) => set.iter().copied().collect(),
+        Err(_) => return,
+    };
+    for pid in pids {
+        kill_pid(pid);
+    }
+}
+
+#[cfg(unix)]
+fn kill_pid(pid: u32) {
+    let _ = Command::new("kill")
+        .arg("-9")
+        .arg(pid.to_string())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(windows)]
+fn kill_pid(pid: u32) {
+    let _ = Command::new("taskkill")
+        .args(["/F", "/PID", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(any(unix, windows)))]
+fn kill_pid(_pid: u32) {}
 
 /// Classify a `git2::Error` into the narrowest `GitError` variant from its
 /// class+code. `op` is a short imperative label (e.g. "rename branch") that
@@ -84,9 +143,19 @@ pub(super) fn spawn_git_command(
     args: &[&str],
     op: &str,
 ) -> Result<Output, GitError> {
-    Command::new("git")
+    let child = Command::new("git")
         .current_dir(repo_path)
         .args(args)
-        .output()
-        .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))?;
+    let pid = child.id();
+    register_pid(pid);
+    let result = child
+        .wait_with_output()
+        .map_err(|e| GitError::Other(format!("{op}: failed to wait on git: {e}")));
+    unregister_pid(pid);
+    result
 }
