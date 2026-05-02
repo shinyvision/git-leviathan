@@ -131,11 +131,13 @@ fn emit_region_fn(
     writeln!(out, "function {ns}.{verb}({param_name}) end\n").unwrap();
 }
 
-const CLASSES: &[ClassDoc] = &[
+pub const CLASSES: &[ClassDoc] = &[
     ClassDoc { name: "leviathan.fs", fields: &[], doc: "" },
     ClassDoc { name: "leviathan.env", fields: &[], doc: "" },
     ClassDoc { name: "leviathan.api", fields: &[], doc: "" },
     ClassDoc { name: "leviathan.ui", fields: &[], doc: "" },
+    ClassDoc { name: "leviathan.persist", fields: &[], doc: "Versioned per-plugin key-value persistence." },
+    ClassDoc { name: "leviathan.services", fields: &[], doc: "Inter-plugin RPC services." },
     ClassDoc {
         name: "leviathan.tab_registry",
         fields: &[
@@ -165,7 +167,7 @@ const CLASSES: &[ClassDoc] = &[
     },
 ];
 
-const FUNCTIONS: &[FnDoc] = &[
+pub const FUNCTIONS: &[FnDoc] = &[
     FnDoc {
         path: "leviathan.log",
         params: &[ParamDoc { name: "message", ty: "string", doc: "Message to log to host stderr." }],
@@ -233,6 +235,32 @@ const FUNCTIONS: &[FnDoc] = &[
         }],
         returns: "",
         doc: "Register a screen with init/view/update lifecycle callbacks.",
+    },
+
+    FnDoc {
+        path: "leviathan.persist.open",
+        params: &[
+            ParamDoc { name: "name", ty: "string", doc: "Plugin-local store identifier." },
+            ParamDoc { name: "opts", ty: "{ version: integer?, migrations: table[]? }", doc: "" },
+        ],
+        returns: "userdata",
+        doc: "Open or create a versioned key-value store under the plugin's state dir.\nReturns a store userdata with `:get(key)`, `:set(key, value)`, `:version()`.",
+    },
+
+    FnDoc {
+        path: "leviathan.services.register",
+        params: &[
+            ParamDoc { name: "name_at_version", ty: "string", doc: "e.g. \"greeter@1\"; must appear in provides_services." },
+            ParamDoc { name: "methods", ty: "table<string, function>", doc: "" },
+        ],
+        returns: "",
+        doc: "Publish a service. The service must be declared in `provides_services`.",
+    },
+    FnDoc {
+        path: "leviathan.services.get",
+        params: &[ParamDoc { name: "name_at_version", ty: "string", doc: "Must appear in consumes_services." }],
+        returns: "table",
+        doc: "Look up a service. Methods are called like `svc.method(args)`.",
     },
 
     FnDoc { path: "leviathan.tab_registry.add", params: &[ParamDoc { name: "path", ty: "string", doc: "" }], returns: "", doc: "Open a new tab for the given path." },

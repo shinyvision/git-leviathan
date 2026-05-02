@@ -1,0 +1,5 @@
+id = "service_publisher_example"
+name = "Service Publisher"
+version = "0.1.0"
+api_version = "1.0"
+provides_services = ["greeter@1"]
