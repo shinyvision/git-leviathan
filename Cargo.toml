@@ -1,3 +1,20 @@
+[workspace]
+members = ["git_leviathan_plugin_api", "xtask"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+authors = ["Rachel Snijders"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+semver = { version = "1", features = ["serde"] }
+schemars = "0.8"
+mlua = { version = "0.10", features = ["luajit", "vendored", "serialize"] }
+notify = { version = "7", features = ["macos_fsevent"] }
+
 [package]
 name = "git_leviathan"
 version = "0.1.0"
@@ -27,6 +44,7 @@ mlua = { version = "0.10", features = ["luajit", "vendored", "serialize"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+git_leviathan_plugin_api = { path = "git_leviathan_plugin_api" }
 
 [package.metadata.deb]
 name = "git-leviathan"
