@@ -93,11 +93,11 @@ impl MockHost {
 
 pub fn test_host_with_plugin(init_lua: &str) -> MockHost {
 	let mut host = MockHost::new();
-	let manifest = r#"[plugin]
+	let manifest = r#"
 id = "test"
 name = "Test"
 version = "0.1.0"
-api = 1
+api_version = "1.0"
 "#;
 	host.load_inline("test", manifest, init_lua)
 		.expect("load test plugin");
@@ -127,29 +127,28 @@ fn split_plugin_str(s: &str) -> Result<(String, String), Box<dyn std::error::Err
 
 fn extract_id(manifest: &str) -> Result<String, Box<dyn std::error::Error>> {
 	let v: toml::Value = toml::from_str(manifest)?;
-	v.get("plugin")
-		.and_then(|p| p.get("id"))
+	v.get("id")
 		.and_then(|i| i.as_str())
 		.map(str::to_owned)
-		.ok_or_else(|| "manifest missing plugin.id".into())
+		.ok_or_else(|| "manifest missing id".into())
 }
 
 #[cfg(test)]
 mod self_tests {
 	use super::*;
 
-	const SMOKE_MANIFEST: &str = r#"[plugin]
+	const SMOKE_MANIFEST: &str = r#"
 id = "smoke"
 name = "Smoke"
 version = "0.1.0"
-api = 1
+api_version = "1.0"
 "#;
 
-	const BAD_MANIFEST: &str = r#"[plugin]
+	const BAD_MANIFEST: &str = r#"
 id = "bad"
 name = "Bad"
 version = "0.1.0"
-api = 1
+api_version = "1.0"
 "#;
 
 	#[test]
@@ -174,11 +173,10 @@ api = 1
 		host.load_inline(
 			"p",
 			r#"
-			[plugin]
 			id = "p"
 			name = "P"
 			version = "0.1.0"
-			api = 1
+			api_version = "1.0"
 		"#,
 			"",
 		)
@@ -186,5 +184,48 @@ api = 1
 		assert!(host.root().is_dir());
 		assert_eq!(host.plugin_dir("p"), Some(host.root().join("p").as_path()));
 		assert!(host.plugin_dir("missing").is_none());
+	}
+
+	#[test]
+	fn fs_read_blocked_without_capability() {
+		let r = load_plugin_from_str(
+			r#"
+		[manifest]
+		id = "no-fs"
+		name = "no-fs"
+		version = "0.1.0"
+		api_version = "1.0"
+
+		[init.lua]
+		leviathan.fs.read_file("/etc/passwd")
+		"#,
+		);
+		let err = match r {
+			Err(e) => e.to_string(),
+			Ok(_) => panic!("expected load failure"),
+		};
+		assert!(
+			err.contains("capability not granted: fs:read"),
+			"got: {err}"
+		);
+	}
+
+	#[test]
+	fn fs_read_allowed_with_capability() {
+		let host = load_plugin_from_str(
+			r#"
+		[manifest]
+		id = "yes-fs"
+		name = "yes-fs"
+		version = "0.1.0"
+		api_version = "1.0"
+		capabilities = ["fs:read:plugin"]
+
+		[init.lua]
+		local _ = leviathan.fs.read_file("init.lua")
+		"#,
+		)
+		.expect("load should succeed");
+		assert!(host.has_plugin("yes-fs"));
 	}
 }

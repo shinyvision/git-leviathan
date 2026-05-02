@@ -17,6 +17,8 @@ use std::rc::Rc;
 
 use mlua::{Lua, RegistryKey};
 
+use crate::plugin::capabilities::CapabilityGuard;
+
 pub mod env;
 pub mod event;
 pub mod factory;
@@ -100,13 +102,14 @@ pub fn install_all(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     pending_tab_ops: tab_registry::PendingOps,
+    guard: Rc<CapabilityGuard>,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
 
     ui::install(lua, Rc::clone(&build), &leviathan)?;
     event::install(lua, Rc::clone(&build), &leviathan)?;
-    fs::install(lua, &leviathan)?;
-    env::install(lua, &leviathan)?;
+    fs::install(lua, &leviathan, Rc::clone(&guard))?;
+    env::install(lua, &leviathan, Rc::clone(&guard))?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
 
     // Start with an empty repository snapshot so plugin code that touches

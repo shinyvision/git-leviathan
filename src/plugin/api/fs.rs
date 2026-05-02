@@ -205,16 +205,22 @@
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use mlua::{Lua, Table};
 
-pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
+use crate::plugin::capabilities::CapabilityGuard;
+
+pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua::Result<()> {
     let fs_tbl = lua.create_table()?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "list_dir",
-        lua.create_function(|lua_inner, path: String| {
+        lua.create_function(move |lua_inner, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
             match list_dir(&path) {
                 Ok(entries) => {
                     let arr = lua_inner.create_table()?;
@@ -235,10 +241,12 @@ pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "delete",
-        lua.create_function(|_, path: String| {
+        lua.create_function(move |_, path: String| {
             let p = Path::new(&path);
+            g.check_fs_write(p).map_err(mlua::Error::external)?;
             let res = if p.is_dir() {
                 fs::remove_dir_all(p)
             } else {
@@ -383,30 +391,42 @@ pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "exists",
-        lua.create_function(|_, path: String| -> mlua::Result<bool> {
+        lua.create_function(move |_, path: String| -> mlua::Result<bool> {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
             Ok(Path::new(&path).exists())
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "is_dir",
-        lua.create_function(|_, path: String| -> mlua::Result<bool> {
+        lua.create_function(move |_, path: String| -> mlua::Result<bool> {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
             Ok(Path::new(&path).is_dir())
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "is_file",
-        lua.create_function(|_, path: String| -> mlua::Result<bool> {
+        lua.create_function(move |_, path: String| -> mlua::Result<bool> {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
             Ok(Path::new(&path).is_file())
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "is_symlink",
-        lua.create_function(|_, path: String| -> mlua::Result<bool> {
+        lua.create_function(move |_, path: String| -> mlua::Result<bool> {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
             Ok(fs::symlink_metadata(&path)
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false))
@@ -420,28 +440,40 @@ pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "size",
-        lua.create_function(|_, path: String| match fs::symlink_metadata(&path) {
-            Ok(m) => Ok((Some(m.len()), None::<String>)),
-            Err(e) => Ok((None, Some(e.to_string()))),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match fs::symlink_metadata(&path) {
+                Ok(m) => Ok((Some(m.len()), None::<String>)),
+                Err(e) => Ok((None, Some(e.to_string()))),
+            }
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "modified",
-        lua.create_function(|_, path: String| match fs::symlink_metadata(&path) {
-            Ok(m) => match m.modified() {
-                Ok(t) => match t.duration_since(UNIX_EPOCH) {
-                    Ok(d) => Ok((Some(d.as_secs() as i64), None::<String>)),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match fs::symlink_metadata(&path) {
+                Ok(m) => match m.modified() {
+                    Ok(t) => match t.duration_since(UNIX_EPOCH) {
+                        Ok(d) => Ok((Some(d.as_secs() as i64), None::<String>)),
+                        Err(e) => Ok((None, Some(e.to_string()))),
+                    },
                     Err(e) => Ok((None, Some(e.to_string()))),
                 },
                 Err(e) => Ok((None, Some(e.to_string()))),
-            },
-            Err(e) => Ok((None, Some(e.to_string()))),
+            }
         })?,
     )?;
 
+    // TODO: `canonicalize` reads filesystem state; gate behind fs:read once
+    // we can do so without breaking existing plugins.
     fs_tbl.set(
         "canonicalize",
         lua.create_function(|_, path: String| match fs::canonicalize(&path) {
@@ -450,111 +482,182 @@ pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "read_link",
-        lua.create_function(|_, path: String| match fs::read_link(&path) {
-            Ok(p) => Ok((Some(p.to_string_lossy().into_owned()), None::<String>)),
-            Err(e) => Ok((None, Some(e.to_string()))),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match fs::read_link(&path) {
+                Ok(p) => Ok((Some(p.to_string_lossy().into_owned()), None::<String>)),
+                Err(e) => Ok((None, Some(e.to_string()))),
+            }
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "read_file",
-        lua.create_function(|_, path: String| match read_file(&path) {
-            Ok(s) => Ok((Some(s), None::<String>)),
-            Err(e) => Ok((None, Some(e))),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            let resolved = resolve_for_read(&plugin_root, &path);
+            match read_file(&resolved) {
+                Ok(s) => Ok((Some(s), None::<String>)),
+                Err(e) => Ok((None, Some(e))),
+            }
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "read_lines",
-        lua.create_function(|lua_inner, path: String| match read_file(&path) {
-            Ok(s) => {
-                let arr = lua_inner.create_table()?;
-                for (i, line) in s.lines().enumerate() {
-                    arr.set(i + 1, line)?;
+        lua.create_function(move |lua_inner, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            let resolved = resolve_for_read(&plugin_root, &path);
+            match read_file(&resolved) {
+                Ok(s) => {
+                    let arr = lua_inner.create_table()?;
+                    for (i, line) in s.lines().enumerate() {
+                        arr.set(i + 1, line)?;
+                    }
+                    Ok((Some(arr), None::<String>))
                 }
-                Ok((Some(arr), None::<String>))
+                Err(e) => Ok((None, Some(e))),
             }
-            Err(e) => Ok((None, Some(e))),
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "mkdir",
-        lua.create_function(|_, path: String| match fs::create_dir_all(&path) {
-            Ok(()) => Ok((true, None::<String>)),
-            Err(e) => Ok((false, Some(e.to_string()))),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_write(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match fs::create_dir_all(&path) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e.to_string()))),
+            }
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "write_file",
         lua.create_function(
-            |_, (path, content): (String, String)| match write_file(&path, &content) {
-                Ok(()) => Ok((true, None::<String>)),
-                Err(e) => Ok((false, Some(e))),
+            move |_, (path, content): (String, String)| {
+                g.check_fs_write(Path::new(&path))
+                    .map_err(mlua::Error::external)?;
+                match write_file(&path, &content) {
+                    Ok(()) => Ok((true, None::<String>)),
+                    Err(e) => Ok((false, Some(e))),
+                }
             },
         )?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "rename",
         lua.create_function(
-            |_, (src, dst): (String, String)| match fs::rename(&src, &dst) {
-                Ok(()) => Ok((true, None::<String>)),
-                Err(e) => Ok((false, Some(e.to_string()))),
+            move |_, (src, dst): (String, String)| {
+                g.check_fs_write(Path::new(&src))
+                    .map_err(mlua::Error::external)?;
+                g.check_fs_write(Path::new(&dst))
+                    .map_err(mlua::Error::external)?;
+                match fs::rename(&src, &dst) {
+                    Ok(()) => Ok((true, None::<String>)),
+                    Err(e) => Ok((false, Some(e.to_string()))),
+                }
             },
         )?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "copy",
         lua.create_function(
-            |_, (src, dst): (String, String)| match copy_file(&src, &dst) {
-                Ok(()) => Ok((true, None::<String>)),
-                Err(e) => Ok((false, Some(e))),
+            move |_, (src, dst): (String, String)| {
+                g.check_fs_read(Path::new(&src))
+                    .map_err(mlua::Error::external)?;
+                g.check_fs_write(Path::new(&dst))
+                    .map_err(mlua::Error::external)?;
+                match copy_file(&src, &dst) {
+                    Ok(()) => Ok((true, None::<String>)),
+                    Err(e) => Ok((false, Some(e))),
+                }
             },
         )?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "metadata",
-        lua.create_function(|lua_inner, path: String| match metadata(&path) {
-            Ok(e) => {
-                let t = lua_inner.create_table()?;
-                t.set("name", e.name)?;
-                t.set("path", e.path)?;
-                t.set("is_dir", e.is_dir)?;
-                t.set("is_symlink", e.is_symlink)?;
-                t.set("size", e.size)?;
-                t.set("modified", e.modified)?;
-                Ok((Some(t), None::<String>))
+        lua.create_function(move |lua_inner, path: String| {
+            g.check_fs_read(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match metadata(&path) {
+                Ok(e) => {
+                    let t = lua_inner.create_table()?;
+                    t.set("name", e.name)?;
+                    t.set("path", e.path)?;
+                    t.set("is_dir", e.is_dir)?;
+                    t.set("is_symlink", e.is_symlink)?;
+                    t.set("size", e.size)?;
+                    t.set("modified", e.modified)?;
+                    Ok((Some(t), None::<String>))
+                }
+                Err(e) => Ok((None, Some(e))),
             }
-            Err(e) => Ok((None, Some(e))),
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "append_file",
         lua.create_function(
-            |_, (path, content): (String, String)| match append_file(&path, &content) {
-                Ok(()) => Ok((true, None::<String>)),
-                Err(e) => Ok((false, Some(e))),
+            move |_, (path, content): (String, String)| {
+                g.check_fs_write(Path::new(&path))
+                    .map_err(mlua::Error::external)?;
+                match append_file(&path, &content) {
+                    Ok(()) => Ok((true, None::<String>)),
+                    Err(e) => Ok((false, Some(e))),
+                }
             },
         )?,
     )?;
 
+    let g = Rc::clone(&guard);
     fs_tbl.set(
         "touch",
-        lua.create_function(|_, path: String| match touch(&path) {
-            Ok(()) => Ok((true, None::<String>)),
-            Err(e) => Ok((false, Some(e))),
+        lua.create_function(move |_, path: String| {
+            g.check_fs_write(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match touch(&path) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e))),
+            }
         })?,
     )?;
 
     leviathan.set("fs", fs_tbl)?;
     Ok(())
+}
+
+/// Resolve a plugin-supplied path against the plugin's root when the path
+/// is relative. Absolute paths pass through unchanged. Used by `read_file`
+/// / `read_lines` so plugins can name their bundled assets without
+/// recomputing the plugin root every call.
+fn resolve_for_read(plugin_root: &Path, path: &str) -> String {
+    let p = Path::new(path);
+    if p.is_absolute() {
+        path.to_string()
+    } else {
+        plugin_root.join(p).to_string_lossy().into_owned()
+    }
 }
 
 const READ_FILE_BYTE_LIMIT: u64 = 8 * 1024 * 1024;
@@ -692,6 +795,21 @@ mod tests {
     use super::*;
     use std::fs as stdfs;
     use std::io::Write;
+
+    fn install_unrestricted(lua: &Lua, leviathan: &Table) {
+        use git_leviathan_plugin_api::capability::{Capability, FsScope};
+        let guard = Rc::new(CapabilityGuard::new(
+            vec![
+                Capability::FsRead { scope: FsScope::Any },
+                Capability::FsWrite { scope: FsScope::Any },
+            ],
+            std::env::temp_dir(),
+            std::env::temp_dir(),
+            std::env::temp_dir(),
+            None,
+        ));
+        install(lua, leviathan, guard).unwrap();
+    }
 
     #[test]
     fn list_dir_returns_sorted_entries() {
@@ -856,7 +974,7 @@ mod tests {
     fn is_file_distinguishes_regular_files_from_directories() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -889,7 +1007,7 @@ mod tests {
     fn is_symlink_distinguishes_symlinks_from_regular_files() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -929,7 +1047,7 @@ mod tests {
     fn canonicalize_resolves_relative_components() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -954,7 +1072,7 @@ mod tests {
     fn canonicalize_returns_error_for_missing_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<String>, Option<String>) = lua
@@ -969,7 +1087,7 @@ mod tests {
     fn cwd_returns_process_working_directory() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<String>, Option<String>) = lua
@@ -986,7 +1104,7 @@ mod tests {
     fn temp_dir_returns_process_temp_directory() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: String = lua
@@ -1002,7 +1120,7 @@ mod tests {
     fn config_dir_matches_dirs_crate_resolution() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1017,7 +1135,7 @@ mod tests {
     fn cache_dir_matches_dirs_crate_resolution() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1032,7 +1150,7 @@ mod tests {
     fn data_dir_matches_dirs_crate_resolution() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1047,7 +1165,7 @@ mod tests {
     fn state_dir_matches_dirs_crate_resolution() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1062,7 +1180,7 @@ mod tests {
     fn is_absolute_distinguishes_absolute_from_relative_paths() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let cases: &[(&str, bool)] = if cfg!(windows) {
@@ -1097,7 +1215,7 @@ mod tests {
     fn size_returns_byte_length_for_regular_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1118,7 +1236,7 @@ mod tests {
     fn size_returns_error_for_missing_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<u64>, Option<String>) = lua
@@ -1134,7 +1252,7 @@ mod tests {
     fn size_does_not_follow_symlinks() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1158,7 +1276,7 @@ mod tests {
     fn relative_to_strips_base_prefix() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1172,7 +1290,7 @@ mod tests {
     fn relative_to_returns_empty_string_when_paths_are_equal() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1186,7 +1304,7 @@ mod tests {
     fn relative_to_returns_nil_when_path_is_not_under_base() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1200,7 +1318,7 @@ mod tests {
     fn relative_to_does_not_match_partial_component() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1214,7 +1332,7 @@ mod tests {
     fn with_extension_replaces_final_extension() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1228,7 +1346,7 @@ mod tests {
     fn with_extension_adds_extension_when_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1242,7 +1360,7 @@ mod tests {
     fn with_extension_strips_extension_when_ext_empty() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1256,7 +1374,7 @@ mod tests {
     fn with_extension_only_replaces_final_extension() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1270,7 +1388,7 @@ mod tests {
     fn with_extension_returns_nil_for_root() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1284,7 +1402,7 @@ mod tests {
     fn with_extension_returns_nil_for_empty_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1298,7 +1416,7 @@ mod tests {
     fn with_file_name_replaces_final_component() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1312,7 +1430,7 @@ mod tests {
     fn with_file_name_replaces_when_path_has_no_parent() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1326,7 +1444,7 @@ mod tests {
     fn with_file_name_returns_nil_for_root() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1340,7 +1458,7 @@ mod tests {
     fn with_file_name_returns_nil_for_empty_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1354,7 +1472,7 @@ mod tests {
     fn with_file_name_returns_nil_for_trailing_dotdot() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let got: Option<String> = lua
@@ -1368,7 +1486,7 @@ mod tests {
     fn modified_returns_mtime_for_regular_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1393,7 +1511,7 @@ mod tests {
     fn modified_returns_error_for_missing_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<i64>, Option<String>) = lua
@@ -1409,7 +1527,7 @@ mod tests {
     fn modified_does_not_follow_symlinks() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1442,7 +1560,7 @@ mod tests {
     fn read_link_returns_stored_target_for_symlink() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1466,7 +1584,7 @@ mod tests {
     fn read_link_preserves_relative_target() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1487,7 +1605,7 @@ mod tests {
     fn read_link_returns_error_for_regular_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1507,7 +1625,7 @@ mod tests {
     fn read_link_returns_error_for_missing_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<String>, Option<String>) = lua
@@ -1532,7 +1650,7 @@ mod tests {
     fn write_file_creates_new_file_with_content() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1554,7 +1672,7 @@ mod tests {
     fn write_file_overwrites_existing_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1577,7 +1695,7 @@ mod tests {
     fn write_file_returns_error_when_parent_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (ok, err): (bool, Option<String>) = lua
@@ -1592,7 +1710,7 @@ mod tests {
     fn mkdir_creates_nested_directories() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1612,7 +1730,7 @@ mod tests {
     fn mkdir_succeeds_when_directory_already_exists() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1630,7 +1748,7 @@ mod tests {
     fn mkdir_returns_error_when_path_is_an_existing_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1650,7 +1768,7 @@ mod tests {
     fn rename_moves_file_to_new_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1676,7 +1794,7 @@ mod tests {
     fn rename_overwrites_existing_destination_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1702,7 +1820,7 @@ mod tests {
     fn rename_returns_error_when_source_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1724,7 +1842,7 @@ mod tests {
     fn copy_duplicates_file_to_new_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1750,7 +1868,7 @@ mod tests {
     fn copy_overwrites_existing_destination_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1776,7 +1894,7 @@ mod tests {
     fn copy_returns_error_when_source_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1829,7 +1947,7 @@ mod tests {
     fn append_file_creates_file_when_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1851,7 +1969,7 @@ mod tests {
     fn append_file_appends_to_existing_file() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let tmp = tempfile::tempdir().unwrap();
@@ -1874,7 +1992,7 @@ mod tests {
     fn append_file_returns_error_when_parent_missing() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (ok, err): (bool, Option<String>) = lua
@@ -1952,7 +2070,7 @@ mod tests {
 
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let script = format!(
@@ -1972,7 +2090,7 @@ mod tests {
     fn metadata_lua_returns_nil_and_error_for_missing_path() {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
         let (got, err): (Option<mlua::Table>, Option<String>) = lua
@@ -1986,7 +2104,7 @@ mod tests {
     fn build_lua() -> Lua {
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
         lua
     }

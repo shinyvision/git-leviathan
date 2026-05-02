@@ -1,5 +1,4 @@
-[plugin]
 id = "regions_demo"
 name = "Regions Demo"
 version = "0.0.1"
-api = 1
+api_version = "1.0"

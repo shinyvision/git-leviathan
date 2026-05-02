@@ -17,10 +17,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
+use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
-use serde::Deserialize;
 
 use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
+use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::slots::{IsSlot, SlotRegistry};
 use crate::plugin::tab_snapshot::{TabChange, TabRegistryOp, TabsSnapshot};
 use crate::plugin::ui::main_bar_slots::{parse_container, PreparedSlot, PreparedSlotOp, SlotWidget};
@@ -29,8 +31,6 @@ use crate::services::RepoRef;
 use crate::widgets::chrome::main_bar::MainBarRegistry;
 use crate::widgets::chrome::repo_region::RepoRegionRegistry;
 use crate::widgets::chrome::tab_bar_slots::TabBarRegistry;
-
-pub const PLUGIN_API_VERSION: u32 = 1;
 
 #[derive(Debug)]
 pub enum PluginLoadError {
@@ -71,22 +71,6 @@ impl std::fmt::Display for PluginLoadError {
 }
 
 impl std::error::Error for PluginLoadError {}
-
-#[derive(Debug, Deserialize)]
-struct Manifest {
-    plugin: ManifestPlugin,
-}
-
-#[derive(Debug, Deserialize)]
-struct ManifestPlugin {
-    id: String,
-    name: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    version: String,
-    #[serde(default)]
-    api: Option<u32>,
-}
 
 struct LoadedPlugin {
     #[allow(dead_code)]
@@ -195,21 +179,48 @@ impl PluginHost {
 
     pub fn load_plugin(&mut self, dir: &Path) -> Result<(), PluginLoadError> {
         let manifest_str = fs::read_to_string(dir.join("plugin.toml"))?;
-        let manifest: Manifest = toml::from_str(&manifest_str)?;
-        if manifest.plugin.api.unwrap_or(PLUGIN_API_VERSION) != PLUGIN_API_VERSION {
+        let manifest: PluginManifest = toml::from_str(&manifest_str)?;
+        if !manifest.api_version.is_compatible_with(HOST_API_VERSION) {
             return Err(PluginLoadError::BadManifest(format!(
-                "api version mismatch: want {PLUGIN_API_VERSION}"
+                "api version {}.{} not compatible with host {}.{}",
+                manifest.api_version.major,
+                manifest.api_version.minor,
+                HOST_API_VERSION.major,
+                HOST_API_VERSION.minor
             )));
         }
         let init_src = fs::read_to_string(dir.join("init.lua"))?;
 
+        let plugin_root = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let state_dir = dirs::state_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("git_leviathan")
+            .join(&manifest.id);
+        let config_dir = dirs::config_dir()
+            .unwrap_or_else(std::env::temp_dir)
+            .join("git_leviathan")
+            .join(&manifest.id);
+        let workdir: Option<PathBuf> = None;
+        let guard = Rc::new(CapabilityGuard::new(
+            manifest.capabilities.clone(),
+            plugin_root.clone(),
+            state_dir,
+            config_dir,
+            workdir,
+        ));
+
         let lua = Lua::new();
         let build: Rc<RefCell<BuildState>> = Rc::new(RefCell::new(BuildState::default()));
 
-        api::install_all(&lua, Rc::clone(&build), Rc::clone(&self.pending_tab_ops))?;
+        api::install_all(
+            &lua,
+            Rc::clone(&build),
+            Rc::clone(&self.pending_tab_ops),
+            Rc::clone(&guard),
+        )?;
 
         lua.load(&init_src)
-            .set_name(format!("plugins/{}/init.lua", manifest.plugin.id))
+            .set_name(format!("plugins/{}/init.lua", manifest.id))
             .exec()?;
 
         let (screens, slot_ops, autocmds) = {
@@ -221,13 +232,12 @@ impl PluginHost {
             )
         };
 
-        let root = fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
         let mut slot_handlers = HashMap::new();
         let mut dynamic_widgets = HashMap::new();
         for op in slot_ops {
             match prepare_op(
-                &manifest.plugin.id,
-                &root,
+                &manifest.id,
+                &plugin_root,
                 op,
                 &mut slot_handlers,
                 &mut dynamic_widgets,
@@ -235,7 +245,7 @@ impl PluginHost {
                 Ok(prepared) => self.slot_ops.push(prepared),
                 Err(e) => eprintln!(
                     "git_leviathan: plugin {} slot op ignored: {e}",
-                    manifest.plugin.id
+                    manifest.id
                 ),
             }
         }
@@ -244,27 +254,27 @@ impl PluginHost {
             self.autocmds
                 .entry(event)
                 .or_default()
-                .push((manifest.plugin.id.clone(), callback));
+                .push((manifest.id.clone(), callback));
         }
 
         eprintln!(
             "git_leviathan: loaded plugin {} ({})",
-            manifest.plugin.id, manifest.plugin.name
+            manifest.id, manifest.name
         );
         let plugin = LoadedPlugin {
-            id: manifest.plugin.id.clone(),
-            root,
+            id: manifest.id.clone(),
+            root: plugin_root,
             lua,
             slot_handlers,
             screens,
             screen_state: HashMap::new(),
             dynamic_widgets,
         };
-        self.plugins.insert(manifest.plugin.id.clone(), plugin);
+        self.plugins.insert(manifest.id.clone(), plugin);
 
         // Populate dynamic widget caches so the first render has a real
         // tree instead of a placeholder null.
-        self.refresh_dynamic_widgets_for_plugin(&manifest.plugin.id);
+        self.refresh_dynamic_widgets_for_plugin(&manifest.id);
         Ok(())
     }
 

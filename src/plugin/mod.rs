@@ -12,6 +12,7 @@
 
 pub mod api;
 pub mod bridge;
+pub mod capabilities;
 pub mod host;
 pub mod message;
 pub mod slots;

@@ -19,25 +19,35 @@
 //! discovery never trip on an exotic locale variable. Pairs with `get`
 //! when the plugin doesn't know the name up-front.
 
+use std::rc::Rc;
+
 use mlua::{Lua, Table};
 
-pub fn install(lua: &Lua, leviathan: &Table) -> mlua::Result<()> {
+use crate::plugin::capabilities::CapabilityGuard;
+
+pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua::Result<()> {
     let env_tbl = lua.create_table()?;
 
+    let g = Rc::clone(&guard);
     env_tbl.set(
         "get",
-        lua.create_function(|_, name: String| match std::env::var(&name) {
-            Ok(v) => Ok((Some(v), None::<String>)),
-            Err(std::env::VarError::NotPresent) => Ok((None, None)),
-            Err(std::env::VarError::NotUnicode(_)) => {
-                Ok((None, Some(format!("env var {name} is not valid UTF-8"))))
+        lua.create_function(move |_, name: String| {
+            g.check_env().map_err(mlua::Error::external)?;
+            match std::env::var(&name) {
+                Ok(v) => Ok((Some(v), None::<String>)),
+                Err(std::env::VarError::NotPresent) => Ok((None, None)),
+                Err(std::env::VarError::NotUnicode(_)) => {
+                    Ok((None, Some(format!("env var {name} is not valid UTF-8"))))
+                }
             }
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
     env_tbl.set(
         "list",
-        lua.create_function(|lua_inner, ()| {
+        lua.create_function(move |lua_inner, ()| {
+            g.check_env().map_err(mlua::Error::external)?;
             let t = lua_inner.create_table()?;
             for (name, value) in std::env::vars_os() {
                 if let (Some(n), Some(v)) = (name.to_str(), value.to_str()) {
@@ -57,9 +67,17 @@ mod tests {
     use super::*;
 
     fn build_lua() -> Lua {
+        use git_leviathan_plugin_api::capability::Capability;
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
-        install(&lua, &leviathan).unwrap();
+        let guard = Rc::new(CapabilityGuard::new(
+            vec![Capability::Env],
+            std::env::temp_dir(),
+            std::env::temp_dir(),
+            std::env::temp_dir(),
+            None,
+        ));
+        install(&lua, &leviathan, guard).unwrap();
         lua.globals().set("leviathan", leviathan).unwrap();
         lua
     }

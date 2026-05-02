@@ -1,5 +1,4 @@
-[plugin]
 id = "terminal"
 name = "Terminal"
 version = "0.1.0"
-api = 1
+api_version = "1.0"
