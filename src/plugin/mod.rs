@@ -16,6 +16,7 @@ pub mod bridge;
 pub mod capabilities;
 pub mod host;
 pub mod message;
+pub mod persist;
 pub mod reload;
 pub mod services;
 pub mod slots;

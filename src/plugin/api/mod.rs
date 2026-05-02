@@ -25,6 +25,7 @@ pub mod env;
 pub mod event;
 pub mod factory;
 pub mod fs;
+pub mod persist;
 pub mod repository;
 pub mod services_api;
 pub mod tab_registry;
@@ -32,6 +33,7 @@ pub mod ui;
 
 pub use async_runtime::DeferredQueue;
 pub use command::UserCommands;
+pub use persist::PersistContext;
 pub use services_api::ServicesContext;
 
 pub struct ScreenDef {
@@ -113,6 +115,7 @@ pub fn install_all(
     pending_tab_ops: tab_registry::PendingOps,
     guard: Rc<CapabilityGuard>,
     services_ctx: ServicesContext,
+    persist_ctx: PersistContext,
     deferred: Rc<RefCell<DeferredQueue>>,
     user_commands: Rc<RefCell<UserCommands>>,
 ) -> mlua::Result<()> {
@@ -129,6 +132,7 @@ pub fn install_all(
     env::install(lua, &leviathan, Rc::clone(&guard))?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
     services_api::install(lua, services_ctx, &leviathan)?;
+    persist::install(lua, persist_ctx, &leviathan)?;
 
     // Start with an empty repository snapshot so plugin code that touches
     // `leviathan.repository` at `init.lua` time (before the first sync)

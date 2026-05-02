@@ -667,6 +667,26 @@ api_version = "1.0"
 	}
 
 	#[test]
+	fn persist_lua_round_trip() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"p",
+			r#"
+			id = "p"
+			name = "p"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			local s = leviathan.persist.open("data", { version = 1 })
+			s:set("n", 7)
+			_G.read_back = s:get("n")
+			"#,
+		).expect("load");
+		assert_eq!(host.read_global_i64("p", "read_back"), Some(7));
+	}
+
+	#[test]
 	fn fs_read_allowed_with_capability() {
 		let host = load_plugin_from_str(
 			r#"

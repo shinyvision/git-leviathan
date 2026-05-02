@@ -23,8 +23,8 @@ use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Thread, ThreadStatus, Value as LuaValue};
 
 use crate::plugin::api::{
-    self, BuildState, DeferredQueue, RawSlotOp, RawSlotSpec, ScreenDef, ServicesContext,
-    UserCommands, WidgetSource,
+    self, BuildState, DeferredQueue, PersistContext, RawSlotOp, RawSlotSpec, ScreenDef,
+    ServicesContext, UserCommands, WidgetSource,
 };
 use crate::plugin::audit::AuditLog;
 use crate::plugin::capabilities::CapabilityGuard;
@@ -240,6 +240,7 @@ impl PluginHost {
             .join("git_leviathan")
             .join(&manifest.id);
         let workdir: Option<PathBuf> = None;
+        let persist_state_dir = state_dir.clone();
         let guard = Rc::new(
             CapabilityGuard::new(
                 manifest.capabilities.clone(),
@@ -266,12 +267,17 @@ impl PluginHost {
             plugin_lua: Rc::clone(&lua),
         };
 
+        let persist_ctx = PersistContext {
+            state_dir: persist_state_dir,
+        };
+
         api::install_all(
             &lua,
             Rc::clone(&build),
             Rc::clone(&self.pending_tab_ops),
             Rc::clone(&guard),
             services_ctx,
+            persist_ctx,
             Rc::clone(&deferred),
             Rc::clone(&user_commands),
         )?;
