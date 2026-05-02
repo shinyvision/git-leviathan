@@ -135,6 +135,10 @@ pub struct PluginHost {
     /// plugins land in the same log. Read by the devtools panel
     /// (Phase 6).
     audit_log: AuditLog,
+    /// Last failed `reload_plugin` error per plugin. Cleared on a
+    /// successful reload. Devtools surfaces this so a hot-reload
+    /// failure is visible without scraping stderr.
+    last_reload_errors: HashMap<String, String>,
 }
 
 impl Default for PluginHost {
@@ -157,6 +161,7 @@ impl PluginHost {
             last_tab_snapshot: TabsSnapshot::default(),
             pending_tab_ops: Rc::new(RefCell::new(Vec::new())),
             audit_log: AuditLog::new(),
+            last_reload_errors: HashMap::new(),
         }
     }
 
@@ -437,6 +442,22 @@ fn compute_repo_hash(
     h.finish()
 }
 
+/// True when this slot op was registered by `plugin_id`. Used by
+/// `reload_plugin` to park / restore plugin-owned host state.
+///
+/// `Remove` and `RemoveAnyContainer` carry no plugin id; they're
+/// considered "host-owned" and never parked. Practical consequence: a
+/// plugin's own removals against its slots aren't moved on reload, but
+/// since the corresponding `Add` is parked alongside, the resulting
+/// state is consistent.
+fn op_belongs_to(op: &PreparedSlotOp, plugin_id: &str) -> bool {
+    match op {
+        PreparedSlotOp::Add(p) => p.plugin_id == plugin_id,
+        PreparedSlotOp::Replace { spec, .. } => spec.plugin_id == plugin_id,
+        PreparedSlotOp::Remove { .. } | PreparedSlotOp::RemoveAnyContainer { .. } => false,
+    }
+}
+
 fn prepare_op(
     plugin_id: &str,
     plugin_root: &Path,
@@ -614,12 +635,66 @@ impl PluginHost {
         plugin.lua.from_value(v).ok()
     }
 
+    /// Returns the last error from a failed `reload_plugin` for this
+    /// plugin id, if any. Cleared by a subsequent successful reload.
+    pub fn last_reload_error(&self, plugin_id: &str) -> Option<&str> {
+        self.last_reload_errors.get(plugin_id).map(String::as_str)
+    }
+
+    /// True when the plugin currently owns a slot at
+    /// `(region, container, slot_id)`. Walks `slot_ops` in reverse so a
+    /// later `Remove` shadows an earlier `Add`.
+    pub fn has_slot(
+        &self,
+        plugin_id: &str,
+        region: &str,
+        container: &str,
+        slot_id: &str,
+    ) -> bool {
+        for op in self.slot_ops.iter().rev() {
+            match op {
+                PreparedSlotOp::Add(p)
+                    if p.plugin_id == plugin_id
+                        && p.region == region
+                        && p.container.key() == container
+                        && p.id == slot_id =>
+                {
+                    return true;
+                }
+                PreparedSlotOp::Replace { region: r, container: c, id, spec }
+                    if spec.plugin_id == plugin_id
+                        && r == region
+                        && c.key() == container
+                        && id == slot_id =>
+                {
+                    return true;
+                }
+                PreparedSlotOp::Remove { region: r, container: c, id }
+                    if r == region && c.key() == container && id == slot_id =>
+                {
+                    return false;
+                }
+                PreparedSlotOp::RemoveAnyContainer { region: r, id }
+                    if r == region && id == slot_id =>
+                {
+                    return false;
+                }
+                _ => {}
+            }
+        }
+        false
+    }
+
     /// Reload a plugin's `init.lua` while preserving any currently open
     /// screens whose `serialize` and `deserialize` hooks are both defined.
     /// Screens without those hooks have their state freshly re-initialised
-    /// via `init()`. Returns `PluginError` on reload failure; on error the
-    /// plugin is left dropped (Phase 4.3 will preserve the prior plugin
-    /// across failed reloads).
+    /// via `init()`.
+    ///
+    /// Two-phase: park the existing plugin and the host-level state it
+    /// owns (slot_ops, autocmds), then attempt a fresh load. On failure,
+    /// restore the parked state and record the error in
+    /// `last_reload_errors` — the prior version keeps serving. On
+    /// success, clear any prior error.
     pub fn reload_plugin(
         &mut self,
         plugin_id: &str,
@@ -658,15 +733,90 @@ impl PluginHost {
             snapshots.insert(screen_id.clone(), snap_json);
         }
 
-        self.plugins.remove(plugin_id);
+        // Park host-level state owned by this plugin so a fresh load
+        // starts from a clean slate. We hand the parked pieces back if
+        // the load fails.
+        let parked_plugin = self.plugins.remove(plugin_id).expect("verified above");
+        let parked_slot_ops: Vec<PreparedSlotOp> = {
+            let mut owned = Vec::new();
+            let mut i = 0;
+            while i < self.slot_ops.len() {
+                if op_belongs_to(&self.slot_ops[i], plugin_id) {
+                    owned.push(self.slot_ops.remove(i));
+                } else {
+                    i += 1;
+                }
+            }
+            owned
+        };
+        let parked_autocmds: Vec<(String, Vec<(String, RegistryKey)>)> = {
+            let mut snapshot: Vec<(String, Vec<(String, RegistryKey)>)> = Vec::new();
+            // Drain entries belonging to this plugin out of the live map.
+            // RegistryKey is non-Clone, so we move the vec slot-by-slot.
+            let events: Vec<String> = self.autocmds.keys().cloned().collect();
+            for event in events {
+                let Some(list) = self.autocmds.get_mut(&event) else { continue };
+                let mut owned: Vec<(String, RegistryKey)> = Vec::new();
+                let mut i = 0;
+                while i < list.len() {
+                    if list[i].0 == plugin_id {
+                        owned.push(list.swap_remove(i));
+                    } else {
+                        i += 1;
+                    }
+                }
+                if !owned.is_empty() {
+                    snapshot.push((event.clone(), owned));
+                }
+                if list.is_empty() {
+                    self.autocmds.remove(&event);
+                }
+            }
+            snapshot
+        };
 
         if let Err(e) = self.load_plugin(&dir) {
+            // Restore parked state. The new load may have partially
+            // populated host-level state before erroring (slot_ops are
+            // pushed during prepare_op which runs after init.lua exec
+            // succeeds). Any state pushed under `plugin_id` by the
+            // failed load gets purged, then the parked snapshot is
+            // re-inserted so the previous good plugin keeps serving.
+            self.slot_ops.retain(|op| !op_belongs_to(op, plugin_id));
+            let events: Vec<String> = self.autocmds.keys().cloned().collect();
+            for event in events {
+                if let Some(list) = self.autocmds.get_mut(&event) {
+                    list.retain(|(pid, _)| pid != plugin_id);
+                    if list.is_empty() {
+                        self.autocmds.remove(&event);
+                    }
+                }
+            }
+            self.plugins.remove(plugin_id);
+
+            for op in parked_slot_ops {
+                self.slot_ops.push(op);
+            }
+            for (event, list) in parked_autocmds {
+                self.autocmds.entry(event).or_default().extend(list);
+            }
+            self.plugins.insert(plugin_id.to_string(), parked_plugin);
+
+            let msg = e.to_string();
+            self.last_reload_errors.insert(plugin_id.to_string(), msg.clone());
             return Err(git_leviathan_plugin_api::error::PluginError::new(
                 plugin_id,
                 "host.reload_plugin",
-                format!("reload failed: {e}"),
+                format!("reload failed: {msg}"),
             ));
         }
+
+        // Reload succeeded — discard the parked state by simply not
+        // restoring it, and clear any prior error.
+        drop(parked_plugin);
+        drop(parked_slot_ops);
+        drop(parked_autocmds);
+        self.last_reload_errors.remove(plugin_id);
 
         let plugin = self.plugins.get_mut(plugin_id).ok_or_else(|| {
             git_leviathan_plugin_api::error::PluginError::new(

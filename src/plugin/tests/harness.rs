@@ -114,6 +114,40 @@ impl MockHost {
 			.reload_plugin(plugin_id)
 			.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
 	}
+
+	pub fn last_reload_error(&self, plugin_id: &str) -> Option<String> {
+		self.host.last_reload_error(plugin_id).map(String::from)
+	}
+
+	pub fn has_slot(
+		&self,
+		plugin_id: &str,
+		region: &str,
+		container: &str,
+		slot_id: &str,
+	) -> bool {
+		self.host.has_slot(plugin_id, region, container, slot_id)
+	}
+
+	/// Rewrites the plugin's `plugin.toml` and `init.lua` on disk and
+	/// reloads. Used by tests that exercise reload-failure / rollback
+	/// paths where the new init.lua needs to be different from the
+	/// initial load.
+	pub fn reload_with_str(
+		&mut self,
+		plugin_id: &str,
+		manifest: &str,
+		init: &str,
+	) -> Result<(), Box<dyn std::error::Error>> {
+		let dir = self
+			.plugin_dirs
+			.get(plugin_id)
+			.ok_or("plugin not loaded")?
+			.clone();
+		std::fs::write(dir.join("plugin.toml"), manifest)?;
+		std::fs::write(dir.join("init.lua"), init)?;
+		self.reload_plugin(plugin_id)
+	}
 }
 
 pub fn test_host_with_plugin(init_lua: &str) -> MockHost {
@@ -349,6 +383,88 @@ api_version = "1.0"
 
 		let post = host.screen_state_json("no_persist", "main");
 		assert_eq!(post.get("n").and_then(|v| v.as_i64()), Some(0));
+	}
+
+	#[test]
+	fn reload_failure_keeps_old_version() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"v1plugin",
+			r#"
+			id = "v1plugin"
+			name = "v1"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.ui.main_bar.add{
+				id = "v1.slot",
+				section = "left",
+				priority = 50,
+				widget = { kind = "text", value = "v1" },
+			}
+			"#,
+		)
+		.expect("v1 loads");
+
+		assert!(
+			host.has_slot("v1plugin", "main_bar", "left", "v1.slot"),
+			"v1 slot present"
+		);
+
+		// Now overwrite init.lua with a syntactically broken version.
+		let dir = host.plugin_dir("v1plugin").expect("dir").to_path_buf();
+		std::fs::write(dir.join("init.lua"), "this is not valid lua >>>").unwrap();
+
+		let result = host.reload_plugin("v1plugin");
+		assert!(result.is_err(), "reload should fail");
+
+		// v1 still serves; new error recorded.
+		assert!(
+			host.has_slot("v1plugin", "main_bar", "left", "v1.slot"),
+			"v1 slot must still be present after failed reload"
+		);
+		let err = host
+			.last_reload_error("v1plugin")
+			.expect("error recorded");
+		assert!(
+			err.contains("syntax")
+				|| err.contains("parse")
+				|| err.contains("'>'")
+				|| err.contains("not valid"),
+			"got: {err}"
+		);
+	}
+
+	#[test]
+	fn successful_reload_clears_error() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"clear",
+			r#"
+			id = "clear"
+			name = "clear"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			"-- v1",
+		)
+		.expect("v1 loads");
+
+		let dir = host.plugin_dir("clear").expect("dir").to_path_buf();
+
+		// First, fail a reload.
+		std::fs::write(dir.join("init.lua"), "this is not valid lua >>>").unwrap();
+		let _ = host.reload_plugin("clear");
+		assert!(host.last_reload_error("clear").is_some());
+
+		// Then fix it and reload again.
+		std::fs::write(dir.join("init.lua"), "-- v3").unwrap();
+		host.reload_plugin("clear").expect("v3 reloads");
+		assert!(
+			host.last_reload_error("clear").is_none(),
+			"successful reload should clear last error"
+		);
 	}
 
 	#[test]
