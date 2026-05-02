@@ -57,10 +57,18 @@ fn install_screen_register(
             let init: Function = spec.get("init")?;
             let view: Function = spec.get("view")?;
             let update: Function = spec.get("update")?;
+            let serialize_opt: Option<Function> = spec.get("serialize")?;
+            let deserialize_opt: Option<Function> = spec.get("deserialize")?;
             let def = ScreenDef {
                 init: lua_inner.create_registry_value(init)?,
                 view: lua_inner.create_registry_value(view)?,
                 update: lua_inner.create_registry_value(update)?,
+                serialize: serialize_opt
+                    .map(|f| lua_inner.create_registry_value(f))
+                    .transpose()?,
+                deserialize: deserialize_opt
+                    .map(|f| lua_inner.create_registry_value(f))
+                    .transpose()?,
             };
             build.borrow_mut().screens.insert(id, def);
             Ok(())

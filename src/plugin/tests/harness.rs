@@ -89,6 +89,31 @@ impl MockHost {
 	pub fn plugin_dir(&self, id: &str) -> Option<&std::path::Path> {
 		self.plugin_dirs.get(id).map(|p| p.as_path())
 	}
+
+	pub fn open_screen(&mut self, plugin_id: &str, screen_id: &str) {
+		self.host
+			.open_screen(plugin_id.to_string(), screen_id.to_string());
+	}
+
+	pub fn dispatch_screen_event(&mut self, plugin_id: &str, screen_id: &str, event: &str) {
+		self.host
+			.dispatch_event(plugin_id, screen_id, event, serde_json::Value::Null);
+	}
+
+	pub fn screen_state_json(&self, plugin_id: &str, screen_id: &str) -> serde_json::Value {
+		self.host
+			.screen_state_json(plugin_id, screen_id)
+			.unwrap_or(serde_json::Value::Null)
+	}
+
+	pub fn reload_plugin(
+		&mut self,
+		plugin_id: &str,
+	) -> Result<(), Box<dyn std::error::Error>> {
+		self.host
+			.reload_plugin(plugin_id)
+			.map_err(|e| Box::new(e) as Box<dyn std::error::Error>)
+	}
 }
 
 pub fn test_host_with_plugin(init_lua: &str) -> MockHost {
@@ -250,6 +275,80 @@ api_version = "1.0"
 		assert!(s.contains("plugin 'buggy'"), "got: {s}");
 		assert!(s.contains("init.lua"), "got: {s}");
 		assert!(s.contains("unknown section 'nope'"), "got: {s}");
+	}
+
+	#[test]
+	fn screen_state_persists_across_reload() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"counter",
+			r#"
+			id = "counter"
+			name = "Counter"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.ui.register_screen{
+				id = "counter",
+				init = function() return { n = 0 } end,
+				view = function(s) return { kind = "text", value = tostring(s.n) } end,
+				update = function(s, evt)
+					if evt == "inc" then s.n = s.n + 1 end
+					return s
+				end,
+				serialize = function(s) return { n = s.n } end,
+				deserialize = function(t) return { n = t.n } end,
+			}
+			"#,
+		)
+		.expect("load");
+		host.open_screen("counter", "counter");
+		host.dispatch_screen_event("counter", "counter", "inc");
+		host.dispatch_screen_event("counter", "counter", "inc");
+
+		let pre = host.screen_state_json("counter", "counter");
+		assert_eq!(pre.get("n").and_then(|v| v.as_i64()), Some(2));
+
+		host.reload_plugin("counter").expect("reload ok");
+
+		let post = host.screen_state_json("counter", "counter");
+		assert_eq!(post.get("n").and_then(|v| v.as_i64()), Some(2));
+	}
+
+	#[test]
+	fn screen_state_resets_when_no_serialize() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"no_persist",
+			r#"
+			id = "no_persist"
+			name = "no_persist"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.ui.register_screen{
+				id = "main",
+				init = function() return { n = 0 } end,
+				view = function(s) return { kind = "text", value = tostring(s.n) } end,
+				update = function(s, evt)
+					if evt == "inc" then s.n = s.n + 1 end
+					return s
+				end,
+			}
+			"#,
+		)
+		.expect("load");
+		host.open_screen("no_persist", "main");
+		host.dispatch_screen_event("no_persist", "main", "inc");
+		let pre = host.screen_state_json("no_persist", "main");
+		assert_eq!(pre.get("n").and_then(|v| v.as_i64()), Some(1));
+
+		host.reload_plugin("no_persist").expect("reload ok");
+
+		let post = host.screen_state_json("no_persist", "main");
+		assert_eq!(post.get("n").and_then(|v| v.as_i64()), Some(0));
 	}
 
 	#[test]

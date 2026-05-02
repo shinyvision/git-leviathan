@@ -31,6 +31,8 @@ pub struct ScreenDef {
     pub init: RegistryKey,
     pub view: RegistryKey,
     pub update: RegistryKey,
+    pub serialize: Option<RegistryKey>,
+    pub deserialize: Option<RegistryKey>,
 }
 
 /// Raw slot spec (region-scoped). Carries everything the host needs to

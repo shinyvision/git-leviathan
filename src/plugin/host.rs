@@ -600,6 +600,115 @@ impl PluginHost {
         self.refresh_active_widget_tree();
     }
 
+    /// Snapshot of a screen's current Lua state as JSON. Returns `None`
+    /// when the plugin is unloaded, the screen has no state yet, or the
+    /// state value can't be serialised.
+    pub fn screen_state_json(
+        &self,
+        plugin_id: &str,
+        screen_id: &str,
+    ) -> Option<serde_json::Value> {
+        let plugin = self.plugins.get(plugin_id)?;
+        let key = plugin.screen_state.get(screen_id)?;
+        let v: LuaValue = plugin.lua.registry_value(key).ok()?;
+        plugin.lua.from_value(v).ok()
+    }
+
+    /// Reload a plugin's `init.lua` while preserving any currently open
+    /// screens whose `serialize` and `deserialize` hooks are both defined.
+    /// Screens without those hooks have their state freshly re-initialised
+    /// via `init()`. Returns `PluginError` on reload failure; on error the
+    /// plugin is left dropped (Phase 4.3 will preserve the prior plugin
+    /// across failed reloads).
+    pub fn reload_plugin(
+        &mut self,
+        plugin_id: &str,
+    ) -> Result<(), git_leviathan_plugin_api::error::PluginError> {
+        let plugin = self.plugins.get(plugin_id).ok_or_else(|| {
+            git_leviathan_plugin_api::error::PluginError::new(
+                plugin_id,
+                "host.reload_plugin",
+                "plugin not loaded",
+            )
+        })?;
+        let dir = plugin.root.clone();
+
+        let mut snapshots: HashMap<String, serde_json::Value> = HashMap::new();
+        let mut open_screens: Vec<String> = Vec::new();
+        for (screen_id, state_key) in plugin.screen_state.iter() {
+            open_screens.push(screen_id.clone());
+            let Some(screen_def) = plugin.screens.get(screen_id) else {
+                continue;
+            };
+            let Some(ser_key) = &screen_def.serialize else {
+                continue;
+            };
+            let Ok(ser_fn) = plugin.lua.registry_value::<Function>(ser_key) else {
+                continue;
+            };
+            let Ok(state_val) = plugin.lua.registry_value::<LuaValue>(state_key) else {
+                continue;
+            };
+            let Ok(snap_lua) = ser_fn.call::<LuaValue>(state_val) else {
+                continue;
+            };
+            let Ok(snap_json) = plugin.lua.from_value(snap_lua) else {
+                continue;
+            };
+            snapshots.insert(screen_id.clone(), snap_json);
+        }
+
+        self.plugins.remove(plugin_id);
+
+        if let Err(e) = self.load_plugin(&dir) {
+            return Err(git_leviathan_plugin_api::error::PluginError::new(
+                plugin_id,
+                "host.reload_plugin",
+                format!("reload failed: {e}"),
+            ));
+        }
+
+        let plugin = self.plugins.get_mut(plugin_id).ok_or_else(|| {
+            git_leviathan_plugin_api::error::PluginError::new(
+                plugin_id,
+                "host.reload_plugin",
+                "plugin missing after reload",
+            )
+        })?;
+        for screen_id in open_screens {
+            let Some(screen_def) = plugin.screens.get(&screen_id) else {
+                continue;
+            };
+            if let Some(snap_json) = snapshots.get(&screen_id) {
+                if let Some(de_key) = &screen_def.deserialize {
+                    if let Ok(de_fn) = plugin.lua.registry_value::<Function>(de_key) {
+                        if let Ok(snap_lua) = plugin.lua.to_value(snap_json) {
+                            if let Ok(state_lua) = de_fn.call::<LuaValue>(snap_lua) {
+                                if let Ok(state_key) =
+                                    plugin.lua.create_registry_value(state_lua)
+                                {
+                                    plugin.screen_state.insert(screen_id, state_key);
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // No serialize/deserialize available — re-init fresh state.
+            if let Ok(init_fn) = plugin.lua.registry_value::<Function>(&screen_def.init) {
+                if let Ok(state) = init_fn.call::<LuaValue>(()) {
+                    if let Ok(key) = plugin.lua.create_registry_value(state) {
+                        plugin.screen_state.insert(screen_id, key);
+                    }
+                }
+            }
+        }
+
+        self.refresh_active_widget_tree();
+        Ok(())
+    }
+
     pub fn open_screen(&mut self, plugin_id: String, screen_id: String) {
         let needs_init = self
             .plugins
