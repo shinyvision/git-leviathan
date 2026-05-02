@@ -155,6 +155,10 @@ impl MockHost {
 		self.host.has_slot(plugin_id, region, container, slot_id)
 	}
 
+	pub fn introspect(&self) -> crate::plugin::devtools::InspectorSnapshot {
+		self.host.introspect()
+	}
+
 	/// Rewrites the plugin's `plugin.toml` and `init.lua` on disk and
 	/// reloads. Used by tests that exercise reload-failure / rollback
 	/// paths where the new init.lua needs to be different from the
@@ -769,6 +773,120 @@ api_version = "1.0"
 		}
 		let report = host.run_health_checks();
 		assert_eq!(report.plugins.len(), 2);
+	}
+
+	#[test]
+	fn introspect_lists_loaded_plugins() {
+		let mut host = MockHost::new();
+		for id in ["alpha", "beta"] {
+			host.load_inline(
+				id,
+				&format!(
+					r#"
+				id = "{id}"
+				name = "{id}"
+				version = "0.1.0"
+				api_version = "1.0"
+				"#
+				),
+				"",
+			)
+			.expect("load");
+		}
+		let snap = host.introspect();
+		assert_eq!(snap.plugins.len(), 2);
+		let ids: Vec<&str> = snap.plugins.iter().map(|p| p.id.as_str()).collect();
+		assert!(ids.contains(&"alpha"));
+		assert!(ids.contains(&"beta"));
+	}
+
+	#[test]
+	fn introspect_records_slot_ownership() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"owner",
+			r#"
+			id = "owner"
+			name = "owner"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.ui.main_bar.add{
+				id = "owner.slot",
+				section = "left",
+				priority = 50,
+				widget = { kind = "text", value = "x" },
+			}
+			"#,
+		)
+		.expect("load");
+		let snap = host.introspect();
+		let slot = snap
+			.slots
+			.iter()
+			.find(|s| s.id == "owner.slot")
+			.expect("slot present");
+		assert_eq!(slot.region, "main_bar");
+		assert_eq!(slot.container, "left");
+		assert_eq!(slot.owner_plugin_id, "owner");
+	}
+
+	#[test]
+	fn introspect_records_services() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"publisher",
+			r#"
+			id = "publisher"
+			name = "publisher"
+			version = "0.1.0"
+			api_version = "1.0"
+			provides_services = ["math@1"]
+			"#,
+			r#"
+			leviathan.services.register("math@1", {
+				add = function(a, b) return a + b end,
+				sub = function(a, b) return a - b end,
+			})
+			"#,
+		)
+		.expect("load");
+		let snap = host.introspect();
+		let svc = snap
+			.services
+			.iter()
+			.find(|s| s.key == "math@1")
+			.expect("service present");
+		assert_eq!(svc.publisher_plugin_id, "publisher");
+		assert_eq!(svc.methods.len(), 2);
+		assert!(svc.methods.contains(&"add".to_string()));
+		assert!(svc.methods.contains(&"sub".to_string()));
+	}
+
+	#[test]
+	fn introspect_includes_recent_audit_entries() {
+		let mut host = MockHost::new();
+		let _ = host.load_inline(
+			"no_fs",
+			r#"
+			id = "no_fs"
+			name = "no_fs"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"leviathan.fs.read_file("/etc/passwd")"#,
+		);
+		let snap = host.introspect();
+		assert!(
+			!snap.audit_recent.is_empty(),
+			"expected at least one audit entry"
+		);
+		let denied = snap
+			.audit_recent
+			.iter()
+			.find(|e| e.outcome == crate::plugin::audit::AuditOutcome::Denied);
+		assert!(denied.is_some(), "expected a Denied entry");
 	}
 
 	#[test]

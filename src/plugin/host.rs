@@ -87,6 +87,10 @@ struct LoadedPlugin {
     /// Absolute path to the plugin's directory. Used as sandbox root when
     /// resolving plugin-bundled assets (icons, etc).
     root: PathBuf,
+    /// Parsed manifest stashed at load time. Read by `introspect()` to
+    /// surface plugin metadata (name, version, capabilities, declared
+    /// services) without re-parsing `plugin.toml` on every devtools open.
+    manifest: PluginManifest,
     lua: Rc<Lua>,
     /// `main_bar.add` / `main_bar.replace` handlers. Keyed by `slot_id`
     /// (the full registry id the plugin declared).
@@ -348,6 +352,7 @@ impl PluginHost {
         let plugin = LoadedPlugin {
             id: manifest.id.clone(),
             root: plugin_root,
+            manifest: manifest.clone(),
             lua,
             slot_handlers,
             screens,
@@ -1403,6 +1408,105 @@ impl PluginHost {
             }
         }
         report
+    }
+
+    /// Point-in-time devtools snapshot: loaded plugins, currently-owned
+    /// slots, registered services, and the tail of the capability audit
+    /// log. Cheap to call (clones strings; ~O(plugins + slot_ops +
+    /// services + audit)). Consumed by the in-app inspector and tests.
+    pub fn introspect(&self) -> crate::plugin::devtools::InspectorSnapshot {
+        use crate::plugin::devtools::{
+            InspectorSnapshot, PluginSummary, ServiceSummary, SlotSummary,
+        };
+        let mut snap = InspectorSnapshot::default();
+
+        for (id, plugin) in &self.plugins {
+            let m = &plugin.manifest;
+            snap.plugins.push(PluginSummary {
+                id: id.clone(),
+                name: m.name.clone(),
+                version: m.version.to_string(),
+                api_version: format!("{}.{}", m.api_version.major, m.api_version.minor),
+                last_reload_error: self.last_reload_errors.get(id).cloned(),
+                provides_services: m
+                    .provides_services
+                    .iter()
+                    .map(|d| format!("{}@{}", d.name, d.version))
+                    .collect(),
+                consumes_services: m
+                    .consumes_services
+                    .iter()
+                    .map(|d| format!("{}@{}", d.name, d.version))
+                    .collect(),
+                capabilities: m
+                    .capabilities
+                    .iter()
+                    .map(|c| String::from(c.clone()))
+                    .collect(),
+            });
+        }
+        snap.plugins.sort_by(|a, b| a.id.cmp(&b.id));
+
+        // Walk slot_ops in order, applying Add/Replace/Remove to a
+        // (region, container, id) keyed map so the snapshot reflects the
+        // currently-owned slots rather than the raw op log.
+        let mut slot_map: std::collections::BTreeMap<(String, String, String), SlotSummary> =
+            std::collections::BTreeMap::new();
+        for op in &self.slot_ops {
+            match op {
+                PreparedSlotOp::Add(p) => {
+                    let key = (p.region.clone(), p.container.key(), p.id.clone());
+                    slot_map.insert(
+                        key,
+                        SlotSummary {
+                            region: p.region.clone(),
+                            container: p.container.key(),
+                            id: p.id.clone(),
+                            priority: p.priority,
+                            owner_plugin_id: p.plugin_id.clone(),
+                        },
+                    );
+                }
+                PreparedSlotOp::Replace { region, container, id, spec } => {
+                    let key = (region.clone(), container.key(), id.clone());
+                    slot_map.insert(
+                        key,
+                        SlotSummary {
+                            region: region.clone(),
+                            container: container.key(),
+                            id: id.clone(),
+                            priority: spec.priority,
+                            owner_plugin_id: spec.plugin_id.clone(),
+                        },
+                    );
+                }
+                PreparedSlotOp::Remove { region, container, id } => {
+                    slot_map.remove(&(region.clone(), container.key(), id.clone()));
+                }
+                PreparedSlotOp::RemoveAnyContainer { region, id } => {
+                    slot_map.retain(|(r, _, i), _| !(r == region && i == id));
+                }
+            }
+        }
+        snap.slots = slot_map.into_values().collect();
+
+        for h in self.service_registry.borrow().handles_iter() {
+            let mut methods: Vec<String> = h.methods.keys().cloned().collect();
+            methods.sort();
+            snap.services.push(ServiceSummary {
+                key: format!("{}@{}", h.decl.name, h.decl.version),
+                publisher_plugin_id: h.plugin_id.clone(),
+                methods,
+            });
+        }
+        snap.services.sort_by(|a, b| a.key.cmp(&b.key));
+
+        let entries = self.audit_log.entries();
+        let n = entries.len();
+        let start = n.saturating_sub(100);
+        snap.audit_recent = entries[start..].to_vec();
+
+        snap
     }
 
     /// Number of suspended coroutines parked in this plugin's queue.

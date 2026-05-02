@@ -14,6 +14,7 @@ pub mod api;
 pub mod audit;
 pub mod bridge;
 pub mod capabilities;
+pub mod devtools;
 pub mod host;
 pub mod message;
 pub mod persist;
