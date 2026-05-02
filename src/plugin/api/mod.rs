@@ -24,8 +24,11 @@ pub mod event;
 pub mod factory;
 pub mod fs;
 pub mod repository;
+pub mod services_api;
 pub mod tab_registry;
 pub mod ui;
+
+pub use services_api::ServicesContext;
 
 pub struct ScreenDef {
     pub init: RegistryKey,
@@ -105,6 +108,7 @@ pub fn install_all(
     build: Rc<RefCell<BuildState>>,
     pending_tab_ops: tab_registry::PendingOps,
     guard: Rc<CapabilityGuard>,
+    services_ctx: ServicesContext,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
 
@@ -113,6 +117,7 @@ pub fn install_all(
     fs::install(lua, &leviathan, Rc::clone(&guard))?;
     env::install(lua, &leviathan, Rc::clone(&guard))?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
+    services_api::install(lua, services_ctx, &leviathan)?;
 
     // Start with an empty repository snapshot so plugin code that touches
     // `leviathan.repository` at `init.lua` time (before the first sync)

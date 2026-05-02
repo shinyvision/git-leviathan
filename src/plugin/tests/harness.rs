@@ -119,6 +119,10 @@ impl MockHost {
 		self.host.last_reload_error(plugin_id).map(String::from)
 	}
 
+	pub fn read_global_i64(&self, plugin_id: &str, name: &str) -> Option<i64> {
+		self.host.plugin_global_i64(plugin_id, name)
+	}
+
 	pub fn has_slot(
 		&self,
 		plugin_id: &str,
@@ -465,6 +469,87 @@ api_version = "1.0"
 			host.last_reload_error("clear").is_none(),
 			"successful reload should clear last error"
 		);
+	}
+
+	#[test]
+	fn services_round_trip() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"publisher",
+			r#"
+			id = "publisher"
+			name = "publisher"
+			version = "0.1.0"
+			api_version = "1.0"
+			provides_services = ["math@1"]
+			"#,
+			r#"
+			leviathan.services.register("math@1", {
+				add = function(a, b) return a + b end,
+				mul = function(a, b) return a * b end,
+			})
+			"#,
+		).expect("publisher loads");
+
+		host.load_inline(
+			"consumer",
+			r#"
+			id = "consumer"
+			name = "consumer"
+			version = "0.1.0"
+			api_version = "1.0"
+			consumes_services = ["math@1"]
+			"#,
+			r#"
+			local m = leviathan.services.get("math@1")
+			_G.add_result = m.add(2, 3)
+			_G.mul_result = m.mul(4, 5)
+			"#,
+		).expect("consumer loads");
+
+		let add_result = host.read_global_i64("consumer", "add_result").expect("add result");
+		let mul_result = host.read_global_i64("consumer", "mul_result").expect("mul result");
+		assert_eq!(add_result, 5);
+		assert_eq!(mul_result, 20);
+	}
+
+	#[test]
+	fn services_get_undeclared_rejected() {
+		let mut host = MockHost::new();
+		let r = host.load_inline(
+			"bad",
+			r#"
+			id = "bad"
+			name = "bad"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.services.get("math@1")
+			"#,
+		);
+		let err = r.expect_err("undeclared get should error").to_string();
+		assert!(err.contains("not declared in consumes_services") || err.contains("not registered"),
+			"got: {err}");
+	}
+
+	#[test]
+	fn services_register_undeclared_rejected() {
+		let mut host = MockHost::new();
+		let r = host.load_inline(
+			"bad2",
+			r#"
+			id = "bad2"
+			name = "bad2"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.services.register("math@1", { f = function() end })
+			"#,
+		);
+		let err = r.expect_err("undeclared register should error").to_string();
+		assert!(err.contains("not declared in provides_services"), "got: {err}");
 	}
 
 	#[test]

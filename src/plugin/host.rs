@@ -21,9 +21,10 @@ use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 
-use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
+use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, ServicesContext, WidgetSource};
 use crate::plugin::audit::AuditLog;
 use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::services::ServiceRegistry;
 use crate::plugin::slots::{IsSlot, SlotRegistry};
 use crate::plugin::tab_snapshot::{TabChange, TabRegistryOp, TabsSnapshot};
 use crate::plugin::ui::main_bar_slots::{parse_container, PreparedSlot, PreparedSlotOp, SlotWidget};
@@ -81,7 +82,7 @@ struct LoadedPlugin {
     /// Absolute path to the plugin's directory. Used as sandbox root when
     /// resolving plugin-bundled assets (icons, etc).
     root: PathBuf,
-    lua: Lua,
+    lua: Rc<Lua>,
     /// `main_bar.add` / `main_bar.replace` handlers. Keyed by `slot_id`
     /// (the full registry id the plugin declared).
     slot_handlers: HashMap<String, RegistryKey>,
@@ -139,6 +140,10 @@ pub struct PluginHost {
     /// successful reload. Devtools surfaces this so a hot-reload
     /// failure is visible without scraping stderr.
     last_reload_errors: HashMap<String, String>,
+    /// Inter-plugin service registry. Populated by
+    /// `leviathan.services.register` calls from each plugin's init.lua;
+    /// queried by `leviathan.services.get`.
+    service_registry: Rc<RefCell<ServiceRegistry>>,
 }
 
 impl Default for PluginHost {
@@ -162,6 +167,7 @@ impl PluginHost {
             pending_tab_ops: Rc::new(RefCell::new(Vec::new())),
             audit_log: AuditLog::new(),
             last_reload_errors: HashMap::new(),
+            service_registry: Rc::new(RefCell::new(ServiceRegistry::new())),
         }
     }
 
@@ -233,14 +239,23 @@ impl PluginHost {
             .with_audit(self.audit_log.clone(), manifest.id.clone()),
         );
 
-        let lua = Lua::new();
+        let lua = Rc::new(Lua::new());
         let build: Rc<RefCell<BuildState>> = Rc::new(RefCell::new(BuildState::default()));
+
+        let services_ctx = ServicesContext {
+            registry: Rc::clone(&self.service_registry),
+            plugin_id: manifest.id.clone(),
+            provides: manifest.provides_services.clone(),
+            consumes: manifest.consumes_services.clone(),
+            plugin_lua: Rc::clone(&lua),
+        };
 
         api::install_all(
             &lua,
             Rc::clone(&build),
             Rc::clone(&self.pending_tab_ops),
             Rc::clone(&guard),
+            services_ctx,
         )?;
 
         if let Err(e) = lua
@@ -635,6 +650,21 @@ impl PluginHost {
         plugin.lua.from_value(v).ok()
     }
 
+    /// Read a top-level Lua global from `plugin_id`'s VM as `i64`. Used
+    /// by tests to observe side-effects of plugin code (e.g. results of
+    /// `leviathan.services.get(...).method(...)`). Returns `None` when
+    /// the plugin is unknown, the global doesn't exist, or the value is
+    /// neither integer nor number.
+    pub fn plugin_global_i64(&self, plugin_id: &str, name: &str) -> Option<i64> {
+        let plugin = self.plugins.get(plugin_id)?;
+        let v: LuaValue = plugin.lua.globals().get(name).ok()?;
+        match v {
+            LuaValue::Integer(i) => Some(i),
+            LuaValue::Number(n) => Some(n as i64),
+            _ => None,
+        }
+    }
+
     /// Returns the last error from a failed `reload_plugin` for this
     /// plugin id, if any. Cleared by a subsequent successful reload.
     pub fn last_reload_error(&self, plugin_id: &str) -> Option<&str> {
@@ -736,6 +766,14 @@ impl PluginHost {
         // Park host-level state owned by this plugin so a fresh load
         // starts from a clean slate. We hand the parked pieces back if
         // the load fails.
+        //
+        // Services published by this plugin are dropped from the registry
+        // before reload so the new init.lua's `services.register` doesn't
+        // collide with the parked-plugin's registration. On reload-failure
+        // the parked plugin keeps serving but its services stay
+        // unregistered; consumers calling `services.get` will see the
+        // service as missing until a successful reload restores it.
+        self.service_registry.borrow_mut().unregister_for_plugin(plugin_id);
         let parked_plugin = self.plugins.remove(plugin_id).expect("verified above");
         let parked_slot_ops: Vec<PreparedSlotOp> = {
             let mut owned = Vec::new();

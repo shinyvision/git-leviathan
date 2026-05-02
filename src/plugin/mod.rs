@@ -17,6 +17,7 @@ pub mod capabilities;
 pub mod host;
 pub mod message;
 pub mod reload;
+pub mod services;
 pub mod slots;
 pub mod tab_snapshot;
 pub mod ui;
