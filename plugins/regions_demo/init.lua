@@ -5,8 +5,7 @@
 -- Style rule: padding is always a standalone `padding` widget — no widget
 -- on its own carries a `padding` field.
 
-leviathan.ui.regions.add_slot({
-  region = "tab_bar",
+leviathan.ui.tab_bar.add({
   section = "right",
   id = "plugin.regions_demo.tag",
   priority = 10,
@@ -16,8 +15,7 @@ leviathan.ui.regions.add_slot({
   },
 })
 
-leviathan.ui.regions.add_slot({
-  region = "repository",
+leviathan.ui.repository.add({
   pane = "sidebar",
   section = "top",
   id = "plugin.regions_demo.banner",

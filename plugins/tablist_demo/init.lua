@@ -4,7 +4,9 @@ leviathan.api.create_autocmd({ "TabAdded", "TabRemoved", "TabSwitched", "TabReor
 	end,
 })
 
-leviathan.ui.tab_bar.replace("builtin.tab_list", {
+leviathan.ui.tab_bar.replace(
+	{ section = "center", id = "builtin.tab_list" },
+	{
 	id = "plugin.tablist_demo.tab_list",
 	section = "center",
 	priority = 10,
@@ -34,4 +36,5 @@ leviathan.ui.tab_bar.replace("builtin.tab_list", {
 			leviathan.tab_registry.reorder(value)
 		end
 	end,
-})
+	}
+)

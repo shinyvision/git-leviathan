@@ -24,7 +24,9 @@ local function info_column(label, value, value_color)
   }
 end
 
-leviathan.ui.main_bar.replace("builtin.repo_info", {
+leviathan.ui.main_bar.replace(
+  { section = "left", id = "builtin.repo_info" },
+  {
   id = "plugin.repository_info.repository_info",
   section = "left",
   priority = 10,
@@ -49,9 +51,10 @@ leviathan.ui.main_bar.replace("builtin.repo_info", {
       },
     }
   end,
-})
+  }
+)
 
-leviathan.ui.main_bar.remove("builtin.separator_chevron")
-leviathan.ui.main_bar.remove("builtin.branch_info")
+leviathan.ui.main_bar.remove({ section = "left", id = "builtin.separator_chevron" })
+leviathan.ui.main_bar.remove({ section = "left", id = "builtin.branch_info" })
 
 leviathan.log("repository_info plugin loaded")

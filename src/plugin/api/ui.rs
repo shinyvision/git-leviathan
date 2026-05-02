@@ -1,280 +1,48 @@
 //! `leviathan.ui` — region-scoped slot hooks + screen registration.
+//!
+//! Each region listed in [`REGIONS`] gets a `{add, remove, replace}`
+//! handle on `leviathan.ui.<region>` produced by
+//! [`make_region_handle`](super::factory::make_region_handle). Plugins
+//! address slots uniformly via `{ section = … }` (chrome) or
+//! `{ pane = …, section = … }` (content).
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
+use mlua::{Function, Lua, Table};
 
-use super::{BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
+use git_leviathan_plugin_api::descriptor::region::REGIONS;
+
+use super::factory::make_region_handle;
+use super::{BuildState, ScreenDef};
 
 pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, leviathan: &Table) -> mlua::Result<()> {
     let ui = lua.create_table()?;
 
-    install_regions_api(lua, Rc::clone(&build), &ui)?;
-    install_main_bar_compat(lua, Rc::clone(&build), &ui)?;
-    install_tab_bar_compat(lua, Rc::clone(&build), &ui)?;
-    install_screen_register(lua, Rc::clone(&build), &ui)?;
+    for desc in REGIONS.iter() {
+        let handle = make_region_handle(lua, Rc::clone(&build), desc)?;
+        ui.set(desc.name, handle)?;
+    }
 
+    let names_owned: Vec<String> = REGIONS.iter().map(|d| d.name.to_string()).collect();
+    ui.set(
+        "list_regions",
+        lua.create_function(move |_, ()| Ok(names_owned.clone()))?,
+    )?;
+
+    let ui_ref = ui.clone();
+    ui.set(
+        "region",
+        lua.create_function(move |_, name: String| -> mlua::Result<Table> {
+            ui_ref
+                .get::<Table>(name.as_str())
+                .map_err(|_| mlua::Error::external(format!("unknown region: {name}")))
+        })?,
+    )?;
+
+    install_screen_register(lua, build, &ui)?;
     leviathan.set("ui", ui)?;
     Ok(())
-}
-
-/// Generic region-scoped surface. Plugins that target tab_bar /
-/// repository panes use this. Main-bar slots can use it too.
-fn install_regions_api(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    ui: &Table,
-) -> mlua::Result<()> {
-    let tbl = lua.create_table()?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "add_slot",
-        lua.create_function(move |lua_inner, spec: Table| {
-            let raw = read_raw_slot_spec(lua_inner, spec)?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "remove_slot",
-        lua.create_function(move |_, args: Table| {
-            let region: String = args.get("region")?;
-            let container = read_container_field(&args)?;
-            let id: String = args.get("id")?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Remove { region, container, id });
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "replace_slot",
-        lua.create_function(move |lua_inner, (target, spec): (Table, Table)| {
-            let region: String = target.get("region")?;
-            let container = read_container_field(&target)?;
-            let id: String = target.get("id")?;
-            let mut raw = read_raw_slot_spec(lua_inner, spec)?;
-            if raw.region != region || raw.container != container {
-                return Err(mlua::Error::external(format!(
-                    "regions.replace_slot: spec address mismatches target ({}/{} vs {}/{})",
-                    raw.region, raw.container, region, container
-                )));
-            }
-            raw.id = id.clone();
-            b.borrow_mut()
-                .slot_ops
-                .push(RawSlotOp::Replace { region, container, id, spec: raw });
-            Ok(())
-        })?,
-    )?;
-
-    ui.set("regions", tbl)?;
-    Ok(())
-}
-
-/// Back-compat: `leviathan.ui.main_bar.{add,remove,replace}` keeps
-/// working. Each lowers to a `regions.*` op against `region="main_bar"`.
-fn install_main_bar_compat(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    ui: &Table,
-) -> mlua::Result<()> {
-    let tbl = lua.create_table()?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "add",
-        lua.create_function(move |lua_inner, spec: Table| {
-            let raw = read_main_bar_slot_spec(lua_inner, spec)?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "remove",
-        lua.create_function(move |_lua, id: String| {
-            // Pre-region API didn't take a section. Use empty container
-            // string as a sentinel; the applier in host.rs scans every
-            // container in the main_bar region.
-            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
-                region: "main_bar".to_string(),
-                container: String::new(),
-                id,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "replace",
-        lua.create_function(move |lua_inner, (id, spec): (String, Table)| {
-            let mut raw = read_main_bar_slot_spec(lua_inner, spec)?;
-            let container = raw.container.clone();
-            raw.id = id.clone();
-            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
-                region: "main_bar".to_string(),
-                container,
-                id,
-                spec: raw,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    ui.set("main_bar", tbl)?;
-    Ok(())
-}
-
-/// `leviathan.ui.tab_bar.{add,remove,replace}` — same nicer surface
-/// `main_bar` got, hardcoded against `region="tab_bar"`. Spec carries
-/// `section` (left/center/right). `id`-keyed lookups; `replace` lets a
-/// plugin swap a `builtin.<name>` slot the same way the dancing-banana
-/// demo replaces `builtin.fetch_indicator`.
-fn install_tab_bar_compat(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    ui: &Table,
-) -> mlua::Result<()> {
-    let tbl = lua.create_table()?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "add",
-        lua.create_function(move |lua_inner, spec: Table| {
-            let raw = read_tab_bar_slot_spec(lua_inner, spec)?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "remove",
-        lua.create_function(move |_lua, id: String| {
-            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
-                region: "tab_bar".to_string(),
-                container: String::new(),
-                id,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    tbl.set(
-        "replace",
-        lua.create_function(move |lua_inner, (id, spec): (String, Table)| {
-            let mut raw = read_tab_bar_slot_spec(lua_inner, spec)?;
-            let container = raw.container.clone();
-            raw.id = id.clone();
-            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
-                region: "tab_bar".to_string(),
-                container,
-                id,
-                spec: raw,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    ui.set("tab_bar", tbl)?;
-    Ok(())
-}
-
-fn read_tab_bar_slot_spec(lua: &Lua, spec: Table) -> mlua::Result<RawSlotSpec> {
-    let id: String = spec.get("id")?;
-    let section: String = spec.get("section")?;
-    let priority: i32 = spec.get("priority")?;
-    let widget = read_widget_field(lua, &spec)?;
-    let on_click_fn: Option<Function> = spec.get::<Option<Function>>("on_click")?;
-    let on_click = on_click_fn
-        .map(|f| lua.create_registry_value(f))
-        .transpose()?;
-    Ok(RawSlotSpec {
-        id,
-        region: "tab_bar".to_string(),
-        container: section,
-        priority,
-        widget,
-        on_click,
-    })
-}
-
-fn read_container_field(args: &Table) -> mlua::Result<String> {
-    // Either `section = "left"` (chrome) or `pane = "sidebar", section = "top"`
-    // (content). The host stores both as a single container key:
-    // `{section}` or `{pane}.{section}`.
-    let section: Option<String> = args.get("section")?;
-    let pane: Option<String> = args.get("pane")?;
-    match (pane, section) {
-        (None, Some(s)) => Ok(s),
-        (Some(p), Some(s)) => Ok(format!("{p}.{s}")),
-        (Some(_), None) => Err(mlua::Error::external(
-            "regions.*: when `pane` is given, `section` is required",
-        )),
-        (None, None) => Err(mlua::Error::external(
-            "regions.*: missing `section` (and optional `pane`)",
-        )),
-    }
-}
-
-fn read_raw_slot_spec(lua: &Lua, spec: Table) -> mlua::Result<RawSlotSpec> {
-    let id: String = spec.get("id")?;
-    let region: String = spec.get("region")?;
-    let container = read_container_field(&spec)?;
-    let priority: i32 = spec.get("priority")?;
-    let widget = read_widget_field(lua, &spec)?;
-    let on_click_fn: Option<Function> = spec.get::<Option<Function>>("on_click")?;
-    let on_click = on_click_fn
-        .map(|f| lua.create_registry_value(f))
-        .transpose()?;
-    Ok(RawSlotSpec {
-        id,
-        region,
-        container,
-        priority,
-        widget,
-        on_click,
-    })
-}
-
-fn read_main_bar_slot_spec(lua: &Lua, spec: Table) -> mlua::Result<RawSlotSpec> {
-    let id: String = spec.get("id")?;
-    let section: String = spec.get("section")?;
-    let priority: i32 = spec.get("priority")?;
-    let widget = read_widget_field(lua, &spec)?;
-    let on_click_fn: Option<Function> = spec.get::<Option<Function>>("on_click")?;
-    let on_click = on_click_fn
-        .map(|f| lua.create_registry_value(f))
-        .transpose()?;
-    Ok(RawSlotSpec {
-        id,
-        region: "main_bar".to_string(),
-        container: section,
-        priority,
-        widget,
-        on_click,
-    })
-}
-
-fn read_widget_field(lua: &Lua, spec: &Table) -> mlua::Result<WidgetSource> {
-    let v: LuaValue = spec.get("widget")?;
-    Ok(match v {
-        LuaValue::Function(f) => WidgetSource::Dynamic(lua.create_registry_value(f)?),
-        other => {
-            let json: serde_json::Value = lua.from_value(other).map_err(|e| {
-                mlua::Error::external(format!("invalid widget tree: {e}"))
-            })?;
-            WidgetSource::Static(json)
-        }
-    })
 }
 
 fn install_screen_register(
@@ -299,4 +67,50 @@ fn install_screen_register(
         })?,
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mlua::Lua;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    fn install_test_harness() -> (Lua, Rc<RefCell<BuildState>>) {
+        let lua = Lua::new();
+        let build = Rc::new(RefCell::new(BuildState::default()));
+        let leviathan = lua.create_table().unwrap();
+        super::install(&lua, Rc::clone(&build), &leviathan).unwrap();
+        lua.globals().set("leviathan", leviathan).unwrap();
+        (lua, build)
+    }
+
+    #[test]
+    fn all_regions_have_add_remove_replace() {
+        let (lua, _) = install_test_harness();
+        for region in ["main_bar", "tab_bar", "repository"] {
+            for verb in ["add", "remove", "replace"] {
+                let chunk = format!("return type(leviathan.ui.{region}.{verb}) == 'function'");
+                let ok: bool = lua.load(&chunk).eval().unwrap();
+                assert!(ok, "{region}.{verb} missing");
+            }
+        }
+    }
+
+    #[test]
+    fn list_regions_returns_all() {
+        let (lua, _) = install_test_harness();
+        let names: Vec<String> = lua.load("return leviathan.ui.list_regions()").eval().unwrap();
+        assert_eq!(names, vec!["main_bar", "tab_bar", "repository"]);
+    }
+
+    #[test]
+    fn region_lookup_returns_handle() {
+        let (lua, build) = install_test_harness();
+        lua.load(r#"
+            local h = leviathan.ui.region("main_bar")
+            h.add{ id = "x", section = "left", priority = 0, widget = { kind = "text", value = "hi" } }
+        "#).exec().unwrap();
+        assert_eq!(build.borrow().slot_ops.len(), 1);
+    }
 }

@@ -23,7 +23,9 @@ leviathan.api.create_autocmd({ "FetchEnd" }, {
   end,
 })
 
-leviathan.ui.main_bar.replace("builtin.fetch_indicator", {
+leviathan.ui.main_bar.replace(
+  { section = "left", id = "builtin.fetch_indicator" },
+  {
   id = "plugin.dancing_banana_test.fetch_indicator",
   section = "left",
   priority = 40,
@@ -57,6 +59,7 @@ leviathan.ui.main_bar.replace("builtin.fetch_indicator", {
       }
     end
   end,
-})
+  }
+)
 
 leviathan.log("dancing_banana_test plugin loaded")
