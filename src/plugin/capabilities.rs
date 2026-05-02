@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use git_leviathan_plugin_api::capability::{Capability, FsScope};
 
+use crate::plugin::audit::{AuditLog, AuditOutcome};
+
 #[derive(Debug, Clone)]
 pub struct CapabilityGuard {
     granted: HashSet<Capability>,
@@ -14,6 +16,7 @@ pub struct CapabilityGuard {
     state_dir: PathBuf,
     config_dir: PathBuf,
     workdir: Option<PathBuf>,
+    audit: Option<(AuditLog, String)>,
 }
 
 impl CapabilityGuard {
@@ -30,6 +33,18 @@ impl CapabilityGuard {
             state_dir,
             config_dir,
             workdir,
+            audit: None,
+        }
+    }
+
+    pub fn with_audit(mut self, log: AuditLog, plugin_id: String) -> Self {
+        self.audit = Some((log, plugin_id));
+        self
+    }
+
+    fn record(&self, capability: &str, target: &str, outcome: AuditOutcome) {
+        if let Some((log, id)) = &self.audit {
+            log.record(id, capability, target, outcome);
         }
     }
 
@@ -37,10 +52,12 @@ impl CapabilityGuard {
         for cap in &self.granted {
             if let Capability::FsRead { scope } = cap {
                 if self.path_in_scope(path, *scope) {
+                    self.record("fs:read", &path.display().to_string(), AuditOutcome::Allowed);
                     return Ok(());
                 }
             }
         }
+        self.record("fs:read", &path.display().to_string(), AuditOutcome::Denied);
         Err(format!(
             "capability not granted: fs:read for {}",
             path.display()
@@ -51,10 +68,12 @@ impl CapabilityGuard {
         for cap in &self.granted {
             if let Capability::FsWrite { scope } = cap {
                 if self.path_in_scope(path, *scope) {
+                    self.record("fs:write", &path.display().to_string(), AuditOutcome::Allowed);
                     return Ok(());
                 }
             }
         }
+        self.record("fs:write", &path.display().to_string(), AuditOutcome::Denied);
         Err(format!(
             "capability not granted: fs:write for {}",
             path.display()
@@ -63,8 +82,10 @@ impl CapabilityGuard {
 
     pub fn check_env(&self) -> Result<(), String> {
         if self.granted.contains(&Capability::Env) {
+            self.record("env", "", AuditOutcome::Allowed);
             Ok(())
         } else {
+            self.record("env", "", AuditOutcome::Denied);
             Err("capability not granted: env".into())
         }
     }

@@ -22,6 +22,7 @@ use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 
 use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
+use crate::plugin::audit::AuditLog;
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::slots::{IsSlot, SlotRegistry};
 use crate::plugin::tab_snapshot::{TabChange, TabRegistryOp, TabsSnapshot};
@@ -127,6 +128,11 @@ pub struct PluginHost {
     /// remove, select}` push into this; `App::update` drains via
     /// `take_pending_tab_ops`.
     pending_tab_ops: Rc<RefCell<Vec<TabRegistryOp>>>,
+    /// Per-host capability audit log. Cloned (cheap, Arc-backed) into
+    /// every plugin's `CapabilityGuard` so allow/deny events from all
+    /// plugins land in the same log. Read by the devtools panel
+    /// (Phase 6).
+    audit_log: AuditLog,
 }
 
 impl Default for PluginHost {
@@ -148,7 +154,15 @@ impl PluginHost {
             last_repository_hash: None,
             last_tab_snapshot: TabsSnapshot::default(),
             pending_tab_ops: Rc::new(RefCell::new(Vec::new())),
+            audit_log: AuditLog::new(),
         }
+    }
+
+    /// Cheap-clone handle to the per-host capability audit log. Will be
+    /// consumed by the devtools panel (Phase 6).
+    #[allow(dead_code)]
+    pub fn audit_log(&self) -> AuditLog {
+        self.audit_log.clone()
     }
 
     pub fn load_from_default_dirs(&mut self) {
@@ -201,13 +215,16 @@ impl PluginHost {
             .join("git_leviathan")
             .join(&manifest.id);
         let workdir: Option<PathBuf> = None;
-        let guard = Rc::new(CapabilityGuard::new(
-            manifest.capabilities.clone(),
-            plugin_root.clone(),
-            state_dir,
-            config_dir,
-            workdir,
-        ));
+        let guard = Rc::new(
+            CapabilityGuard::new(
+                manifest.capabilities.clone(),
+                plugin_root.clone(),
+                state_dir,
+                config_dir,
+                workdir,
+            )
+            .with_audit(self.audit_log.clone(), manifest.id.clone()),
+        );
 
         let lua = Lua::new();
         let build: Rc<RefCell<BuildState>> = Rc::new(RefCell::new(BuildState::default()));
