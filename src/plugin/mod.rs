@@ -20,3 +20,6 @@ pub mod ui;
 
 pub use host::PluginHost;
 pub use message::PluginMessage;
+
+#[cfg(test)]
+pub mod tests;
