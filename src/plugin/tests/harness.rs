@@ -81,6 +81,14 @@ impl MockHost {
 	pub fn audit_log(&self) -> Arc<Mutex<Vec<AuditEntry>>> {
 		Arc::clone(&self.audit_log)
 	}
+
+	pub fn root(&self) -> &std::path::Path {
+		self._tmp.path()
+	}
+
+	pub fn plugin_dir(&self, id: &str) -> Option<&std::path::Path> {
+		self.plugin_dirs.get(id).map(|p| p.as_path())
+	}
 }
 
 pub fn test_host_with_plugin(init_lua: &str) -> MockHost {
@@ -109,19 +117,21 @@ fn split_plugin_str(s: &str) -> Result<(String, String), Box<dyn std::error::Err
 	let init_marker = "[init.lua]";
 	let m_start = s.find(manifest_marker).ok_or("missing [manifest] section")?;
 	let i_start = s.find(init_marker).ok_or("missing [init.lua] section")?;
+	if m_start >= i_start {
+		return Err("`[manifest]` section must appear before `[init.lua]` section".into());
+	}
 	let manifest = s[m_start + manifest_marker.len()..i_start].trim().to_string();
 	let init = s[i_start + init_marker.len()..].trim().to_string();
 	Ok((manifest, init))
 }
 
 fn extract_id(manifest: &str) -> Result<String, Box<dyn std::error::Error>> {
-	for line in manifest.lines() {
-		if let Some(rest) = line.trim().strip_prefix("id") {
-			let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || c == '=');
-			return Ok(rest.trim().trim_matches('"').to_string());
-		}
-	}
-	Err("manifest missing id".into())
+	let v: toml::Value = toml::from_str(manifest)?;
+	v.get("plugin")
+		.and_then(|p| p.get("id"))
+		.and_then(|i| i.as_str())
+		.map(str::to_owned)
+		.ok_or_else(|| "manifest missing plugin.id".into())
 }
 
 #[cfg(test)]
@@ -156,5 +166,25 @@ api = 1
 			.load_inline("bad", BAD_MANIFEST, r#"error("boom")"#)
 			.unwrap_err();
 		assert!(err.to_string().contains("boom"), "got: {err}");
+	}
+
+	#[test]
+	fn mock_host_exposes_paths() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"p",
+			r#"
+			[plugin]
+			id = "p"
+			name = "P"
+			version = "0.1.0"
+			api = 1
+		"#,
+			"",
+		)
+		.expect("load");
+		assert!(host.root().is_dir());
+		assert_eq!(host.plugin_dir("p"), Some(host.root().join("p").as_path()));
+		assert!(host.plugin_dir("missing").is_none());
 	}
 }
