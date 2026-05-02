@@ -230,6 +230,29 @@ api_version = "1.0"
 	}
 
 	#[test]
+	fn host_load_error_carries_plugin_traceback() {
+		let r = load_plugin_from_str(
+			r#"
+		[manifest]
+		id = "buggy"
+		name = "buggy"
+		version = "0.1.0"
+		api_version = "1.0"
+
+		[init.lua]
+		leviathan.ui.main_bar.add{ id = "x", section = "nope", priority = 0, widget = { kind = "text", value = "hi" } }
+		"#,
+		);
+		let s = match r {
+			Err(e) => e.to_string(),
+			Ok(_) => panic!("expected load failure"),
+		};
+		assert!(s.contains("plugin 'buggy'"), "got: {s}");
+		assert!(s.contains("init.lua"), "got: {s}");
+		assert!(s.contains("unknown section 'nope'"), "got: {s}");
+	}
+
+	#[test]
 	fn fs_read_allowed_with_capability() {
 		let host = load_plugin_from_str(
 			r#"

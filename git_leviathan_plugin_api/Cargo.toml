@@ -11,6 +11,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 semver = { workspace = true }
 schemars = { workspace = true }
+mlua = { workspace = true }
 
 [dev-dependencies]
 toml = { workspace = true }

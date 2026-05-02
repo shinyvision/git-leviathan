@@ -1522,6 +1522,7 @@ dependencies = [
 name = "git_leviathan_plugin_api"
 version = "0.1.0"
 dependencies = [
+ "mlua",
  "schemars",
  "semver",
  "serde",

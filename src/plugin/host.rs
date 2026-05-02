@@ -39,6 +39,7 @@ pub enum PluginLoadError {
     Toml(toml::de::Error),
     Lua(mlua::Error),
     BadManifest(String),
+    Plugin(git_leviathan_plugin_api::error::PluginError),
 }
 
 impl From<std::io::Error> for PluginLoadError {
@@ -67,6 +68,7 @@ impl std::fmt::Display for PluginLoadError {
             Self::Toml(e) => write!(f, "toml: {e}"),
             Self::Lua(e) => write!(f, "lua: {e}"),
             Self::BadManifest(m) => write!(f, "bad manifest: {m}"),
+            Self::Plugin(e) => write!(f, "{e}"),
         }
     }
 }
@@ -236,9 +238,19 @@ impl PluginHost {
             Rc::clone(&guard),
         )?;
 
-        lua.load(&init_src)
+        if let Err(e) = lua
+            .load(&init_src)
             .set_name(format!("plugins/{}/init.lua", manifest.id))
-            .exec()?;
+            .exec()
+        {
+            return Err(PluginLoadError::Plugin(
+                git_leviathan_plugin_api::error::PluginError::from_mlua(
+                    &manifest.id,
+                    "init.lua exec",
+                    &e,
+                ),
+            ));
+        }
 
         let (screens, slot_ops, autocmds) = {
             let mut b = build.borrow_mut();
