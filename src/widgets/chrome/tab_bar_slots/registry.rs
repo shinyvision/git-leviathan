@@ -8,21 +8,24 @@ use iced::Element;
 
 use crate::message::Message;
 use crate::plugin::slots::{Container, IsSlot, SlotRegistry};
+use crate::plugin::tab_snapshot::TabsSnapshot;
 
-/// Where on the tab bar the slot sits. Middle is the tabs themselves, so
-/// plugins only target leading or trailing edges.
-#[allow(dead_code)]
+/// Where on the tab bar a slot sits. `Left`/`Right` are the chrome edges
+/// (plus button, version label by default); `Center` is the tab list
+/// itself (`builtin.tab_list` by default — replaced via
+/// `leviathan.ui.tab_bar.replace`).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Section {
     Left,
+    Center,
     Right,
 }
 
-#[allow(dead_code)]
 impl Section {
     pub fn as_str(self) -> &'static str {
         match self {
             Section::Left => "left",
+            Section::Center => "center",
             Section::Right => "right",
         }
     }
@@ -32,27 +35,23 @@ impl Section {
     }
 }
 
-/// Per-render context. Empty for now — kept as a distinct type so future
-/// plumbing (active tab id, total count, etc.) doesn't change the shape.
+/// Per-render context. Carries the live tab snapshot so the
+/// `builtin.tab_list` slot — and any plugin slot that wants to mirror
+/// native tab state — can render without reaching back into `App`.
 pub struct TabBarCtx<'a> {
-    _marker: std::marker::PhantomData<&'a ()>,
+    pub tabs: Option<&'a TabsSnapshot>,
 }
 
 impl<'a> TabBarCtx<'a> {
-    pub fn new() -> Self {
-        Self { _marker: std::marker::PhantomData }
+    pub fn with_tabs(tabs: &'a TabsSnapshot) -> Self {
+        Self { tabs: Some(tabs) }
     }
-}
-
-impl<'a> Default for TabBarCtx<'a> {
-    fn default() -> Self { Self::new() }
 }
 
 pub type TabBarBuilder = Box<
     dyn for<'ctx, 'data> Fn(&'ctx TabBarCtx<'data>) -> Element<'data, Message> + 'static,
 >;
 
-#[allow(dead_code)]
 pub struct TabBarSlot {
     pub id: String,
     pub container: Container,
@@ -60,7 +59,6 @@ pub struct TabBarSlot {
     pub builder: TabBarBuilder,
 }
 
-#[allow(dead_code)]
 impl TabBarSlot {
     pub fn new<F>(
         id: impl Into<String>,
@@ -80,17 +78,14 @@ impl TabBarSlot {
     }
 }
 
-#[allow(dead_code)]
 impl IsSlot for TabBarSlot {
     fn id(&self) -> &str { &self.id }
     fn container(&self) -> &Container { &self.container }
     fn priority(&self) -> i32 { self.priority }
 }
 
-#[allow(dead_code)]
 pub type TabBarRegistry = SlotRegistry<TabBarSlot>;
 
-#[allow(dead_code)]
 pub fn iter_section<'a>(
     registry: &'a TabBarRegistry,
     section: Section,

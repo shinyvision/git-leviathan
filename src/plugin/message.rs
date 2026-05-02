@@ -7,13 +7,20 @@
 
 #[derive(Debug, Clone)]
 pub enum PluginMessage {
-    /// A plugin-contributed slot was clicked. The host's slot-handler map
-    /// is keyed by `(plugin_id, region, container, slot_id)`.
+    /// A widget inside a plugin-contributed slot fired an event. The
+    /// host's slot-handler map is keyed by `(plugin_id, region,
+    /// container, slot_id)`. `event` is the widget-supplied string
+    /// (e.g. `on_click`, `on_select`); `value` is its payload. Plain
+    /// buttons that only set `on_click` produce `event = ""` and
+    /// `value = Null` — the slot's Lua handler can ignore the extra
+    /// args and stays backward-compatible.
     SlotClicked {
         plugin_id: String,
         region: String,
         container: String,
         slot_id: String,
+        event: String,
+        value: serde_json::Value,
     },
     /// A widget inside a plugin screen emitted an event (e.g. button press).
     Event {

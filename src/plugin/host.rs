@@ -21,6 +21,8 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 use serde::Deserialize;
 
 use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, WidgetSource};
+use crate::plugin::slots::{IsSlot, SlotRegistry};
+use crate::plugin::tab_snapshot::{TabChange, TabRegistryOp, TabsSnapshot};
 use crate::plugin::ui::main_bar_slots::{parse_container, PreparedSlot, PreparedSlotOp, SlotWidget};
 use crate::plugin::ui::split;
 use crate::services::RepoRef;
@@ -131,6 +133,16 @@ pub struct PluginHost {
     /// `sync_repository` call always pushes. Used to suppress redundant
     /// table rebuilds + `BranchChanged` fires on unchanged snapshots.
     last_repository_hash: Option<u64>,
+    /// Last `TabsSnapshot` pushed into every plugin's `leviathan.tab_registry`.
+    /// Diffed against fresh snapshots in `sync_tab_registry` to elide
+    /// redundant Lua syncs and to compute the precise `TabChange` returned
+    /// to the app for event dispatch. Default-initialized so the first
+    /// non-empty snapshot is treated as a change.
+    last_tab_snapshot: TabsSnapshot,
+    /// Shared between every plugin's Lua state. `tab_registry.{add,
+    /// remove, select}` push into this; `App::update` drains via
+    /// `take_pending_tab_ops`.
+    pending_tab_ops: Rc<RefCell<Vec<TabRegistryOp>>>,
 }
 
 impl Default for PluginHost {
@@ -150,6 +162,8 @@ impl PluginHost {
             split_drag: None,
             autocmds: HashMap::new(),
             last_repository_hash: None,
+            last_tab_snapshot: TabsSnapshot::default(),
+            pending_tab_ops: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -192,7 +206,7 @@ impl PluginHost {
         let lua = Lua::new();
         let build: Rc<RefCell<BuildState>> = Rc::new(RefCell::new(BuildState::default()));
 
-        api::install_all(&lua, Rc::clone(&build))?;
+        api::install_all(&lua, Rc::clone(&build), Rc::clone(&self.pending_tab_ops))?;
 
         lua.load(&init_src)
             .set_name(format!("plugins/{}/init.lua", manifest.plugin.id))
@@ -256,68 +270,46 @@ impl PluginHost {
 
     /// Apply every collected `main_bar` op to a `MainBarRegistry`.
     pub fn apply_main_bar_slots(&self, registry: &mut MainBarRegistry) {
-        for op in &self.slot_ops {
-            match op {
-                PreparedSlotOp::Add(p) if p.region == "main_bar" => {
-                    registry.add(p.clone().into_main_bar());
-                }
-                PreparedSlotOp::Replace { region, id, spec, .. } if region == "main_bar" => {
-                    if !registry.replace(id, spec.clone().into_main_bar()) {
-                        eprintln!("git_leviathan: regions.replace_slot(main_bar, \"{id}\") — no such slot");
-                    }
-                }
-                PreparedSlotOp::Remove { region, id, .. } if region == "main_bar" => {
-                    if !registry.remove(id) {
-                        eprintln!("git_leviathan: regions.remove_slot(main_bar, \"{id}\") — no such slot");
-                    }
-                }
-                PreparedSlotOp::RemoveAnyContainer { region, id } if region == "main_bar" => {
-                    if !registry.remove(id) {
-                        eprintln!("git_leviathan: main_bar.remove(\"{id}\") — no such slot");
-                    }
-                }
-                _ => {}
-            }
-        }
+        self.apply_region_slots(registry, "main_bar", true, PreparedSlot::into_main_bar);
     }
 
     /// Apply every collected `repository` op to a `RepoRegionRegistry`.
     pub fn apply_repo_region_slots(&self, registry: &mut RepoRegionRegistry) {
-        for op in &self.slot_ops {
-            match op {
-                PreparedSlotOp::Add(p) if p.region == "repository" => {
-                    registry.add(p.clone().into_repo_pane());
-                }
-                PreparedSlotOp::Replace { region, id, spec, .. } if region == "repository" => {
-                    if !registry.replace(id, spec.clone().into_repo_pane()) {
-                        eprintln!("git_leviathan: regions.replace_slot(repository, \"{id}\") — no such slot");
-                    }
-                }
-                PreparedSlotOp::Remove { region, id, .. } if region == "repository" => {
-                    if !registry.remove(id) {
-                        eprintln!("git_leviathan: regions.remove_slot(repository, \"{id}\") — no such slot");
-                    }
-                }
-                _ => {}
-            }
-        }
+        self.apply_region_slots(registry, "repository", false, PreparedSlot::into_repo_pane);
     }
 
     /// Apply every collected `tab_bar` op to a `TabBarRegistry`.
     pub fn apply_tab_bar_slots(&self, registry: &mut TabBarRegistry) {
+        self.apply_region_slots(registry, "tab_bar", false, PreparedSlot::into_tab_bar);
+    }
+
+    fn apply_region_slots<T: IsSlot>(
+        &self,
+        registry: &mut SlotRegistry<T>,
+        region_name: &str,
+        handle_any_container: bool,
+        convert: impl Fn(PreparedSlot) -> T,
+    ) {
         for op in &self.slot_ops {
             match op {
-                PreparedSlotOp::Add(p) if p.region == "tab_bar" => {
-                    registry.add(p.clone().into_tab_bar());
+                PreparedSlotOp::Add(p) if p.region == region_name => {
+                    registry.add(convert(p.clone()));
                 }
-                PreparedSlotOp::Replace { region, id, spec, .. } if region == "tab_bar" => {
-                    if !registry.replace(id, spec.clone().into_tab_bar()) {
-                        eprintln!("git_leviathan: regions.replace_slot(tab_bar, \"{id}\") — no such slot");
+                PreparedSlotOp::Replace { region, id, spec, .. } if region == region_name => {
+                    if !registry.replace(id, convert(spec.clone())) {
+                        eprintln!("git_leviathan: regions.replace_slot({region_name}, \"{id}\") — no such slot");
                     }
                 }
-                PreparedSlotOp::Remove { region, id, .. } if region == "tab_bar" => {
+                PreparedSlotOp::Remove { region, id, .. } if region == region_name => {
                     if !registry.remove(id) {
-                        eprintln!("git_leviathan: regions.remove_slot(tab_bar, \"{id}\") — no such slot");
+                        eprintln!("git_leviathan: regions.remove_slot({region_name}, \"{id}\") — no such slot");
+                    }
+                }
+                PreparedSlotOp::RemoveAnyContainer { region, id }
+                    if handle_any_container && region == region_name =>
+                {
+                    if !registry.remove(id) {
+                        eprintln!("git_leviathan: {region_name}.remove(\"{id}\") — no such slot");
                     }
                 }
                 _ => {}
@@ -325,14 +317,19 @@ impl PluginHost {
         }
     }
 
-    /// Invoke a plugin's slot-click handler. Silently no-ops if the plugin
-    /// is gone, the slot has no handler, or the Lua call errors.
+    /// Invoke a plugin's slot-click handler. Handler is called with
+    /// `(slot_id, event, value)` so a single slot can receive multiple
+    /// distinct widget events (e.g. a `tablist` fires `select` / `close`
+    /// / `reorder`). Silently no-ops if the plugin is gone, the slot has
+    /// no handler, or the Lua call errors.
     pub fn dispatch_slot_click(
         &mut self,
         plugin_id: &str,
         region: &str,
         container: &str,
         slot_id: &str,
+        event: &str,
+        value: serde_json::Value,
     ) {
         let handler_key = format!("{region}:{container}:{slot_id}");
         let nav: Option<String> = {
@@ -349,7 +346,14 @@ impl PluginHost {
                     return;
                 }
             };
-            match func.call::<Option<Table>>(slot_id.to_string()) {
+            let value_lua = match plugin.lua.to_value(&value) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("git_leviathan: slot value conv failed: {e}");
+                    return;
+                }
+            };
+            match func.call::<Option<Table>>((slot_id.to_string(), event.to_string(), value_lua)) {
                 Ok(Some(t)) => t.get::<String>("navigate").ok(),
                 Ok(None) => None,
                 Err(e) => {
@@ -382,20 +386,15 @@ fn compute_repo_hash(
     use std::hash::{Hash, Hasher};
 
     let mut h = DefaultHasher::new();
-    repo_name.hash(&mut h);
-    workdir_path.hash(&mut h);
-    current_branch_name.hash(&mut h);
-    head_hash.hash(&mut h);
-    default_remote_name.hash(&mut h);
-    refs.len().hash(&mut h);
-    for r in refs {
-        r.name.hash(&mut h);
-        r.kind.hash(&mut h);
-        r.target_hash.hash(&mut h);
-        r.remote_name.hash(&mut h);
-        r.is_current.hash(&mut h);
-        r.upstream_ref.hash(&mut h);
-    }
+    (
+        repo_name,
+        workdir_path,
+        current_branch_name,
+        head_hash,
+        default_remote_name,
+        refs,
+    )
+        .hash(&mut h);
     h.finish()
 }
 
@@ -835,6 +834,60 @@ impl PluginHost {
         for pid in plugin_ids {
             self.refresh_dynamic_widgets_for_plugin(&pid);
         }
+    }
+
+    /// Drain the queue of `tab_registry.{add,remove,select}` ops Lua
+    /// pushed since the last call. App applies them through `TabManager`.
+    pub fn take_pending_tab_ops(&mut self) -> Vec<TabRegistryOp> {
+        std::mem::take(&mut *self.pending_tab_ops.borrow_mut())
+    }
+
+    /// Push a fresh tabs snapshot into every plugin's
+    /// `leviathan.tab_registry.{list, current}`. Cheap no-op when the
+    /// snapshot hash matches the last sync, mirroring `sync_repository`.
+    /// Does not fire any tab-lifecycle events — those are explicit at the
+    /// app's tab-mutation sites.
+    ///
+    /// Refreshes every plugin's dynamic widgets after the table is set.
+    /// Same rationale as `sync_repository`: `leviathan.tab_registry` is a
+    /// host-owned global that any `widget = function() ... end` may
+    /// read, even from a plugin that didn't subscribe to a tab event.
+    pub fn sync_tab_registry(&mut self, snapshot: &TabsSnapshot) -> Option<TabChange> {
+        if &self.last_tab_snapshot == snapshot {
+            return None;
+        }
+        let change = TabChange::diff(&self.last_tab_snapshot, snapshot);
+        self.last_tab_snapshot = snapshot.clone();
+
+        for plugin in self.plugins.values() {
+            let leviathan: Table = match plugin.lua.globals().get("leviathan") {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!(
+                        "git_leviathan: `leviathan` global missing for {}: {e}",
+                        plugin.id
+                    );
+                    continue;
+                }
+            };
+            if let Err(e) = api::tab_registry::refresh(&plugin.lua, &leviathan, snapshot) {
+                eprintln!(
+                    "git_leviathan: tab_registry refresh failed for {}: {e}",
+                    plugin.id
+                );
+            }
+        }
+
+        let plugin_ids: Vec<String> = self.plugins.keys().cloned().collect();
+        for pid in plugin_ids {
+            self.refresh_dynamic_widgets_for_plugin(&pid);
+        }
+
+        Some(change)
+    }
+
+    pub fn tab_snapshot(&self) -> &TabsSnapshot {
+        &self.last_tab_snapshot
     }
 
     /// Re-invoke every dynamic widget fn the plugin registered and push

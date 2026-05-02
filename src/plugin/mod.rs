@@ -15,6 +15,7 @@ pub mod bridge;
 pub mod host;
 pub mod message;
 pub mod slots;
+pub mod tab_snapshot;
 pub mod ui;
 
 pub use host::PluginHost;

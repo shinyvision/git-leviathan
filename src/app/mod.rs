@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use crate::{
     config::AppConfig,
     message::Message,
+    plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
     plugin::PluginHost,
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
@@ -22,7 +23,7 @@ use crate::{
     toast::ToastManager,
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
     widgets::chrome::repo_region::RepoRegionRegistry,
-    widgets::chrome::tab_bar_slots::TabBarRegistry,
+    widgets::chrome::tab_bar_slots::{builtins as tab_bar_builtins, TabBarRegistry},
 };
 
 use fetch_policy::FetchPolicy;
@@ -74,6 +75,7 @@ impl App {
         plugin_host.apply_main_bar_slots(&mut main_bar_registry);
 
         let mut tab_bar_registry = TabBarRegistry::new();
+        tab_bar_builtins::register_all(&mut tab_bar_registry);
         plugin_host.apply_tab_bar_slots(&mut tab_bar_registry);
 
         let mut repo_region_registry = RepoRegionRegistry::new();
@@ -113,6 +115,7 @@ impl App {
 
         let task = app.load_initial_repos();
         app.sync_repository_to_plugins();
+        app.process_tab_changes();
         (app, task)
     }
 
@@ -144,8 +147,10 @@ impl App {
             Message::Plugin(pm) => self.update_plugin(pm),
         };
         self.sync_repository_to_plugins();
+        self.process_tab_changes();
+        let drain = self.drain_pending_tab_ops();
         self.reset_animation_clock_if_idle();
-        task
+        Task::batch(vec![task, drain])
     }
 
     /// Push the active tab's branch refs into every plugin's
@@ -190,6 +195,117 @@ impl App {
             &default_remote,
             &refs,
         );
+    }
+
+    fn snapshot_tabs(&self) -> TabsSnapshot {
+        let entries: Vec<TabSnapshotEntry> = self
+            .tabs
+            .tabs()
+            .iter()
+            .map(|t| TabSnapshotEntry {
+                id: t.id,
+                path: t.repo_path.clone(),
+                name: t.name.clone(),
+            })
+            .collect();
+        let active_id = if self.tabs.is_empty() {
+            None
+        } else {
+            Some(self.tabs.active_tab_id())
+        };
+        let active_path = active_id.and_then(|id| {
+            entries
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.path.clone())
+        });
+        TabsSnapshot {
+            tabs: entries,
+            active_id,
+            active_path,
+        }
+    }
+
+    /// Diff the current tab list against the last reflected snapshot.
+    /// On any change: push the new snapshot to every plugin's
+    /// `leviathan.tab_registry`, then fire each matching lifecycle event
+    /// at most once. Sync runs first so autocmd handlers reading the
+    /// global see the fresh state.
+    pub(super) fn process_tab_changes(&mut self) {
+        let current = self.snapshot_tabs();
+        let Some(change) = self.plugin_host.sync_tab_registry(&current) else {
+            return;
+        };
+        if change.added {
+            self.plugin_host.fire_event("TabAdded");
+        }
+        if change.removed {
+            self.plugin_host.fire_event("TabRemoved");
+        }
+        if change.reordered {
+            self.plugin_host.fire_event("TabReordered");
+        }
+        if change.selected_changed {
+            self.plugin_host.fire_event("TabSwitched");
+        }
+    }
+
+    /// Apply queued `tab_registry.{add,remove,select}` ops Lua pushed
+    /// during the just-finished update. Each pass may itself trigger
+    /// further events (whose autocmds may queue more ops); cap the loop
+    /// to keep a misbehaving plugin from spinning forever.
+    pub(super) fn drain_pending_tab_ops(&mut self) -> Task<Message> {
+        const MAX_ITERATIONS: usize = 8;
+        let mut tasks: Vec<Task<Message>> = Vec::new();
+        let mut iterations = 0;
+        for _ in 0..MAX_ITERATIONS {
+            let ops = self.plugin_host.take_pending_tab_ops();
+            if ops.is_empty() {
+                break;
+            }
+            iterations += 1;
+            for op in ops {
+                if let Some(t) = self.apply_tab_registry_op(op) {
+                    tasks.push(t);
+                }
+            }
+            self.sync_repository_to_plugins();
+            self.process_tab_changes();
+        }
+        if iterations == MAX_ITERATIONS {
+            eprintln!(
+                "git_leviathan: drain_pending_tab_ops hit cap of {MAX_ITERATIONS} iterations; deferring remaining ops"
+            );
+        }
+        Task::batch(tasks)
+    }
+
+    pub(super) fn apply_tab_registry_op(&mut self, op: TabRegistryOp) -> Option<Task<Message>> {
+        match op {
+            TabRegistryOp::Add(path) => {
+                Some(self.open_repo_from_path(std::path::PathBuf::from(path)))
+            }
+            TabRegistryOp::Remove(path) => {
+                if let Some(id) = self.tabs.tab_id_for_path(&path) {
+                    self.tabs.close_tab(id);
+                }
+                None
+            }
+            TabRegistryOp::Select(path) => self
+                .tabs
+                .tab_id_for_path(&path)
+                .map(|id| self.tabs.select(id)),
+            TabRegistryOp::Reorder(paths) => {
+                let ids: Vec<_> = paths
+                    .iter()
+                    .filter_map(|p| self.tabs.tab_id_for_path(p))
+                    .collect();
+                if !ids.is_empty() {
+                    self.tabs.reorder(ids);
+                }
+                None
+            }
+        }
     }
 
     pub fn view(&self) -> Element<'_, Message> {

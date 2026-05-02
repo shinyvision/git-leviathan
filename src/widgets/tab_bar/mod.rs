@@ -2,6 +2,7 @@
 //! content are supplied by the caller. The repository-specific consumer lives
 //! in `widgets::chrome::repo_tab_bar`.
 
+pub mod parts;
 mod state;
 mod tracker;
 mod widget;

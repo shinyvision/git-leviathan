@@ -101,7 +101,7 @@ pub enum RepoRefKind {
     Tag,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub struct RepoRef {
     pub name: String,
     pub kind: RepoRefKind,

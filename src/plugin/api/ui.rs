@@ -12,6 +12,7 @@ pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, leviathan: &Table) -> 
 
     install_regions_api(lua, Rc::clone(&build), &ui)?;
     install_main_bar_compat(lua, Rc::clone(&build), &ui)?;
+    install_tab_bar_compat(lua, Rc::clone(&build), &ui)?;
     install_screen_register(lua, Rc::clone(&build), &ui)?;
 
     leviathan.set("ui", ui)?;
@@ -129,6 +130,81 @@ fn install_main_bar_compat(
 
     ui.set("main_bar", tbl)?;
     Ok(())
+}
+
+/// `leviathan.ui.tab_bar.{add,remove,replace}` — same nicer surface
+/// `main_bar` got, hardcoded against `region="tab_bar"`. Spec carries
+/// `section` (left/center/right). `id`-keyed lookups; `replace` lets a
+/// plugin swap a `builtin.<name>` slot the same way the dancing-banana
+/// demo replaces `builtin.fetch_indicator`.
+fn install_tab_bar_compat(
+    lua: &Lua,
+    build: Rc<RefCell<BuildState>>,
+    ui: &Table,
+) -> mlua::Result<()> {
+    let tbl = lua.create_table()?;
+
+    let b = Rc::clone(&build);
+    tbl.set(
+        "add",
+        lua.create_function(move |lua_inner, spec: Table| {
+            let raw = read_tab_bar_slot_spec(lua_inner, spec)?;
+            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
+            Ok(())
+        })?,
+    )?;
+
+    let b = Rc::clone(&build);
+    tbl.set(
+        "remove",
+        lua.create_function(move |_lua, id: String| {
+            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
+                region: "tab_bar".to_string(),
+                container: String::new(),
+                id,
+            });
+            Ok(())
+        })?,
+    )?;
+
+    let b = Rc::clone(&build);
+    tbl.set(
+        "replace",
+        lua.create_function(move |lua_inner, (id, spec): (String, Table)| {
+            let mut raw = read_tab_bar_slot_spec(lua_inner, spec)?;
+            let container = raw.container.clone();
+            raw.id = id.clone();
+            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
+                region: "tab_bar".to_string(),
+                container,
+                id,
+                spec: raw,
+            });
+            Ok(())
+        })?,
+    )?;
+
+    ui.set("tab_bar", tbl)?;
+    Ok(())
+}
+
+fn read_tab_bar_slot_spec(lua: &Lua, spec: Table) -> mlua::Result<RawSlotSpec> {
+    let id: String = spec.get("id")?;
+    let section: String = spec.get("section")?;
+    let priority: i32 = spec.get("priority")?;
+    let widget = read_widget_field(lua, &spec)?;
+    let on_click_fn: Option<Function> = spec.get::<Option<Function>>("on_click")?;
+    let on_click = on_click_fn
+        .map(|f| lua.create_registry_value(f))
+        .transpose()?;
+    Ok(RawSlotSpec {
+        id,
+        region: "tab_bar".to_string(),
+        container: section,
+        priority,
+        widget,
+        on_click,
+    })
 }
 
 fn read_container_field(args: &Table) -> mlua::Result<String> {

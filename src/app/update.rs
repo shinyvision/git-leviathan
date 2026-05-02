@@ -20,9 +20,11 @@ impl App {
                 region,
                 container,
                 slot_id,
+                event,
+                value,
             } => {
                 self.plugin_host
-                    .dispatch_slot_click(&plugin_id, &region, &container, &slot_id);
+                    .dispatch_slot_click(&plugin_id, &region, &container, &slot_id, &event, value);
             }
             PluginMessage::Event {
                 plugin_id,
@@ -93,21 +95,22 @@ impl App {
             AppMessage::OpenRepoDialog => self.open_repo_dialog(),
             AppMessage::RepoPathChosen(Some(path)) => self.open_repo_from_path(path),
             AppMessage::RepoPathChosen(None) => Task::none(),
-            AppMessage::TabSelected(tab_id) => {
-                if tab_id == self.tabs.active_tab_id() {
-                    return Task::none();
+            AppMessage::TabRegistryOp(op) => {
+                if let crate::plugin::tab_snapshot::TabRegistryOp::Select(ref path) = op {
+                    if self.tabs.tab_id_for_path(path) == Some(self.tabs.active_tab_id()) {
+                        return Task::none();
+                    }
                 }
-                let screen_task = self.tabs.select(tab_id);
-                let fetch_task = self.try_start_fetch();
-                Task::batch(vec![screen_task, fetch_task])
-            }
-            AppMessage::TabClosed(tab_id) => {
-                self.tabs.close_tab(tab_id);
-                Task::none()
-            }
-            AppMessage::TabsReordered(order) => {
-                self.tabs.reorder(order);
-                Task::none()
+                let is_select = matches!(
+                    op,
+                    crate::plugin::tab_snapshot::TabRegistryOp::Select(_)
+                );
+                let screen_task = self.apply_tab_registry_op(op).unwrap_or_else(Task::none);
+                if is_select {
+                    Task::batch(vec![screen_task, self.try_start_fetch()])
+                } else {
+                    screen_task
+                }
             }
             AppMessage::TabOpened { tab_id, result } => self.handle_tab_opened(tab_id, result),
             AppMessage::AnimationTick(timestamp) => self.handle_animation_tick(timestamp),

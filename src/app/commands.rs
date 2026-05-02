@@ -61,10 +61,16 @@ impl App {
     pub(super) fn open_repo_from_path(&mut self, path: PathBuf) -> Task<Message> {
         match self.tabs.open_path(path) {
             Ok(task) => task,
-            Err(tabs::OpenRepoError::NotARepo(path)) => self.show_toast(ToastData::error(
-                "Not a Git Repository",
-                format!("{} is not a git repository", path.display()),
-            )),
+            Err(tabs::OpenRepoError::NotARepo(path)) => {
+                eprintln!(
+                    "git_leviathan: open_repo_from_path: {} is not a git repository",
+                    path.display()
+                );
+                self.show_toast(ToastData::error(
+                    "Not a Git Repository",
+                    format!("{} is not a git repository", path.display()),
+                ))
+            }
         }
     }
 

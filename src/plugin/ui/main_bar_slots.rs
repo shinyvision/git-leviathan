@@ -50,9 +50,6 @@ pub enum PreparedSlotOp {
 }
 
 impl PreparedSlot {
-    /// Render this slot through `widget_tree::build`. Used by every
-    /// per-region `into_*` shim — the resulting closure ignores its
-    /// region-typed ctx parameter and reads from the cached widget tree.
     fn render(&self) -> Element<'static, Message> {
         let empty_splits: HashMap<String, Vec<f32>> = HashMap::new();
         let container_str = self.container.key();

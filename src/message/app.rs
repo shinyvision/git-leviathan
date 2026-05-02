@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use crate::core::TabId;
+use crate::plugin::tab_snapshot::TabRegistryOp;
 use crate::services::GitError;
 use crate::view_model::LoadedRepo;
 
@@ -24,9 +25,7 @@ pub enum AppMessage {
         tab_id: TabId,
         result: Result<LoadedRepo, GitError>,
     },
-    TabSelected(TabId),
-    TabClosed(TabId),
-    TabsReordered(Vec<TabId>),
+    TabRegistryOp(TabRegistryOp),
     AnimationTick(Instant),
     /// A repository's files changed on disk; carries the owning tab id.
     RepoFilesChanged(TabId),

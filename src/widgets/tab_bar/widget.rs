@@ -352,6 +352,7 @@ where
                 shell.request_redraw();
             }
             Event::Window(window::Event::RedrawRequested(now)) => {
+                state.drag.clear_committed_if_matches(&self.tab_input_order());
                 let working = state.drag.working_order().map(|s| s.to_vec());
                 let sim = self.simulated_positions(working.as_deref(), layout);
                 state.tracker.settle(&sim, *now);
@@ -437,18 +438,8 @@ where
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let bg_style = style::toolbar_container(theme);
-        if let Some(bg) = bg_style.background {
-            renderer.fill_quad(
-                renderer::Quad {
-                    bounds: layout.bounds(),
-                    border: bg_style.border,
-                    ..Default::default()
-                },
-                bg,
-            );
-        }
-
+        // Background + outer border are painted by the surrounding
+        // `tab_bar_view` container; widget only renders tabs themselves.
         let state: &TabBarState<K> = tree.state.downcast_ref();
         let now = Instant::now();
         let working = state.drag.working_order().map(|s| s.to_vec());

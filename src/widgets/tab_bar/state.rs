@@ -129,21 +129,48 @@ impl<K: Copy + Eq + Hash> DragState<K> {
     pub fn on_released(&mut self) -> DragOutcome<K> {
         let press = self.press_origin.take();
         let was_dragging = self.dragging.take().is_some();
-        let final_order = self.working_order.take();
         let initial = self.initial_order.take();
         self.grab_offset = None;
         self.cursor = None;
 
         if !was_dragging {
+            self.working_order = None;
             return press
                 .map(|(k, _)| DragOutcome::Click(k))
                 .unwrap_or(DragOutcome::None);
         }
+        // Reorder commit: keep `working_order`. Widget keeps rendering at
+        // committed positions until the parent re-renders with a matching
+        // input order — `clear_committed_if_matches` does the cleanup on
+        // the next redraw. Without this hold, a transient frame between
+        // "drag released" and "parent supplied new order" would settle
+        // the tracker against the old input order and animate every tab
+        // back to its pre-drag slot, then forward again next frame.
+        let final_order = self.working_order.clone();
         match (final_order, initial) {
             (Some(final_order), Some(initial)) if final_order != initial => {
                 DragOutcome::Reorder(final_order)
             }
-            _ => DragOutcome::None,
+            _ => {
+                self.working_order = None;
+                DragOutcome::None
+            }
+        }
+    }
+
+    /// Clear a post-release `working_order` once the caller's input
+    /// order matches it. Called on every redraw. No-op while a press or
+    /// drag is in flight, otherwise on-press's
+    /// `working_order = current_order` would be undone before the cursor
+    /// crosses the drag threshold.
+    pub fn clear_committed_if_matches(&mut self, input_order: &[K]) {
+        if self.dragging.is_some() || self.press_origin.is_some() {
+            return;
+        }
+        if let Some(wo) = &self.working_order {
+            if wo.as_slice() == input_order {
+                self.working_order = None;
+            }
         }
     }
 
@@ -306,6 +333,48 @@ mod tests {
             assert!(!s.on_cursor_moved(pt(120.0, 10.0), &slots_post, |_| false));
         }
         assert_eq!(s.working_order(), Some(&[2u32, 1][..]));
+    }
+
+    #[test]
+    fn clear_committed_is_noop_during_press_pre_threshold() {
+        let mut s: DragState<u32> = DragState::new();
+        s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2]);
+        // Pressed but not yet past drag threshold. working_order matches
+        // input_order — but a clear here would discard the press's
+        // working_order set up in on_press, breaking the next swap.
+        s.clear_committed_if_matches(&[1, 2]);
+        assert_eq!(s.working_order(), Some(&[1u32, 2][..]));
+    }
+
+    #[test]
+    fn clear_committed_is_noop_during_active_drag() {
+        let mut s: DragState<u32> = DragState::new();
+        s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2, 3]);
+        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3, |_| false);
+        assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
+        // Active drag — clear must not touch working_order even if the
+        // caller hasn't caught up.
+        s.clear_committed_if_matches(&[1, 2, 3]);
+        assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
+    }
+
+    #[test]
+    fn reorder_release_keeps_working_order_until_input_matches() {
+        let mut s: DragState<u32> = DragState::new();
+        s.on_press(1, pt(10.0, 10.0), 0.0, &[1, 2, 3]);
+        s.on_cursor_moved(pt(130.0, 10.0), &SLOTS_3, |_| false);
+        let outcome = s.on_released();
+        assert_eq!(outcome, DragOutcome::Reorder(vec![2, 3, 1]));
+        // Released into a Reorder: working_order is retained so the
+        // widget keeps rendering committed positions while the parent
+        // catches up to the new order.
+        assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
+        // Parent still showing old order — no clear yet.
+        s.clear_committed_if_matches(&[1, 2, 3]);
+        assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
+        // Parent has caught up — committed cleared.
+        s.clear_committed_if_matches(&[2, 3, 1]);
+        assert_eq!(s.working_order(), None);
     }
 
     #[test]

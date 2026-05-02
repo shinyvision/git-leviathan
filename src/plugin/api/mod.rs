@@ -21,6 +21,7 @@ pub mod env;
 pub mod event;
 pub mod fs;
 pub mod repository;
+pub mod tab_registry;
 pub mod ui;
 
 pub struct ScreenDef {
@@ -94,13 +95,18 @@ pub struct BuildState {
     pub autocmds: Vec<RawAutocmd>,
 }
 
-pub fn install_all(lua: &Lua, build: Rc<RefCell<BuildState>>) -> mlua::Result<()> {
+pub fn install_all(
+    lua: &Lua,
+    build: Rc<RefCell<BuildState>>,
+    pending_tab_ops: tab_registry::PendingOps,
+) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
 
     ui::install(lua, Rc::clone(&build), &leviathan)?;
     event::install(lua, Rc::clone(&build), &leviathan)?;
     fs::install(lua, &leviathan)?;
     env::install(lua, &leviathan)?;
+    tab_registry::install(lua, &leviathan, pending_tab_ops)?;
 
     // Start with an empty repository snapshot so plugin code that touches
     // `leviathan.repository` at `init.lua` time (before the first sync)

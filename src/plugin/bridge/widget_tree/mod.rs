@@ -40,6 +40,7 @@ mod padding;
 mod row;
 mod scrollable;
 mod space;
+mod tablist;
 mod text;
 
 // Consumed outside this module by `plugin::ui::split`.
@@ -109,6 +110,7 @@ pub fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
         "image" => image::build(node, ctx),
         "scrollable" => scrollable::build(node, ctx),
         "mouse_area" => mouse_area::build(node, ctx),
+        "tablist" => tablist::build(node, ctx),
         "resizable_split" => split::build(node, ctx),
         other => error_text(format!("unknown kind: {other}")),
     }

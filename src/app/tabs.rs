@@ -67,6 +67,13 @@ impl TabManager {
         &self.tabs
     }
 
+    pub fn tab_id_for_path(&self, path: &str) -> Option<TabId> {
+        self.tabs
+            .iter()
+            .find(|t| t.repo_path == path)
+            .map(|t| t.id)
+    }
+
     pub fn active_screen(&self) -> Option<&RepositoryScreen> {
         self.screens.get(&self.active_tab_id)
     }

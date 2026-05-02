@@ -4,7 +4,7 @@
 //! `tab_bar_view` keeps its hardcoded "+" / version-label chrome and
 //! plugins inject leading/trailing widgets via this registry.
 
+pub mod builtins;
 mod registry;
 
-#[allow(unused_imports)]
 pub use registry::{iter_section, Section, TabBarCtx, TabBarRegistry, TabBarSlot};

@@ -75,6 +75,8 @@ pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Messag
                 region: region.to_string(),
                 container: container.to_string(),
                 slot_id: slot_id.to_string(),
+                event,
+                value,
             }),
         })
     };

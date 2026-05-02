@@ -1,155 +1,58 @@
-//! Repository tab bar — concrete consumer of the generic [`TabBar`] widget.
-//! Maps `TabId` keys to messages, supplies the folder icon per tab, the
-//! hover-swap close button, the leading "+" button (open repo dialog), and
-//! the trailing version label. Drag-reorder mechanics live entirely in the
-//! widget; this view only exposes selection and reorder commits.
+//! Repository tab bar — slot-driven composer.
+//!
+//! The bar is a `row![left, centre, fill, right]` strip wrapped in a
+//! toolbar-styled container; every visual piece is a slot in
+//! `TabBarRegistry`. Built-ins (`builtin.plus_button` / `builtin.tab_list`
+//! / `builtin.version_label`) are registered at app startup; plugins
+//! contribute or replace by id via `leviathan.ui.tab_bar.{add,remove,
+//! replace}`. Drag-reorder, click selection, close button — all live
+//! inside the `builtin.tab_list` slot's `TabBar` widget.
 
 use iced::{
-    widget::{button, container, row},
-    Border, Element, Length, Padding, Theme,
+    widget::{container, row},
+    Alignment, Element, Length,
 };
 
 use crate::{
-    assets,
-    core::TabId,
-    message::{AppMessage, Message},
+    message::Message,
+    plugin::tab_snapshot::TabsSnapshot,
     style, theme,
     widgets::chrome::tab_bar_slots::{self, TabBarCtx, TabBarRegistry},
-    widgets::primitives::hoverable::hoverable_swap,
-    widgets::tab_bar::{TabBar, TabItem},
 };
 
 pub fn tab_bar_view<'a>(
-    tabs: Vec<(TabId, String)>,
-    active_tab_id: TabId,
     registry: &'a TabBarRegistry,
+    snapshot: &'a TabsSnapshot,
 ) -> Element<'a, Message> {
-    let items: Vec<TabItem<'a, TabId, Message>> = tabs
-        .into_iter()
-        .map(|(id, name)| {
-            let is_active = id == active_tab_id;
-            TabItem::new(id, name)
-                .leading(folder_icon(is_active))
-                .trailing(close_button(id))
-        })
-        .collect();
+    let ctx = TabBarCtx::with_tabs(snapshot);
 
-    let ctx = TabBarCtx::new();
+    let left: Vec<Element<'a, Message>> =
+        tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)
+            .map(|slot| (slot.builder)(&ctx))
+            .collect();
+    let centre: Vec<Element<'a, Message>> =
+        tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Center)
+            .map(|slot| (slot.builder)(&ctx))
+            .collect();
+    let right: Vec<Element<'a, Message>> =
+        tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Right)
+            .map(|slot| (slot.builder)(&ctx))
+            .collect();
 
-    let leading_empty = tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)
-        .next()
-        .is_none();
-    let trailing_empty = tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Right)
-        .next()
-        .is_none();
+    // Centre row is the only Length::Fill in the strip — its TabBar
+    // child fills it and pushes the right section to the screen edge.
+    // Adding another Fill (e.g. an explicit `horizontal_space()`) would
+    // split the leftover width 50/50 and leave a visible seam.
+    let bar = row![
+        row(left).align_y(Alignment::Center),
+        row(centre).align_y(Alignment::Center).width(Length::Fill),
+        row(right).align_y(Alignment::Center),
+    ]
+    .align_y(Alignment::Center);
 
-    let leading: Element<'a, Message> = if leading_empty {
-        plus_button()
-    } else {
-        let plugin_items: Vec<Element<'a, Message>> =
-            tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)
-                .map(|slot| (slot.builder)(&ctx))
-                .collect();
-        row![row(plugin_items).align_y(iced::Alignment::Center), plus_button()]
-            .align_y(iced::Alignment::Center)
-            .into()
-    };
-    let trailing: Element<'a, Message> = if trailing_empty {
-        version_label()
-    } else {
-        let plugin_items: Vec<Element<'a, Message>> =
-            tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Right)
-                .map(|slot| (slot.builder)(&ctx))
-                .collect();
-        row![row(plugin_items).align_y(iced::Alignment::Center), version_label()]
-            .align_y(iced::Alignment::Center)
-            .into()
-    };
-
-    TabBar::new(items, active_tab_id)
-        .leading_slot(leading)
-        .trailing_slot(trailing)
-        .on_select(|id| Message::App(AppMessage::TabSelected(id)))
-        .on_reorder(|order| Message::App(AppMessage::TabsReordered(order)))
+    container(bar)
+        .height(Length::Fixed(theme::TAB_HEIGHT as f32))
+        .width(Length::Fill)
+        .style(style::toolbar_container)
         .into()
-}
-
-fn folder_icon<'a>(is_active: bool) -> Element<'a, Message> {
-    container(assets::tab_icon(
-        assets::FOLDER,
-        if is_active {
-            theme::TEXT_PRIMARY
-        } else {
-            theme::TEXT_DIM
-        },
-    ))
-    .align_y(iced::alignment::Vertical::Center)
-    .into()
-}
-
-fn close_button<'a>(tab_id: TabId) -> Element<'a, Message> {
-    let close_idle: Element<'a, Message> =
-        button(assets::tab_icon(assets::CLOSE, theme::TEXT_DIM))
-            .style(|_: &Theme, _: button::Status| button::Style {
-                background: None,
-                text_color: theme::TEXT_DIM,
-                border: Border::default(),
-                shadow: Default::default(),
-                snap: false,
-            })
-            .padding(Padding::from([4u16, 4]))
-            .into();
-
-    let close_hover: Element<'a, Message> =
-        button(assets::tab_icon(assets::CLOSE, theme::TEXT_PRIMARY))
-            .style(|_: &Theme, _: button::Status| button::Style {
-                background: None,
-                text_color: theme::TEXT_PRIMARY,
-                border: Border::default(),
-                shadow: Default::default(),
-                snap: false,
-            })
-            .padding(Padding::from([4u16, 4]))
-            .on_press(Message::App(AppMessage::TabClosed(tab_id)))
-            .into();
-
-    hoverable_swap(
-        close_idle,
-        close_hover,
-        |_| iced::widget::container::Style::default(),
-        |_| iced::widget::container::Style::default(),
-    )
-}
-
-fn plus_button<'a>() -> Element<'a, Message> {
-    button(
-        container(assets::tab_icon(assets::PLUS, theme::TEXT_DIM))
-            .align_y(iced::alignment::Vertical::Center)
-            .height(Length::Fill),
-    )
-    .style(|_: &Theme, status: button::Status| button::Style {
-        background: match status {
-            button::Status::Hovered => Some(theme::BG_HOVER.into()),
-            _ => None,
-        },
-        text_color: theme::TEXT_DIM,
-        border: Border::default(),
-        shadow: Default::default(),
-        snap: false,
-    })
-    .padding(Padding::from([0, 12]))
-    .height(Length::Fixed(theme::TAB_HEIGHT as f32))
-    .on_press(Message::App(AppMessage::OpenRepoDialog))
-    .into()
-}
-
-fn version_label<'a>() -> Element<'a, Message> {
-    container(
-        iced::widget::text(format!("v{}", env!("CARGO_PKG_VERSION")))
-            .size(theme::FONT_SM)
-            .style(style::secondary_text),
-    )
-    .padding(Padding::from([0, 12]))
-    .align_y(iced::alignment::Vertical::Center)
-    .into()
 }

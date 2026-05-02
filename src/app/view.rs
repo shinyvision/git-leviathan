@@ -3,7 +3,6 @@
 use iced::widget::{column, Stack};
 use iced::{Element, Length};
 
-use crate::core::TabId;
 use crate::message::Message;
 use crate::plugin::ui::screen as plugin_screen;
 use crate::screens::{BlankScreen, NoGitScreen, RepositoryScreen, Screen, ToolbarCtx};
@@ -42,15 +41,8 @@ fn plugin_view(app: &App) -> Element<'_, Message> {
 }
 
 fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a, Message> {
-    let tab_entries: Vec<(TabId, String)> = app
-        .tabs
-        .tabs()
-        .iter()
-        .map(|t| (t.id, t.name.clone()))
-        .collect();
-
     let mut content_col = column![
-        chrome::tab_bar_view(tab_entries, app.tabs.active_tab_id(), &app.tab_bar_registry),
+        chrome::tab_bar_view(&app.tab_bar_registry, app.plugin_host.tab_snapshot()),
     ]
     .spacing(0);
     let ctx = ToolbarCtx {
