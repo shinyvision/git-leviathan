@@ -19,6 +19,7 @@ use mlua::{Lua, RegistryKey};
 
 pub mod env;
 pub mod event;
+pub mod factory;
 pub mod fs;
 pub mod repository;
 pub mod tab_registry;

@@ -32,6 +32,10 @@ impl RegionDescriptor {
                         panes.iter().map(|(n,_)| *n).collect::<Vec<_>>().join(", "))),
                 }
             }
+            (RegionKind::Content { panes }, None, _) => Err(format!(
+                "region '{}': unknown pane (none given; have: {})",
+                self.name,
+                panes.iter().map(|(n,_)| *n).collect::<Vec<_>>().join(", "))),
             _ => Err(format!("region '{}': missing or invalid address", self.name)),
         }
     }
