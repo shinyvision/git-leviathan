@@ -32,16 +32,7 @@ use mlua::{Function, Lua, Table};
 
 use super::{BuildState, RawAutocmd};
 
-pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, leviathan: &Table) -> mlua::Result<()> {
-    let api = match leviathan.get::<Table>("api") {
-        Ok(t) => t,
-        Err(_) => {
-            let t = lua.create_table()?;
-            leviathan.set("api", t.clone())?;
-            t
-        }
-    };
-
+pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, api: &Table) -> mlua::Result<()> {
     let build_for_autocmd = Rc::clone(&build);
     api.set(
         "create_autocmd",

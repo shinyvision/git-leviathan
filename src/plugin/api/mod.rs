@@ -19,6 +19,8 @@ use mlua::{Lua, RegistryKey};
 
 use crate::plugin::capabilities::CapabilityGuard;
 
+pub mod async_runtime;
+pub mod command;
 pub mod env;
 pub mod event;
 pub mod factory;
@@ -28,6 +30,8 @@ pub mod services_api;
 pub mod tab_registry;
 pub mod ui;
 
+pub use async_runtime::DeferredQueue;
+pub use command::UserCommands;
 pub use services_api::ServicesContext;
 
 pub struct ScreenDef {
@@ -109,11 +113,18 @@ pub fn install_all(
     pending_tab_ops: tab_registry::PendingOps,
     guard: Rc<CapabilityGuard>,
     services_ctx: ServicesContext,
+    deferred: Rc<RefCell<DeferredQueue>>,
+    user_commands: Rc<RefCell<UserCommands>>,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
 
+    let api_tbl = lua.create_table()?;
+    event::install(lua, Rc::clone(&build), &api_tbl)?;
+    async_runtime::install(lua, Rc::clone(&deferred), &api_tbl)?;
+    command::install(lua, Rc::clone(&user_commands), &api_tbl)?;
+    leviathan.set("api", api_tbl)?;
+
     ui::install(lua, Rc::clone(&build), &leviathan)?;
-    event::install(lua, Rc::clone(&build), &leviathan)?;
     fs::install(lua, &leviathan, Rc::clone(&guard))?;
     env::install(lua, &leviathan, Rc::clone(&guard))?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;

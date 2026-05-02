@@ -16,12 +16,16 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Instant;
 
 use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 use git_leviathan_plugin_api::manifest::PluginManifest;
-use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
+use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Thread, ThreadStatus, Value as LuaValue};
 
-use crate::plugin::api::{self, BuildState, RawSlotOp, RawSlotSpec, ScreenDef, ServicesContext, WidgetSource};
+use crate::plugin::api::{
+    self, BuildState, DeferredQueue, RawSlotOp, RawSlotSpec, ScreenDef, ServicesContext,
+    UserCommands, WidgetSource,
+};
 use crate::plugin::audit::AuditLog;
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::services::ServiceRegistry;
@@ -93,6 +97,14 @@ struct LoadedPlugin {
     /// builder reads from. Populated on load; refreshed after every
     /// autocmd fire affecting this plugin.
     dynamic_widgets: HashMap<String, (RegistryKey, Rc<RefCell<serde_json::Value>>)>,
+    /// Per-plugin deferred-call queue. `leviathan.api.schedule(fn)` and
+    /// `defer_fn(ms, fn)` push into this; `PluginHost::tick` drains it.
+    /// Coroutines that yielded mid-resume also live here so subsequent
+    /// ticks can resume them.
+    deferred: Rc<RefCell<DeferredQueue>>,
+    /// Plugin-registered named commands (`leviathan.api.create_user_command`).
+    /// Looked up by `PluginHost::invoke_user_command`.
+    user_commands: Rc<RefCell<UserCommands>>,
 }
 
 struct SplitDragInfo {
@@ -241,6 +253,10 @@ impl PluginHost {
 
         let lua = Rc::new(Lua::new());
         let build: Rc<RefCell<BuildState>> = Rc::new(RefCell::new(BuildState::default()));
+        let deferred: Rc<RefCell<DeferredQueue>> =
+            Rc::new(RefCell::new(DeferredQueue::default()));
+        let user_commands: Rc<RefCell<UserCommands>> =
+            Rc::new(RefCell::new(UserCommands::default()));
 
         let services_ctx = ServicesContext {
             registry: Rc::clone(&self.service_registry),
@@ -256,6 +272,8 @@ impl PluginHost {
             Rc::clone(&self.pending_tab_ops),
             Rc::clone(&guard),
             services_ctx,
+            Rc::clone(&deferred),
+            Rc::clone(&user_commands),
         )?;
 
         if let Err(e) = lua
@@ -318,6 +336,8 @@ impl PluginHost {
             screens,
             screen_state: HashMap::new(),
             dynamic_widgets,
+            deferred,
+            user_commands,
         };
         self.plugins.insert(manifest.id.clone(), plugin);
 
@@ -1224,6 +1244,122 @@ impl PluginHost {
 
     pub fn tab_snapshot(&self) -> &TabsSnapshot {
         &self.last_tab_snapshot
+    }
+
+    /// Drain every plugin's deferred-call queue. Order per plugin:
+    ///
+    /// 1. Immediate (`leviathan.api.schedule(fn)`) callbacks, in FIFO order.
+    /// 2. Delayed (`defer_fn(ms, fn)`) callbacks whose deadline is now in
+    ///    the past.
+    /// 3. Resumable coroutines parked from a previous
+    ///    `invoke_user_command` or earlier tick. Coroutines that yield
+    ///    again are re-parked for the next tick.
+    ///
+    /// Errors from any callback / resume are logged; other queue entries
+    /// keep processing so one buggy callback can't stall a plugin.
+    pub fn tick(&mut self) {
+        let now = Instant::now();
+        let ids: Vec<String> = self.plugins.keys().cloned().collect();
+        for id in ids {
+            let Some(plugin) = self.plugins.get(&id) else {
+                continue;
+            };
+            let lua = Rc::clone(&plugin.lua);
+            let queue = Rc::clone(&plugin.deferred);
+
+            let immediate = queue.borrow_mut().drain_immediate();
+            for key in immediate {
+                match lua.registry_value::<Function>(&key) {
+                    Ok(f) => {
+                        if let Err(e) = f.call::<()>(()) {
+                            eprintln!("git_leviathan: scheduled fn error in {id}: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("git_leviathan: scheduled fn lookup failed in {id}: {e}");
+                    }
+                }
+            }
+
+            let due = queue.borrow_mut().drain_due(now);
+            for key in due {
+                match lua.registry_value::<Function>(&key) {
+                    Ok(f) => {
+                        if let Err(e) = f.call::<()>(()) {
+                            eprintln!("git_leviathan: defer_fn error in {id}: {e}");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("git_leviathan: defer_fn lookup failed in {id}: {e}");
+                    }
+                }
+            }
+
+            let drained: Vec<RegistryKey> =
+                std::mem::take(&mut queue.borrow_mut().coroutines);
+            for key in drained {
+                let thread: Thread = match lua.registry_value(&key) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        eprintln!("git_leviathan: coroutine lookup failed in {id}: {e}");
+                        continue;
+                    }
+                };
+                if let Err(e) = thread.resume::<()>(()) {
+                    eprintln!("git_leviathan: coroutine resume error in {id}: {e}");
+                    continue;
+                }
+                if thread.status() == ThreadStatus::Resumable {
+                    match lua.create_registry_value(thread) {
+                        Ok(new_key) => queue.borrow_mut().coroutines.push(new_key),
+                        Err(e) => eprintln!(
+                            "git_leviathan: re-parking coroutine failed in {id}: {e}"
+                        ),
+                    }
+                }
+            }
+        }
+    }
+
+    /// Invoke a plugin's named user command. The function is wrapped in
+    /// a Lua coroutine so cooperative yields are honoured: if the command
+    /// yields, it's parked in the plugin's `coroutines` bucket and
+    /// resumed on subsequent `tick` calls. Returns once the first resume
+    /// finishes (either completed or yielded).
+    pub fn invoke_user_command(
+        &mut self,
+        plugin_id: &str,
+        name: &str,
+    ) -> mlua::Result<()> {
+        let plugin = self.plugins.get(plugin_id).ok_or_else(|| {
+            mlua::Error::external(format!("plugin '{plugin_id}' not loaded"))
+        })?;
+        let f: Function = {
+            let cmds = plugin.user_commands.borrow();
+            let key = cmds.commands.get(name).ok_or_else(|| {
+                mlua::Error::external(format!(
+                    "user command '{name}' not registered"
+                ))
+            })?;
+            plugin.lua.registry_value(key)?
+        };
+        let thread = plugin.lua.create_thread(f)?;
+        thread.resume::<()>(())?;
+        if thread.status() == ThreadStatus::Resumable {
+            let key = plugin.lua.create_registry_value(thread)?;
+            plugin.deferred.borrow_mut().coroutines.push(key);
+        }
+        Ok(())
+    }
+
+    /// Number of suspended coroutines parked in this plugin's queue.
+    /// Used by tests to drive a coroutine to completion via repeated
+    /// `tick()` calls.
+    pub fn coroutine_count(&self, plugin_id: &str) -> usize {
+        self.plugins
+            .get(plugin_id)
+            .map(|p| p.deferred.borrow().coroutines.len())
+            .unwrap_or(0)
     }
 
     /// Re-invoke every dynamic widget fn the plugin registered and push

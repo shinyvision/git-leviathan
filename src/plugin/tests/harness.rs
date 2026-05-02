@@ -123,6 +123,24 @@ impl MockHost {
 		self.host.plugin_global_i64(plugin_id, name)
 	}
 
+	pub fn tick(&mut self) {
+		self.host.tick();
+	}
+
+	pub fn invoke_user_command(
+		&mut self,
+		plugin_id: &str,
+		name: &str,
+	) -> Result<(), Box<dyn std::error::Error>> {
+		self.host
+			.invoke_user_command(plugin_id, name)
+			.map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))
+	}
+
+	pub fn coroutine_count(&self, plugin_id: &str) -> usize {
+		self.host.coroutine_count(plugin_id)
+	}
+
 	pub fn has_slot(
 		&self,
 		plugin_id: &str,
@@ -550,6 +568,102 @@ api_version = "1.0"
 		);
 		let err = r.expect_err("undeclared register should error").to_string();
 		assert!(err.contains("not declared in provides_services"), "got: {err}");
+	}
+
+	#[test]
+	fn schedule_defers_until_tick() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"sched",
+			r#"
+			id = "sched"
+			name = "sched"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			_G.x = 0
+			leviathan.api.schedule(function() _G.x = 1 end)
+			"#,
+		)
+		.expect("load");
+		assert_eq!(host.read_global_i64("sched", "x"), Some(0), "before tick: still 0");
+		host.tick();
+		assert_eq!(host.read_global_i64("sched", "x"), Some(1), "after tick: 1");
+	}
+
+	#[test]
+	fn defer_fn_waits_for_elapsed_ms() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"deferred",
+			r#"
+			id = "deferred"
+			name = "deferred"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			_G.x = 0
+			leviathan.api.defer_fn(50, function() _G.x = 9 end)
+			"#,
+		)
+		.expect("load");
+		host.tick();
+		assert_eq!(
+			host.read_global_i64("deferred", "x"),
+			Some(0),
+			"before 50ms: still 0"
+		);
+		std::thread::sleep(std::time::Duration::from_millis(80));
+		host.tick();
+		assert_eq!(
+			host.read_global_i64("deferred", "x"),
+			Some(9),
+			"after sleep + tick: fired"
+		);
+	}
+
+	#[test]
+	fn user_command_yield_does_not_block() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"cmd",
+			r#"
+			id = "cmd"
+			name = "cmd"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			_G.steps = 0
+			leviathan.api.create_user_command("slow", function()
+				for i = 1, 5 do
+					_G.steps = _G.steps + 1
+					coroutine.yield()
+				end
+			end)
+			"#,
+		)
+		.expect("load");
+
+		let start = std::time::Instant::now();
+		host.invoke_user_command("cmd", "slow").expect("invoke");
+		assert!(
+			start.elapsed() < std::time::Duration::from_millis(50),
+			"first resume must be quick"
+		);
+		assert_eq!(host.read_global_i64("cmd", "steps"), Some(1));
+		assert_eq!(host.coroutine_count("cmd"), 1);
+
+		for _ in 0..10 {
+			host.tick();
+			if host.coroutine_count("cmd") == 0 {
+				break;
+			}
+		}
+		assert_eq!(host.coroutine_count("cmd"), 0, "coroutine should finish");
+		assert_eq!(host.read_global_i64("cmd", "steps"), Some(5));
 	}
 
 	#[test]
