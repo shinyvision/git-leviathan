@@ -25,6 +25,7 @@ pub mod env;
 pub mod event;
 pub mod factory;
 pub mod fs;
+pub mod health;
 pub mod persist;
 pub mod repository;
 pub mod services_api;
@@ -33,6 +34,7 @@ pub mod ui;
 
 pub use async_runtime::DeferredQueue;
 pub use command::UserCommands;
+pub use health::HealthCheckRegistration;
 pub use persist::PersistContext;
 pub use services_api::ServicesContext;
 
@@ -118,6 +120,7 @@ pub fn install_all(
     persist_ctx: PersistContext,
     deferred: Rc<RefCell<DeferredQueue>>,
     user_commands: Rc<RefCell<UserCommands>>,
+    health_checks: Rc<RefCell<Vec<HealthCheckRegistration>>>,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
 
@@ -133,6 +136,7 @@ pub fn install_all(
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
     services_api::install(lua, services_ctx, &leviathan)?;
     persist::install(lua, persist_ctx, &leviathan)?;
+    health::install(lua, health_checks, &leviathan)?;
 
     // Start with an empty repository snapshot so plugin code that touches
     // `leviathan.repository` at `init.lua` time (before the first sync)

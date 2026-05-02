@@ -23,9 +23,10 @@ use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Thread, ThreadStatus, Value as LuaValue};
 
 use crate::plugin::api::{
-    self, BuildState, DeferredQueue, PersistContext, RawSlotOp, RawSlotSpec, ScreenDef,
-    ServicesContext, UserCommands, WidgetSource,
+    self, BuildState, DeferredQueue, HealthCheckRegistration, PersistContext, RawSlotOp,
+    RawSlotSpec, ScreenDef, ServicesContext, UserCommands, WidgetSource,
 };
+use crate::plugin::api::health::{HealthContext, HealthItem, HealthReport, PluginHealth};
 use crate::plugin::audit::AuditLog;
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::services::ServiceRegistry;
@@ -105,6 +106,10 @@ struct LoadedPlugin {
     /// Plugin-registered named commands (`leviathan.api.create_user_command`).
     /// Looked up by `PluginHost::invoke_user_command`.
     user_commands: Rc<RefCell<UserCommands>>,
+    /// Health-check callbacks registered via `leviathan.health.register`.
+    /// Drained per-plugin by `PluginHost::run_health_checks`. Plugins
+    /// without any registration are absent from the resulting report.
+    health_checks: Vec<HealthCheckRegistration>,
 }
 
 struct SplitDragInfo {
@@ -258,6 +263,8 @@ impl PluginHost {
             Rc::new(RefCell::new(DeferredQueue::default()));
         let user_commands: Rc<RefCell<UserCommands>> =
             Rc::new(RefCell::new(UserCommands::default()));
+        let health_checks_sink: Rc<RefCell<Vec<HealthCheckRegistration>>> =
+            Rc::new(RefCell::new(Vec::new()));
 
         let services_ctx = ServicesContext {
             registry: Rc::clone(&self.service_registry),
@@ -280,6 +287,7 @@ impl PluginHost {
             persist_ctx,
             Rc::clone(&deferred),
             Rc::clone(&user_commands),
+            Rc::clone(&health_checks_sink),
         )?;
 
         if let Err(e) = lua
@@ -334,6 +342,9 @@ impl PluginHost {
             "git_leviathan: loaded plugin {} ({})",
             manifest.id, manifest.name
         );
+        let health_checks: Vec<HealthCheckRegistration> =
+            std::mem::take(&mut *health_checks_sink.borrow_mut());
+
         let plugin = LoadedPlugin {
             id: manifest.id.clone(),
             root: plugin_root,
@@ -344,6 +355,7 @@ impl PluginHost {
             dynamic_widgets,
             deferred,
             user_commands,
+            health_checks,
         };
         self.plugins.insert(manifest.id.clone(), plugin);
 
@@ -1356,6 +1368,41 @@ impl PluginHost {
             plugin.deferred.borrow_mut().coroutines.push(key);
         }
         Ok(())
+    }
+
+    /// Run every plugin's registered health checks and return an aggregated
+    /// report. Plugins that didn't register a check (or whose checks
+    /// produced no items) are absent from the report. Errors from
+    /// individual callbacks are logged; partial item lists are kept.
+    pub fn run_health_checks(&self) -> HealthReport {
+        let mut report = HealthReport::default();
+        for (plugin_id, plugin) in &self.plugins {
+            let mut items: Vec<HealthItem> = Vec::new();
+            for check in &plugin.health_checks {
+                let func: Function = match plugin.lua.registry_value(&check.callback) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        eprintln!(
+                            "git_leviathan: health callback lookup failed for {plugin_id}: {e}"
+                        );
+                        continue;
+                    }
+                };
+                let bucket: Rc<RefCell<Vec<HealthItem>>> = Rc::new(RefCell::new(Vec::new()));
+                let ctx = HealthContext { items: Rc::clone(&bucket) };
+                if let Err(e) = func.call::<()>(ctx) {
+                    eprintln!("git_leviathan: health callback error in {plugin_id}: {e}");
+                }
+                items.extend(bucket.borrow().iter().cloned());
+            }
+            if !items.is_empty() {
+                report.plugins.push(PluginHealth {
+                    plugin_id: plugin_id.clone(),
+                    items,
+                });
+            }
+        }
+        report
     }
 
     /// Number of suspended coroutines parked in this plugin's queue.

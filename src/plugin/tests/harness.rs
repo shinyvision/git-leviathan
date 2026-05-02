@@ -141,6 +141,10 @@ impl MockHost {
 		self.host.coroutine_count(plugin_id)
 	}
 
+	pub fn run_health_checks(&self) -> crate::plugin::api::health::HealthReport {
+		self.host.run_health_checks()
+	}
+
 	pub fn has_slot(
 		&self,
 		plugin_id: &str,
@@ -703,5 +707,85 @@ api_version = "1.0"
 		)
 		.expect("load should succeed");
 		assert!(host.has_plugin("yes-fs"));
+	}
+
+	#[test]
+	fn health_check_runs_per_plugin() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"p1",
+			r#"
+			id = "p1"
+			name = "p1"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			r#"
+			leviathan.health.register(function(ctx)
+				ctx:ok("lua present")
+				ctx:warn("disk slow")
+				ctx:info("cache size: 4")
+				ctx:error("missing dep")
+			end)
+			"#,
+		)
+		.expect("load");
+
+		let report = host.run_health_checks();
+		let p1 = report.for_plugin("p1").expect("p1 in report");
+		assert_eq!(p1.items.len(), 4);
+
+		let kinds: Vec<_> = p1.items.iter().map(|i| i.severity).collect();
+		use crate::plugin::api::health::Severity;
+		assert!(kinds.contains(&Severity::Ok));
+		assert!(kinds.contains(&Severity::Warn));
+		assert!(kinds.contains(&Severity::Info));
+		assert!(kinds.contains(&Severity::Error));
+	}
+
+	#[test]
+	fn health_report_aggregates_multiple_plugins() {
+		let mut host = MockHost::new();
+		for id in ["pa", "pb"] {
+			host.load_inline(
+				id,
+				&format!(
+					r#"
+				id = "{id}"
+				name = "{id}"
+				version = "0.1.0"
+				api_version = "1.0"
+				"#
+				),
+				&format!(
+					r#"
+				leviathan.health.register(function(ctx)
+					ctx:ok("hello from {id}")
+				end)
+				"#
+				),
+			)
+			.expect("load");
+		}
+		let report = host.run_health_checks();
+		assert_eq!(report.plugins.len(), 2);
+	}
+
+	#[test]
+	fn plugins_without_health_check_absent_from_report() {
+		let mut host = MockHost::new();
+		host.load_inline(
+			"no_health",
+			r#"
+			id = "no_health"
+			name = "no_health"
+			version = "0.1.0"
+			api_version = "1.0"
+			"#,
+			"-- nothing",
+		)
+		.expect("load");
+		let report = host.run_health_checks();
+		assert!(report.for_plugin("no_health").is_none());
 	}
 }
