@@ -1,1 +1,1 @@
-// placeholder — populated in later phases
+pub mod stubs;
