@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use git_leviathan_plugin_api::descriptor::region::RegionDescriptor;
+use git_leviathan_plugin_api::descriptor::widget::WidgetKind;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
 use super::{BuildState, RawSlotOp, RawSlotSpec, WidgetSource};
@@ -91,6 +92,12 @@ fn read_widget(lua: &Lua, spec: &Table) -> mlua::Result<WidgetSource> {
         other => {
             let json: serde_json::Value = lua.from_value(other)
                 .map_err(|e| mlua::Error::external(format!("invalid widget tree: {e}")))?;
+            // Validate the static tree against the WidgetKind schema. Catches
+            // typos (`kind = "rwo"`) at boundary time instead of letting them
+            // fall through to the bridge's silent error-text fallback. The
+            // runtime still consumes the raw JSON; validation is additive.
+            serde_json::from_value::<WidgetKind>(json.clone())
+                .map_err(|e| mlua::Error::external(format!("invalid widget tree: {e}")))?;
             WidgetSource::Static(json)
         }
     })
@@ -131,6 +138,23 @@ mod tests {
         let err = lua.load(r#"h.add{ id = "x", section = "nope", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .exec().unwrap_err().to_string();
         assert!(err.contains("unknown section 'nope'"), "got: {err}");
+    }
+
+    #[test]
+    fn factory_rejects_unknown_widget_kind() {
+        let (lua, build) = fresh();
+        let desc = REGIONS.get("main_bar").unwrap();
+        let handle = make_region_handle(&lua, Rc::clone(&build), desc).unwrap();
+        lua.globals().set("h", handle).unwrap();
+        let err = lua
+            .load(r#"h.add{ id = "x", section = "left", priority = 0, widget = { kind = "rwo", value = "hi" } }"#)
+            .exec()
+            .unwrap_err()
+            .to_string();
+        assert!(
+            err.contains("invalid widget tree") || err.contains("unknown variant"),
+            "got: {err}"
+        );
     }
 
     #[test]

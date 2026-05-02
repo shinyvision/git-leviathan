@@ -187,6 +187,25 @@ api_version = "1.0"
 	}
 
 	#[test]
+	fn sample_plugins_load_unchanged() {
+		// Regression guard for widget schema validation: every static widget
+		// shape used by the bundled sample plugins must round-trip through
+		// `WidgetKind`. If a plugin breaks here, the schema is too strict.
+		let mut host = MockHost::new();
+		for plugin in [
+			"dancing_banana_test",
+			"repository_info",
+			"tablist_demo",
+			"regions_demo",
+		] {
+			let dir = std::path::PathBuf::from("plugins").join(plugin);
+			host.host_mut()
+				.load_plugin(&dir)
+				.unwrap_or_else(|e| panic!("plugin {plugin} broke: {e}"));
+		}
+	}
+
+	#[test]
 	fn fs_read_blocked_without_capability() {
 		let r = load_plugin_from_str(
 			r#"
