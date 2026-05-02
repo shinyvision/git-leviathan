@@ -4,5 +4,6 @@ mod registry;
 
 #[allow(unused_imports)]
 pub use registry::{
-    container, is_empty, iter, Pane, RepoPaneCtx, RepoPaneSlot, RepoRegionRegistry, Section,
+    container, is_empty, iter, render_bottom, render_top, Pane, RepoPaneCtx, RepoPaneSlot,
+    RepoRegionRegistry, Section,
 };

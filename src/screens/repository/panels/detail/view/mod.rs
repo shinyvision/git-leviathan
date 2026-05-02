@@ -64,12 +64,17 @@ pub fn dirty_file_context_menu(
     ContextMenu::new(items).into()
 }
 
-pub fn detail_panel_view(screen: DetailViewModel<'_>) -> Element<'_, Message> {
+pub fn detail_panel_view<'a>(
+    screen: DetailViewModel<'a>,
+    top_slot: Option<Element<'a, Message>>,
+    bottom_slot: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
     match screen.orientation {
         DetailOrientation::Vertical => {
             let resize_handle = resize_handle_view(screen.is_resizing, screen.width);
             let panel_content = detail_panel_content(screen);
-            MouseArea::new(row![resize_handle, panel_content])
+            let panel_with_slots = wrap_with_slots(panel_content, top_slot, bottom_slot);
+            MouseArea::new(row![resize_handle, panel_with_slots])
                 .on_press(Message::repo(RepositoryMessage::Center(
                     CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Detail),
                 )))
@@ -77,13 +82,33 @@ pub fn detail_panel_view(screen: DetailViewModel<'_>) -> Element<'_, Message> {
         }
         DetailOrientation::Horizontal => {
             let panel_content = detail_panel_content(screen);
-            MouseArea::new(panel_content)
+            let panel_with_slots = wrap_with_slots(panel_content, top_slot, bottom_slot);
+            MouseArea::new(panel_with_slots)
                 .on_press(Message::repo(RepositoryMessage::Center(
                     CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Detail),
                 )))
                 .into()
         }
     }
+}
+
+fn wrap_with_slots<'a>(
+    body: Element<'a, Message>,
+    top_slot: Option<Element<'a, Message>>,
+    bottom_slot: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    if top_slot.is_none() && bottom_slot.is_none() {
+        return body;
+    }
+    let mut col_items: Vec<Element<'a, Message>> = Vec::with_capacity(3);
+    if let Some(top) = top_slot {
+        col_items.push(top);
+    }
+    col_items.push(body);
+    if let Some(bottom) = bottom_slot {
+        col_items.push(bottom);
+    }
+    column(col_items).spacing(0).height(Length::Fill).into()
 }
 
 fn resize_handle_view(is_resizing: bool, effective_width: f32) -> Element<'static, Message> {

@@ -30,13 +30,40 @@ impl CenterPanel {
     pub(in crate::screens::repository) fn view_with<'a>(
         &'a self,
         ctx: &CenterViewCtx<'a>,
+        top_slot: Option<Element<'a, Message>>,
+        bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
-        self.view(
+        let body = self.view(
             ctx.data,
             ctx.selection,
             ctx.dirty_commit_message,
             ctx.commit_search,
             ctx.branch_popout,
-        )
+        );
+        wrap_with_slots(body, top_slot, bottom_slot)
     }
+}
+
+pub(in crate::screens::repository) fn wrap_with_slots<'a>(
+    body: Element<'a, Message>,
+    top_slot: Option<Element<'a, Message>>,
+    bottom_slot: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    use iced::Length;
+    if top_slot.is_none() && bottom_slot.is_none() {
+        return body;
+    }
+    let mut col_items: Vec<Element<'a, Message>> = Vec::with_capacity(3);
+    if let Some(top) = top_slot {
+        col_items.push(top);
+    }
+    col_items.push(body);
+    if let Some(bottom) = bottom_slot {
+        col_items.push(bottom);
+    }
+    iced::widget::column(col_items)
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }

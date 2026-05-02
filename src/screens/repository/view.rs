@@ -28,13 +28,17 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
     registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
 ) -> Element<'a, Message> {
     if screen.panels.diff.is_conflict_fullscreen() {
-        let center_graph = screen.panels.center.view_with(&panels::center::CenterViewCtx {
-            data: &screen.data,
-            selection: &screen.data.selection,
-            dirty_commit_message: &screen.panels.detail.dirty_commit_message,
-            commit_search: screen.data.commit_search.as_ref(),
-            branch_popout: &screen.data.branch_popout,
-        });
+        let center_graph = screen.panels.center.view_with(
+            &panels::center::CenterViewCtx {
+                data: &screen.data,
+                selection: &screen.data.selection,
+                dirty_commit_message: &screen.panels.detail.dirty_commit_message,
+                commit_search: screen.data.commit_search.as_ref(),
+                branch_popout: &screen.data.branch_popout,
+            },
+            None,
+            None,
+        );
         let center = screen.panels.diff.view_or_passthrough(center_graph);
         return container(center)
             .style(|_: &Theme| container::Style {
@@ -56,37 +60,6 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
-}
-
-fn wrap_pane<'a>(
-    pane: crate::widgets::chrome::repo_region::Pane,
-    body: Element<'a, Message>,
-    registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
-) -> Element<'a, Message> {
-    use crate::widgets::chrome::repo_region as rr;
-
-    let top_empty = rr::is_empty(registry, pane, rr::Section::Top);
-    let bottom_empty = rr::is_empty(registry, pane, rr::Section::Bottom);
-    if top_empty && bottom_empty {
-        return body;
-    }
-
-    let pane_ctx = rr::RepoPaneCtx::new();
-    let mut col = column![].spacing(0).width(Length::Fill).height(Length::Fill);
-    if !top_empty {
-        let items: Vec<Element<'a, Message>> = rr::iter(registry, pane, rr::Section::Top)
-            .map(|s| (s.builder)(&pane_ctx))
-            .collect();
-        col = col.push(iced::widget::column(items).spacing(0));
-    }
-    col = col.push(body);
-    if !bottom_empty {
-        let items: Vec<Element<'a, Message>> = rr::iter(registry, pane, rr::Section::Bottom)
-            .map(|s| (s.builder)(&pane_ctx))
-            .collect();
-        col = col.push(iced::widget::column(items).spacing(0));
-    }
-    col.into()
 }
 
 fn build_body_with_region<'a>(
@@ -111,37 +84,47 @@ fn build_body_with_region<'a>(
         ),
     };
 
-    let sidebar_body = screen.panels.sidebar.view(&panels::sidebar::SidebarViewCtx {
-        sections: screen.data.snapshot.sidebar_sections(),
-        commit_count: screen.data.snapshot.commits().len(),
-        width: sidebar_width,
-        is_resizing: screen.data.resize.sidebar_resizing,
-        active_worktree_path: screen.fleet.active_path(),
-    });
-    let center_graph = screen.panels.center.view_with(&panels::center::CenterViewCtx {
-        data: &screen.data,
-        selection: &screen.data.selection,
-        dirty_commit_message: &screen.panels.detail.dirty_commit_message,
-        commit_search: screen.data.commit_search.as_ref(),
-        branch_popout: &screen.data.branch_popout,
-    });
+    let sidebar = screen.panels.sidebar.view(
+        &panels::sidebar::SidebarViewCtx {
+            sections: screen.data.snapshot.sidebar_sections(),
+            commit_count: screen.data.snapshot.commits().len(),
+            width: sidebar_width,
+            is_resizing: screen.data.resize.sidebar_resizing,
+            active_worktree_path: screen.fleet.active_path(),
+        },
+        rr::render_top(registry, rr::Pane::Sidebar),
+        rr::render_bottom(registry, rr::Pane::Sidebar),
+    );
+    let center_graph = screen.panels.center.view_with(
+        &panels::center::CenterViewCtx {
+            data: &screen.data,
+            selection: &screen.data.selection,
+            dirty_commit_message: &screen.panels.detail.dirty_commit_message,
+            commit_search: screen.data.commit_search.as_ref(),
+            branch_popout: &screen.data.branch_popout,
+        },
+        None,
+        None,
+    );
     let center_body = screen.panels.diff.view_or_passthrough(center_graph);
+    let center = panels::center::wrap_with_slots(
+        center_body,
+        rr::render_top(registry, rr::Pane::Graph),
+        rr::render_bottom(registry, rr::Pane::Graph),
+    );
 
-    let detail_body = screen
-        .panels
-        .detail
-        .view_with(&panels::detail::DetailViewCtx {
+    let detail = screen.panels.detail.view_with(
+        &panels::detail::DetailViewCtx {
             data: &screen.data,
             selection: &screen.data.selection,
             active_diff_file_path: screen.panels.diff.active_diff_file_path(),
             merged_diff: screen.merged_diff.result(),
             orientation,
             width: detail_width,
-        });
-
-    let sidebar = wrap_pane(rr::Pane::Sidebar, sidebar_body, registry);
-    let center = wrap_pane(rr::Pane::Graph, center_body, registry);
-    let detail = wrap_pane(rr::Pane::Details, detail_body, registry);
+        },
+        rr::render_top(registry, rr::Pane::Details),
+        rr::render_bottom(registry, rr::Pane::Details),
+    );
 
     match orientation {
         DetailOrientation::Vertical => row![sidebar, center, detail].height(Length::Fill).into(),

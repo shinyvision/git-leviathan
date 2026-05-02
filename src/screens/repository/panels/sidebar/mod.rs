@@ -33,8 +33,10 @@ impl SidebarPanel {
     pub(in crate::screens::repository) fn view<'a>(
         &'a self,
         ctx: &SidebarViewCtx<'a>,
+        top_slot: Option<Element<'a, Message>>,
+        bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
-        view::view(self, ctx)
+        view::view(self, ctx, top_slot, bottom_slot)
     }
 
     pub(in crate::screens::repository) fn update(

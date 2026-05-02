@@ -40,6 +40,8 @@ impl DetailPanel {
     pub(in crate::screens::repository) fn view_with<'a>(
         &'a self,
         ctx: &DetailViewCtx<'a>,
+        top_slot: Option<Element<'a, Message>>,
+        bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
         self.view(
             ctx.data,
@@ -48,6 +50,8 @@ impl DetailPanel {
             ctx.merged_diff,
             ctx.orientation,
             ctx.width,
+            top_slot,
+            bottom_slot,
         )
     }
 }

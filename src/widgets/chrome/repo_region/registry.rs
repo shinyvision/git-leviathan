@@ -128,3 +128,36 @@ pub fn iter<'a>(
 pub fn is_empty(registry: &RepoRegionRegistry, pane: Pane, section: Section) -> bool {
     iter(registry, pane, section).next().is_none()
 }
+
+/// Render the top-section slots for a pane as a stacked column. Returns
+/// `None` if the pane has no top slots; callers should render their body
+/// alone in that case.
+pub fn render_top<'a>(
+    registry: &'a RepoRegionRegistry,
+    pane: Pane,
+) -> Option<Element<'a, Message>> {
+    if is_empty(registry, pane, Section::Top) {
+        return None;
+    }
+    let pane_ctx = RepoPaneCtx::new();
+    let items: Vec<Element<'a, Message>> = iter(registry, pane, Section::Top)
+        .map(|s| (s.builder)(&pane_ctx))
+        .collect();
+    Some(iced::widget::column(items).spacing(0).into())
+}
+
+/// Render the bottom-section slots for a pane as a stacked column.
+/// Returns `None` if no bottom slots are registered.
+pub fn render_bottom<'a>(
+    registry: &'a RepoRegionRegistry,
+    pane: Pane,
+) -> Option<Element<'a, Message>> {
+    if is_empty(registry, pane, Section::Bottom) {
+        return None;
+    }
+    let pane_ctx = RepoPaneCtx::new();
+    let items: Vec<Element<'a, Message>> = iter(registry, pane, Section::Bottom)
+        .map(|s| (s.builder)(&pane_ctx))
+        .collect();
+    Some(iced::widget::column(items).spacing(0).into())
+}

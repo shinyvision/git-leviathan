@@ -26,7 +26,12 @@ fn matches_filter(needle: &str, hay: &str) -> bool {
     hay.to_ascii_lowercase().contains(&needle.to_ascii_lowercase())
 }
 
-pub(super) fn view<'a>(panel: &'a SidebarPanel, ctx: &SidebarViewCtx<'a>) -> Element<'a, Message> {
+pub(super) fn view<'a>(
+    panel: &'a SidebarPanel,
+    ctx: &SidebarViewCtx<'a>,
+    top_slot: Option<Element<'a, Message>>,
+    bottom_slot: Option<Element<'a, Message>>,
+) -> Element<'a, Message> {
     let sidebar_width = ctx.width;
     let is_resizing = ctx.is_resizing;
     let filter_query = panel.filter_query();
@@ -77,9 +82,16 @@ pub(super) fn view<'a>(panel: &'a SidebarPanel, ctx: &SidebarViewCtx<'a>) -> Ele
     .width(Length::Fill)
     .style(style::header_container);
 
-    let full_sidebar = column![viewing_bar, scrolled]
-        .spacing(0)
-        .height(Length::Fill);
+    let mut col_items: Vec<Element<'a, Message>> = Vec::with_capacity(4);
+    if let Some(top) = top_slot {
+        col_items.push(top);
+    }
+    col_items.push(viewing_bar.into());
+    col_items.push(scrolled.into());
+    if let Some(bottom) = bottom_slot {
+        col_items.push(bottom);
+    }
+    let full_sidebar = column(col_items).spacing(0).height(Length::Fill);
 
     let sidebar_container = container(full_sidebar)
         .width(Length::Fixed(sidebar_width))

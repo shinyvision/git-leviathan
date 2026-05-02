@@ -181,15 +181,21 @@ impl DetailPanel {
         merged_diff: Option<&'a MergedCommitDiffResult>,
         orientation: DetailOrientation,
         width: f32,
+        top_slot: Option<Element<'a, Message>>,
+        bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
-        detail_view::detail_panel_view(self.detail_view_model(
-            data,
-            selection,
-            active_diff_file_path,
-            merged_diff,
-            orientation,
-            width,
-        ))
+        detail_view::detail_panel_view(
+            self.detail_view_model(
+                data,
+                selection,
+                active_diff_file_path,
+                merged_diff,
+                orientation,
+                width,
+            ),
+            top_slot,
+            bottom_slot,
+        )
     }
 }
 

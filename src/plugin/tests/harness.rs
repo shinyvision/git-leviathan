@@ -906,4 +906,24 @@ api_version = "1.0"
 		let report = host.run_health_checks();
 		assert!(report.for_plugin("no_health").is_none());
 	}
+
+	#[test]
+	fn regions_demo_does_not_break_existing_layout() {
+		// After regions_demo registers its sidebar.top banner, the slot
+		// shows up in the host's introspection — proves the slot
+		// registration succeeded. The actual layout fix is a visual concern;
+		// this test guards the data path.
+		let mut host = MockHost::new();
+		let dir = std::path::PathBuf::from("plugins/regions_demo");
+		host.host_mut()
+			.load_plugin(&dir)
+			.expect("regions_demo loads");
+		let snap = host.introspect();
+		assert!(
+			snap.slots.iter().any(|s| s.region == "repository"
+				&& s.container == "sidebar.top"
+				&& s.id == "plugin.regions_demo.banner"),
+			"regions_demo sidebar banner slot must register"
+		);
+	}
 }
