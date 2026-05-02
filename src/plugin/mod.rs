@@ -16,6 +16,7 @@ pub mod bridge;
 pub mod capabilities;
 pub mod host;
 pub mod message;
+pub mod reload;
 pub mod slots;
 pub mod tab_snapshot;
 pub mod ui;
