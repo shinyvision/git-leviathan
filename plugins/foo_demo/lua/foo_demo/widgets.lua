@@ -1,6 +1,6 @@
 -- Reusable widget builders for the foo_demo plugin.
 --
--- Phase 5 demonstrates plugin packages: helpers live in
+-- Helper widgets live in
 -- `lua/foo_demo/widgets.lua` and are reached from `init.lua` (and
 -- `after/plugin/*.lua`) via `require("foo_demo.widgets")`.
 

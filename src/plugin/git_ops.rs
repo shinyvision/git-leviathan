@@ -1,11 +1,11 @@
-//! Phase 11 typed Git op surface.
+//! typed Git op surface.
 //!
 //! Plugins request a Git effect through `leviathan.git.*`. The Lua
 //! shim funnels the request to [`GitOpDispatcher::execute`], which:
 //!
 //! 1. Checks the corresponding `git:write:<op>` capability on the
 //!    plugin's [`crate::plugin::capabilities::CapabilityGuard`]
-//!    (Phase 10 Invariant 6).
+//!    (capability grant invariant 6).
 //! 2. Consults [`DestructiveConfirmPolicy`] for destructive ops
 //!    (`delete_branch{force=true}`, `delete_tag`, `reset{mode=hard}`,
 //!    `merge`, `rebase`).
@@ -13,26 +13,23 @@
 //!    devtools can show in-flight ops (cap = 32).
 //! 4. Routes through the host-supplied [`SharedRepositoryGateway`] —
 //!    this is the same gateway the built-in UI buttons use, so plugin
-//!    writes share the existing app pipeline (Phase 11 acceptance
-//!    gate).
+//!    writes share the existing app pipeline.
 //! 5. Records an [`AuditEntry`] for both allow / deny outcomes.
 //! 6. Emits a `git.task_succeeded` (info) or `git.task_failed`
 //!    (error) [`PluginDiagnostic`].
 //! 7. Returns the typed event tuple `(event_name, payload)` to the
-//!    caller so the host can fire the corresponding Phase 7 event
+//!    caller so the host can fire the corresponding autocmd event
 //!    (`HeadChanged`, `RefsChanged`, `FetchFinished`, `PushFinished`,
 //!    etc.).
 //!
 //! "Same task and message flow as built-in UI actions" interpretation:
 //! the built-in UI's checkout/fetch/branch flow lands on the
 //! [`crate::services::gateway::Repository`] trait. This dispatcher
-//! lands on the same trait. The compromise versus a full migration of
-//! the iced `Task::perform` async pipeline is documented in the Phase
-//! 11 deliverables note: writes are executed synchronously on the
-//! host's main-thread tick, the result event is fired immediately
-//! after, and devtools captures the request with `started_at` so
-//! Phase 12's full async machinery can replace this without touching
-//! the Lua surface.
+//! lands on the same trait. Writes currently execute synchronously on
+//! the host's main-thread tick; the result event fires immediately
+//! after, and devtools captures the request with `started_at` so the
+//! async runtime can replace this later without touching the Lua
+//! surface.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -60,8 +57,8 @@ pub struct PendingGitWrite {
     pub started_at_unix_ms: u128,
     /// Set after [`GitOpDispatcher::execute`] finishes. `None` while
     /// the op is still running. The dispatcher is synchronous today
-    /// (Phase 11 compromise) so observers see this populated by the
-    /// time `execute` returns; Phase 12 will move execution off the
+    /// (synchronous Git API compromise) so observers see this populated by the
+    /// time `execute` returns; async runtime will move execution off the
     /// main thread and the field will stay `None` until completion.
     pub finished_at_unix_ms: Option<u128>,
     pub outcome: Option<GitOpStatus>,
@@ -314,7 +311,7 @@ impl GitOpRequest {
     }
 }
 
-/// Outcome of a successful git op, indicating which typed Phase 7
+/// Outcome of a successful git op, indicating which typed autocmd events
 /// event the host should fire (or `None` for ops that don't fit one).
 pub struct GitOpEvents {
     pub fires: Vec<(&'static str, EventPayload)>,
@@ -334,8 +331,8 @@ impl GitOpEvents {
 
 /// Per-host destructive-action policy. The headless default rejects
 /// every destructive op until the host or a test driver explicitly
-/// flips a per-op approval. Phase 11 ships the headless surface; the
-/// visible UI overlay is deferred (Phase 19 already covers visible
+/// flips a per-op approval. the Git API ships the headless surface; the
+/// visible UI overlay is deferred (devtools already covers visible
 /// security UI for capability prompts; the destructive prompt overlay
 /// will mount on the same surface).
 #[derive(Clone, Default)]
@@ -533,8 +530,8 @@ impl GitOpsContext {
         });
 
         // Capability check. The supplied closure already audits +
-        // diagnoses on failure (Phase 10 guard); we just need to
-        // record the git_write audit row + the Phase 11 diagnostic.
+        // diagnoses on failure (capability guard); we just need to
+        // record the git_write audit row + the repository Git diagnostic.
         if let Err(reason) = cap_check(cap) {
             self.record_audit(plugin_id, &op, AuditOutcome::Denied, "denied:capability");
             self.record_diagnostic(
@@ -861,7 +858,7 @@ fn run_request(
             // Fire the started event eagerly via the returned event
             // list so the host emits it before completion. We collect
             // started + finished into the same fire list because
-            // execution is currently synchronous (Phase 11 compromise).
+            // execution is currently synchronous (synchronous Git API compromise).
             let result = gateway.fetch_remotes();
             let mut finished_payload = EventPayload::new();
             match result {

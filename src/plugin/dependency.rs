@@ -1,4 +1,4 @@
-//! Phase 15: plugin dependency resolver.
+//! Plugin dependency resolver.
 //!
 //! Walks a set of [`PluginManifest`]s, validates the version requirements
 //! declared in `dependencies` (required) and `optional_dependencies`
@@ -24,7 +24,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use git_leviathan_plugin_api::manifest::PluginManifest;
 use semver::{Version, VersionReq};
 
-/// One row in the dependency graph projection. Phase 15 devtools row.
+/// One row in the dependency graph projection. devtools dependency row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DependencySummary {
     pub consumer_plugin_id: String,

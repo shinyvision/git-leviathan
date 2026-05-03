@@ -1,7 +1,7 @@
-//! Phase 19 host-bundled devtools commands.
+//! host-bundled devtools commands.
 //!
 //! Registers ten plugin-management commands under the host plugin id
-//! (`<host>`). Every command goes through the same Phase 8 dispatcher
+//! (`<host>`). Every command goes through the same command registry dispatcher
 //! every other host or plugin command goes through, so palette
 //! listing, schema validation, capability gating, audit + diagnostic
 //! emission, and the `CommandExecuted` event all behave identically.
@@ -42,7 +42,7 @@ use crate::plugin::diagnostic::DiagnosticStore;
 /// `invoke_command` after dispatch returns.
 pub type DevtoolsActionQueue = Rc<RefCell<Vec<DevtoolsAction>>>;
 
-/// One queued action a devtools command body asked the host to run
+/// One queued action a command body asked the host to run
 /// after dispatch returns. Carries the command name and its merged
 /// (defaults-applied) args so the host applies the action with the
 /// same view the body saw. The host action handler matches on

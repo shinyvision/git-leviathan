@@ -1,11 +1,11 @@
-//! Phase 6 staged reload pipeline.
+//! reload transactions staged reload pipeline.
 //!
 //! Hot reload runs in two strictly-ordered halves:
 //!
 //! 1. **Stage** — build a *complete* candidate generation in isolation.
 //!    Reads the new manifest, allocates a fresh `GenerationId`,
 //!    constructs a new `mlua::Lua`, installs every `leviathan.*` API
-//!    against it (Phase 5 `LuaLoader` included), runs `init.lua` and
+//!    against it (Lua loader included), runs `init.lua` and
 //!    `after/plugin/*.lua`, drains its `BuildState` into prepared slot
 //!    ops, validates every staged widget and dynamic widget, runs the
 //!    optional `leviathan.health` callback, and finally invokes the
@@ -138,33 +138,33 @@ pub struct StageInputs<'a> {
     pub previous_capabilities: Vec<String>,
     pub previous_screen_ids: Vec<String>,
     pub pending_tab_ops: Rc<RefCell<Vec<crate::plugin::tab_snapshot::TabRegistryOp>>>,
-    /// Phase 8: dispatch env handed to the staged generation's
+    /// Command dispatch env handed to the staged generation's
     /// `leviathan.command` API installer. A failed staging drops the
     /// staged generation cleanly; the live registry is never touched
-    /// during this phase. On commit, the host moves
+    /// during staging. On commit, the host moves
     /// [`StagingArtifacts::commands`] into the live registry.
     pub command_dispatch: CommandDispatchEnv,
-    /// Phase 10 grant store consulted at the `Capability` stage. A
+    /// capability grant store consulted at the `Capability` stage. A
     /// staged reload widening the requested set without a matching
     /// grant halts here (`capability.upgrade_required`).
     pub grant_store: GrantStore,
     /// Whether bundled-plugin auto-grant applies to this staging
     /// (i.e. the plugin's root is under a trusted bundled root).
     pub bundled: bool,
-    /// Phase 9: live keymap registry handle. The staged generation's
+    /// keymaps: live keymap registry handle. The staged generation's
     /// `leviathan.keymap.list` shim borrows from this so plugins see
     /// the same resolved table the host sees. Staged `set` / `del`
     /// rows are NOT installed here — they ride on
     /// [`StagingArtifacts::keymaps`] / [`StagingArtifacts::keymap_dels`]
     /// and the host's `commit_staging` splices them in atomically.
     pub keymap_registry: Rc<RefCell<KeymapRegistry>>,
-    /// Phase 11: cheap-clone GitOpsContext shared with the staged
+    /// Cheap-clone GitOpsContext shared with the staged
     /// generation's git/repo Lua APIs.
     pub git_ctx: crate::plugin::git_ops::GitOpsContext,
-    /// Phase 11: cheap-clone outbound queue of typed git events the
+    /// Cheap-clone outbound queue of typed git events the
     /// staged generation's API will push to.
     pub pending_git_events: crate::plugin::api::git::PendingGitEvents,
-    /// Phase 12: cheap-clone async-runtime registries shared across
+    /// Cheap-clone async runtime registries shared across
     /// generations. The staged generation's `leviathan.async`,
     /// `leviathan.timer`, and `leviathan.fs.watch` shims push into
     /// these via fresh per-generation callback maps.
@@ -173,7 +173,7 @@ pub struct StageInputs<'a> {
     pub watchers: crate::plugin::watchers::FileWatcherRegistry,
     pub storage_roots: PluginStorageRoots,
     pub service_registry: Rc<RefCell<ServiceRegistry>>,
-    /// Phase 17: shared extension registry. The staged generation's
+    /// Shared extension registry. The staged generation's
     /// new init runs against the live registry — the host clears the
     /// previous generation's records on commit (see
     /// `commit_staging`).
@@ -212,25 +212,25 @@ pub struct StagingArtifacts {
     pub autocmd_clears: Vec<RawAutocmdClear>,
     pub staged_services: Rc<RefCell<ServiceRegistry>>,
     pub started_at: Instant,
-    /// Phase 8: command rows the staged generation registered. The
+    /// Command rows the staged generation registered. The
     /// host swaps these into the live `CommandRegistry` during
     /// `commit_staging`. Dropped wholesale on rollback.
     pub commands: Vec<RawCommand>,
-    /// Phase 8: capability guard built for the staged generation. The
+    /// Capability guard built for the staged generation. The
     /// host installs it into the dispatcher's plugin registry on
     /// commit so the new generation's commands route capability
     /// checks through the right grant set.
     pub capability_guard: Rc<CapabilityGuard>,
-    /// Phase 9 staged keymap rows. Installed into the live
+    /// staged keymap rows. Installed into the live
     /// `KeymapRegistry` during `commit_staging` after the previous
     /// generation's bindings have been dropped — a failed staging
     /// drops these on the floor.
     pub keymaps: Vec<RawKeymap>,
-    /// Phase 9 staged keymap deletions. Applied after the staged
+    /// staged keymap deletions. Applied after the staged
     /// `set` rows so a plugin can rebind its own keymaps in one
     /// init.lua run.
     pub keymap_dels: Vec<RawKeymapDel>,
-    /// Phase 12 per-generation async-runtime callback maps. The staged
+    /// async runtime per-generation async-runtime callback maps. The staged
     /// generation's `leviathan.async.spawn`, `leviathan.timer.*`, and
     /// `leviathan.fs.watch` shims insert into these; commit moves
     /// them into the live `LoadedPlugin`.
@@ -401,7 +401,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
     }
 
     // Detect whether any newly-declared capability was previously absent.
-    // Phase 10: widening detection halts here when the new set
+    // capability grants: widening detection halts here when the new set
     // contains capabilities the grant store hasn't decided about yet
     // (`capability.upgrade_required`). Bundled plugins auto-grant new
     // capabilities; non-bundled plugins force the user through a
@@ -727,7 +727,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
     // already-installed plugin whose widget fn started returning
     // garbage. Aborting the swap on a decode error would mean a
     // perfectly compatible reload could be blocked by an unrelated
-    // dynamic-widget regression — exactly the brittleness Phase 6
+    // dynamic-widget regression — exactly the brittleness reload transactions
     // is supposed to remove.
     for (slot_id, (key, cache)) in &dynamic_widgets {
         let func: Function = lua.registry_value(key).map_err(|e| {

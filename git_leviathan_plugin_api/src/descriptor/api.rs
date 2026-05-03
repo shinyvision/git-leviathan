@@ -122,7 +122,7 @@ pub struct ApiRegion {
     pub kind: &'static str,
     pub sections: Vec<&'static str>,
     pub panes: Vec<ApiRegionPane>,
-    /// Phase 17: dynamic section prefixes valid at the region (chrome)
+    /// extension points: dynamic section prefixes valid at the region (chrome)
     /// level. Each entry like `"section:"` allows `"section:<id>"`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dynamic_section_prefixes: Vec<&'static str>,
@@ -132,7 +132,7 @@ pub struct ApiRegion {
 pub struct ApiRegionPane {
     pub name: &'static str,
     pub sections: Vec<&'static str>,
-    /// Phase 17: dynamic section prefixes valid in this pane.
+    /// extension points: dynamic section prefixes valid in this pane.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dynamic_section_prefixes: Vec<&'static str>,
 }
@@ -364,7 +364,7 @@ const UI_FUNCTIONS: &[ApiFunction] = &[
             notes: &["serialize and deserialize are optional functions."],
         },
     },
-    // Phase 17 extension-point APIs (overlay / context_menu /
+    // extension-point APIs (overlay / context_menu /
     // graph_decoration / diff_decoration). Same module table.
     ApiFunction {
         path: "leviathan.ui.overlay",
@@ -473,7 +473,7 @@ const REGION_VALIDATION: ApiValidation = ApiValidation {
         "widget must validate as a LeviathanWidget or be a function",
     ],
     returns: &[],
-    notes: &["Slot ownership is recorded in the Phase 1 resource ledger."],
+    notes: &["Slot ownership is recorded in the resource ledger."],
 };
 
 const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
@@ -512,7 +512,7 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
     },
 ];
 
-// Phase 17: cross-region extension-point APIs (overlays, context menu
+// extension points: cross-region extension-point APIs (overlays, context menu
 // items, graph decorations, diff decorations). Each surface is
 // capability-gated: see `UI_EXT_*_CAP`.
 const UI_OVERLAY_CAP: &[&str] = &["ui:overlay"];
@@ -1326,7 +1326,7 @@ const REPOSITORY_FUNCTIONS: &[ApiFunction] = &[
         name: "blame",
         since: "1.0",
         compatibility: "v1",
-        doc: "Phase 11 placeholder: blame is not yet wired through the host gateway. Returns (nil, \"unsupported\").",
+        doc: "Blame is not yet wired through the host gateway. Returns (nil, \"unsupported\").",
         params: &[ApiParam {
             name: "opts",
             lua_type: "table",
@@ -2387,7 +2387,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "command",
         table: "leviathan.command",
         version: V1,
-        doc: "Phase 8 typed command registry and palette dispatch.",
+        doc: "Typed command registry and palette dispatch.",
         functions: COMMAND_FUNCTIONS,
         events: &["CommandExecuted"],
         types: &[
@@ -2402,7 +2402,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "keymap",
         table: "leviathan.keymap",
         version: V1,
-        doc: "Phase 9 context-aware keymap registry.",
+        doc: "Context-aware keymap registry.",
         functions: KEYMAP_FUNCTIONS,
         events: &["KeymapTriggered"],
         types: &[
@@ -2417,7 +2417,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "autocmd",
         table: "leviathan.autocmd",
         version: V1,
-        doc: "Phase 7 autocmd group, typed-event registration namespace.",
+        doc: "Autocmd group and typed-event registration namespace.",
         functions: AUTOCMD_FUNCTIONS,
         events: &[
             "AppStarted",
@@ -2502,7 +2502,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "repository",
         table: "leviathan.repository",
         version: V1,
-        doc: "Active repository snapshot plus typed read APIs (Phase 11).",
+        doc: "Active repository snapshot plus typed read APIs.",
         functions: REPOSITORY_FUNCTIONS,
         events: &["BranchChanged", "RefsChanged", "HeadChanged", "CommitListChanged"],
         types: &[
@@ -2523,7 +2523,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "git",
         table: "leviathan.git",
         version: V1,
-        doc: "Phase 11 typed Git write APIs. All routes capability-checked, audited, and (when destructive) gated by the host's confirmation policy.",
+        doc: "Typed Git write APIs. All routes are capability-checked, audited, and gated by the host's confirmation policy when destructive.",
         functions: GIT_FUNCTIONS,
         events: &[
             "HeadChanged",
@@ -2631,7 +2631,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "async",
         table: "leviathan.async",
         version: V1,
-        doc: "Phase 12 host-managed background workers.",
+        doc: "Host-managed background workers.",
         functions: ASYNC_FUNCTIONS,
         events: &[],
         types: &[
@@ -2645,7 +2645,7 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "timer",
         table: "leviathan.timer",
         version: V1,
-        doc: "Phase 12 one-shot and repeating timers.",
+        doc: "One-shot and repeating timers.",
         functions: TIMER_FUNCTIONS,
         events: &[],
         types: &["leviathan.timer", "LeviathanTimerHandle"],
@@ -3137,7 +3137,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "process:spawn:<binary>",
         since: "1.0",
-        doc: "Spawn a specific binary by basename (e.g. `process:spawn:git`). Phase 12 will enforce.",
+        doc: "Spawn a specific binary by basename (e.g. `process:spawn:git`).",
     },
     ApiCapability {
         name: "net:fetch",
@@ -3147,7 +3147,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "net:fetch:<domain>",
         since: "1.0",
-        doc: "Fetch from a specific domain (e.g. `net:fetch:github.com`). Phase 12 will enforce.",
+        doc: "Fetch from a specific domain (e.g. `net:fetch:github.com`).",
     },
     ApiCapability {
         name: "clipboard",
@@ -3182,7 +3182,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "credentials",
         since: "1.0",
-        doc: "Read host-stored credentials (Phase 13 secrets).",
+        doc: "Read host-stored credentials.",
     },
     ApiCapability {
         name: "repo:read",
@@ -3192,77 +3192,77 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "git:read:status",
         since: "1.0",
-        doc: "Read working tree status. Phase 11 wires the typed API.",
+        doc: "Read working tree status.",
     },
     ApiCapability {
         name: "git:read:log",
         since: "1.0",
-        doc: "Read commit history. Phase 11 wires the typed API.",
+        doc: "Read commit history.",
     },
     ApiCapability {
         name: "git:read:diff",
         since: "1.0",
-        doc: "Read diffs between commits or against the index. Phase 11 wires the typed API.",
+        doc: "Read diffs between commits or against the index.",
     },
     ApiCapability {
         name: "git:read:show",
         since: "1.0",
-        doc: "Read a commit's tree or a file at a commit. Phase 11 wires the typed API.",
+        doc: "Read a commit's tree or a file at a commit.",
     },
     ApiCapability {
         name: "git:read:blame",
         since: "1.0",
-        doc: "Read line-level blame for a tracked file. Phase 11 wires the typed API.",
+        doc: "Read line-level blame for a tracked file.",
     },
     ApiCapability {
         name: "git:write:checkout",
         since: "1.0",
-        doc: "Move HEAD to a ref or commit. Phase 11 wires the typed API.",
+        doc: "Move HEAD to a ref or commit.",
     },
     ApiCapability {
         name: "git:write:branch",
         since: "1.0",
-        doc: "Create / delete / rename branches. Phase 11 wires the typed API.",
+        doc: "Create, delete, or rename branches.",
     },
     ApiCapability {
         name: "git:write:tag",
         since: "1.0",
-        doc: "Create / delete tags. Phase 11 wires the typed API.",
+        doc: "Create or delete tags.",
     },
     ApiCapability {
         name: "git:write:commit",
         since: "1.0",
-        doc: "Create commits. Phase 11 wires the typed API.",
+        doc: "Create commits.",
     },
     ApiCapability {
         name: "git:write:stash",
         since: "1.0",
-        doc: "Push / pop / drop stashes. Phase 11 wires the typed API.",
+        doc: "Push, pop, or drop stashes.",
     },
     ApiCapability {
         name: "git:write:reset",
         since: "1.0",
-        doc: "Reset the index or working tree. Phase 11 wires the typed API.",
+        doc: "Reset the index or working tree.",
     },
     ApiCapability {
         name: "git:write:fetch",
         since: "1.0",
-        doc: "Fetch from a remote. Phase 11 wires the typed API.",
+        doc: "Fetch from a remote.",
     },
     ApiCapability {
         name: "git:write:push",
         since: "1.0",
-        doc: "Push to a remote. Phase 11 wires the typed API.",
+        doc: "Push to a remote.",
     },
     ApiCapability {
         name: "git:write:merge",
         since: "1.0",
-        doc: "Merge refs into HEAD. Phase 11 wires the typed API.",
+        doc: "Merge refs into HEAD.",
     },
     ApiCapability {
         name: "git:write:rebase",
         since: "1.0",
-        doc: "Rebase HEAD. Phase 11 wires the typed API.",
+        doc: "Rebase HEAD.",
     },
     ApiCapability {
         name: "ui:region:<region>",
@@ -3272,52 +3272,52 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "services:provide:<service@version>",
         since: "1.0",
-        doc: "Provide a versioned service to other plugins (Phase 14).",
+        doc: "Provide a versioned service to other plugins.",
     },
     ApiCapability {
         name: "services:consume:<service@version>",
         since: "1.0",
-        doc: "Consume a versioned service from another plugin (Phase 14).",
+        doc: "Consume a versioned service from another plugin.",
     },
     ApiCapability {
         name: "async:spawn",
         since: "1.12",
-        doc: "Spawn a host-managed background worker thread (Phase 12).",
+        doc: "Spawn a host-managed background worker thread.",
     },
     ApiCapability {
         name: "timer:create",
         since: "1.12",
-        doc: "Schedule one-shot or repeating timers (Phase 12).",
+        doc: "Schedule one-shot or repeating timers.",
     },
     ApiCapability {
         name: "fs:watch",
         since: "1.12",
-        doc: "Watch paths for filesystem events (Phase 12, plugin scope).",
+        doc: "Watch plugin-scoped paths for filesystem events.",
     },
     ApiCapability {
         name: "fs:watch:scope:<dir>",
         since: "1.12",
-        doc: "Watch paths under an explicit user-chosen directory (Phase 12).",
+        doc: "Watch paths under an explicit user-chosen directory.",
     },
     ApiCapability {
         name: "ui:overlay",
         since: "1.0",
-        doc: "Register modal overlays that the host renders above the active screen (Phase 17).",
+        doc: "Register modal overlays that the host renders above the active screen.",
     },
     ApiCapability {
         name: "ui:context_menu",
         since: "1.0",
-        doc: "Contribute items to host-rendered context menus at extension points (Phase 17).",
+        doc: "Contribute items to host-rendered context menus at extension points.",
     },
     ApiCapability {
         name: "ui:graph_decoration",
         since: "1.0",
-        doc: "Attach badges / icons / markers / lanes to commit rows in the graph (Phase 17).",
+        doc: "Attach badges, icons, markers, or lanes to commit rows in the graph.",
     },
     ApiCapability {
         name: "ui:diff_decoration",
         since: "1.0",
-        doc: "Attach line hints / hunk badges / line gutters to the diff view (Phase 17).",
+        doc: "Attach line hints, hunk badges, or line gutters to the diff view.",
     },
 ];
 
@@ -4229,7 +4229,7 @@ pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "leviathan.command",
         since: "1.8",
-        doc: "Phase 8 typed command registry namespace.",
+        doc: "Typed command registry namespace.",
         fields: &[],
         methods: &[],
     },
@@ -4257,7 +4257,7 @@ pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "leviathan.keymap",
         since: "1.9",
-        doc: "Phase 9 keymap registry namespace.",
+        doc: "Context-aware keymap registry namespace.",
         fields: &[],
         methods: &[],
     },

@@ -93,7 +93,7 @@
 ---Autocmd group and typed-event namespace.
 ---@class leviathan.autocmd
 
----Phase 8 typed command registry namespace.
+---Typed command registry namespace.
 ---@class leviathan.command
 
 ---Descriptor accepted by `leviathan.command.create`.
@@ -123,7 +123,7 @@
 ---@field context string Activation context.
 ---@field destructive boolean Destructive flag.
 
----Phase 9 keymap registry namespace.
+---Context-aware keymap registry namespace.
 ---@class leviathan.keymap
 
 ---Options table accepted by `leviathan.keymap.set`.
@@ -671,7 +671,7 @@ function leviathan.repository.diff(opts) end
 ---@return string|nil Error message on failure.
 function leviathan.repository.file_at(opts) end
 
----Phase 11 placeholder: blame is not yet wired through the host gateway. Returns (nil, "unsupported").
+---Blame is not yet wired through the host gateway. Returns (nil, "unsupported").
 ---@param opts table Options table: { path = "src/main.rs", line_range = {start,end} }.
 ---@return nil Always nil.
 ---@return string Error message.

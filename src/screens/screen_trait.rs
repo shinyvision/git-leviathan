@@ -24,7 +24,7 @@ pub struct ToolbarCtx<'a> {
 
 pub trait Screen {
     /// Per-screen action enum. Every screen owns its own message space; the
-    /// outer routing wrappers (Phase 2) name them.
+    /// outer routing wrappers (screen routing) name them.
     type Message: Debug + Send + Clone + 'static;
 
     fn update(&mut self, msg: Self::Message) -> Task<Message>;

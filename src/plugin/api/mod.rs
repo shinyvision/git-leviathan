@@ -50,7 +50,7 @@ pub use health::HealthCheckRegistration;
 pub use persist::PersistContext;
 pub use services_api::ServicesContext;
 
-/// Phase 12 cross-plugin async-runtime handles. Cheap-clone (Arc-backed).
+/// async runtime cross-plugin async-runtime handles. Cheap-clone (Arc-backed).
 /// Bundles the registries plus per-plugin callback tables so the
 /// install path doesn't grow yet another argument.
 pub struct AsyncRuntimeContext {
@@ -206,16 +206,16 @@ pub struct BuildState {
     /// group / clear op so the host can replay them in source
     /// order at install time.
     pub next_autocmd_sequence: u64,
-    /// Phase 8 typed user-command registrations from
+    /// typed command registrations from
     /// `leviathan.command.create`. The host drains this list after
     /// init.lua and installs each entry into the unified
     /// `CommandRegistry`.
     pub commands: Vec<crate::plugin::commands::RawCommand>,
-    /// Phase 9 keymap `set` rows captured from `leviathan.keymap.set`.
+    /// keymap `set` rows captured from `leviathan.keymap.set`.
     /// The host drains and installs them into the unified
     /// `KeymapRegistry` keyed by `(plugin_id, generation_id)`.
     pub keymaps: Vec<crate::plugin::keymap::RawKeymap>,
-    /// Phase 9 keymap `del` rows captured from `leviathan.keymap.del`.
+    /// keymap `del` rows captured from `leviathan.keymap.del`.
     /// Applied after the staged generation's `set` rows so a plugin
     /// can rebind its own keymap inside one init.lua run.
     pub keymap_dels: Vec<crate::plugin::keymap::RawKeymapDel>,
@@ -335,7 +335,7 @@ pub fn install_all(
         repository::build_table(lua, "", "", "", "", "", &[])?,
     )?;
 
-    // Phase 11 typed read APIs install onto the existing repository
+    // typed read APIs install onto the existing repository
     // table. Capability checks happen at call time inside each closure.
     repository::install_read_functions(
         lua,
@@ -346,7 +346,7 @@ pub fn install_all(
         generation_id,
     )?;
 
-    // Phase 11 `leviathan.git.*` write namespace.
+    // `leviathan.git.*` write namespace.
     git::install(
         lua,
         &leviathan,
@@ -486,7 +486,7 @@ mod tests {
             crate::plugin::extensions::ExtensionRegistry::new(),
         )
         .unwrap();
-        // The Phase 5 `leviathan.runtime` module is installed by the
+        // The plugin package layout `leviathan.runtime` module is installed by the
         // host alongside `leviathan.*`. Mirror that here so the
         // descriptor coverage test sees every host function the real
         // load path exposes.

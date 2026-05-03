@@ -640,7 +640,7 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     Ok(())
 }
 
-/// Phase 12 watch-handle userdata returned by `leviathan.fs.watch`.
+/// async runtime watch-handle userdata returned by `leviathan.fs.watch`.
 /// `:cancel()` drops the OS watcher and the parked Lua callback so
 /// further events for this watch_id stop dispatching.
 pub struct LuaWatchHandle {
@@ -660,7 +660,7 @@ impl mlua::UserData for LuaWatchHandle {
     }
 }
 
-/// Phase 12 file-watch install. Mounts `leviathan.fs.watch(path, opts, cb)`
+/// async runtime file-watch install. Mounts `leviathan.fs.watch(path, opts, cb)`
 /// onto the existing fs table. Each call records a [`PluginResourceKind::FileWatcher`]
 /// entry; cancellation flows through the returned userdata or
 /// `cancel_for_generation`.

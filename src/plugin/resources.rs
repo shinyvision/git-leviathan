@@ -90,20 +90,20 @@ pub enum PluginResourceKind {
     DynamicWidgetCache,
     PersistedScreenState,
     HealthCheck,
-    /// Phase 16: a placeholder registration the host installs on
+    /// lazy loading: a placeholder registration the host installs on
     /// behalf of a lazy plugin (a stub command, keymap, event
     /// subscription, region slot, or file-presence watcher) so the
     /// plugin can be activated lazily on first trigger. The
     /// activation resolver owns the lifecycle; the ledger ensures
     /// stubs disappear on unload, just like real registrations.
     ActivationStub,
-    /// Phase 17: one item contributed at a `*.context_menu`
+    /// extension points: one item contributed at a `*.context_menu`
     /// extension point.
     ContextMenuItem,
-    /// Phase 17: one decoration attached to a commit row in the
+    /// extension points: one decoration attached to a commit row in the
     /// graph view.
     GraphDecoration,
-    /// Phase 17: one decoration attached to a diff line / hunk.
+    /// extension points: one decoration attached to a diff line / hunk.
     DiffDecoration,
 }
 
@@ -352,7 +352,7 @@ mod tests {
     }
 
     #[test]
-    fn known_kinds_include_phase_one_placeholders() {
+    fn known_kinds_include_resource_lifecycle_placeholders() {
         let kinds = PluginResourceKind::all_known();
         assert!(kinds.contains(&PluginResourceKind::Overlay));
         assert!(kinds.contains(&PluginResourceKind::Keymap));

@@ -1,6 +1,6 @@
 //! Capability audit log. Each `CapabilityGuard` may have an attached
 //! `AuditLog` to record allow/deny events. Used by the devtools panel
-//! (Phase 6) and tests.
+//! (reload transactions) and tests.
 
 use std::sync::{Arc, Mutex};
 

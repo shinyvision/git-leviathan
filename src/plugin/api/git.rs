@@ -1,4 +1,4 @@
-//! `leviathan.git.*` — Phase 11 typed Git write namespace.
+//! `leviathan.git.*` — typed Git write namespace.
 //!
 //! Every entry point captures the supplied options into a typed
 //! [`GitOpRequest`] and forwards to the host-owned
@@ -21,7 +21,7 @@ use crate::plugin::events::EventPayload;
 use crate::plugin::git_ops::{GitOpRequest, GitOpsContext, ResetMode};
 use crate::plugin::resources::{GenerationId, PluginId};
 
-/// Outbound queue of Phase 7 events to fire post-execute. The host
+/// Outbound queue of autocmd events to fire post-execute. The host
 /// drains this on `tick` (or after each call when a synchronous tick
 /// is forced). Cheap-clone (Rc-backed); shared between the Lua shims
 /// and the host.

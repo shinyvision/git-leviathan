@@ -1,6 +1,6 @@
 //! Git-operation result dispatch. Every non-panel `RepositoryMessage` variant
 //! lands here. Each family of operations has its own submodule (mirrors the
-//! segregated gateway traits introduced in Phase 3); this file owns the
+//! segregated gateway traits; this file owns the
 //! top-level routing that maps an incoming `RepositoryMessage` to the right
 //! handler.
 //!

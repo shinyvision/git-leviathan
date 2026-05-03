@@ -16,7 +16,7 @@ pub struct PaneDescriptor {
 pub enum RegionKind {
     Chrome {
         sections: &'static [&'static str],
-        /// Prefixes that allow dynamic section ids (Phase 17).
+        /// Prefixes that allow dynamic section ids (extension points).
         /// Empty for chrome regions that don't need them.
         dynamic_section_prefixes: &'static [&'static str],
     },
@@ -181,7 +181,7 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
             dynamic_section_prefixes: NO_PREFIXES,
         },
     },
-    // Phase 17: dedicated chrome region for the bottom status bar.
+    // extension points: dedicated chrome region for the bottom status bar.
     RegionDescriptor {
         name: "status_bar",
         kind: RegionKind::Chrome {
@@ -196,7 +196,7 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
                 PaneDescriptor {
                     name: "sidebar",
                     sections: &["top", "bottom"],
-                    // Phase 17: plugins can attach to plugin-defined
+                    // extension points: plugins can attach to plugin-defined
                     // sidebar sections via `section:<id>`.
                     dynamic_section_prefixes: &["section:"],
                 },
@@ -208,7 +208,7 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
             ],
         },
     },
-    // Phase 17: graph extension points (commit row decorations and
+    // extension points: graph extension points (commit row decorations and
     // graph context menu live here).
     RegionDescriptor {
         name: "repository.graph",
@@ -221,7 +221,7 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
             }],
         },
     },
-    // Phase 17: details panel — commit header + files panes.
+    // extension points: details panel — commit header + files panes.
     RegionDescriptor {
         name: "repository.details",
         kind: RegionKind::Content {
@@ -232,7 +232,7 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
             }],
         },
     },
-    // Phase 17: diff panel — toolbar, hunk badges, line gutters,
+    // extension points: diff panel — toolbar, hunk badges, line gutters,
     // context menu.
     RegionDescriptor {
         name: "repository.diff",

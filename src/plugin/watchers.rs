@@ -1,4 +1,4 @@
-//! Phase 12 file-watcher registry. `leviathan.fs.watch(path, opts, cb)`
+//! async runtime file-watcher registry. `leviathan.fs.watch(path, opts, cb)`
 //! creates one entry; the host's `tick()` drains buffered events from
 //! the underlying `notify` watcher and invokes the Lua callback on
 //! the main thread with a serialised event payload.

@@ -92,7 +92,7 @@ pub enum PluginLoadError {
     Lua(mlua::Error),
     BadManifest(String),
     Plugin(git_leviathan_plugin_api::error::PluginError),
-    /// Phase 19: the plugin id is on the host's
+    /// devtools: the plugin id is on the host's
     /// disabled-plugins set. Surfaced from
     /// [`PluginHost::load_plugin`] when a `Plugin: Disable`
     /// devtools command (or test fixture) marked the plugin as
@@ -164,19 +164,19 @@ struct LoadedPlugin {
     /// Drained per-plugin by `PluginHost::run_health_checks`. Plugins
     /// without any registration are absent from the resulting report.
     health_checks: Vec<HealthCheckRegistration>,
-    /// Phase 5 Lua loader. Owns the per-generation module cache and
+    /// Lua loader. Owns the per-generation module cache and
     /// the resolved runtime path. Held here so `module_graph()` and
     /// `runtime_paths` introspection can read live state, and so the
     /// cache drops when this `LoadedPlugin` (and its generation) is
     /// dropped.
     lua_loader: LuaLoader,
-    /// Phase 12 per-plugin async-job on-complete callbacks. Keyed by
+    /// async runtime per-plugin async-job on-complete callbacks. Keyed by
     /// `JobId`; consumed by `tick()` when the worker thread finishes.
     job_callbacks: Rc<RefCell<JobCallbacks>>,
-    /// Phase 12 per-plugin timer callbacks. Keyed by `TimerId`; the
+    /// async runtime per-plugin timer callbacks. Keyed by `TimerId`; the
     /// timer registry owns lifecycle, this map owns the Lua refs.
     timer_callbacks: Rc<RefCell<PluginTimerCallbacks>>,
-    /// Phase 12 per-plugin file-watcher callbacks. Keyed by
+    /// async runtime per-plugin file-watcher callbacks. Keyed by
     /// `WatchId`. Drained when the watcher fires or is cancelled.
     watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>>,
 }
@@ -256,9 +256,9 @@ pub struct PluginHost {
     widget_tree: Option<WidgetAst>,
     split_sizes: HashMap<String, Vec<f32>>,
     split_drag: Option<SplitDragInfo>,
-    /// Phase 7 typed-event registry. Owns every autocmd row and the
+    /// typed-event registry. Owns every autocmd row and the
     /// host-side virtual clock used for debounce. Replaces the
-    /// pre-Phase-7 `HashMap<event, Vec<(plugin, key)>>` table.
+    /// legacy autocmd `HashMap<event, Vec<(plugin, key)>>` table.
     event_bus: EventBus,
     /// Hash of the last `(current_branch, refs)` pushed to every plugin's
     /// `leviathan.repository`. `None` means "not yet synced" — the first
@@ -278,7 +278,7 @@ pub struct PluginHost {
     /// Per-host capability audit log. Cloned (cheap, Arc-backed) into
     /// every plugin's `CapabilityGuard` so allow/deny events from all
     /// plugins land in the same log. Read by the devtools panel
-    /// (Phase 6).
+    /// (reload transactions).
     audit_log: AuditLog,
     /// Last failed `reload_plugin` error per plugin. Cleared on a
     /// successful reload. Devtools surfaces this so a hot-reload
@@ -289,21 +289,21 @@ pub struct PluginHost {
     /// queried by `leviathan.services.get`.
     service_registry: Rc<RefCell<ServiceRegistry>>,
     next_generation_ids: HashMap<String, u64>,
-    /// Phase 3 typed diagnostics. Every host-side error path that used
+    /// typed diagnostics. Every host-side error path that used
     /// to `eprintln!` records a `PluginDiagnostic` here. Cheap-clone
     /// (Arc-backed); shared into the devtools snapshot.
     diagnostics: DiagnosticStore,
-    /// Phase 5 host-wide map of `plugin_id -> root directory`. Read by
+    /// plugin root map of `plugin_id -> root directory`. Read by
     /// `PluginRuntimePath::resolve` so a plugin's declared
     /// `requires_plugins` resolve to absolute `lua/<dep_id>/` roots.
     /// Cheap-clone (Rc-backed); kept on the host so reload/unload can
     /// keep it in sync with the live plugin set.
     runtime_path_registry: RuntimePathRegistry,
-    /// Phase 6 reload-history per plugin, capped at the most recent
+    /// Reload history per plugin, capped at the most recent
     /// `RELOAD_HISTORY_CAP` entries. Drained into the devtools
     /// `InspectorSnapshot::reload_history` view (oldest first).
     reload_history: HashMap<String, VecDeque<ReloadEventSummary>>,
-    /// Phase 8 unified command registry. Holds host-side built-in
+    /// unified command registry. Holds host-side built-in
     /// commands (registered at construction with
     /// [`HOST_COMMAND_PLUGIN_ID`]) and every plugin-registered Lua
     /// command. Dispatch flows through
@@ -318,109 +318,109 @@ pub struct PluginHost {
     command_plugin_registry: CommandPluginRegistry,
     /// Queue of `CommandExecuted` events the dispatcher pushes from
     /// either entry path. Drained during `tick` and routed through
-    /// `fire_event_typed` so subscribers see the same Phase 7 event
+    /// `fire_event_typed` so subscribers see the same autocmd event
     /// shape regardless of where the dispatch originated.
     pending_command_events: PendingCommandEvents,
-    /// Phase 9 unified keymap registry. Holds built-in, user, and
+    /// unified keymap registry. Holds built-in, user, and
     /// plugin-registered bindings. Dispatch routes through
     /// [`PluginHost::dispatch_key`] which calls
     /// [`commands::dispatch_command`] for matched chords so the same
-    /// Phase 8 funnel runs.
+    /// command dispatch funnel runs.
     keymap_registry: Rc<RefCell<KeymapRegistry>>,
-    /// Phase 10 grant store. Persists every `(plugin_id,
+    /// capability grant store. Persists every `(plugin_id,
     /// plugin_version, capability)` decision and is the only thing
     /// every sensitive API call consults at use time. Cheap-clone
     /// (Arc-backed); shared into every `CapabilityGuard`.
     grant_store: GrantStore,
-    /// Phase 10 auto-grant policy. Bundled plugins (those loaded from
+    /// auto-grant policy. Bundled plugins (those loaded from
     /// a path under a trusted root) get their requested capabilities
     /// auto-allowed with `decided_by = "default"`. Non-bundled plugins
     /// go through the prompt path.
     auto_grant_policy: AutoGrantPolicy,
-    /// Phase 11 active repository gateway handle. The app calls
+    /// active repository gateway handle. The app calls
     /// [`PluginHost::set_repository_gateway`] on tab switches to keep
     /// this current. Plugin git read/write APIs route through this
     /// handle, which is the same gateway built-in UI uses.
     active_gateway: ActiveRepositoryGateway,
-    /// Phase 11 destructive-op confirmation policy. Defaults reject
+    /// destructive-op confirmation policy. Defaults reject
     /// every destructive op until [`DestructiveConfirmPolicy::approve_next`]
     /// is called.
     destructive_policy: DestructiveConfirmPolicy,
-    /// Phase 11 ring of recent / in-flight Git writes. Capped at
+    /// recent / in-flight Git write ring. Capped at
     /// [`PendingGitWrites::CAP`].
     pending_git_writes: PendingGitWrites,
-    /// Phase 11 outbound queue of typed events the git Lua API queued
+    /// outbound queue of typed events the git Lua API queued
     /// up for the host to fire. Drained synchronously after each
     /// `leviathan.git.*` call (see [`Self::flush_pending_git_events`])
     /// and on every `tick`.
     pending_git_events: crate::plugin::api::git::PendingGitEvents,
-    /// Phase 12 host-wide async-job registry. Cheap-clone (Arc-backed).
+    /// host-wide async-job registry. Cheap-clone (Arc-backed).
     async_jobs: AsyncJobRegistry,
-    /// Phase 12 host-wide timer registry. Cheap-clone (Arc-backed).
+    /// host-wide timer registry. Cheap-clone (Arc-backed).
     timers: TimerRegistry,
-    /// Phase 12 host-wide file-watcher registry. Cheap-clone
+    /// host-wide file-watcher registry. Cheap-clone
     /// (Arc-backed). Drained per `tick` to dispatch buffered notify
     /// events to the matching plugin's Lua callback.
     watchers: FileWatcherRegistry,
-    /// Phase 13 storage roots. Production uses OS dirs; tests can
+    /// plugin storage roots. Production uses OS dirs; tests can
     /// replace these with a temp-root before loading plugins.
     storage_roots: PluginStorageRoots,
-    /// Phase 15 cached dependency graph from the last
+    /// cached dependency graph from the last
     /// [`PluginHost::resolve_and_load`] (or `load_from_dir`) call.
     /// Surfaced by `introspect()` so devtools can render the same
     /// structure the resolver computed.
     dependency_graph: Vec<crate::plugin::dependency::DependencySummary>,
-    /// Phase 16 lazy-activation registry. Plugins whose manifests
+    /// lazy activation registry. Plugins whose manifests
     /// declared an `[activation]` section are parked here until
     /// their first matching trigger fires; the host then runs
     /// `load_plugin` and re-dispatches the trigger. Stubs are
     /// recorded against synthetic `(plugin_id, gen=0)` ledgers so
     /// `unload_plugin` reaps them like real registrations.
     lazy_registry: crate::plugin::activation::LazyRegistry,
-    /// Phase 16 ledgers for lazy-stub bookkeeping. One per parked
+    /// Lazy-stub ledgers for lazy-stub bookkeeping. One per parked
     /// plugin id; dropped (and its records released) when the
     /// plugin activates or is unloaded.
     lazy_ledgers: HashMap<String, ResourceLedger>,
-    /// Phase 16 latest repository shape pushed in via
+    /// Latest repository shape pushed in via
     /// [`PluginHost::sync_repository`]. Used to evaluate
     /// `activation.repository_shape` predicates against.
     last_repository_shape: Option<RepositoryShapeFacts>,
-    /// Phase 17 host-wide extension registry. Owns overlays,
+    /// host-wide extension registry. Owns overlays,
     /// context-menu items, and graph / diff decorations contributed
     /// via the new `leviathan.ui.*` extension APIs. Cheap-clone
     /// (Rc-backed); shared into every plugin's Lua factory.
     extension_registry: crate::plugin::extensions::ExtensionRegistry,
-    /// Phase 18 performance / circuit-breaker tracker. Cheap-clone
+    /// performance / circuit-breaker tracker. Cheap-clone
     /// (Arc-Mutex). Every plugin callback dispatch routes through
     /// `track_call` against this tracker; the host's devtools snapshot
     /// projects the recent traces and per-callback breaker rows.
     budget_tracker: BudgetTracker,
-    /// Phase 19 disabled-plugins set. Set by the
+    /// disabled-plugins set. Set by the
     /// `Plugin: Disable` devtools command and consulted by
     /// [`PluginHost::load_plugin`] before staging — a disabled id
     /// short-circuits load with a `plugin.disabled` diagnostic. The
     /// `Plugin: Enable` command removes the entry and re-loads the
     /// plugin from its known root.
     disabled_plugins: std::collections::HashSet<String>,
-    /// Phase 19 last-known plugin root per id. Populated by every
+    /// last-known plugin root per id. Populated by every
     /// successful `load_plugin` so `Plugin: Enable` can re-load the
     /// plugin from disk after a `Plugin: Disable` that unloaded it.
     /// Survives unload/disable so re-enable works in a single step.
     last_plugin_roots: HashMap<String, PathBuf>,
-    /// Phase 19 shared queue of pending devtools actions. Each
-    /// devtools command body captures a clone of this `Rc` and pushes
+    /// shared queue of pending devtools actions. Each
+    /// command body captures a clone of this `Rc` and pushes
     /// a [`crate::plugin::devtools_commands::DevtoolsAction`] when
     /// dispatched; [`PluginHost::invoke_command`] drains the queue
     /// after dispatch returns and applies each action against
     /// `&mut self`, producing the structured JSON result.
     devtools_action_queue: crate::plugin::devtools_commands::DevtoolsActionQueue,
-    /// Phase 19 last devtools-action result, populated by the
+    /// last devtools-action result, populated by the
     /// drain pass and consumed by [`PluginHost::invoke_devtools_command`].
     /// Cleared on every read.
     last_devtools_result: Option<serde_json::Value>,
 }
 
-/// Phase 16 cached repository facts the host evaluates against
+/// lazy loading cached repository facts the host evaluates against
 /// `[activation.repository_shape]` predicates. Populated by
 /// `sync_repository`; absent before the first repo open.
 #[derive(Debug, Clone)]
@@ -432,7 +432,7 @@ struct RepositoryShapeFacts {
 
 const RELOAD_HISTORY_CAP: usize = 64;
 
-/// Phase 19 helper used by `build_diagnostic_bundle` to inline a
+/// helper used by `build_diagnostic_bundle` to inline a
 /// surface's contents into the JSON state map. For files, parses as
 /// JSON when possible (so the bundle preserves structure) and falls
 /// back to a `{ "raw": "<size> bytes" }` placeholder for non-JSON
@@ -529,18 +529,18 @@ impl PluginHost {
         host
     }
 
-    /// Phase 12 cheap-clone snapshot of the async-job registry.
+    /// async runtime cheap-clone snapshot of the async-job registry.
     /// Devtools renders these directly.
     pub fn async_jobs(&self) -> AsyncJobRegistry {
         self.async_jobs.clone()
     }
 
-    /// Phase 12 cheap-clone handle to the timer registry.
+    /// async runtime cheap-clone handle to the timer registry.
     pub fn timers(&self) -> TimerRegistry {
         self.timers.clone()
     }
 
-    /// Phase 12 cheap-clone handle to the file-watcher registry.
+    /// async runtime cheap-clone handle to the file-watcher registry.
     pub fn watchers(&self) -> FileWatcherRegistry {
         self.watchers.clone()
     }
@@ -572,7 +572,7 @@ impl PluginHost {
         }
     }
 
-    /// Phase 11 setter the app calls to keep the host's view of the
+    /// repository gateway setter the app calls to keep the host's view of the
     /// active repository in sync. Pass `None` when no repository is
     /// open. The same gateway powers built-in UI ops, so plugin git
     /// reads/writes route through the existing pipeline.
@@ -583,13 +583,13 @@ impl PluginHost {
         self.active_gateway.set(gateway);
     }
 
-    /// Phase 11 destructive-policy handle. Devtools / tests use this
+    /// destructive-policy handle. Devtools / tests use this
     /// to pre-approve a destructive op before invoking it. Cheap-clone.
     pub fn destructive_policy(&self) -> DestructiveConfirmPolicy {
         self.destructive_policy.clone()
     }
 
-    /// Phase 11 cheap-clone snapshot of the recent + in-flight git
+    /// cheap-clone snapshot of the recent + in-flight git
     /// write entries. Devtools renders these directly.
     pub fn pending_git_writes(&self) -> Vec<PendingGitWrite> {
         self.pending_git_writes.entries()
@@ -607,7 +607,7 @@ impl PluginHost {
         }
     }
 
-    /// Phase 11: drain queued git typed events and fire them through
+    /// Drain queued git typed events and fire them through
     /// the existing typed-event funnel. Called after every
     /// `leviathan.git.*` invocation surface and once per `tick()`.
     fn flush_pending_git_events(&mut self) {
@@ -647,7 +647,7 @@ impl PluginHost {
         self.auto_grant_policy.trust_bundled_root(root);
     }
 
-    /// Phase 10 capability-prompt resolution entry point used by the
+    /// capability-prompt resolution entry point used by the
     /// (future) devtools modal. Hands the prompt back to the user
     /// code with the current pending decisions; the caller calls
     /// [`crate::plugin::capability_grants::PromptState::decide`] for
@@ -697,7 +697,7 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Phase 10 revoke entry point used by devtools / settings UI.
+    /// Revoke entry point used by devtools / settings UI.
     /// Records a `Deny` row, audits `grant.revoked`, and emits a
     /// `capability.revoked` info diagnostic so the next sensitive
     /// call's denial is traceable to this revoke.
@@ -745,11 +745,11 @@ impl PluginHost {
     }
 
     /// Seed three representative built-in repository commands into the
-    /// unified registry. Phase 8 keeps the wiring narrow: each
+    /// unified registry. command registry keeps the wiring narrow: each
     /// built-in is a no-op host body that emits a structured info
     /// diagnostic so a `/repository.refresh` palette invocation does
     /// _something_ visible, but the full migration of every existing
-    /// `RepositoryMessage` family to the registry is left to Phase 9
+    /// `RepositoryMessage` family to the registry is left to keymaps
     /// (which also wires keymaps into the dispatcher). The acceptance
     /// gate only requires that one registry can hold both kinds —
     /// that's proven by registering at least one host command here
@@ -790,7 +790,7 @@ impl PluginHost {
                 .register(descriptor, &self.diagnostics);
         }
 
-        // Phase 11: register `git.<op>` host commands so the palette
+        // Register `git.<op>` host commands so the palette
         // can list them and so the keymap-bound dispatcher can route
         // through `leviathan.command.invoke("git.checkout", ...)`. The
         // bodies route through the same [`GitOpsContext::execute`]
@@ -916,12 +916,12 @@ impl PluginHost {
         }
     }
 
-    /// Phase 19: register the ten devtools commands. Each body
+    /// Register the ten devtools commands. Each body
     /// captures the host's
     /// [`crate::plugin::devtools_commands::DevtoolsActionQueue`] so
     /// the body can queue an action for the host to apply (with
     /// `&mut self`) after dispatch returns. Called once from
-    /// [`PluginHost::new`] after the Phase 8 / 11 builtin commands.
+    /// [`PluginHost::new`] after the command registry builtin commands.
     fn register_builtin_devtools_commands(&mut self) {
         crate::plugin::devtools_commands::register(
             &mut self.command_registry.borrow_mut(),
@@ -930,7 +930,7 @@ impl PluginHost {
         );
     }
 
-    /// Phase 19 entry point: invoke a devtools command by name and
+    /// devtools entry point: invoke a devtools command by name and
     /// return its structured JSON result. Routes through the same
     /// [`PluginHost::invoke_command`] funnel as every other
     /// dispatched command so palette listing, schema validation,
@@ -1208,7 +1208,7 @@ impl PluginHost {
         );
     }
 
-    // ----- Phase 19 host helpers consumed by devtools commands -----
+    // ----- devtools host helpers consumed by devtools commands -----
 
     /// Mark `plugin_id` as disabled. If the plugin is currently
     /// loaded, unload it as part of the disable so the user sees
@@ -1668,12 +1668,12 @@ impl PluginHost {
     }
 
     /// Public Rust dispatch entry point used by UI buttons, keymaps
-    /// (Phase 9), and tests. Routes through the same
+    /// (keymaps), and tests. Routes through the same
     /// [`commands::dispatch_command`] funnel as the Lua API so all
-    /// entry paths share a single dispatcher (Phase 8 acceptance
+    /// entry paths share a single dispatcher (command registry acceptance
     /// gate). Returns the structured outcome unchanged.
     pub fn invoke_command(&mut self, name: &str, args: serde_json::Value) -> InvokeOutcome {
-        // Phase 16: when no live command matches but a lazy plugin
+        // lazy loading: when no live command matches but a lazy plugin
         // declared this command, activate the plugin and re-dispatch
         // through the now-live registry. The activation entry path
         // does its own re-dispatch and returns the final outcome.
@@ -1706,11 +1706,11 @@ impl PluginHost {
         // `CommandExecuted` after a single call see the firing
         // synchronously without needing a separate `tick()`.
         self.flush_pending_command_events();
-        // Phase 11: any host git command may have queued typed events
+        // Any host git command may have queued typed events
         // (HeadChanged etc.) — fire them in the same flush so plugin
         // autocmds see post-op state before this returns.
         self.flush_pending_git_events();
-        // Phase 19: when the dispatched command was a host devtools
+        // When the dispatched command was a host devtools
         // command, drain queued devtools actions and apply each
         // against `&mut self`. This wires the devtools surface into
         // the same `invoke_command` entry point every other caller
@@ -1764,8 +1764,8 @@ impl PluginHost {
         self.keymap_registry.borrow_mut().set_leader(leader);
     }
 
-    /// Phase 9 user-keymap entry point. Tests use this directly; the
-    /// Phase 10 user-config loader will too. Built-in / plugin
+    /// keymaps user-keymap entry point. Tests use this directly; the
+    /// capability-grant user-config loader will too. Built-in / plugin
     /// bindings are NOT routed through here — they have their own
     /// install paths.
     pub fn set_user_keymap(
@@ -1804,14 +1804,14 @@ impl PluginHost {
         );
     }
 
-    /// Phase 9 dispatch entry. Pass the active context and the
+    /// keymaps dispatch entry. Pass the active context and the
     /// in-flight keystroke buffer; the host walks the resolver and,
-    /// on a match, routes through the Phase 8 command dispatcher.
+    /// on a match, routes through the command dispatcher.
     /// Returns the structured outcome the live `src/app/input.rs`
     /// (or a test driver) consults to decide whether to keep
     /// buffering, dispatch, or fall back to built-in app handling.
     pub fn dispatch_key(&mut self, context: &str, buffer: &[Keystroke]) -> KeymapDispatchOutcome {
-        // Phase 16: when the live registry has no entry but a lazy
+        // lazy loading: when the live registry has no entry but a lazy
         // plugin's `[activation.keymaps]` declared this chord, route
         // through the activation entry. After activation, re-dispatch
         // through the live registry. `match_chord` ignores
@@ -1822,7 +1822,7 @@ impl PluginHost {
         {
             let live_match = self.keymap_registry.borrow().match_chord(context, buffer);
             if matches!(live_match, keymap_mod::MatchOutcome::None) && !buffer.is_empty() {
-                // Phase 16: parse each lazy entry's declared key with
+                // lazy loading: parse each lazy entry's declared key with
                 // the active leader and compare against the buffer.
                 // The manifest carries the lhs verbatim (`<leader>l`),
                 // so we can't shortcut via `render_chord` (which spells
@@ -1880,7 +1880,7 @@ impl PluginHost {
         // Drain queued `CommandExecuted` events so subscribers see
         // them synchronously, same as `invoke_command` does.
         self.flush_pending_command_events();
-        // Phase 11: keymap-triggered git commands queue typed events
+        // Keymap-triggered git commands queue typed events
         // through the shared pending-git-events handle; flush so the
         // `HeadChanged` / `RefsChanged` etc. fire before this returns.
         self.flush_pending_git_events();
@@ -1917,7 +1917,7 @@ impl PluginHost {
 
     /// Replace the diagnostic store. Tests pass a store wired to
     /// `NullSink` so test output stays quiet while every emission path
-    /// still records a real diagnostic. The Phase 18 tracker is
+    /// still records a real diagnostic. The performance budgets tracker is
     /// rebuilt against the new store so its breach / trip diagnostics
     /// land in the same buffer the rest of the host uses.
     pub fn set_diagnostic_store(&mut self, store: DiagnosticStore) {
@@ -1925,7 +1925,7 @@ impl PluginHost {
         self.budget_tracker = BudgetTracker::new(store);
     }
 
-    /// Phase 18: cheap-clone handle to the budget tracker. Tests use
+    /// Cheap-clone handle to the budget tracker. Tests use
     /// this to drive the breaker (`reset_breaker`) and project
     /// summaries directly. Production code goes through
     /// [`Self::reset_breaker`].
@@ -1933,14 +1933,14 @@ impl PluginHost {
         self.budget_tracker.clone()
     }
 
-    /// Replace the budget tracker. Phase 18 tests use this to inject
+    /// Replace the budget tracker. performance budget tests use this to inject
     /// a `MockClock`-backed tracker so timing assertions stay
     /// deterministic.
     pub fn set_budget_tracker(&mut self, tracker: BudgetTracker) {
         self.budget_tracker = tracker;
     }
 
-    /// Phase 18 user-facing breaker reset. Walks every generation
+    /// User-facing breaker reset. Walks every generation
     /// under `plugin_id` and emits a `performance.reset` info
     /// diagnostic.
     pub fn reset_breaker(&self, plugin_id: &str, callback_id: &str) {
@@ -1948,7 +1948,7 @@ impl PluginHost {
             .reset_breaker(&PluginId::from(plugin_id), callback_id);
     }
 
-    /// Phase 18: query whether a callback's circuit breaker is
+    /// Query whether a callback's circuit breaker is
     /// tripped. The app-level startup pass calls this with sentinel
     /// values to keep the lookup path warm; tests use it through
     /// `MockHost::budget_tracker()` for assertions.
@@ -1965,7 +1965,7 @@ impl PluginHost {
         )
     }
 
-    /// Phase 18: drop every breaker / trace row for `plugin_id`.
+    /// Drop every breaker / trace row for `plugin_id`.
     /// Called from `unload_plugin`; the startup pass uses a sentinel
     /// id so production builds always have a live entry into this
     /// path.
@@ -1973,7 +1973,7 @@ impl PluginHost {
         self.budget_tracker.drop_for_plugin(plugin_id);
     }
 
-    /// Phase 18: drop breaker / trace rows tied to one specific
+    /// Drop breaker / trace rows tied to one specific
     /// generation. Called from the reload-cleanup walk so the new
     /// generation starts with a clean slate.
     pub fn drop_breaker_state_for_generation(&self, plugin_id: &str, generation_id: u64) {
@@ -2137,7 +2137,7 @@ impl PluginHost {
     }
 
     /// Cheap-clone handle to the per-host capability audit log. Will be
-    /// consumed by the devtools panel (Phase 6).
+    /// consumed by the devtools panel (reload transactions).
     pub fn audit_log(&self) -> AuditLog {
         self.audit_log.clone()
     }
@@ -2171,7 +2171,7 @@ impl PluginHost {
         self.resolve_and_load(dir, &candidate_dirs);
     }
 
-    /// Phase 15 resolver entry point. `lockfile_dir` is the root used
+    /// dependency resolver entry point. `lockfile_dir` is the root used
     /// for `plugins.lock` / `plugins.lock.local`; `candidate_dirs`
     /// is the set of plugin directories to consider for loading.
     pub fn resolve_and_load(&mut self, lockfile_dir: &Path, candidate_dirs: &[PathBuf]) {
@@ -2537,7 +2537,7 @@ impl PluginHost {
         }
     }
 
-    /// Phase 16: park a plugin in the lazy registry. Records stubs
+    /// lazy loading: park a plugin in the lazy registry. Records stubs
     /// against a synthetic ledger keyed under `(plugin_id, gen=0)`
     /// so `unload_plugin` can reap them. Validation diagnostics
     /// fire here for unknown events / empty trigger fields. A
@@ -2790,7 +2790,7 @@ impl PluginHost {
         }
     }
 
-    /// Phase 16 internal activation worker. Removes the plugin's
+    /// lazy loading internal activation worker. Removes the plugin's
     /// lazy stubs (ledger entries), runs `load_plugin`, then either
     /// marks the entry `Active` (success) or bumps the failure
     /// counter and records `activation.failed` /
@@ -2966,7 +2966,7 @@ impl PluginHost {
     }
 
     pub fn load_plugin(&mut self, dir: &Path) -> Result<(), PluginLoadError> {
-        // Phase 19: respect the disabled-plugins set. If the id (derived
+        // Respect the disabled-plugins set. If the id (derived
         // from the manifest below) is in `self.disabled_plugins`, we
         // refuse to load. Pre-parse the manifest to know the id; the
         // actual `disabled` check happens after we have a manifest in
@@ -3019,7 +3019,7 @@ impl PluginHost {
                 return Err(PluginLoadError::Toml(e));
             }
         };
-        // Phase 19: short-circuit when the plugin is on the
+        // Short-circuit when the plugin is on the
         // disabled-plugins list. The diagnostic carries enough
         // context to debug a "why isn't my plugin loading" question
         // without scraping stderr; the error variant is `Disabled`
@@ -3100,7 +3100,7 @@ impl PluginHost {
 
         self.validate_service_dependencies(&manifest, generation_id)?;
 
-        // Phase 10: walk the requested capability list. Anything the
+        // Walk the requested capability list. Anything the
         // descriptor table doesn't know becomes a `capability.unknown`
         // warning; anything not yet decided gets either auto-granted
         // (bundled plugin) or queued for the security prompt
@@ -3254,7 +3254,7 @@ impl PluginHost {
             return Err(e.into());
         }
 
-        // Phase 5: build the runtime path. The plugin's own root is
+        // Build the runtime path. The plugin's own root is
         // passed in directly; dependency roots are looked up from the
         // host-wide registry. Registration of *this* plugin's root is
         // deferred until init.lua succeeds, so a failed load doesn't
@@ -3309,7 +3309,7 @@ impl PluginHost {
         }
 
         let chunk_name = format!("plugins/{}/init.lua", manifest.id);
-        // Phase 18: time init.lua against the `Init` budget. We pass
+        // Time init.lua against the `Init` budget. We pass
         // a fresh `PluginId` rather than borrowing from the manifest
         // because the closure has to be `'static` over the Lua state.
         let init_pid = PluginId::from(manifest.id.clone());
@@ -3434,7 +3434,7 @@ impl PluginHost {
         let health_checks: Vec<HealthCheckRegistration> =
             std::mem::take(&mut *health_checks_sink.borrow_mut());
 
-        // Phase 8: register the plugin's Lua state + capability guard
+        // Register the plugin's Lua state + capability guard
         // in the dispatcher's plugin map *before* installing any
         // commands so the dispatcher can resolve them. Then install
         // any `RawCommand`s captured during init into the unified
@@ -3451,7 +3451,7 @@ impl PluginHost {
         let raw_commands = std::mem::take(&mut build.borrow_mut().commands);
         self.install_raw_commands(&manifest.id, generation_id, raw_commands);
 
-        // Phase 9: install captured keymap rows. Apply staged `del`s
+        // keymaps: install captured keymap rows. Apply staged `del`s
         // after the `set`s so a plugin can rebind its own keymaps in
         // one init.lua run.
         let (raw_keymaps, raw_keymap_dels) = {
@@ -3490,7 +3490,7 @@ impl PluginHost {
             watcher_callbacks,
         };
         self.plugins.insert(manifest.id.clone(), plugin);
-        // Phase 19: remember where this plugin loaded from so a later
+        // Remember where this plugin loaded from so a later
         // `Plugin: Enable` (after `Plugin: Disable` unloaded it) can
         // re-load it from the same on-disk path without the user
         // re-supplying the root.
@@ -3560,7 +3560,7 @@ impl PluginHost {
         self.apply_region_slots(registry, "tab_bar", PreparedSlot::into_tab_bar);
     }
 
-    /// Phase 17 host-level lookup: every context-menu item registered
+    /// extension points host-level lookup: every context-menu item registered
     /// for `region` (e.g. `"repository.diff.context_menu"`), already
     /// sorted ascending by priority then `(plugin_id, id)`.
     /// Renderers reach the live extension registry through this entry
@@ -3572,7 +3572,7 @@ impl PluginHost {
         self.extension_registry.context_menu_items(region)
     }
 
-    /// Phase 17 host-level lookup: every graph decoration attached to
+    /// extension points host-level lookup: every graph decoration attached to
     /// `commit_hash`, sorted by `(plugin_id, id)`. Lets the future
     /// graph renderer paint per-commit decorations without iterating
     /// the full registry on every row.
@@ -3583,7 +3583,7 @@ impl PluginHost {
         self.extension_registry.graph_decorations_for(commit_hash)
     }
 
-    /// Phase 17 host-level helper used by the load/unload pipeline:
+    /// extension points host-level helper used by the load/unload pipeline:
     /// drop every overlay / context-menu item / decoration owned by
     /// `plugin_id`. Callers outside the host (e.g. an admin command
     /// that uninstalls a plugin) reach the registry through this
@@ -3968,7 +3968,7 @@ struct EntrySnapshot {
 /// Build the typed payload table the Lua callback receives. Mirrors
 /// the descriptor's `LeviathanAutocmdEvent` shape. Empty payload
 /// tables still surface as `{}` so the callback signature stays
-/// uniform across every Phase 7 event.
+/// uniform across every autocmd event.
 fn build_payload_table(
     lua: &Lua,
     canonical: &'static event_descriptor::ApiEvent,
@@ -4322,7 +4322,7 @@ impl PluginHost {
         }
     }
 
-    /// String counterpart of `plugin_global_i64`. Used by Phase 5
+    /// String counterpart of `plugin_global_i64`. Used by plugin package layout
     /// tests that read order-tracking strings out of `_G`.
     pub fn plugin_global_string(&self, plugin_id: &str, name: &str) -> Option<String> {
         let plugin = self.plugins.get(plugin_id)?;
@@ -4382,7 +4382,7 @@ impl PluginHost {
         &mut self,
         plugin_id: &str,
     ) -> Result<(), git_leviathan_plugin_api::error::PluginError> {
-        // Phase 16: a plugin may live in the lazy registry without
+        // lazy loading: a plugin may live in the lazy registry without
         // a Lua state. Reap its stub ledger and remove the entry.
         let in_lazy = self
             .lazy_registry
@@ -4412,7 +4412,7 @@ impl PluginHost {
             .entries_mut()
             .retain(|e| e.plugin_id != plugin_id);
         plugin.generation.mark_unloading();
-        // Phase 12: cancel every async resource owned by this plugin's
+        // async runtime: cancel every async resource owned by this plugin's
         // current generation. Worker threads observe their cancellation
         // tokens; timer / watcher records drop immediately so no further
         // tick fires their callbacks.
@@ -4421,7 +4421,7 @@ impl PluginHost {
         self.async_jobs.cancel_for_generation(&pid_typed, gen_id);
         self.timers.cancel_for_generation(&pid_typed, gen_id);
         self.watchers.cancel_for_generation(&pid_typed, gen_id);
-        // Phase 8: drop every command this plugin owned (across all
+        // Drop every command this plugin owned (across all
         // generations — defensive, mirroring `EventBus::drop_for_plugin`)
         // and release the Lua callback registry keys back to the
         // owning state before the state itself is dropped.
@@ -4431,16 +4431,16 @@ impl PluginHost {
             .drop_for_plugin(plugin_id);
         commands::release_lua_keys(removed, plugin.lua());
         self.command_plugin_registry.remove(plugin_id);
-        // Phase 9: drop every keymap this plugin owned. The resolver
+        // keymaps: drop every keymap this plugin owned. The resolver
         // re-runs inside `drop_for_plugin`, so any conflict-loser
         // bindings from peers automatically reactivate.
         self.keymap_registry.borrow_mut().drop_for_plugin(plugin_id);
         self.cleanup_ledger(&plugin.generation.ledger);
-        // Phase 17: drop overlays / context-menu items / decorations
+        // extension points: drop overlays / context-menu items / decorations
         // owned by this plugin. Records came from a non-Slot ledger
         // path so the cleaner above didn't touch the registry.
         self.extension_registry.clear_for_plugin(plugin_id);
-        // Phase 18: drop every breaker / trace row tied to this plugin
+        // Drop every breaker / trace row tied to this plugin
         // so a future load starts with a clean slate.
         self.budget_tracker.drop_for_plugin(plugin_id);
         if self
@@ -4469,7 +4469,7 @@ impl PluginHost {
         Ok(())
     }
 
-    /// Phase 6 staged reload. Builds a new generation in isolation,
+    /// reload transactions staged reload. Builds a new generation in isolation,
     /// validates it, runs the optional `M.reload(old_state)` migration
     /// hook, and only then atomically swaps it for the previous
     /// generation. Any failure between stages aborts cleanly: the
@@ -4669,7 +4669,7 @@ impl PluginHost {
         // Clone, so we drain entries by index.
         if let Some(mut previous) = self.plugins.remove(&plugin_id_str) {
             previous.generation.mark_unloading();
-            // Phase 12: cancel previous generation's async-runtime
+            // async runtime: cancel previous generation's async-runtime
             // resources so old-gen jobs/timers/watchers don't keep
             // firing against the soon-to-be-dropped Lua state.
             let prev_pid = previous.generation.plugin_id.clone();
@@ -4677,7 +4677,7 @@ impl PluginHost {
             self.async_jobs.cancel_for_generation(&prev_pid, prev_gen);
             self.timers.cancel_for_generation(&prev_pid, prev_gen);
             self.watchers.cancel_for_generation(&prev_pid, prev_gen);
-            // Phase 8: drop every command this plugin owned (across
+            // Drop every command this plugin owned (across
             // all prior generations) and release the Lua callback
             // keys against the *previous* state — the staged
             // generation will install fresh keys on the new state
@@ -4688,18 +4688,18 @@ impl PluginHost {
                 .drop_for_plugin(&plugin_id_str);
             commands::release_lua_keys(removed, previous.lua());
             self.command_plugin_registry.remove(&plugin_id_str);
-            // Phase 9: drop every keymap the previous generation
+            // keymaps: drop every keymap the previous generation
             // owned. The staged generation's `set` rows install
             // below.
             self.keymap_registry
                 .borrow_mut()
                 .drop_for_plugin(&plugin_id_str);
             self.cleanup_ledger(&previous.generation.ledger);
-            // Phase 17: drop overlays / context-menu items / decorations
+            // extension points: drop overlays / context-menu items / decorations
             // owned by the previous generation. The staged init.lua
             // re-registers anything the new generation needs.
             self.extension_registry.clear_for_plugin(&plugin_id_str);
-            // Phase 18: clear breaker state for the previous generation
+            // Clear breaker state for the previous generation
             // so a fixed plugin starts clean. Earlier generations'
             // traces stay visible in devtools because we key by
             // generation id; only the previous-gen rows are dropped.
@@ -4776,7 +4776,7 @@ impl PluginHost {
         // staged autocmds always start with clean failure counters.
         // The previous generation's disabled rows were dropped by
         // `cleanup_ledger` + the defensive `drop_for_plugin` sweep
-        // above, satisfying Phase 7's "re-enabled on plugin reload"
+        // above, satisfying autocmd registry's "re-enabled on plugin reload"
         // requirement.
 
         // Transfer staged services into the live registry. Old-gen
@@ -4784,7 +4784,7 @@ impl PluginHost {
         let drained = staged_reload::drain_staged_services(&staged_services, &plugin_id_str);
         self.service_registry.borrow_mut().restore_handles(drained);
 
-        // Phase 8: insert the new generation's lua + capabilities into
+        // Insert the new generation's lua + capabilities into
         // the dispatcher's plugin registry, then install the staged
         // commands. Any command rejected by `build_descriptor` lands
         // as a `command.invalid_args` diagnostic the same way it
@@ -4800,7 +4800,7 @@ impl PluginHost {
         );
         self.install_raw_commands(&plugin_id_str, generation_id, staged_commands);
 
-        // Phase 9: install staged keymaps. Bad rows surface as
+        // keymaps: install staged keymaps. Bad rows surface as
         // `keymap.invalid_key` diagnostics — the swap itself doesn't
         // fail because of one bad binding (mirrors commands /
         // autocmds). Apply staged `del`s after the `set`s so a plugin
@@ -5085,7 +5085,7 @@ impl PluginHost {
     /// 4. refreshes dynamic widgets for every plugin whose callbacks
     ///    actually ran.
     pub fn fire_event_typed(&mut self, event: &str, payload: EventPayload) {
-        // Phase 16: probe the lazy registry for a plugin that
+        // lazy loading: probe the lazy registry for a plugin that
         // declared this event as an activation trigger. Activation
         // re-fires the event through this same funnel so the now-live
         // autocmds observe it.
@@ -5513,7 +5513,7 @@ impl PluginHost {
             self.refresh_dynamic_widgets_for_plugin(&pid);
         }
 
-        // Phase 16: cache the new shape facts and probe the lazy
+        // lazy loading: cache the new shape facts and probe the lazy
         // registry for repository-shape and file-presence triggers.
         let has_remote = !default_remote_name.is_empty();
         let workdir_buf = PathBuf::from(workdir_path);
@@ -5526,7 +5526,7 @@ impl PluginHost {
         self.probe_lazy_repository_triggers();
     }
 
-    /// Phase 16: walk the lazy registry's repository-shape and
+    /// lazy loading: walk the lazy registry's repository-shape and
     /// file-presence triggers against the cached facts and activate
     /// matching plugins. Called after every `sync_repository`.
     fn probe_lazy_repository_triggers(&mut self) {
@@ -5655,12 +5655,12 @@ impl PluginHost {
     /// Errors from any callback / resume are logged; other queue entries
     /// keep processing so one buggy callback can't stall a plugin.
     pub fn tick(&mut self) {
-        // Phase 8: drain any `CommandExecuted` events queued by Lua-
+        // Drain any `CommandExecuted` events queued by Lua-
         // initiated dispatch since the last tick. The Rust entry
         // (`invoke_command`) flushes synchronously; this catches
         // anything the Lua API queued in between.
         self.flush_pending_command_events();
-        // Phase 11: drain any typed events the git Lua API queued so
+        // Drain any typed events the git Lua API queued so
         // `HeadChanged` / `RefsChanged` / etc. fire on the next tick
         // even if the plugin invoked the op via `tick`-deferred Lua.
         self.flush_pending_git_events();
@@ -5818,17 +5818,17 @@ impl PluginHost {
             self.diagnostics.record(diag);
         }
 
-        // Phase 12: drain finished async jobs, due timers, and queued
+        // async runtime: drain finished async jobs, due timers, and queued
         // file-watcher events. Each fires a Lua callback on the
         // matching plugin's main state.
-        self.drive_phase12_runtime(now);
+        self.drive_async_runtime(now);
     }
 
-    /// Phase 12: invoke plugin Lua callbacks for finished async jobs,
+    /// async runtime: invoke plugin Lua callbacks for finished async jobs,
     /// due timers, and buffered file-watcher events. Errors are
     /// recorded as diagnostics; one buggy callback can't stall the
     /// next.
-    fn drive_phase12_runtime(&mut self, now: Instant) {
+    fn drive_async_runtime(&mut self, now: Instant) {
         let mut pending: Vec<PluginDiagnostic> = Vec::new();
 
         // Async jobs.
@@ -5864,7 +5864,7 @@ impl PluginHost {
                 }
             };
             let chunk_name = format!("plugins/{}/init.lua", job.plugin_id.as_str());
-            // Phase 18: budget the async on-complete callback against
+            // Budget the async on-complete callback against
             // the `AsyncJob` budget. The async body itself runs off
             // the main thread, but on_complete is the only Lua-side
             // step the host invokes synchronously, so it's the
@@ -5922,7 +5922,7 @@ impl PluginHost {
                     .and_then(|k| lua.registry_value::<Function>(k).ok()),
             };
             let Some(func) = func_opt else { continue };
-            // Phase 18: time the timer callback against the `Timer`
+            // Time the timer callback against the `Timer`
             // budget. The callback id is the timer kind + id so each
             // timer's stats roll up independently.
             let callback_id = format!("timer:{}:{}", due.kind.as_str(), due.timer_id.get());
@@ -6326,7 +6326,7 @@ impl PluginHost {
                 .then(a.service_key.cmp(&b.service_key))
         });
 
-        // Phase 15 dependency graph projection. The host stores the
+        // dependency graph projection. The host stores the
         // resolver's last graph as live state so devtools mirror what
         // resolution actually produced (including blocked plugins).
         snap.dependency_graph = self
@@ -6368,7 +6368,7 @@ impl PluginHost {
             })
             .collect();
 
-        // Phase 7 autocmd rows. Project every entry into a stable
+        // autocmd rows. Project every entry into a stable
         // summary; sort by (plugin_id, generation_id, autocmd_id).
         for entry in self.event_bus.entries() {
             snap.autocmds.push(AutocmdSummary {
@@ -6396,7 +6396,7 @@ impl PluginHost {
                 .then(a.id.cmp(&b.id))
         });
 
-        // Phase 8 command rows: project the unified registry into
+        // command rows: project the unified registry into
         // sorted devtools rows. Host commands sit under `<host>`.
         let registry = self.command_registry.borrow();
         for entry in registry.entries() {
@@ -6420,7 +6420,7 @@ impl PluginHost {
         snap.commands
             .sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.name.cmp(&b.name)));
 
-        // Phase 9 keymap rows: project the registry's already-sorted
+        // keymap rows: project the registry's already-sorted
         // summaries straight through.
         let keymap_summaries = self.keymap_registry.borrow().summaries();
         for summary in keymap_summaries {
@@ -6440,7 +6440,7 @@ impl PluginHost {
             });
         }
 
-        // Phase 10 grant snapshot: cheap-clone every row + every
+        // capability grant snapshot: cheap-clone every row + every
         // open prompt. Inspectors / tests use these to drive the
         // grant lifecycle without poking the store directly.
         snap.capability_grants = self
@@ -6462,10 +6462,10 @@ impl PluginHost {
         });
         snap.pending_capability_prompts = prompts;
 
-        // Phase 11: surface every recent / in-flight git write.
+        // Surface every recent / in-flight git write.
         snap.pending_git_writes = self.pending_git_writes.entries();
 
-        // Phase 12: project async-runtime registries into the snapshot.
+        // async runtime: project async-runtime registries into the snapshot.
         snap.async_jobs = self
             .async_jobs
             .summaries()
@@ -6504,7 +6504,7 @@ impl PluginHost {
             })
             .collect();
 
-        // Phase 16 lazy-plugin projection. Builds the inspector row
+        // lazy-plugin projection. Builds the inspector row
         // directly from the registry (sorted by plugin_id for
         // stable rendering) and renders trigger descriptors inline
         // — the registry does not own a projection helper, since
@@ -6551,7 +6551,7 @@ impl PluginHost {
         lazy_rows.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id));
         snap.lazy_plugins = lazy_rows;
 
-        // Phase 17 extension-point projections. The registry already
+        // extension-point projections. The registry already
         // sorts each surface for us (see `ExtensionRegistry`), so the
         // snapshots flow through verbatim.
         snap.overlays = self
@@ -6618,7 +6618,7 @@ impl PluginHost {
             })
             .collect();
 
-        // Phase 18 performance traces + circuit-breaker rows. Both
+        // performance traces + circuit-breaker rows. Both
         // are cheap clones from the tracker; sort here so the
         // snapshot is deterministic.
         let mut traces: Vec<crate::plugin::devtools::PerformanceTraceSummary> = self
@@ -6790,7 +6790,7 @@ impl PluginHost {
                     continue;
                 }
             };
-            // Phase 18: budget the dynamic-widget render against the
+            // Budget the dynamic-widget render against the
             // `UiCallback` budget. UI callbacks have the tightest
             // budgets in the plan because they run on every frame.
             let pid = PluginId::from(plugin_id);

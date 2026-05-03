@@ -2,7 +2,7 @@
 //! iced window/keyboard events, the active screen's own subscription, the
 //! file watcher, periodic fetch/animation ticks, and a SIGINT/SIGTERM stream.
 //!
-//! Extracted from `App` in Phase 9. Kept a single function rather than a
+//! Extracted from `App` in keymaps. Kept a single function rather than a
 //! type because it has no state of its own — subscriptions are built fresh
 //! on every view pass.
 

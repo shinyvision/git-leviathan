@@ -20,7 +20,7 @@ pub struct PluginManifest {
     pub consumes_services: Vec<ServiceDecl>,
     #[serde(default)]
     pub dependencies: HashMap<String, VersionReq>,
-    /// Phase 15: optional plugin dependencies. Same shape as
+    /// Optional plugin dependencies. Same shape as
     /// `dependencies` (`id -> VersionReq`); resolution treats a missing
     /// optional dep as a warning rather than a hard failure. Consumers
     /// must tolerate the dependency being absent at runtime.
@@ -28,17 +28,16 @@ pub struct PluginManifest {
     pub optional_dependencies: HashMap<String, VersionReq>,
     /// Other plugin ids whose `lua/<id>/` modules this plugin may
     /// `require`. Empty by default — a plugin can only `require` its
-    /// own modules unless it explicitly names dependencies here. Phase
-    /// 5 enforces the per-`require` filesystem boundary; later phases
-    /// (15) will resolve these against the dependency graph for load
-    /// ordering.
+    /// own modules unless it explicitly names dependencies here. The
+    /// runtime enforces the per-`require` filesystem boundary, and
+    /// dependency resolution uses these declarations for load ordering.
     #[serde(default)]
     pub requires_plugins: Vec<String>,
     /// Optional `[runtime]` section. Currently controls strict-globals
     /// enforcement for the plugin's Lua state.
     #[serde(default)]
     pub runtime: PluginRuntimeConfig,
-    /// Phase 16: optional `[activation]` section. When present, the
+    /// Optional `[activation]` section. When present, the
     /// host installs lazy stubs for the declared triggers and only
     /// spins up the plugin's Lua state on first match. When absent,
     /// the plugin loads eagerly as before.
@@ -46,7 +45,7 @@ pub struct PluginManifest {
     pub activation: Option<PluginActivation>,
 }
 
-/// Phase 16 activation triggers. An empty section (`[activation]`
+/// lazy loading activation triggers. An empty section (`[activation]`
 /// with no fields set) marks the plugin as manual-activation only —
 /// equivalent to `manual = true`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

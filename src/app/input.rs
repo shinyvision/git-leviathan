@@ -1,4 +1,4 @@
-//! Keyboard-input dispatch for `App`. Extracted from `update.rs` in Phase 9.
+//! Keyboard-input dispatch for `App`. Extracted from `update.rs` in keymaps.
 
 use iced::{keyboard, Task};
 

@@ -1,6 +1,6 @@
 //! Plugin storage surface layout.
 //!
-//! Phase 13 splits plugin-owned persistence into explicit surfaces while
+//! persistence and settings splits plugin-owned persistence into explicit surfaces while
 //! preserving the v1 default `persist.open(name)` state path.
 
 use std::fs;

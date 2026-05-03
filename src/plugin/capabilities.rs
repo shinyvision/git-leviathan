@@ -1,6 +1,6 @@
 //! Capability enforcement for plugin host calls.
 //!
-//! Phase 10: every check now routes through [`GrantStore`]. The
+//! Every check now routes through [`GrantStore`]. The
 //! `CapabilityGuard` is a per-plugin handle carrying the manifest's
 //! requested set, the keys the grant store uses (`plugin_id +
 //! plugin_version`), and the resolution dirs needed for fs scope
@@ -151,7 +151,7 @@ impl CapabilityGuard {
         out
     }
 
-    /// Phase 10: every gated string-form capability funnels through
+    /// Every gated string-form capability funnels through
     /// here. Returns `Ok(())` when the grant store says Allow; emits
     /// the right audit entry + diagnostic and returns the standard
     /// `capability denied: …` string otherwise.
@@ -215,7 +215,7 @@ impl CapabilityGuard {
         self.check_fs(path, false)
     }
 
-    /// Phase 12: check `fs:watch[:scope]` against `path`. Records audit
+    /// async runtime: check `fs:watch[:scope]` against `path`. Records audit
     /// + diagnostic on denial.
     pub fn check_fs_watch(&self, path: &Path) -> Result<(), String> {
         self.check_fs_watch_self(path)?;
@@ -307,8 +307,8 @@ impl CapabilityGuard {
 
     /// Compatibility wrapper for the env API: returns `Ok` if either
     /// the bare `env` capability or any granted `env:<glob>` allows
-    /// reading every variable. Phase 10 wires the bare form; future
-    /// phases may add per-glob filtering inside `env::list`.
+    /// reading every variable. The bare form is wired here; per-glob
+    /// filtering can be added inside `env::list`.
     pub fn check_env(&self) -> Result<(), String> {
         self.check_env_self()?;
         if let Some(caller) = self.active_service_caller() {

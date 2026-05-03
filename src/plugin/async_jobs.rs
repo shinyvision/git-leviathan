@@ -1,4 +1,4 @@
-//! Phase 12 async-job registry. Each plugin gets a cheap-clone
+//! async-job registry. Each plugin gets a cheap-clone
 //! `AsyncJobRegistry` handle. `leviathan.async.spawn(fn)` records a
 //! `JobHandle`, spawns a `std::thread`, and the body runs off-thread
 //! while the main thread keeps ticking. Cancellation, status, and the

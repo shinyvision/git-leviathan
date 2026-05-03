@@ -264,7 +264,7 @@ impl RepositoryScreen {
         self.fleet.active_path()
     }
 
-    /// Cheap-clone of the active gateway. Phase 11 wires this into the
+    /// Cheap-clone of the active gateway. plugin Git APIs use this through the
     /// plugin host every time the active screen changes so plugin
     /// `leviathan.git.*` and `leviathan.repository.{status,...}` calls
     /// route through the same `SharedRepositoryGateway` the built-in UI

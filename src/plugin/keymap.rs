@@ -1,4 +1,4 @@
-//! Phase 9 context-aware keymap registry.
+//! context-aware keymap registry.
 //!
 //! This module owns:
 //!
@@ -20,7 +20,7 @@
 //!
 //! 1. **Host owns every effect.** The resolver runs in Rust; Lua never
 //!    sees the raw key event. A successful match dispatches through the
-//!    Phase 8 [`crate::plugin::commands::dispatch_command`] funnel so
+//!    command registry [`crate::plugin::commands::dispatch_command`] funnel so
 //!    capability checks, arg validation, and the `CommandExecuted`
 //!    event all run.
 //! 2. **Generation-scoped ownership.** Plugin keymaps are keyed by
@@ -33,7 +33,7 @@
 //!    the host's `commit_staging`; failed staging never touches the
 //!    live registry.
 //! 6. **Capabilities at use time.** [`KeymapRegistry::dispatch`] is
-//!    *not* a second capability gate — it routes to the Phase 8
+//!    *not* a second capability gate — it routes to the command registry
 //!    command dispatcher, which performs every check.
 //! 7. **Devtools required.** [`KeymapRegistry::summaries`] feeds the
 //!    `keymaps` row on `InspectorSnapshot` with conflict winners,
@@ -50,7 +50,7 @@
 //!   see what overrode them.
 //! - `keymap.dispatched` (info) — a chord matched and dispatch ran.
 //!
-//! Phase 9 acceptance gate:
+//! keymaps acceptance gate:
 //!
 //! - **Plugin keymaps work only in declared contexts.** Resolution is
 //!   `(context, key)`; a `repository` binding never fires under
@@ -62,7 +62,7 @@
 //!   (`built-in > user > plugin`), then within the plugin tier by
 //!   `(plugin_id, registration_sequence)` lex order.
 //! - **User overrides are respected.** User bindings live in their own
-//!   tier above plugins; the loader (Phase 10) will populate from
+//!   tier above plugins; the loader (capability grants) will populate from
 //!   `~/.config/git_leviathan/keymaps.toml`.
 
 use std::collections::HashMap;
@@ -76,22 +76,22 @@ use crate::plugin::resources::{GenerationId, PluginId};
 
 /// Sentinel plugin id used by the host when registering built-in
 /// keymaps and for diagnostics emitted by the resolver itself. Same
-/// convention as Phase 8 commands.
+/// convention as registered commands.
 pub const HOST_KEYMAP_PLUGIN_ID: &str = "<host>";
 
 /// User-config "plugin id". User-keymap rows are stored under this
 /// sentinel so they sort and resolve as a distinct tier.
 pub const USER_KEYMAP_PLUGIN_ID: &str = "<user>";
 
-/// The static set of context names Phase 9 ships with. Order matters
+/// The static set of context names keymaps ships with. Order matters
 /// only for the descriptor and devtools; the resolver treats them as
-/// opaque strings so future expansion (Phase 16+) can add new ones
+/// opaque strings so future expansion (lazy loading+) can add new ones
 /// without a schema bump.
 ///
 /// `plugin_screen:<id>` and `overlay:<id>` are handled at use time —
 /// any context string starting with `plugin_screen:` or `overlay:`
 /// matches the intended scope. The static list below is the closed
-/// set referenced by tests and the Phase 9 plan.
+/// set referenced by tests and the keymaps plan.
 pub const KNOWN_CONTEXTS: &[&str] = &[
     "global",
     "repository",
@@ -271,7 +271,7 @@ pub fn parse_key_sequence(lhs: &str, leader: &str) -> Result<Vec<Keystroke>, Str
         // multi-byte UTF-8 to keep the matcher predictable.
         if !c.is_ascii() {
             return Err(format!(
-                "non-ASCII character `{c}` in `{lhs}` is not supported in Phase 9"
+                "non-ASCII character `{c}` in `{lhs}` is not supported in keymaps"
             ));
         }
         if c.is_ascii_control() {
@@ -367,7 +367,7 @@ impl KeymapSource {
     }
 }
 
-/// Phase 9 status flag carried on each [`KeymapEntry`] after the
+/// keymaps status flag carried on each [`KeymapEntry`] after the
 /// resolver runs. `Active` means the binding is the winner for its
 /// `(context, chord)` slot; `ConflictLost` means another tier or a
 /// lex-earlier plugin won.
@@ -443,7 +443,7 @@ pub enum MatchOutcome {
 
 /// Plugin-side capture of `leviathan.keymap.set` calls during init.
 /// Drained by the host into permanent registry entries after
-/// init.lua finishes — same shape as Phase 7 autocmds and Phase 8
+/// init.lua finishes — same shape as autocmds and command registry
 /// commands.
 pub struct RawKeymap {
     pub context: String,
@@ -472,7 +472,7 @@ pub struct KeymapRegistry {
     entries: Vec<KeymapEntry>,
     /// Active leader string. Defaults to `\` to match the most
     /// common Neovim default; tests pin it to `,` for predictable
-    /// `<leader>gh` behaviour. Phase 10 will let users pick this in
+    /// `<leader>gh` behaviour. capability settings will let users pick this in
     /// their config.
     leader: String,
 }
@@ -560,7 +560,7 @@ impl KeymapRegistry {
 
     /// Insert (or replace) a user-config binding. Tier 1 — beats
     /// every plugin binding for the same `(context, chord)`. Used by
-    /// the Phase 10 user-config loader and by tests.
+    /// the capability-grant user-config loader and by tests.
     pub fn set_user_keymap(
         &mut self,
         context: impl Into<String>,
@@ -785,7 +785,7 @@ impl KeymapRegistry {
     }
 
     /// Drop every binding owned by `plugin_id` (across all
-    /// generations — defensive, mirrors the Phase 8 command path).
+    /// generations — defensive, mirrors the command path).
     /// Used by `unload_plugin`.
     pub fn drop_for_plugin(&mut self, plugin_id: &str) {
         self.entries
@@ -855,7 +855,7 @@ impl KeymapRegistry {
     }
 
     /// Public dispatch. Walks [`Self::match_chord`] and, on a match,
-    /// routes through the Phase 8 [`dispatch_command`] funnel.
+    /// routes through the command registry [`dispatch_command`] funnel.
     /// Returns the dispatch outcome plus the matched keymap so the
     /// caller can fire the typed `KeymapTriggered` event.
     pub fn dispatch(
@@ -943,7 +943,7 @@ impl KeymapRegistry {
 
     fn upsert(&mut self, entry: KeymapEntry) {
         // Same-source same-key replacement keeps the registry small
-        // and matches the Phase 8 command "later wins within a
+        // and matches the command "later wins within a
         // (plugin_id, name) slot" rule.
         if let Some(i) = self.entries.iter().position(|e| {
             e.source == entry.source
@@ -1157,7 +1157,7 @@ fn log_conflict_lost(diagnostics: &DiagnosticStore, entry: &KeymapEntry) {
 /// `binding_context` matches `active_context` when they're equal or
 /// when the binding is in `global`. Future-proof: a context like
 /// `repository.diff` should also be served by a `repository` binding,
-/// but Phase 9 keeps the rule narrow — the plan calls for the
+/// but keymaps keeps the rule narrow — the plan calls for the
 /// concrete contexts exactly. The dispatcher's caller is expected to
 /// pass the most specific active context for the keystroke.
 fn context_matches(binding_context: &str, active_context: &str) -> bool {

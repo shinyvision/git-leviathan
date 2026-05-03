@@ -4,7 +4,7 @@
   "properties": {
     "activation": {
       "additionalProperties": false,
-      "description": "Phase 16 lazy-activation triggers. When omitted, the plugin loads eagerly.",
+      "description": "lazy activation triggers. When omitted, the plugin loads eagerly.",
       "properties": {
         "commands": {
           "description": "Command ids the plugin will register on activation. The host installs stubs for each so palette and keymap dispatch can activate the plugin.",

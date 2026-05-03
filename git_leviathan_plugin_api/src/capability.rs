@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-/// One capability the plugin manifest may request. Phase 10 grew the
-/// surface to include parametric forms (path scopes, env globs, network
+/// One capability the plugin manifest may request. The grant system supports
+/// parametric forms (path scopes, env globs, network
 /// domains, process binaries, services, regions, git op subsets) so the
 /// host can grant access at the right granularity. The string form is
 /// canonical; serde uses it for both the `plugin.toml` capability list
@@ -40,7 +40,7 @@ pub enum Capability {
     /// `env:<glob>` — read variables whose name matches the glob (e.g.
     /// `env:GIT_*`).
     EnvVar { glob: String },
-    /// `credentials` — read host-stored credentials (Phase 13).
+    /// `credentials` — read host-stored credentials (persistence and settings).
     Credentials,
     /// `repo:read` — observe the active repository projection.
     RepoRead,
@@ -51,28 +51,28 @@ pub enum Capability {
     GitWrite { op: GitWriteOp },
     /// `ui:region:<region>`.
     UiRegion { region: String },
-    /// `services:provide:<name>@<version>` (Phase 14).
+    /// `services:provide:<name>@<version>` (plugin services).
     ServicesProvide { name: String, version: u32 },
-    /// `services:consume:<name>@<version>` (Phase 14).
+    /// `services:consume:<name>@<version>` (plugin services).
     ServicesConsume { name: String, version: u32 },
-    /// `async:spawn` (Phase 12) — allows `leviathan.async.spawn`.
+    /// `async:spawn` (async runtime) — allows `leviathan.async.spawn`.
     AsyncSpawn,
-    /// `timer:create` (Phase 12) — allows `leviathan.timer.after` and
+    /// `timer:create` (async runtime) — allows `leviathan.timer.after` and
     /// `leviathan.timer.every`.
     TimerCreate,
-    /// `fs:watch[:scope]` (Phase 12) — `leviathan.fs.watch` against a
+    /// `fs:watch[:scope]` (async runtime) — `leviathan.fs.watch` against a
     /// known fs scope (plugin/state/config/workdir/any).
     FsWatch { scope: FsScope },
-    /// `fs:watch:scope:<dir>` (Phase 12) — explicit user-chosen
+    /// `fs:watch:scope:<dir>` (async runtime) — explicit user-chosen
     /// directory, canonicalised at check time.
     FsWatchDir { dir: String },
-    /// `ui:overlay` (Phase 17) — register modal overlays.
+    /// `ui:overlay` (extension points) — register modal overlays.
     UiOverlay,
-    /// `ui:context_menu` (Phase 17) — contribute context-menu items.
+    /// `ui:context_menu` (extension points) — contribute context-menu items.
     UiContextMenu,
-    /// `ui:graph_decoration` (Phase 17) — attach commit-row decorations.
+    /// `ui:graph_decoration` (extension points) — attach commit-row decorations.
     UiGraphDecoration,
-    /// `ui:diff_decoration` (Phase 17) — attach diff line / hunk decorations.
+    /// `ui:diff_decoration` (extension points) — attach diff line / hunk decorations.
     UiDiffDecoration,
 }
 
@@ -311,7 +311,7 @@ fn scope_str(s: FsScope) -> &'static str {
 }
 
 /// Whether a manifest-declared capability string is recognised by the
-/// host's known descriptor surface. Phase 10 emits
+/// host's known descriptor surface. Capability checks emit
 /// `capability.unknown` diagnostics for everything else.
 pub fn is_known_capability(s: &str) -> bool {
     Capability::try_from(s.to_string()).is_ok()
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn phase12_capabilities_round_trip() {
+    fn async_runtime_capabilities_round_trip() {
         assert!(is_known_capability("async:spawn"));
         assert!(is_known_capability("timer:create"));
         assert!(is_known_capability("fs:watch:plugin"));

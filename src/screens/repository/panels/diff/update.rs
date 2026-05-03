@@ -1,5 +1,5 @@
 //! Diff panel action handler. Migrated out of `RepositoryScreen` as part of
-//! the Phase 5 completion.
+//! the package-layout extraction.
 
 use iced::Task;
 

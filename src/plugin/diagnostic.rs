@@ -1,11 +1,11 @@
 //! Typed plugin diagnostics.
 //!
-//! Phase 3: every host-side error path that used to `eprintln!` instead
+//! typed diagnostics: every host-side error path that used to `eprintln!` instead
 //! emits a `PluginDiagnostic`. The host owns a ring-buffered
 //! `DiagnosticStore`; devtools, tests, and an optional stderr sink read
 //! from it. Plugins never emit diagnostics themselves — the host
 //! summarises Lua/manifest/widget/capability/reload/cleanup failures and
-//! attaches `(plugin_id, generation_id)` from the Phase 1 newtypes.
+//! attaches `(plugin_id, generation_id)` from the resource lifecycle newtypes.
 //!
 //! Engineering invariant 1 (host owns every effect) is preserved:
 //! diagnostics are an effect, so only host-side code constructs them.
@@ -43,7 +43,7 @@ impl std::fmt::Display for DiagnosticSeverity {
     }
 }
 
-/// Where in the plugin's source the diagnostic originated. Phase 3
+/// Where in the plugin's source the diagnostic originated. typed diagnostics
 /// covers the four locations the plan calls out: manifest path+key, Lua
 /// file+line, widget AST path, and host API function name.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

@@ -1,4 +1,4 @@
-//! Phase 10: capability grant store, prompt overlay, and persistence.
+//! Capability grant store, prompt overlay, and persistence.
 //!
 //! Plugins *request* capabilities through `plugin.toml`. The host
 //! *grants* them through this store, which persists every decision
@@ -10,11 +10,11 @@
 //! Persistence: the store mirrors itself to a JSON file under the
 //! host's config directory (`~/.config/git_leviathan/plugin_grants.json`
 //! by default). Reads and writes are explicit; we don't pre-empt
-//! Phase 13's persistence layer.
+//! persistence and settings's persistence layer.
 //!
 //! Prompts: when a plugin requests capabilities the user has never
 //! decided about, [`PromptState`] holds the pending decisions until
-//! the user resolves them. Phase 10 ships a headless prompt; Phase 19
+//! the user resolves them. The grant store ships a headless prompt; devtools
 //! will render it as a modal overlay using the [`OverlayDescriptor`]
 //! shape we hand back here.
 //!
@@ -71,7 +71,7 @@ impl Decision {
 
 /// Who decided. `User` = explicit modal acceptance; `Default` =
 /// auto-grant (e.g. bundled-plugin policy); `Policy` = future
-/// org-policy file (Phase 22).
+/// org-policy file (org policy).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DecidedBy {
@@ -160,7 +160,7 @@ pub struct PendingDecision {
 
 /// One row of the security prompt the host hands the renderer. The
 /// headless [`PromptState`] commits these into the grant store via
-/// [`PromptState::decide`]; Phase 19 will render them in a modal.
+/// [`PromptState::decide`]; devtools will render them in a modal.
 #[derive(Debug, Clone)]
 pub struct PromptState {
     pending: Vec<PendingDecision>,
@@ -239,8 +239,8 @@ fn key(d: &PendingDecision) -> (String, String, String) {
     )
 }
 
-/// Serialised shape of a [`PromptState`] for the upcoming Phase 19
-/// devtools overlay. The renderer doesn't need direct access to the
+/// Serialised shape of a [`PromptState`] for the devtools overlay.
+/// The renderer doesn't need direct access to the
 /// store — it consumes this descriptor.
 #[derive(Debug, Clone, Serialize)]
 pub struct OverlayDescriptor {
@@ -775,7 +775,7 @@ impl ScopeResolver<'_> {
         ))
     }
 
-    /// Phase 12 watch-scope check. Mirrors `check_fs_scope` but matches
+    /// async runtime watch-scope check. Mirrors `check_fs_scope` but matches
     /// against `Capability::FsWatch` / `FsWatchDir` instead. Returns the
     /// canonical path on success.
     pub fn check_watch_scope(
@@ -845,7 +845,7 @@ pub fn granted_set_contains(granted: &[Capability], wanted: &str) -> bool {
 }
 
 /// Helper that records a grant lifecycle event on the audit log under
-/// the canonical phase-10 codes. Audit entries flow into the same
+/// the canonical capability-grant codes. Audit entries flow into the same
 /// devtools panel as every other capability allow/deny.
 pub fn audit_grant_event(
     log: &AuditLog,

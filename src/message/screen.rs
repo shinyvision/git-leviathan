@@ -20,7 +20,7 @@ pub enum ScreenRouted {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Repository carries LoadedRepo; boxing shifts to Phase 4.
+#[allow(clippy::large_enum_variant)] // Repository carries LoadedRepo; boxing shifts to widget AST.
 pub enum ScreenMessage {
     Blank(BlankMessage),
     NoGit(NoGitMessage),

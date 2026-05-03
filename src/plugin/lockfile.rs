@@ -1,4 +1,4 @@
-//! Phase 15: plugin lockfile.
+//! Plugin lockfile.
 //!
 //! `plugins.lock` is a small TOML document that pins each loaded
 //! plugin's resolved version + checksum so subsequent runs detect
@@ -35,7 +35,7 @@ pub struct LockedPlugin {
     pub id: String,
     pub version: String,
     /// Origin of the plugin: `"local"` (this repo), `"path"` (user
-    /// development override), `"registry"` (Phase 22, not yet
+    /// development override), `"registry"` (org policy, not yet
     /// produced). Lockfile readers preserve the value verbatim so a
     /// future package manager can round-trip without losing it.
     pub source: String,

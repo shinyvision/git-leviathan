@@ -1,6 +1,6 @@
 //! App-level command handlers: opening repos, showing toasts, spawning the
 //! OS file picker, opening URLs, and finalising a tab-load result.
-//! Extracted from `update.rs` in Phase 9.
+//! Extracted from `update.rs` in keymaps.
 
 use std::path::PathBuf;
 

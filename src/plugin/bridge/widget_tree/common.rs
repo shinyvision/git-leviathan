@@ -1,6 +1,6 @@
 //! Shared DSL parsers + the error-text fallback used by every widget.
 //!
-//! The AST decoder normalises types upstream (Phase 4) — these helpers
+//! The AST decoder normalises types upstream (widget AST) — these helpers
 //! are the small "AST → iced" converters: turn an `AstColor` into an
 //! `iced::Color`, an `AstLength` into a `Length`, etc. They never look
 //! at raw JSON; that's the decoder's job.

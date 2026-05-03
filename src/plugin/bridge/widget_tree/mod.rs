@@ -1,6 +1,6 @@
 //! Typed widget AST → `iced::Element` converter.
 //!
-//! Phase 4: the renderer consumes a [`WidgetAst`] only. The boundary
+//! widget AST: the renderer consumes a [`WidgetAst`] only. The boundary
 //! decoder validates plugin Lua tables once at the boundary; the build
 //! step here is pure AST → iced. The renderer cannot panic on a
 //! malformed tree because there is no malformed tree to see — anything

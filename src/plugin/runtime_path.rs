@@ -1,6 +1,6 @@
 //! Plugin runtimepath registry.
 //!
-//! Phase 5 introduces multi-file plugin packages. Every plugin lives in
+//! The package layout supports multi-file plugins. Every plugin lives in
 //! `<plugin_root>/` with the layout:
 //!
 //! ```text
@@ -10,7 +10,7 @@
 //! after/plugin/...lua             # post-init bootstrap files
 //! assets/                         # bundled assets (icons etc)
 //! doc/                            # plugin docs
-//! tests/                          # Phase 20 test sources
+//! tests/                          # plugin test sources
 //! migrations/                     # persist migrations
 //! ```
 //!
@@ -119,7 +119,7 @@ impl PluginRuntimePath {
     /// order. Dependencies that aren't yet loaded are silently dropped
     /// — the loader will surface the missing module as a
     /// `lua.module.not_found` diagnostic if the consumer actually
-    /// tries to require something from them. (Phase 15 will wire load
+    /// tries to require something from them. (dependency resolution wires load
     /// ordering so this stops being silent.)
     pub fn resolve(
         plugin_id: &str,

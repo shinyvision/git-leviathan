@@ -1,7 +1,7 @@
 //! Shared helpers used by the command-result dispatchers.
 //!
 //! These started as private methods on `RepositoryScreen`; they moved out
-//! during the Phase 5 completion because the command modules needed to call
+//! during the package-layout extraction because the command modules needed to call
 //! them and `pub fn` on the screen would leak internals to the `Screen`
 //! trait impl. As free functions they live beside their callers.
 

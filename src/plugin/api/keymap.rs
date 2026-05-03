@@ -1,4 +1,4 @@
-//! Phase 9 `leviathan.keymap.{set,del,list}` Lua surface.
+//! keymaps `leviathan.keymap.{set,del,list}` Lua surface.
 //!
 //! `set` and `del` capture into the per-plugin [`BuildState`]; the
 //! host drains those after init.lua and installs them into the live

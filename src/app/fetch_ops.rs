@@ -1,7 +1,7 @@
 //! App-level fetch orchestration: kicking off user/auto fetches and
 //! file-watcher-driven refs reloads. Works on top of `FetchPolicy` (which
 //! owns the single-slot state) by wiring it to the active-tab screen.
-//! Extracted from `update.rs` in Phase 9.
+//! Extracted from `update.rs` in keymaps.
 
 use iced::Task;
 

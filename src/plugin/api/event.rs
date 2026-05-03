@@ -1,6 +1,6 @@
 //! `leviathan.autocmd.*` plugin-side typed-event subscription.
 //!
-//! Phase 7 introduced typed event descriptors (see
+//! autocmd events introduced typed event descriptors (see
 //! [`git_leviathan_plugin_api::descriptor::api::API_EVENTS`]) and the
 //! `leviathan.autocmd` namespace which mirrors Neovim's autocmd shape:
 //!

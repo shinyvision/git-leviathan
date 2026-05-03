@@ -1,7 +1,7 @@
-//! Phase 5 acceptance tests for the Lua module loader, runtimepath
+//! package layout acceptance tests for the Lua module loader, runtimepath
 //! resolution, after-directory walk, and strict-globals enforcement.
 //!
-//! Each test maps onto one of the acceptance criteria in the Phase 5
+//! Each test maps onto one of the acceptance criteria in the plugin package layout
 //! plan:
 //!
 //! - own-module loading                  -> `plugin_can_require_its_own_module`

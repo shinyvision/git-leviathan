@@ -1,0 +1,9 @@
+id = "diff_notes"
+name = "Diff Notes"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture exercising diff decorations and context menu actions."
+capabilities = ["ui:diff_decoration", "ui:context_menu"]
+
+[runtime]
+strict_globals = false

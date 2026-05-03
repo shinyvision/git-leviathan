@@ -33,7 +33,7 @@ impl MockHost {
         let mut host = PluginHost::new();
         host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
         host.set_plugin_storage_base(tmp.path().join("plugin-storage"));
-        // Phase 10: tests treat their own tmp directory as a trusted
+        // Capability grant tests treat their own tmp directory as a trusted
         // "bundled plugin" root so `MockHost::load_inline` plugins
         // get their declared capabilities auto-granted. Tests that
         // need to exercise the prompt path (e.g.
@@ -79,7 +79,7 @@ impl MockHost {
         Ok(())
     }
 
-    /// Phase 15: stage a set of plugin sources on disk and invoke the
+    /// Stage a set of plugin sources on disk and invoke the
     /// host's resolve-and-load entry point so the dependency resolver
     /// runs over them as a unit. Each tuple is `(id, manifest, init)`.
     /// Plugins are written into the harness tmp dir; the lockfile root
@@ -104,14 +104,14 @@ impl MockHost {
     }
 
     /// Path to the workspace tmp dir backing this harness — used by
-    /// Phase 15 tests that need to read or write `plugins.lock` /
+    /// dependency lockfile tests that need to read or write `plugins.lock` /
     /// `plugins.lock.local` directly.
     pub fn lockfile_dir(&self) -> &std::path::Path {
         self._tmp.path()
     }
 
     /// Strict-globals counterpart for tests that want to assert the
-    /// new Phase 5 enforcement behaviour. Skips the test-default
+    /// new package-layout enforcement behaviour. Skips the test-default
     /// auto-inject of `[runtime] strict_globals = false`.
     pub fn load_inline_strict(
         &mut self,
@@ -132,7 +132,7 @@ impl MockHost {
 
     /// Drop a plugin file at an arbitrary path under a previously
     /// loaded plugin's directory (e.g. `lua/foo/bar.lua` or
-    /// `after/plugin/x.lua`). Used by the Phase 5 module-loader tests.
+    /// `after/plugin/x.lua`). Used by the package layout module-loader tests.
     pub fn write_plugin_file(
         &self,
         plugin_id: &str,
@@ -204,7 +204,7 @@ impl MockHost {
         self.host.tick();
     }
 
-    /// Phase 18: install a `MockClock`-backed budget tracker so tests
+    /// performance budgets: install a `MockClock`-backed budget tracker so tests
     /// can drive timing deterministically. Returns the clock handle so
     /// the test can `advance_ms()` between callback dispatches. Must
     /// be called before `load_inline` so the tracker covers init.lua
@@ -219,7 +219,7 @@ impl MockHost {
         clock
     }
 
-    /// Phase 18: cheap-clone handle to the host's budget tracker.
+    /// Cheap-clone handle to the host's budget tracker.
     pub fn budget_tracker(&self) -> crate::plugin::performance::BudgetTracker {
         self.host.budget_tracker()
     }
@@ -234,7 +234,7 @@ impl MockHost {
             .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))
     }
 
-    /// Phase 8 typed dispatch entry. Routes through the same
+    /// typed command dispatch entry. Routes through the same
     /// [`crate::plugin::commands::CommandRegistry::invoke`] funnel as
     /// the Lua `leviathan.command.invoke` shim.
     pub fn invoke_command(
@@ -245,7 +245,7 @@ impl MockHost {
         self.host.invoke_command(name, args)
     }
 
-    /// Phase 19 devtools dispatch entry. Routes through the same
+    /// devtools dispatch entry. Routes through the same
     /// dispatcher as `invoke_command` and additionally drains the
     /// host's queued devtools actions, returning the structured JSON
     /// result alongside the outcome.
@@ -257,7 +257,7 @@ impl MockHost {
         self.host.invoke_devtools_command(name, args)
     }
 
-    /// Phase 9 dispatch entry. Routes through
+    /// keymaps dispatch entry. Routes through
     /// [`crate::plugin::host::PluginHost::dispatch_key`].
     pub fn dispatch_key(
         &mut self,
@@ -268,7 +268,7 @@ impl MockHost {
     }
 
     /// Cheap-clone handle to the unified keymap registry. Used by
-    /// Phase 9 tests that project summaries.
+    /// keymaps tests that project summaries.
     pub fn keymap_registry(
         &self,
     ) -> std::rc::Rc<std::cell::RefCell<crate::plugin::keymap::KeymapRegistry>> {
@@ -301,7 +301,7 @@ impl MockHost {
     }
 
     /// Cheap-clone handle to the unified command registry. Used by
-    /// Phase 8 tests that project summaries and assert palette
+    /// command registry tests that project summaries and assert palette
     /// filtering / dispatch counters.
     pub fn command_registry(
         &self,
@@ -329,7 +329,7 @@ impl MockHost {
         self.host.reset_plugin_storage(plugin_id, surface)
     }
 
-    /// Phase 7 typed-event replay. Forwards through
+    /// typed-event replay. Forwards through
     /// `PluginHost::dispatch_test_event` so tests stage event
     /// sequences deterministically.
     pub fn dispatch_test_event(&mut self, event: &str, payload: serde_json::Value) {
@@ -343,7 +343,7 @@ impl MockHost {
         self.host.advance_event_clock(delta_ms);
     }
 
-    /// Read a Lua global as `String`. Used by Phase 7 tests that
+    /// Read a Lua global as `String`. Used by autocmd tests that
     /// observe payload-table fields a callback copied into `_G`.
     pub fn read_global_string(&self, plugin_id: &str, name: &str) -> Option<String> {
         self.host.plugin_global_string(plugin_id, name)
@@ -374,7 +374,7 @@ impl MockHost {
 /// If the test manifest already declares a `[runtime]` section we
 /// leave it alone — the test is making a deliberate strict-globals
 /// statement. Otherwise, append `[runtime] strict_globals = false` so
-/// pre-Phase-5 test fixtures that scribble onto `_G` keep loading
+/// legacy test fixtures that scribble onto `_G` keep loading
 /// without modification.
 fn inject_runtime_section(manifest: &str) -> String {
     if manifest.contains("[runtime]") || manifest.contains("strict_globals") {

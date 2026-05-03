@@ -177,7 +177,7 @@ pub fn emit_manifest_schema_json() -> String {
             },
             "activation": {
                 "type": "object",
-                "description": "Phase 16 lazy-activation triggers. When omitted, the plugin loads eagerly.",
+                "description": "lazy activation triggers. When omitted, the plugin loads eagerly.",
                 "additionalProperties": false,
                 "properties": {
                     "events": {

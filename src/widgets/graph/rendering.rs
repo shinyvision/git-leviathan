@@ -406,7 +406,7 @@ pub fn draw_graph_rows(
     //
     // Dotted lines are rendered as explicit axis-aligned square dots placed
     // at constant arc-length spacing along each sub-path. Lyon's built-in
-    // `LineDash` resets phase at every sub-path boundary and rotates dashes
+    // `LineDash` resets dash offset at every sub-path boundary and rotates dashes
     // around curves, both of which produce visibly uneven spacing where
     // short corners meet long straights. Manual placement keeps spacing and
     // orientation uniform.

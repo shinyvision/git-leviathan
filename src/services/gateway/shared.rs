@@ -449,8 +449,8 @@ impl CommitOps for GitRepositoryGateway {
 
 impl RemoteOps for GitRepositoryGateway {
     fn fetch_remotes(&self) -> Result<(), GitError> {
-        // Phase 1 (write-lock): network fetch only.
-        // Phase 2 (no write-lock): `git ls-remote --tags` per remote to refresh
+        // resource lifecycle (write-lock): network fetch only.
+        // screen routing (no write-lock): `git ls-remote --tags` per remote to refresh
         // the tag→remotes cache. Held under the writer lock in the past, this
         // stretched lock-hold time by (num_remotes × round-trip) and caused
         // file-watcher reload_refs tasks to pile up during the fetch; keep it

@@ -1,7 +1,7 @@
 //! Per-plugin Lua module loader, after-directory runner, and strict-
 //! globals enforcement.
 //!
-//! Phase 5 wiring. The host owns every effect:
+//! plugin package layout wiring. The host owns every effect:
 //!
 //! - We replace Lua's stock `require` with a host-implemented closure
 //!   that resolves names against the plugin's `PluginRuntimePath`,

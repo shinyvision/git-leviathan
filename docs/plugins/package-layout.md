@@ -1,6 +1,6 @@
 # Plugin Package Layout
 
-Phase 5 introduces a multi-file plugin layout modelled on Neovim. A single
+The package layout supports multi-file plugins modelled on Neovim. A single
 `init.lua` still works, but plugins of any size should split into modules.
 
 ## Layout
@@ -18,7 +18,7 @@ plugins/<plugin_id>/
     02_keymaps.lua
   assets/                           # bundled files (icons, gifs, ...)
   doc/                              # plugin documentation
-  tests/                            # plugin tests (Phase 20)
+  tests/                            # plugin tests (plugin-test)
   migrations/                       # persist migrations
 ```
 

@@ -1,4 +1,4 @@
-//! Phase 12 timer registry. `leviathan.timer.after(ms, fn)` records a
+//! async runtime timer registry. `leviathan.timer.after(ms, fn)` records a
 //! one-shot timer; `leviathan.timer.every(ms, fn)` records a repeating
 //! timer. Both fire on the host's `tick()` loop using a virtual clock
 //! (`Instant::now()`); cancellation is cooperative — `:cancel()` on

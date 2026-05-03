@@ -1,4 +1,4 @@
-//! Top-level update dispatchers for `App`. Extracted from `mod.rs` in Phase 9.
+//! Top-level update dispatchers for `App`. Extracted from `mod.rs` in keymaps.
 //! Individual handler methods live in sibling modules (`input`, `commands`,
 //! `fetch_ops`, `animation`); this file only routes.
 

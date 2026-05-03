@@ -53,7 +53,7 @@ pub struct ServiceDependencyStatus {
 pub struct ServiceRegistry {
     handles: HashMap<String, ServiceHandle>,
     traces: RefCell<VecDeque<ServiceCallTrace>>,
-    /// Phase 18 budget tracker (optional). When set, every service
+    /// performance budget tracker (optional). When set, every service
     /// call is timed against the `ServiceCall` budget and routes
     /// through the per-callback circuit breaker. Constructed empty;
     /// the host installs the live tracker after `PluginHost::new`.
@@ -65,7 +65,7 @@ impl ServiceRegistry {
         Self::default()
     }
 
-    /// Install the host's Phase 18 budget tracker. Calls before this
+    /// Install the host's performance budget tracker. Calls before this
     /// runs simply skip the budget pass (used to keep a few existing
     /// unit tests that build a bare `ServiceRegistry` without a host
     /// from needing to reconstruct one).
@@ -170,7 +170,7 @@ impl ServiceRegistry {
             .unwrap_or("<missing>")
             .to_string();
 
-        // Phase 18: route through the budget tracker keyed against
+        // Route through the budget tracker keyed against
         // the caller (callers are how plugins reach into a provider;
         // tripping per caller-method keeps a single misbehaving
         // consumer from disabling a healthy provider). The tracker

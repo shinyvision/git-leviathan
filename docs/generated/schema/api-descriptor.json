@@ -71,7 +71,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Spawn a specific binary by basename (e.g. `process:spawn:git`). Phase 12 will enforce.",
+      "doc": "Spawn a specific binary by basename (e.g. `process:spawn:git`).",
       "name": "process:spawn:<binary>",
       "since": "1.0"
     },
@@ -81,7 +81,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Fetch from a specific domain (e.g. `net:fetch:github.com`). Phase 12 will enforce.",
+      "doc": "Fetch from a specific domain (e.g. `net:fetch:github.com`).",
       "name": "net:fetch:<domain>",
       "since": "1.0"
     },
@@ -116,7 +116,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Read host-stored credentials (Phase 13 secrets).",
+      "doc": "Read host-stored credentials.",
       "name": "credentials",
       "since": "1.0"
     },
@@ -126,77 +126,77 @@
       "since": "1.0"
     },
     {
-      "doc": "Read working tree status. Phase 11 wires the typed API.",
+      "doc": "Read working tree status.",
       "name": "git:read:status",
       "since": "1.0"
     },
     {
-      "doc": "Read commit history. Phase 11 wires the typed API.",
+      "doc": "Read commit history.",
       "name": "git:read:log",
       "since": "1.0"
     },
     {
-      "doc": "Read diffs between commits or against the index. Phase 11 wires the typed API.",
+      "doc": "Read diffs between commits or against the index.",
       "name": "git:read:diff",
       "since": "1.0"
     },
     {
-      "doc": "Read a commit's tree or a file at a commit. Phase 11 wires the typed API.",
+      "doc": "Read a commit's tree or a file at a commit.",
       "name": "git:read:show",
       "since": "1.0"
     },
     {
-      "doc": "Read line-level blame for a tracked file. Phase 11 wires the typed API.",
+      "doc": "Read line-level blame for a tracked file.",
       "name": "git:read:blame",
       "since": "1.0"
     },
     {
-      "doc": "Move HEAD to a ref or commit. Phase 11 wires the typed API.",
+      "doc": "Move HEAD to a ref or commit.",
       "name": "git:write:checkout",
       "since": "1.0"
     },
     {
-      "doc": "Create / delete / rename branches. Phase 11 wires the typed API.",
+      "doc": "Create, delete, or rename branches.",
       "name": "git:write:branch",
       "since": "1.0"
     },
     {
-      "doc": "Create / delete tags. Phase 11 wires the typed API.",
+      "doc": "Create or delete tags.",
       "name": "git:write:tag",
       "since": "1.0"
     },
     {
-      "doc": "Create commits. Phase 11 wires the typed API.",
+      "doc": "Create commits.",
       "name": "git:write:commit",
       "since": "1.0"
     },
     {
-      "doc": "Push / pop / drop stashes. Phase 11 wires the typed API.",
+      "doc": "Push, pop, or drop stashes.",
       "name": "git:write:stash",
       "since": "1.0"
     },
     {
-      "doc": "Reset the index or working tree. Phase 11 wires the typed API.",
+      "doc": "Reset the index or working tree.",
       "name": "git:write:reset",
       "since": "1.0"
     },
     {
-      "doc": "Fetch from a remote. Phase 11 wires the typed API.",
+      "doc": "Fetch from a remote.",
       "name": "git:write:fetch",
       "since": "1.0"
     },
     {
-      "doc": "Push to a remote. Phase 11 wires the typed API.",
+      "doc": "Push to a remote.",
       "name": "git:write:push",
       "since": "1.0"
     },
     {
-      "doc": "Merge refs into HEAD. Phase 11 wires the typed API.",
+      "doc": "Merge refs into HEAD.",
       "name": "git:write:merge",
       "since": "1.0"
     },
     {
-      "doc": "Rebase HEAD. Phase 11 wires the typed API.",
+      "doc": "Rebase HEAD.",
       "name": "git:write:rebase",
       "since": "1.0"
     },
@@ -206,52 +206,52 @@
       "since": "1.0"
     },
     {
-      "doc": "Provide a versioned service to other plugins (Phase 14).",
+      "doc": "Provide a versioned service to other plugins.",
       "name": "services:provide:<service@version>",
       "since": "1.0"
     },
     {
-      "doc": "Consume a versioned service from another plugin (Phase 14).",
+      "doc": "Consume a versioned service from another plugin.",
       "name": "services:consume:<service@version>",
       "since": "1.0"
     },
     {
-      "doc": "Spawn a host-managed background worker thread (Phase 12).",
+      "doc": "Spawn a host-managed background worker thread.",
       "name": "async:spawn",
       "since": "1.12"
     },
     {
-      "doc": "Schedule one-shot or repeating timers (Phase 12).",
+      "doc": "Schedule one-shot or repeating timers.",
       "name": "timer:create",
       "since": "1.12"
     },
     {
-      "doc": "Watch paths for filesystem events (Phase 12, plugin scope).",
+      "doc": "Watch plugin-scoped paths for filesystem events.",
       "name": "fs:watch",
       "since": "1.12"
     },
     {
-      "doc": "Watch paths under an explicit user-chosen directory (Phase 12).",
+      "doc": "Watch paths under an explicit user-chosen directory.",
       "name": "fs:watch:scope:<dir>",
       "since": "1.12"
     },
     {
-      "doc": "Register modal overlays that the host renders above the active screen (Phase 17).",
+      "doc": "Register modal overlays that the host renders above the active screen.",
       "name": "ui:overlay",
       "since": "1.0"
     },
     {
-      "doc": "Contribute items to host-rendered context menus at extension points (Phase 17).",
+      "doc": "Contribute items to host-rendered context menus at extension points.",
       "name": "ui:context_menu",
       "since": "1.0"
     },
     {
-      "doc": "Attach badges / icons / markers / lanes to commit rows in the graph (Phase 17).",
+      "doc": "Attach badges, icons, markers, or lanes to commit rows in the graph.",
       "name": "ui:graph_decoration",
       "since": "1.0"
     },
     {
-      "doc": "Attach line hints / hunk badges / line gutters to the diff view (Phase 17).",
+      "doc": "Attach line hints, hunk badges, or line gutters to the diff view.",
       "name": "ui:diff_decoration",
       "since": "1.0"
     }
@@ -907,7 +907,7 @@
     },
     {
       "capabilities": [],
-      "doc": "Phase 8 typed command registry and palette dispatch.",
+      "doc": "Typed command registry and palette dispatch.",
       "events": [
         "CommandExecuted"
       ],
@@ -1026,7 +1026,7 @@
     },
     {
       "capabilities": [],
-      "doc": "Phase 9 context-aware keymap registry.",
+      "doc": "Context-aware keymap registry.",
       "events": [
         "KeymapTriggered"
       ],
@@ -1149,7 +1149,7 @@
     },
     {
       "capabilities": [],
-      "doc": "Phase 7 autocmd group, typed-event registration namespace.",
+      "doc": "Autocmd group and typed-event registration namespace.",
       "events": [
         "AppStarted",
         "AppWillQuit",
@@ -1521,7 +1521,7 @@
               "widget must validate as a LeviathanWidget or be a function"
             ],
             "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
+              "Slot ownership is recorded in the resource ledger."
             ],
             "returns": []
           }
@@ -1549,7 +1549,7 @@
               "widget must validate as a LeviathanWidget or be a function"
             ],
             "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
+              "Slot ownership is recorded in the resource ledger."
             ],
             "returns": []
           }
@@ -1583,7 +1583,7 @@
               "widget must validate as a LeviathanWidget or be a function"
             ],
             "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
+              "Slot ownership is recorded in the resource ledger."
             ],
             "returns": []
           }
@@ -2807,7 +2807,7 @@
         "git:read:show",
         "git:read:blame"
       ],
-      "doc": "Active repository snapshot plus typed read APIs (Phase 11).",
+      "doc": "Active repository snapshot plus typed read APIs.",
       "events": [
         "BranchChanged",
         "RefsChanged",
@@ -3013,7 +3013,7 @@
             "git:read:blame"
           ],
           "compatibility": "v1",
-          "doc": "Phase 11 placeholder: blame is not yet wired through the host gateway. Returns (nil, \"unsupported\").",
+          "doc": "Blame is not yet wired through the host gateway. Returns (nil, \"unsupported\").",
           "name": "blame",
           "params": [
             {
@@ -3070,7 +3070,7 @@
         "git:write:merge",
         "git:write:rebase"
       ],
-      "doc": "Phase 11 typed Git write APIs. All routes capability-checked, audited, and (when destructive) gated by the host's confirmation policy.",
+      "doc": "Typed Git write APIs. All routes are capability-checked, audited, and gated by the host's confirmation policy when destructive.",
       "events": [
         "HeadChanged",
         "BranchChanged",
@@ -4226,7 +4226,7 @@
       "capabilities": [
         "async:spawn"
       ],
-      "doc": "Phase 12 host-managed background workers.",
+      "doc": "Host-managed background workers.",
       "events": [],
       "functions": [
         {
@@ -4289,7 +4289,7 @@
       "capabilities": [
         "timer:create"
       ],
-      "doc": "Phase 12 one-shot and repeating timers.",
+      "doc": "One-shot and repeating timers.",
       "events": [],
       "functions": [
         {
@@ -4839,7 +4839,7 @@
       "since": "1.7"
     },
     {
-      "doc": "Phase 8 typed command registry namespace.",
+      "doc": "Typed command registry namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.command",
@@ -4978,7 +4978,7 @@
       "since": "1.8"
     },
     {
-      "doc": "Phase 9 keymap registry namespace.",
+      "doc": "Context-aware keymap registry namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.keymap",

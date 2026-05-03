@@ -81,7 +81,7 @@ pub struct DiagnosticSummary {
     pub timestamp_unix_ms: u128,
 }
 
-/// One row of the Phase 5 runtime-path inspector. Plugins are sorted
+/// One row of the plugin package layout runtime-path inspector. Plugins are sorted
 /// by `plugin_id`; entries within each plugin are in search order
 /// (own first, then `requires_plugins` in manifest order).
 #[derive(Debug, Clone)]
@@ -132,7 +132,7 @@ impl std::fmt::Display for ReloadOutcome {
     }
 }
 
-/// One Phase 7 autocmd row projected for the inspector. Mirrors
+/// One autocmd row projected for the inspector. Mirrors
 /// every observable field of an [`crate::plugin::events::AutocmdEntry`]
 /// so the in-app devtools and external tooling can answer questions
 /// like "which plugin's autocmd disabled itself?" without needing
@@ -159,7 +159,7 @@ pub struct AutocmdSummary {
     pub disabled: bool,
 }
 
-/// One row of the Phase 6 reload-history panel. Capped at the last
+/// One row of the Reload history panel. Capped at the last
 /// 64 entries per plugin by `PluginHost::record_reload_event`.
 ///
 /// `stage_reached` names the highest staging step the attempt
@@ -180,7 +180,7 @@ pub struct ReloadEventSummary {
     pub timestamp_unix_ms: u128,
 }
 
-/// Phase 9 keymap projection. Mirrors the live
+/// keymap projection. Mirrors the live
 /// [`crate::plugin::keymap::KeymapSummary`] shape so external
 /// inspectors don't need to depend on the host crate.
 ///
@@ -209,7 +209,7 @@ pub struct KeymapConflictRef {
     pub source: String,
 }
 
-/// Phase 8 command projection. Mirrors the live
+/// command projection. Mirrors the live
 /// [`crate::plugin::commands::CommandSummary`] shape minus the dispatcher
 /// internals so external inspectors don't need to depend on the host
 /// crate.
@@ -234,105 +234,105 @@ pub struct InspectorSnapshot {
     pub plugins: Vec<PluginSummary>,
     pub slots: Vec<SlotSummary>,
     pub services: Vec<ServiceSummary>,
-    /// Phase 14: declared consumer/provider service edges. Required
+    /// plugin services: declared consumer/provider service edges. Required
     /// missing edges block plugin load, so live snapshots mainly show
     /// connected required edges plus optional missing integrations.
     pub service_graph: Vec<ServiceGraphEdge>,
-    /// Phase 14: recent cross-plugin service method calls, capped in
+    /// plugin services: recent cross-plugin service method calls, capped in
     /// the registry. Includes success/failure and duration so devtools
     /// can trace invisible composition.
     pub service_call_traces: Vec<ServiceCallTraceSummary>,
     pub resources: Vec<ResourceSummary>,
     pub audit_recent: Vec<AuditEntry>,
     pub diagnostics: Vec<DiagnosticSummary>,
-    /// Phase 5: ordered runtime-path entries per plugin. Sorted by
+    /// plugin package layout: ordered runtime-path entries per plugin. Sorted by
     /// `(plugin_id, position-in-search-order)`.
     pub runtime_paths: Vec<RuntimePathSummary>,
-    /// Phase 5: cached modules per plugin/generation.
+    /// plugin package layout: cached modules per plugin/generation.
     pub loaded_modules: Vec<LoadedModuleSummary>,
-    /// Phase 6: reload-history rows, oldest first across plugins.
+    /// reload transactions: reload-history rows, oldest first across plugins.
     /// Entries within a plugin stay in chronological order. Capped at
     /// 64 per plugin in the underlying store.
     pub reload_history: Vec<ReloadEventSummary>,
-    /// Phase 7: every live autocmd row across all plugins. Sorted by
+    /// autocmd events: every live autocmd row across all plugins. Sorted by
     /// `(plugin_id, generation_id, autocmd_id)` so external tooling
     /// can group as it pleases.
     pub autocmds: Vec<AutocmdSummary>,
-    /// Phase 8: every live command row across host and plugins.
+    /// command registry: every live command row across host and plugins.
     /// Sorted by `(plugin_id, name)`. Built-in host commands appear
     /// under the sentinel `<host>` plugin id.
     pub commands: Vec<CommandSummaryRow>,
-    /// Phase 9: every live keymap row, including conflict losers
+    /// keymaps: every live keymap row, including conflict losers
     /// (each loser carries a `conflict_with` cross-reference to the
     /// winner). Sorted by `(context, key, source, plugin_id)`.
     pub keymaps: Vec<KeymapSummaryRow>,
-    /// Phase 10: every recorded capability grant row, sorted by
+    /// Every recorded capability grant row, sorted by
     /// `(plugin_id, plugin_version, capability)`. Includes both
     /// allow/deny rows and `decided_by` lineage so a security-review
     /// pass can audit the full set without scraping the persisted
     /// JSON.
     pub capability_grants: Vec<CapabilityGrantSummary>,
-    /// Phase 10: open security prompts the host has surfaced but the
+    /// capability grants: open security prompts the host has surfaced but the
     /// user hasn't yet resolved. Sorted by `(plugin_id, plugin_version)`.
-    /// Phase 19 will render each row as a modal overlay; Phase 10
+    /// devtools will render each row as a modal overlay; the grant store
     /// ships them headless so tests can drive the prompt flow
     /// without a renderer in the loop.
     pub pending_capability_prompts: Vec<PendingPromptSummary>,
-    /// Phase 11: in-flight + recent plugin-triggered Git writes.
+    /// repository Git API: in-flight + recent plugin-triggered Git writes.
     /// Capped at [`crate::plugin::git_ops::PendingGitWrites::CAP`] (32)
     /// in chronological order. Each row records the plugin id, op
     /// name, args summary, start/finish unix-ms, and final status.
     pub pending_git_writes: Vec<PendingGitWrite>,
-    /// Phase 12: every active plugin async job. Sorted by
+    /// async runtime: every active plugin async job. Sorted by
     /// `(plugin_id, generation_id, job_id)`.
     pub async_jobs: Vec<AsyncJobSummary>,
-    /// Phase 12: every active plugin timer.
+    /// async runtime: every active plugin timer.
     pub timers: Vec<TimerSummary>,
-    /// Phase 12: every active plugin file watcher.
+    /// async runtime: every active plugin file watcher.
     pub file_watchers: Vec<WatcherSummary>,
-    /// Phase 13: storage browser rows for plugin state, config,
+    /// persistence and settings: storage browser rows for plugin state, config,
     /// per-repo state, cache, settings, and secrets surfaces.
     pub storage: Vec<StorageSurfaceSummary>,
-    /// Phase 13: settings schema/value metadata. Values are omitted;
+    /// persistence and settings: settings schema/value metadata. Values are omitted;
     /// devtools renders from schema and key lists.
     pub settings: Vec<SettingsSummary>,
-    /// Phase 13: secret metadata only. Secret values never appear in
+    /// persistence and settings: secret metadata only. Secret values never appear in
     /// devtools snapshots.
     pub secrets: Vec<SecretSummary>,
-    /// Phase 15: per-edge dependency rows. Sorted by
+    /// dependency lockfile: per-edge dependency rows. Sorted by
     /// `(consumer_plugin_id, dependency_id)`. Required and optional
     /// edges share the same row shape; `kind` and `status`
     /// distinguish them.
     pub dependency_graph: Vec<DependencySummaryRow>,
-    /// Phase 16: per-plugin lazy-activation rows. Sorted by
+    /// lazy loading: per-plugin lazy-activation rows. Sorted by
     /// `plugin_id`. Lists every plugin that opted into lazy load
     /// regardless of whether it has activated yet — `status` is
     /// `"lazy"`, `"active"`, or `"poisoned"`.
     pub lazy_plugins: Vec<LazyPluginSummary>,
-    /// Phase 17: every overlay registered via `leviathan.ui.overlay`,
+    /// extension points: every overlay registered via `leviathan.ui.overlay`,
     /// sorted by descending priority then `(plugin_id, id)`.
     pub overlays: Vec<OverlaySummary>,
-    /// Phase 17: every context-menu item, sorted by
+    /// extension points: every context-menu item, sorted by
     /// `(region, priority, plugin_id, id)`.
     pub context_menu_items: Vec<ContextMenuItemSummary>,
-    /// Phase 17: every commit-row decoration, sorted by
+    /// extension points: every commit-row decoration, sorted by
     /// `(commit_hash, plugin_id, id)`.
     pub graph_decorations: Vec<GraphDecorationSummary>,
-    /// Phase 17: every diff decoration, sorted by `(plugin_id, id)`.
+    /// extension points: every diff decoration, sorted by `(plugin_id, id)`.
     pub diff_decorations: Vec<DiffDecorationSummary>,
-    /// Phase 18: recent performance traces (one per `track_call`).
+    /// performance budgets: recent performance traces (one per `track_call`).
     /// Capped at 256 in the underlying tracker. Sorted by
     /// `(timestamp_unix_ms, plugin_id, callback_id)` ascending so
     /// devtools can render newest-last (oldest-first).
     pub performance_traces: Vec<PerformanceTraceSummary>,
-    /// Phase 18: per-callback circuit-breaker rows, one per
+    /// performance budgets: per-callback circuit-breaker rows, one per
     /// `(plugin_id, generation_id, callback_id)` that has at least
     /// one recorded sample. Sorted by
     /// `(plugin_id, generation_id, callback_id)`.
     pub circuit_breakers: Vec<CircuitBreakerSummary>,
 }
 
-/// Phase 18 performance-trace projection. Mirrors
+/// performance-trace projection. Mirrors
 /// [`crate::plugin::performance::PerformanceTrace`] for the inspector.
 #[derive(Debug, Clone)]
 pub struct PerformanceTraceSummary {
@@ -345,7 +345,7 @@ pub struct PerformanceTraceSummary {
     pub timestamp_unix_ms: u128,
 }
 
-/// Phase 18 circuit-breaker projection. Mirrors
+/// performance budgets circuit-breaker projection. Mirrors
 /// [`crate::plugin::performance::CircuitBreakerSummary`] (the host
 /// crate keeps one too, but devtools needs it without cross-crate
 /// imports).
@@ -368,7 +368,7 @@ pub struct CircuitBreakerSummary {
     pub last_failure: Option<String>,
 }
 
-/// Phase 17 overlay projection. The `widget` payload is carried
+/// extension points overlay projection. The `widget` payload is carried
 /// through verbatim so devtools / acceptance tests can introspect
 /// the plugin-supplied content without re-decoding the Lua AST.
 #[derive(Debug, Clone)]
@@ -381,7 +381,7 @@ pub struct OverlaySummary {
     pub source_location: Option<String>,
 }
 
-/// Phase 17 context-menu projection.
+/// extension points context-menu projection.
 #[derive(Debug, Clone)]
 pub struct ContextMenuItemSummary {
     pub plugin_id: String,
@@ -394,7 +394,7 @@ pub struct ContextMenuItemSummary {
     pub source_location: Option<String>,
 }
 
-/// Phase 17 graph-decoration projection.
+/// extension points graph-decoration projection.
 #[derive(Debug, Clone)]
 pub struct GraphDecorationSummary {
     pub plugin_id: String,
@@ -405,7 +405,7 @@ pub struct GraphDecorationSummary {
     pub source_location: Option<String>,
 }
 
-/// Phase 17 diff-decoration projection.
+/// extension points diff-decoration projection.
 #[derive(Debug, Clone)]
 pub struct DiffDecorationSummary {
     pub plugin_id: String,
@@ -415,7 +415,7 @@ pub struct DiffDecorationSummary {
     pub source_location: Option<String>,
 }
 
-/// Phase 16 lazy-plugin projection. The host's `introspect()`
+/// lazy-plugin projection. The host's `introspect()`
 /// builds these directly from the lazy registry; external
 /// inspectors don't need to depend on the host crate.
 #[derive(Debug, Clone)]
@@ -436,7 +436,7 @@ pub struct LazyPluginSummary {
     pub last_error: Option<String>,
 }
 
-/// Phase 15 dependency-graph projection row. Mirrors
+/// Dependency graph projection row. Mirrors
 /// [`crate::plugin::dependency::DependencySummary`] for the inspector.
 #[derive(Debug, Clone)]
 pub struct DependencySummaryRow {
@@ -450,7 +450,7 @@ pub struct DependencySummaryRow {
     pub status: String,
 }
 
-/// Phase 12 async-job projection. Mirrors the live
+/// async-job projection. Mirrors the live
 /// [`crate::plugin::async_jobs::AsyncJobSummary`] shape.
 #[derive(Debug, Clone)]
 pub struct AsyncJobSummary {
@@ -461,7 +461,7 @@ pub struct AsyncJobSummary {
     pub status: String,
 }
 
-/// Phase 12 timer projection. Mirrors the live
+/// async runtime timer projection. Mirrors the live
 /// [`crate::plugin::timers::TimerSummary`] shape.
 #[derive(Debug, Clone)]
 pub struct TimerSummary {
@@ -473,7 +473,7 @@ pub struct TimerSummary {
     pub fires: u64,
 }
 
-/// Phase 12 watcher projection. Mirrors the live
+/// async runtime watcher projection. Mirrors the live
 /// [`crate::plugin::watchers::WatcherSummary`] shape.
 #[derive(Debug, Clone)]
 pub struct WatcherSummary {

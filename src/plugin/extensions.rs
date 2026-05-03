@@ -1,4 +1,4 @@
-//! Phase 17 extension-point registries.
+//! extension-point registries.
 //!
 //! Plugins register overlays, context-menu items, and graph / diff
 //! decorations via the `leviathan.ui.{overlay, context_menu,
@@ -7,7 +7,7 @@
 //! can drop everything a plugin owns on unload.
 //!
 //! The store is renderer-agnostic: tests inspect the projected
-//! summaries and Iced rendering happens in later phases. The
+//! summaries and Iced rendering happens in later work. The
 //! registries are deliberately small — value-typed entries with
 //! deterministic ordering.
 
@@ -20,7 +20,7 @@ use crate::plugin::ui::widget_ast::WidgetAst;
 
 /// One overlay registered by a plugin. The widget tree is captured
 /// statically — overlay re-rendering on plugin state change is out of
-/// scope for Phase 17.
+/// scope for extension points.
 #[derive(Debug, Clone)]
 pub struct OverlayRecord {
     pub plugin_id: String,

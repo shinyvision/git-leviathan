@@ -24,7 +24,7 @@ use super::BuildState;
 pub struct UserCommands {
     /// Lua registry-key index keyed by command name. Kept around for
     /// `host.invoke_user_command`, which runs plugin command callbacks
-    /// directly in tests and devtools helpers.
+    /// directly in tests and helpers.
     pub commands: HashMap<String, RegistryKey>,
 }
 

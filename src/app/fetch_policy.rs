@@ -1,6 +1,6 @@
 //! `FetchPolicy` — single-slot remote-fetch orchestration.
 //!
-//! Extracted from `App` in Phase 9. The app only ever runs one user-driven
+//! Extracted from `App` in keymaps. The app only ever runs one user-driven
 //! remote fetch at a time; this struct owns the in-flight slot, its abort
 //! handle, and the Ctrl+Tab post-switch debounce handle.
 

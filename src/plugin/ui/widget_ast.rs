@@ -1,6 +1,6 @@
 //! Typed widget AST for plugin UI.
 //!
-//! Phase 4: replaces the ad-hoc `serde_json::Value` widget tree with a
+//! widget AST: replaces the ad-hoc `serde_json::Value` widget tree with a
 //! typed AST that the boundary validates *once* and the renderer
 //! consumes. Plugin Lua keeps its existing table syntax — only the
 //! host-side decoding step changes.
@@ -16,7 +16,7 @@
 //!   missing `spacing` → 0, missing `width`/`height` → `Auto` so the
 //!   widget can pick its own preferred default at build time).
 //!
-//! Limits live next to the AST so future phases can revisit them in one
+//! Limits live next to the AST so future changes can revisit them in one
 //! place: depth, node count, string length, image bytes. Hitting a
 //! limit produces the same kind of structured error as a malformed
 //! field; the host emits a diagnostic and renders an in-place error
@@ -35,7 +35,7 @@ use serde_json::Value;
 // Limits
 // ---------------------------------------------------------------------------
 
-/// Hard ceilings on decoded widget trees. Centralised so future phases
+/// Hard ceilings on decoded widget trees. Centralised so future changes
 /// (performance budgets, per-plugin overrides) can mutate them without
 /// hunting through the renderer. Values picked to be large enough that
 /// honest plugins never see them and small enough that a runaway
@@ -63,7 +63,7 @@ impl Default for WidgetLimits {
     }
 }
 
-/// Stable error codes emitted by the AST decoder. Mirrors the Phase 3
+/// Stable error codes emitted by the AST decoder. Mirrors the typed diagnostics
 /// diagnostic-code convention (`widget.<short>`). Surfaces of these
 /// strings:
 /// - `PluginDiagnostic::code`

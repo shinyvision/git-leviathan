@@ -1,4 +1,4 @@
-//! Phase 18 performance budgets and circuit breakers.
+//! Performance budgets and circuit breakers.
 //!
 //! Every plugin callback the host invokes flows through
 //! [`BudgetTracker::track_call`]. The tracker times the call, records
@@ -9,7 +9,7 @@
 //! re-enables it from devtools (`reset_breaker(plugin_id, callback_id)`).
 //! Once a plugin accumulates `MAX_DISABLED_CALLBACKS_PER_PLUGIN`
 //! disabled callbacks in one generation, the plugin itself is marked
-//! degraded (a `plugin.degraded` diagnostic is emitted; future phases
+//! degraded (a `plugin.degraded` diagnostic is emitted; future changes
 //! will unload it).
 //!
 //! State is keyed by `(PluginId, GenerationId, callback_id)` so reload
@@ -198,7 +198,7 @@ impl Clock for MockClock {
     }
 }
 
-/// Circuit-breaker state. Phase 18 ships auto-trip only; explicit
+/// Circuit-breaker state. the performance budget tracker ships auto-trip only; explicit
 /// "disable" is left for a future devtools button (a separate variant
 /// will land then so the audit log can distinguish "user disabled" from
 /// "auto-tripped").

@@ -1,4 +1,4 @@
-//! Test helpers and Phase 3 acceptance tests for the typed diagnostic
+//! Test helpers and typed diagnostics acceptance tests for the typed diagnostic
 //! pipeline.
 
 use crate::plugin::diagnostic::{
@@ -140,7 +140,7 @@ api_version = "1.0"
 
 #[test]
 fn invalid_widget_field_emits_field_level_diagnostic() {
-    // Phase 4: a bad field type produces a *specific* code (not the
+    // widget AST: a bad field type produces a *specific* code (not the
     // generic `widget.invalid_tree`) and a `Widget` source span that
     // points at the offending field path.
     let mut host = MockHost::new();
@@ -211,7 +211,7 @@ api_version = "1.0"
     host.host_mut().fire_event("BranchChanged");
 
     let store = host.diagnostics();
-    // Phase 7 renamed the autocmd-callback failure code from the
+    // autocmd renamed the autocmd-callback failure code from the
     // generic `lua.callback_error` to the more specific
     // `autocmd.callback_failed` (the screen-update path still uses
     // the original code; this codify the new boundary).

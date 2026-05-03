@@ -187,7 +187,7 @@ fn resolve_upstream(
         .cloned()
 }
 
-/// Phase 11 typed read APIs.
+/// typed read APIs.
 ///
 /// `current` always works — it just hands back the cached snapshot
 /// table that `sync_repository` keeps fresh on every host tick. The
@@ -196,8 +196,8 @@ fn resolve_upstream(
 /// the host's UI reads from. No new git2 calls; no new spawn paths.
 ///
 /// All read functions follow the Lua-idiomatic `(value, nil)` /
-/// `(nil, err)` shape. Capability gates per the Phase 10 / 11
-/// descriptors:
+/// `(nil, err)` shape. Capability gates follow the grant store and
+/// repository API descriptors:
 /// - `status` -> `git:read:status`
 /// - `commits` -> `git:read:log`
 /// - `diff` -> `git:read:diff`

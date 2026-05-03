@@ -1,4 +1,4 @@
-//! Phase 17 decoration ASTs.
+//! extension points decoration ASTs.
 //!
 //! Plugins describe graph and diff decorations as small typed values
 //! the host renders verbatim. The trees are pure data so devtools and

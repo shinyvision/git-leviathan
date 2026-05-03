@@ -1,0 +1,16 @@
+id = "lazy_demo"
+name = "Lazy Demo"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture proving lazy activation through command, keymap, or event."
+
+[activation]
+commands = ["lazy_demo.run"]
+events = ["FetchStarted"]
+
+[[activation.keymaps]]
+context = "global"
+key = "<leader>d"
+
+[runtime]
+strict_globals = false

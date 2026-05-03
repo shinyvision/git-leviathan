@@ -1,4 +1,4 @@
-//! Phase 8 unified command registry.
+//! unified command registry.
 //!
 //! One [`CommandRegistry`] holds every command: built-in host commands
 //! (registered at startup with [`HOST_COMMAND_PLUGIN_ID`]) and plugin
@@ -38,7 +38,7 @@
 //!   registered the same name twice; the later one wins.
 //!
 //! After every invocation, the registry asks its caller-supplied
-//! event sink to fire the typed Phase 7 `CommandExecuted` event with
+//! event sink to fire the typed `CommandExecuted` autocmd event with
 //! `{ name, plugin_id, ok, duration_ms }` — both success and failure
 //! paths emit it so subscribers see every dispatch.
 
@@ -133,7 +133,7 @@ pub struct CommandArg {
     pub doc: String,
 }
 
-/// Static metadata about an activation context. Phase 9 will route
+/// Static metadata about an activation context. keymaps will route
 /// keymap dispatch through these context names; for now we treat them
 /// as opaque strings and carry the descriptor list to keep the palette
 /// honest.
@@ -209,7 +209,7 @@ pub struct CommandEntry {
 /// - resolve a Lua callback's owning plugin's `Lua` state;
 /// - check whether a plugin holds the named capability;
 /// - emit the typed `CommandExecuted` event;
-/// - record audit entries for capability checks (mirrors Phase 3).
+/// - record audit entries for capability checks (mirrors typed diagnostics).
 ///
 /// The host implements this through a thin shim in `host.rs`. Tests
 /// implement a no-op variant so the registry can be exercised without
@@ -353,7 +353,7 @@ impl CommandRegistry {
     /// Find a command by name. Multiple plugins may declare the same
     /// command name; this returns the first match in registration
     /// order. The palette and dispatch path treat `name` as the
-    /// primary key — Phase 9 keymaps will resolve ambiguity by
+    /// primary key — keymaps will resolve ambiguity by
     /// `(plugin_id, name)`.
     pub fn find(&self, name: &str) -> Option<&CommandEntry> {
         self.entries.iter().find(|e| e.descriptor.name == name)
@@ -531,7 +531,7 @@ impl CommandRegistry {
             pre_diag
         });
 
-        // Run the body. Phase 18: every body runs through the
+        // Run the body. Every body runs through the
         // budget tracker so its duration / breaker state is recorded
         // and a tripped breaker short-circuits before the runner is
         // invoked. The tracker emits its own diagnostic on skip;
@@ -892,7 +892,7 @@ impl CommandPluginRegistry {
 /// Queued command-execution event. The Lua `invoke` shim and the
 /// Rust `host.invoke_command` path both push one entry per dispatch
 /// (success or failure) into this queue; the host drains the queue
-/// on `tick` and fires the typed Phase 7 `CommandExecuted` event for
+/// on `tick` and fires the typed `CommandExecuted` autocmd event for
 /// each. This indirection keeps the Lua shim from needing a `&mut
 /// PluginHost` at call time.
 #[derive(Default, Clone)]
@@ -932,7 +932,7 @@ pub struct CommandDispatchEnv {
     pub plugin_registry: CommandPluginRegistry,
     pub diagnostics: DiagnosticStore,
     pub pending_events: PendingCommandEvents,
-    /// Phase 18 budget tracker. Threaded through so the dispatcher
+    /// performance budget tracker. Threaded through so the dispatcher
     /// can wrap each command body in a `track_call` against the
     /// `CommandCallback` budget.
     pub budget_tracker: crate::plugin::performance::BudgetTracker,
@@ -1009,7 +1009,7 @@ impl CommandRunner for DispatchEnvRunner {
             .plugin_registry
             .get(plugin_id)
             .ok_or_else(|| format!("plugin `{plugin_id}` is not loaded"))?;
-        // Phase 10: every command capability check routes through
+        // Every command capability check routes through
         // the guard's `check_named`, which in turn consults the host's
         // `GrantStore`. Audit + diagnostic emission happens inside
         // the guard so command-side and direct-API denials look
@@ -1069,7 +1069,7 @@ pub fn release_lua_keys(removed: Vec<CommandEntry>, lua: &Lua) {
 
 /// Headless palette state. Holds a query string and a destructive-show
 /// toggle; produces filtered, ranked summaries via [`Self::filter`].
-/// The visible overlay (Phase 9 / later) sits on top of this.
+/// The visible overlay (keymaps / later) sits on top of this.
 #[derive(Debug, Clone, Default)]
 pub struct PaletteState {
     pub query: String,

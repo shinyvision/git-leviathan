@@ -1,11 +1,11 @@
-//! Phase 7 typed-event registry and autocmd dispatch funnel.
+//! typed-event registry and autocmd dispatch funnel.
 //!
 //! Every fire of a host event flows through [`EventBus::dispatch`].
 //! That includes:
 //! - `PluginHost::fire_event(name)`, which constructs an empty payload
 //!   and routes through the funnel.
 //! - The new `PluginHost::fire_event_typed(name, payload)` API that
-//!   the app uses to fire fully-typed Phase 7 events.
+//!   the app uses to fire fully-typed autocmd events.
 //! - The test-only `PluginHost::dispatch_test_event(name, payload)`
 //!   replay hook (it shares the same funnel — no shortcut).
 //!
@@ -130,7 +130,7 @@ pub enum DispatchOutcome {
 }
 
 /// Owns the mutable autocmd table plus monotonically-increasing id /
-/// group / clock counters. Phase 7's "single funnel" lives on this
+/// group / clock counters. autocmd registry's "single funnel" lives on this
 /// type via [`EventBus::dispatch`].
 #[derive(Default)]
 pub struct EventBus {

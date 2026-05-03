@@ -1,4 +1,4 @@
-//! Phase 17 `leviathan.ui.{overlay, context_menu, graph_decoration,
+//! extension points `leviathan.ui.{overlay, context_menu, graph_decoration,
 //! diff_decoration}` Lua APIs.
 //!
 //! Each registration funnels through `CapabilityGuard::check_named`
@@ -24,7 +24,7 @@ use crate::plugin::extensions::{
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::widget_ast;
 
-/// Mount the four Phase 17 functions onto the existing `leviathan.ui`
+/// Mount the four extension points functions onto the existing `leviathan.ui`
 /// table.
 ///
 /// `ui` must be the table the host installed under `leviathan.ui`

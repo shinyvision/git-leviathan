@@ -1,4 +1,4 @@
-//! Phase 16 lazy activation registry.
+//! lazy activation registry.
 //!
 //! When a plugin's manifest carries an `[activation]` section the
 //! host installs a *stub* registration for each declared trigger

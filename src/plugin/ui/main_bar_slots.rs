@@ -6,7 +6,7 @@
 //! (`MainBarSlot`, `TabBarSlot`, ...) using the region-specific
 //! `into_*` shims on `PreparedSlot`.
 //!
-//! Phase 4: every cached widget is a typed [`WidgetAst`]. The dynamic
+//! widget AST: every cached widget is a typed [`WidgetAst`]. The dynamic
 //! variant carries an `Option<WidgetAst>` so the host can store `None`
 //! before the first refresh, then a real AST after re-decoding the
 //! plugin's Lua return.

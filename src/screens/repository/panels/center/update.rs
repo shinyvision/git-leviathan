@@ -1,5 +1,5 @@
 //! Center panel action handler. Migrated out of `RepositoryScreen` as part of
-//! the Phase 5 completion: the screen is a composer, each panel's update lives
+//! the package-layout extraction: the screen is a composer, each panel's update lives
 //! beside its state and view.
 
 use std::time::Duration;

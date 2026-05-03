@@ -1,7 +1,7 @@
 -- Foo Demo plugin
 -- Contributes a "Foo" main-bar button that opens a 3-panel screen.
 --
--- Phase 5 layout: helper widgets live in `lua/foo_demo/widgets.lua` and
+-- Helper widgets live in `lua/foo_demo/widgets.lua` and
 -- are loaded via `require("foo_demo.widgets")`. Style rule: padding is
 -- always a standalone `padding` widget.
 
