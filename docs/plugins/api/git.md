@@ -195,4 +195,3 @@ Rebase the current branch onto `ref`. Destructive — requires confirmation.
 **Returns:**
 - `boolean` - True on success, false on failure.
 - `string|nil` - Error message on failure.
-

@@ -371,11 +371,6 @@ impl MockHost {
     }
 }
 
-/// If the test manifest already declares a `[runtime]` section we
-/// leave it alone — the test is making a deliberate strict-globals
-/// statement. Otherwise, append `[runtime] strict_globals = false` so
-/// legacy test fixtures that scribble onto `_G` keep loading
-/// without modification.
 fn inject_runtime_section(manifest: &str) -> String {
     if manifest.contains("[runtime]") || manifest.contains("strict_globals") {
         manifest.to_string()

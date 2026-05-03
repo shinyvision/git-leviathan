@@ -17,7 +17,7 @@ Typed command registry namespace.
 Descriptor accepted by `leviathan.command.create`.
 
 - `title` (`string`; optional) - Human-friendly palette title; defaults to the command name.
-- `description` (`string`; optional) - Long-form description shown in the palette and devtools.
+- `description` (`string`; optional) - Description shown in the palette and devtools.
 - `context` (`string`; optional) - Activation context name; defaults to `global`.
 - `args` (`LeviathanCommandArg[]`; optional) - Argument schema validated at invocation time.
 - `destructive` (`boolean`; optional) - When true, the palette filters this command behind a destructive-actions toggle.
@@ -40,7 +40,7 @@ Compact view of a registered command, returned by `leviathan.command.list`.
 
 - `name` (`string`; required) - Command identifier.
 - `title` (`string`; required) - Palette title.
-- `description` (`string`; required) - Description text.
+- `description` (`string`; required) - Description.
 - `plugin_id` (`string`; required) - Owning plugin id; `<host>` for built-in commands.
 - `context` (`string`; required) - Activation context.
 - `destructive` (`boolean`; required) - Destructive flag.
@@ -59,7 +59,7 @@ Register a typed user command in the host registry.
 
 **Parameters:**
 - `name` (`string`; required) - Command identifier; unique per plugin.
-- `spec` (`LeviathanCommandSpec`; required) - Command descriptor including title, args, run.
+- `spec` (`LeviathanCommandSpec`; required) - Command spec including title, args, run.
 
 ### `leviathan.command.invoke(name, args)`
 
@@ -74,8 +74,7 @@ Invoke a registered command by name through the host dispatcher.
 
 ### `leviathan.command.list()`
 
-List every registered command (host + plugin) as descriptor tables.
+List every registered command.
 
 **Returns:**
 - `LeviathanCommandSummary[]` - Array of command summaries.
-

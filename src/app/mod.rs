@@ -65,23 +65,9 @@ impl App {
         let presenter: Arc<dyn Presenter> = Arc::new(DefaultPresenter::new());
         let mut plugin_host = PluginHost::new();
         plugin_host.load_from_default_dirs();
-        // Prime the devtools inspector path at startup so the extension points
-        // extension projections (overlays / context-menu items / graph
-        // and diff decorations) are exercised against the live registry
-        // and the in-app inspector can request the same projection
-        // mid-session without paying a first-call setup cost.
         let _ = plugin_host.introspect();
-        // extension points: smoke-touch the registry's filtered lookups
-        // (per-region menu, per-commit graph decoration) so the
-        // future renderer wiring uses warm code paths. Sentinels
-        // intentionally match nothing — the call exists for the side
-        // effect of resolving the lookup, not its result.
         let _ = plugin_host.extension_context_menu_items("");
         let _ = plugin_host.extension_graph_decorations_for_commit("");
-        // extension points: the unload/admin path drops a plugin's extension
-        // records via this entry. The startup pass calls it with a
-        // sentinel id that matches nothing so the registry's owner-
-        // scoped retain runs without touching real state.
         plugin_host.discard_extensions_for_plugin("");
         // Prime the budget tracker query / reset / cleanup
         // entry points so the dead-code analyser sees them as live.

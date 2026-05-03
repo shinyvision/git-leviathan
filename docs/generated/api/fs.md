@@ -428,4 +428,3 @@ Watch a path for filesystem changes and dispatch events to a callback.
 
 **Returns:**
 - `LeviathanFsWatchHandle` - Handle with `:cancel()` method.
-

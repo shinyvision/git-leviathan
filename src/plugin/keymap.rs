@@ -1,69 +1,4 @@
-//! context-aware keymap registry.
-//!
-//! This module owns:
-//!
-//! - the **key parser** that turns vim-style notation
-//!   (`gl`, `<C-r>`, `<S-Tab>`, `<leader>gh`) into a deterministic
-//!   sequence of [`Keystroke`]s;
-//! - the **chord matcher** that walks an in-progress keystroke buffer
-//!   against the resolved keymap table, returning either
-//!   [`MatchOutcome::Pending`] (chord prefix), [`MatchOutcome::Match`]
-//!   (full chord), or [`MatchOutcome::None`];
-//! - the **conflict resolver** that flattens built-in / user / plugin
-//!   bindings into one resolved table per `(context, key)` with a
-//!   stable winner and a recorded `conflict_lost` loser list — losers
-//!   are visible in devtools, never silently dropped;
-//! - the **registry** itself, keyed by `(plugin_id, generation_id)` so
-//!   reload and unload drop a plugin's bindings deterministically.
-//!
-//! Engineering invariants honoured here:
-//!
-//! 1. **Host owns every effect.** The resolver runs in Rust; Lua never
-//!    sees the raw key event. A successful match dispatches through the
-//!    command registry [`crate::plugin::commands::dispatch_command`] funnel so
-//!    capability checks, arg validation, and the `CommandExecuted`
-//!    event all run.
-//! 2. **Generation-scoped ownership.** Plugin keymaps are keyed by
-//!    `(plugin_id, generation_id)` via [`KeymapEntry::generation_id`];
-//!    [`KeymapRegistry::drop_for_plugin`] /
-//!    [`KeymapRegistry::drop_for_generation`] reap them on unload /
-//!    reload.
-//! 3. **Reload is transactional.** Plugin keymaps are captured into
-//!    [`RawKeymap`] rows during init.lua and committed atomically by
-//!    the host's `commit_staging`; failed staging never touches the
-//!    live registry.
-//! 6. **Capabilities at use time.** [`KeymapRegistry::dispatch`] is
-//!    *not* a second capability gate — it routes to the command registry
-//!    command dispatcher, which performs every check.
-//! 7. **Devtools required.** [`KeymapRegistry::summaries`] feeds the
-//!    `keymaps` row on `InspectorSnapshot` with conflict winners,
-//!    losers, and the `conflict_with` cross-reference.
-//!
-//! Diagnostic codes emitted from this module:
-//!
-//! - `keymap.registered` (info) — a binding was added.
-//! - `keymap.invalid_key` (warning) — `parse_key_sequence` rejected
-//!   the lhs; the binding is dropped.
-//! - `keymap.conflict_lost` (warning) — the binding lost a conflict
-//!   resolution. `context.winner_source`, `context.winner_plugin_id`,
-//!   and `context.context` carry the resolved winner so authors can
-//!   see what overrode them.
-//! - `keymap.dispatched` (info) — a chord matched and dispatch ran.
-//!
-//! keymaps acceptance gate:
-//!
-//! - **Plugin keymaps work only in declared contexts.** Resolution is
-//!   `(context, key)`; a `repository` binding never fires under
-//!   `tab_bar`. The `global` context is always considered as a
-//!   fallback, but a context-specific binding wins over `global` in
-//!   the same source tier.
-//! - **Conflicts never produce nondeterministic behavior.** Resolution
-//!   is fully deterministic: source tier first
-//!   (`built-in > user > plugin`), then within the plugin tier by
-//!   `(plugin_id, registration_sequence)` lex order.
-//! - **User overrides are respected.** User bindings live in their own
-//!   tier above plugins; the loader (capability grants) will populate from
-//!   `~/.config/git_leviathan/keymaps.toml`.
+//! Context-aware keymap parsing, resolution, and dispatch.
 
 use std::collections::HashMap;
 
@@ -83,15 +18,9 @@ pub const HOST_KEYMAP_PLUGIN_ID: &str = "<host>";
 /// sentinel so they sort and resolve as a distinct tier.
 pub const USER_KEYMAP_PLUGIN_ID: &str = "<user>";
 
-/// The static set of context names keymaps ships with. Order matters
-/// only for the descriptor and devtools; the resolver treats them as
-/// opaque strings so future expansion (lazy loading+) can add new ones
-/// without a schema bump.
-///
 /// `plugin_screen:<id>` and `overlay:<id>` are handled at use time —
 /// any context string starting with `plugin_screen:` or `overlay:`
-/// matches the intended scope. The static list below is the closed
-/// set referenced by tests and the keymaps plan.
+/// matches the intended scope.
 pub const KNOWN_CONTEXTS: &[&str] = &[
     "global",
     "repository",

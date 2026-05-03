@@ -29,4 +29,3 @@ Register a plugin health-check callback.
 
 **Parameters:**
 - `callback` (`fun(ctx: LeviathanHealthContext)`; required) - Health check callback.
-

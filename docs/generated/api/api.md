@@ -35,10 +35,10 @@ Typed event payload table handed to autocmd callbacks.
 
 ### `leviathan.api.describe()`
 
-Return the full host API descriptor table used for generated docs and validation metadata.
+Return the full host API table.
 
 **Returns:**
-- `table` - Host API descriptor.
+- `table` - Host API table.
 
 ### `leviathan.api.schedule(callback)`
 
@@ -54,4 +54,3 @@ Run a Lua callback after a host-side millisecond delay.
 **Parameters:**
 - `ms` (`integer`; required) - Delay in milliseconds.
 - `callback` (`fun()`; required) - Callback to enqueue.
-

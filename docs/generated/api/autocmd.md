@@ -125,4 +125,3 @@ Remove every autocmd registered against a group handle.
 
 **Parameters:**
 - `group` (`integer`; required) - Group handle returned by `leviathan.autocmd.group`.
-

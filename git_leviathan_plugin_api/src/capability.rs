@@ -27,7 +27,7 @@ pub enum Capability {
     NetFetch,
     /// `net:fetch:<domain>` — a specific domain.
     NetFetchDomain { domain: String },
-    /// `clipboard` (compat alias granting both read+write).
+    /// `clipboard` — read and write.
     Clipboard,
     /// `clipboard:read`.
     ClipboardRead,

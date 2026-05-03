@@ -715,11 +715,11 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Return true when the host exposes a descriptor feature such as `fs.read_file@1`.",
+          "doc": "Return true when the host exposes a feature such as `fs.read_file@1`.",
           "name": "has",
           "params": [
             {
-              "doc": "`module.feature@major` descriptor query.",
+              "doc": "`module.feature@major` query.",
               "lua_type": "string",
               "name": "feature",
               "required": true
@@ -810,13 +810,13 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Return the full host API descriptor table used for generated docs and validation metadata.",
+          "doc": "Return the full host API table.",
           "name": "describe",
           "params": [],
           "path": "leviathan.api.describe",
           "returns": [
             {
-              "doc": "Host API descriptor.",
+              "doc": "Host API table.",
               "lua_type": "table"
             }
           ],
@@ -925,7 +925,7 @@
               "required": true
             },
             {
-              "doc": "Command descriptor including title, args, run.",
+              "doc": "Command spec including title, args, run.",
               "lua_type": "LeviathanCommandSpec",
               "name": "spec",
               "required": true
@@ -991,7 +991,7 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "List every registered command (host + plugin) as descriptor tables.",
+          "doc": "List every registered command.",
           "name": "list",
           "params": [],
           "path": "leviathan.command.list",
@@ -1501,11 +1501,11 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Add a slot to any descriptor-backed UI region.",
+          "doc": "Add a slot to a UI region.",
           "name": "add_slot",
           "params": [
             {
-              "doc": "Slot descriptor including region, section/pane, id, priority, and widget.",
+              "doc": "Slot spec including region, section/pane, id, priority, and widget.",
               "lua_type": "LeviathanSlotSpec",
               "name": "spec",
               "required": true
@@ -1529,7 +1529,7 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Remove a slot from any descriptor-backed UI region.",
+          "doc": "Remove a slot from a UI region.",
           "name": "remove_slot",
           "params": [
             {
@@ -1557,7 +1557,7 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Replace a slot in any descriptor-backed UI region.",
+          "doc": "Replace a slot in a UI region.",
           "name": "replace_slot",
           "params": [
             {
@@ -1567,7 +1567,7 @@
               "required": true
             },
             {
-              "doc": "Replacement slot descriptor.",
+              "doc": "Replacement slot spec.",
               "lua_type": "LeviathanSlotSpec",
               "name": "spec",
               "required": true
@@ -4855,7 +4855,7 @@
           "required": false
         },
         {
-          "doc": "Long-form description shown in the palette and devtools.",
+          "doc": "Description shown in the palette and devtools.",
           "lua_type": "string",
           "name": "description",
           "required": false
@@ -4949,7 +4949,7 @@
           "required": true
         },
         {
-          "doc": "Description text.",
+          "doc": "Description.",
           "lua_type": "string",
           "name": "description",
           "required": true
@@ -4988,7 +4988,7 @@
       "doc": "Options table accepted by `leviathan.keymap.set`.",
       "fields": [
         {
-          "doc": "Human-friendly description shown in devtools and the keymap inspector.",
+          "doc": "Description shown in devtools and the keymap inspector.",
           "lua_type": "string",
           "name": "description",
           "required": false
@@ -5044,7 +5044,7 @@
           "required": true
         },
         {
-          "doc": "Description text supplied at registration.",
+          "doc": "Description supplied at registration.",
           "lua_type": "string",
           "name": "description",
           "required": true
@@ -5081,7 +5081,7 @@
       "since": "1.9"
     },
     {
-      "doc": "Plugin screen descriptor.",
+      "doc": "Plugin screen.",
       "fields": [
         {
           "doc": "Screen id.",
@@ -5125,7 +5125,7 @@
       "since": "1.0"
     },
     {
-      "doc": "UI slot descriptor.",
+      "doc": "UI slot.",
       "fields": [
         {
           "doc": "Region name; inferred by direct handles.",
@@ -5175,7 +5175,7 @@
       "since": "1.0"
     },
     {
-      "doc": "UI slot target descriptor.",
+      "doc": "UI slot target.",
       "fields": [
         {
           "doc": "Content region pane.",
@@ -5201,7 +5201,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Tagged widget tree node; see widget descriptors and widget schema.",
+      "doc": "Tagged widget tree node.",
       "fields": [],
       "methods": [],
       "name": "LeviathanWidget",
@@ -5252,7 +5252,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Open tab descriptor.",
+      "doc": "Open tab.",
       "fields": [
         {
           "doc": "Tab repository path.",
@@ -5272,7 +5272,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Local branch descriptor.",
+      "doc": "Local branch.",
       "fields": [
         {
           "doc": "Branch name.",
@@ -5304,7 +5304,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Remote branch descriptor.",
+      "doc": "Remote branch.",
       "fields": [
         {
           "doc": "Branch name.",
@@ -5330,7 +5330,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Git tag descriptor.",
+      "doc": "Git tag.",
       "fields": [
         {
           "doc": "Tag name.",
@@ -5359,7 +5359,7 @@
           "required": false
         },
         {
-          "doc": "Migration descriptors.",
+          "doc": "Migrations.",
           "lua_type": "table[]",
           "name": "migrations",
           "required": false
@@ -5969,10 +5969,10 @@
       "since": "1.0"
     },
     {
-      "doc": "Tab strip widget backed by plugin-supplied tab descriptors.",
+      "doc": "Tab strip widget backed by plugin-supplied tabs.",
       "fields": [
         {
-          "doc": "Tab id/name descriptors.",
+          "doc": "Tab id/name list.",
           "lua_type": "table[]",
           "name": "tabs",
           "required": false

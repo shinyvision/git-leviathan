@@ -33,4 +33,3 @@ Look up a declared inter-plugin service proxy.
 
 **Returns:**
 - `table|nil` - Service proxy, or nil for declared optional consumers when the provider is absent.
-

@@ -1,48 +1,4 @@
-//! reload transactions staged reload pipeline.
-//!
-//! Hot reload runs in two strictly-ordered halves:
-//!
-//! 1. **Stage** — build a *complete* candidate generation in isolation.
-//!    Reads the new manifest, allocates a fresh `GenerationId`,
-//!    constructs a new `mlua::Lua`, installs every `leviathan.*` API
-//!    against it (Lua loader included), runs `init.lua` and
-//!    `after/plugin/*.lua`, drains its `BuildState` into prepared slot
-//!    ops, validates every staged widget and dynamic widget, runs the
-//!    optional `leviathan.health` callback, and finally invokes the
-//!    optional `M.reload(old_state)` migration hook with a snapshot of
-//!    the previous generation's serialised screen state.
-//!
-//!    Crucially, the staging gen does *not* mutate any host-level
-//!    state during this half — its slot ops live in a local `Vec`,
-//!    its autocmds live in a local `Vec`, its services live in a
-//!    private `ServiceRegistry`, and its plugin-root entry is not
-//!    written into the host's `RuntimePathRegistry`. The previous
-//!    generation keeps serving every Lua callback uninterrupted.
-//!
-//! 2. **Commit** — `PluginHost::commit_staging` drops the previous
-//!    generation atomically and installs the staged one. The previous
-//!    generation's `LoadedPlugin`, slot ops, autocmds and service
-//!    handles are removed in a single critical section; the staged
-//!    artefacts replace them; the old generation's `ResourceLedger`
-//!    is drained through the host's standard `cleanup_ledger` path so
-//!    every resource keyed to the old `(plugin_id, generation_id)`
-//!    pair is gone once the swap returns.
-//!
-//! On any failure between stages the staged Lua state, ledger,
-//! services, and runtime-path entry are dropped together (the host
-//! never saw them). The caller's previous generation is untouched.
-//!
-//! Diagnostic codes emitted by this pipeline:
-//!
-//! - `reload.staging_started` (info) — staging began.
-//! - `reload.failed` (error, with `context.stage` and
-//!   `context.cause`) — a stage aborted; previous generation kept.
-//! - `reload.completed` (info, with `context.duration_ms`) — commit
-//!   finished and the previous generation has been cleaned up.
-//! - `reload.migration_invoked` (info) — `M.reload` was found and
-//!   called.
-//! - `reload.migration_failed` (error) — `M.reload` raised, returned
-//!   a non-table value, or returned a table that failed validation.
+//! Transactional plugin reload.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -542,10 +498,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
     let health_checks_sink: Rc<RefCell<Vec<HealthCheckRegistration>>> =
         Rc::new(RefCell::new(Vec::new()));
 
-    // Staging gets its OWN service registry. On commit the host drains
-    // the live registry's old-gen handles and inserts these in their
-    // place. Until then, other plugins see only the previous gen's
-    // services — the transactional invariant.
+    // Keep staged services invisible until commit.
     let staged_services: Rc<RefCell<ServiceRegistry>> =
         Rc::new(RefCell::new(ServiceRegistry::new()));
     let services_ctx = ServicesContext {
@@ -644,8 +597,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
     }
 
     let chunk_name = format!("plugins/{}/init.lua", manifest.id);
-    // Eval (not exec) so we can capture the chunk's return value — the
-    // `M.reload(old_state)` hook lives on it.
+    // Eval captures the returned module table for `M.reload(old_state)`.
     let init_return: LuaValue = lua
         .load(&init_src)
         .set_name(chunk_name.clone())
@@ -658,8 +610,6 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             )
         })?;
 
-    // After-files run *before* the plugin's root is exposed in the host
-    // registry, exactly mirroring the cold-load path.
     lua_loader.run_after_plugin(&lua, &plugin_root);
 
     let (
@@ -713,22 +663,8 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         slot_ops.push(prepared);
     }
 
-    // Validation step: pre-warm dynamic widget caches. Static widgets
-    // were decoded inline by the builder, so they're already
-    // known-good once we get here.
-    //
-    // Dynamic widget *call* failure (Lua raises) and *type* failure
-    // (return value not JSON-serialisable) are hard staging errors —
-    // a widget fn that can't even produce JSON is not safe to install.
-    // *Decode* failure (the AST is invalid) downgrades to a diagnostic
-    // and a `None` cache entry, mirroring the production refresh
-    // path: the renderer will surface the bad widget through its own
-    // error path on first paint, the same way it would for an
-    // already-installed plugin whose widget fn started returning
-    // garbage. Aborting the swap on a decode error would mean a
-    // perfectly compatible reload could be blocked by an unrelated
-    // dynamic-widget regression — exactly the brittleness reload transactions
-    // is supposed to remove.
+    // Dynamic widget call/type failures abort staging. AST decode failures
+    // stay diagnostics so unrelated widget regressions do not block reload.
     for (slot_id, (key, cache)) in &dynamic_widgets {
         let func: Function = lua.registry_value(key).map_err(|e| {
             StagingFailure::new(
@@ -772,10 +708,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         }
     }
 
-    // Validate that every `provides_services` entry actually got a
-    // matching registration during init. The registry refuses
-    // out-of-manifest registrations at install time, so the only
-    // missing-side check left is "promised but not delivered".
+    // `provides_services` entries must register during init.
     {
         let staged = staged_services.borrow();
         for decl in &manifest.provides_services {
@@ -793,9 +726,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         }
     }
 
-    // Health check: same path as production `run_health_checks`, but
-    // confined to the staged generation. A registered check that emits
-    // `Severity::Error` items aborts the swap; warnings/info pass.
+    // Error health items abort the swap; warnings/info pass.
     let staged_health: Vec<HealthCheckRegistration> =
         std::mem::take(&mut *health_checks_sink.borrow_mut());
     for check in &staged_health {
@@ -831,9 +762,6 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         }
     }
 
-    // Migration: build the old_state table and (if M.reload exists)
-    // call it. The return value seeds new screens via each screen's
-    // `deserialize` hook.
     let mut migrated_screens: HashMap<String, serde_json::Value> = HashMap::new();
     for snap in &inputs.previous_screens {
         if let Some(json) = snap.serialized.clone() {
@@ -878,8 +806,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
                     format!("M.reload raised: {e}"),
                 )
             })?;
-            // The hook may legitimately return nil (== keep old_state
-            // unchanged) or a table.
+            // Nil means keep the prior serialized state.
             if !matches!(returned, LuaValue::Nil) {
                 let returned_json: serde_json::Value = lua.from_value(returned).map_err(|e| {
                     StagingFailure::new(

@@ -26,7 +26,7 @@ Persistence store userdata.
 Persistence open options.
 
 - `version` (`integer`; optional) - Target store version.
-- `migrations` (`table[]`; optional) - Migration descriptors.
+- `migrations` (`table[]`; optional) - Migrations.
 - `surface` (`string`; optional) - Storage surface: state, config, cache, or repo.
 - `repo` (`string`; optional) - Per-repo state key when surface is repo.
 
@@ -52,4 +52,3 @@ Run a persistence transaction and atomically commit only if the callback succeed
 
 **Returns:**
 - `boolean` - True after commit.
-

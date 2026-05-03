@@ -14,7 +14,7 @@ UI namespace.
 
 ### `LeviathanScreenSpec`
 
-Plugin screen descriptor.
+Plugin screen.
 
 - `id` (`string`; required) - Screen id.
 - `init` (`fun(): table`; required) - Initial state callback.
@@ -25,7 +25,7 @@ Plugin screen descriptor.
 
 ### `LeviathanSlotSpec`
 
-UI slot descriptor.
+UI slot.
 
 - `region` (`string`; optional) - Region name; inferred by direct handles.
 - `pane` (`string`; optional) - Content region pane.
@@ -37,7 +37,7 @@ UI slot descriptor.
 
 ### `LeviathanSlotTarget`
 
-UI slot target descriptor.
+UI slot target.
 
 - `pane` (`string`; optional) - Content region pane.
 - `section` (`string`; required) - Region section.
@@ -96,4 +96,3 @@ Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter)
 
 **Parameters:**
 - `decoration` (`LeviathanDiffDecoration`; required) - Decoration AST: line_hint / hunk_badge / line_gutter.
-

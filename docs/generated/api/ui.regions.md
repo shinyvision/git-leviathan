@@ -10,7 +10,7 @@ Descriptor-backed region slot API.
 
 ### `LeviathanSlotSpec`
 
-UI slot descriptor.
+UI slot.
 
 - `region` (`string`; optional) - Region name; inferred by direct handles.
 - `pane` (`string`; optional) - Content region pane.
@@ -22,7 +22,7 @@ UI slot descriptor.
 
 ### `LeviathanSlotTarget`
 
-UI slot target descriptor.
+UI slot target.
 
 - `pane` (`string`; optional) - Content region pane.
 - `section` (`string`; required) - Region section.
@@ -32,23 +32,22 @@ UI slot target descriptor.
 
 ### `leviathan.ui.regions.add_slot(spec)`
 
-Add a slot to any descriptor-backed UI region.
+Add a slot to a UI region.
 
 **Parameters:**
-- `spec` (`LeviathanSlotSpec`; required) - Slot descriptor including region, section/pane, id, priority, and widget.
+- `spec` (`LeviathanSlotSpec`; required) - Slot spec including region, section/pane, id, priority, and widget.
 
 ### `leviathan.ui.regions.remove_slot(target)`
 
-Remove a slot from any descriptor-backed UI region.
+Remove a slot from a UI region.
 
 **Parameters:**
 - `target` (`LeviathanSlotTarget`; required) - Slot address including region, section/pane, and id.
 
 ### `leviathan.ui.regions.replace_slot(target, spec)`
 
-Replace a slot in any descriptor-backed UI region.
+Replace a slot in a UI region.
 
 **Parameters:**
 - `target` (`LeviathanSlotTarget`; required) - Existing slot address including region and id.
-- `spec` (`LeviathanSlotSpec`; required) - Replacement slot descriptor.
-
+- `spec` (`LeviathanSlotSpec`; required) - Replacement slot spec.

@@ -1,9 +1,4 @@
-//! `leviathan.ui` — descriptor-backed slot hooks + screen registration.
-//!
-//! Plugins address slots uniformly through
-//! `leviathan.ui.regions.{add_slot,remove_slot,replace_slot}` using
-//! `{ region = …, section = … }` for chrome regions or
-//! `{ region = …, pane = …, section = … }` for content regions.
+//! `leviathan.ui` slot hooks and screen registration.
 
 use std::cell::RefCell;
 use std::rc::Rc;

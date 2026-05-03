@@ -1,12 +1,3 @@
--- Dancing banana plugin. Replaces the built-in fetch indicator so the
--- main bar shows a dancing banana GIF while refs are being fetched and
--- falls back to the Tabler refresh icon when idle.
---
--- Pattern: autocmd callbacks mutate plugin-local Lua state; the slot's
--- widget is a function that re-reads that state on each refresh. The
--- host re-invokes the function whenever any of this plugin's autocmds
--- fire, so the UI stays a pure function of `fetching`.
-
 local TEXT_DIM = "#585d6e"
 
 local fetching = false

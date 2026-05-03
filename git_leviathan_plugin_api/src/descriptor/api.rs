@@ -1,9 +1,4 @@
-//! Self-describing host Lua API descriptors.
-//!
-//! The tables in this module are the source of truth for host APIs
-//! exposed under the `leviathan.*` Lua global. Runtime introspection,
-//! `leviathan.has`, Lua annotations, Markdown docs, and generated
-//! validation metadata all read from these descriptors.
+//! Host Lua API descriptors.
 
 use serde::Serialize;
 
@@ -65,8 +60,7 @@ pub struct ApiEvent {
     /// payload (the host still hands the callback an empty table so
     /// the call signature stays uniform).
     pub payload_fields: &'static [ApiTypeField],
-    /// Additional dispatch names for this event. Empty for current
-    /// descriptor-backed events.
+    /// Additional dispatch names for this event.
     pub aliases: &'static [&'static str],
     /// True for descriptor aliases that should not fire as canonicals.
     pub is_alias: bool,
@@ -208,12 +202,12 @@ const ROOT_FUNCTIONS: &[ApiFunction] = &[
         name: "has",
         since: "1.0",
         compatibility: "v1",
-        doc: "Return true when the host exposes a descriptor feature such as `fs.read_file@1`.",
+        doc: "Return true when the host exposes a feature such as `fs.read_file@1`.",
         params: &[ApiParam {
             name: "feature",
             lua_type: "string",
             required: true,
-            doc: "`module.feature@major` descriptor query.",
+            doc: "`module.feature@major` query.",
         }],
         returns: BOOL_RET,
         capabilities: &[],
@@ -263,11 +257,11 @@ const API_FUNCTIONS: &[ApiFunction] = &[
         name: "describe",
         since: "1.0",
         compatibility: "v1",
-        doc: "Return the full host API descriptor table used for generated docs and validation metadata.",
+        doc: "Return the full host API table.",
         params: &[],
         returns: &[ApiReturn {
             lua_type: "table",
-            doc: "Host API descriptor.",
+            doc: "Host API table.",
         }],
         capabilities: &[],
         validation: ApiValidation {
@@ -441,7 +435,7 @@ const REGION_ADD_SLOT_PARAM: &[ApiParam] = &[ApiParam {
     name: "spec",
     lua_type: "LeviathanSlotSpec",
     required: true,
-    doc: "Slot descriptor including region, section/pane, id, priority, and widget.",
+    doc: "Slot spec including region, section/pane, id, priority, and widget.",
 }];
 
 const REGION_REMOVE_SLOT_PARAM: &[ApiParam] = &[ApiParam {
@@ -462,7 +456,7 @@ const REGION_REPLACE_SLOT_PARAMS: &[ApiParam] = &[
         name: "spec",
         lua_type: "LeviathanSlotSpec",
         required: true,
-        doc: "Replacement slot descriptor.",
+        doc: "Replacement slot spec.",
     },
 ];
 
@@ -482,7 +476,7 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
         name: "add_slot",
         since: "1.0",
         compatibility: "v1",
-        doc: "Add a slot to any descriptor-backed UI region.",
+        doc: "Add a slot to a UI region.",
         params: REGION_ADD_SLOT_PARAM,
         returns: &[],
         capabilities: &[],
@@ -493,7 +487,7 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
         name: "remove_slot",
         since: "1.0",
         compatibility: "v1",
-        doc: "Remove a slot from any descriptor-backed UI region.",
+        doc: "Remove a slot from a UI region.",
         params: REGION_REMOVE_SLOT_PARAM,
         returns: &[],
         capabilities: &[],
@@ -504,7 +498,7 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
         name: "replace_slot",
         since: "1.0",
         compatibility: "v1",
-        doc: "Replace a slot in any descriptor-backed UI region.",
+        doc: "Replace a slot in a UI region.",
         params: REGION_REPLACE_SLOT_PARAMS,
         returns: &[],
         capabilities: &[],
@@ -2105,7 +2099,7 @@ const COMMAND_FUNCTIONS: &[ApiFunction] = &[
                 name: "spec",
                 lua_type: "LeviathanCommandSpec",
                 required: true,
-                doc: "Command descriptor including title, args, run.",
+                doc: "Command spec including title, args, run.",
             },
         ],
         returns: &[],
@@ -2163,7 +2157,7 @@ const COMMAND_FUNCTIONS: &[ApiFunction] = &[
         name: "list",
         since: "1.8",
         compatibility: "v1",
-        doc: "List every registered command (host + plugin) as descriptor tables.",
+        doc: "List every registered command.",
         params: &[],
         returns: &[ApiReturn {
             lua_type: "LeviathanCommandSummary[]",
@@ -3782,7 +3776,7 @@ const TYPE_PERSIST_OPEN_FIELDS: &[ApiTypeField] = &[
         name: "migrations",
         lua_type: "table[]",
         required: false,
-        doc: "Migration descriptors.",
+        doc: "Migrations.",
     },
     ApiTypeField {
         name: "surface",
@@ -3865,7 +3859,7 @@ const TYPE_COMMAND_SPEC_FIELDS: &[ApiTypeField] = &[
         name: "description",
         lua_type: "string",
         required: false,
-        doc: "Long-form description shown in the palette and devtools.",
+        doc: "Description shown in the palette and devtools.",
     },
     ApiTypeField {
         name: "context",
@@ -3949,7 +3943,7 @@ const TYPE_COMMAND_SUMMARY_FIELDS: &[ApiTypeField] = &[
         name: "description",
         lua_type: "string",
         required: true,
-        doc: "Description text.",
+        doc: "Description.",
     },
     ApiTypeField {
         name: "plugin_id",
@@ -3976,7 +3970,7 @@ const TYPE_KEYMAP_OPTS_FIELDS: &[ApiTypeField] = &[
         name: "description",
         lua_type: "string",
         required: false,
-        doc: "Human-friendly description shown in devtools and the keymap inspector.",
+        doc: "Description shown in devtools and the keymap inspector.",
     },
     ApiTypeField {
         name: "args",
@@ -4027,7 +4021,7 @@ const TYPE_KEYMAP_SUMMARY_FIELDS: &[ApiTypeField] = &[
         name: "description",
         lua_type: "string",
         required: true,
-        doc: "Description text supplied at registration.",
+        doc: "Description supplied at registration.",
     },
     ApiTypeField {
         name: "conflict_with",
@@ -4285,28 +4279,28 @@ pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "LeviathanScreenSpec",
         since: "1.0",
-        doc: "Plugin screen descriptor.",
+        doc: "Plugin screen.",
         fields: TYPE_SCREEN_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanSlotSpec",
         since: "1.0",
-        doc: "UI slot descriptor.",
+        doc: "UI slot.",
         fields: TYPE_SLOT_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanSlotTarget",
         since: "1.0",
-        doc: "UI slot target descriptor.",
+        doc: "UI slot target.",
         fields: TYPE_SLOT_TARGET_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanWidget",
         since: "1.0",
-        doc: "Tagged widget tree node; see widget descriptors and widget schema.",
+        doc: "Tagged widget tree node.",
         fields: &[],
         methods: &[],
     },
@@ -4320,28 +4314,28 @@ pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "LeviathanTab",
         since: "1.0",
-        doc: "Open tab descriptor.",
+        doc: "Open tab.",
         fields: TYPE_TAB_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanLocalBranch",
         since: "1.0",
-        doc: "Local branch descriptor.",
+        doc: "Local branch.",
         fields: TYPE_LOCAL_BRANCH_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanRemoteBranch",
         since: "1.0",
-        doc: "Remote branch descriptor.",
+        doc: "Remote branch.",
         fields: TYPE_REMOTE_BRANCH_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanTag",
         since: "1.0",
-        doc: "Git tag descriptor.",
+        doc: "Git tag.",
         fields: TYPE_TAG_FIELDS,
         methods: &[],
     },

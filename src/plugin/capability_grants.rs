@@ -1,40 +1,4 @@
-//! Capability grant store, prompt overlay, and persistence.
-//!
-//! Plugins *request* capabilities through `plugin.toml`. The host
-//! *grants* them through this store, which persists every decision
-//! keyed by `(plugin_id, plugin_version, capability)`. The grant store
-//! is the single source of truth for "is this plugin allowed to do
-//! this right now?" — every sensitive API call routes through
-//! [`GrantStore::check`].
-//!
-//! Persistence: the store mirrors itself to a JSON file under the
-//! host's config directory (`~/.config/git_leviathan/plugin_grants.json`
-//! by default). Reads and writes are explicit; we don't pre-empt
-//! persistence and settings's persistence layer.
-//!
-//! Prompts: when a plugin requests capabilities the user has never
-//! decided about, [`PromptState`] holds the pending decisions until
-//! the user resolves them. The grant store ships a headless prompt; devtools
-//! will render it as a modal overlay using the [`OverlayDescriptor`]
-//! shape we hand back here.
-//!
-//! Audit: every grant lifecycle event lands in the host's existing
-//! audit log under codes `grant.allowed`, `grant.denied`,
-//! `grant.revoked`, `grant.upgrade_prompted`. The audit log is
-//! immutable history — revoking a grant adds a `grant.revoked` row,
-//! it does NOT erase the original `grant.allowed` row.
-//!
-//! Diagnostic codes emitted by callers:
-//! - `capability.denied` (error) — request rejected at use time.
-//! - `capability.revoked` (error) — capability was granted, then revoked.
-//! - `capability.upgrade_required` (error) — staging halted because
-//!   the new manifest requested capabilities not previously granted.
-//! - `capability.path_outside_scope` (error) — scoped fs check
-//!   resolved a symlink/relative path outside the granted directory.
-//! - `capability.unknown` (warning) — manifest declared a string the
-//!   descriptor table doesn't know.
-//! - `capability.persistence_failed` (warning) — the JSON grant file
-//!   could not be read/written.
+//! Capability grants, prompts, and persistence.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -69,9 +33,7 @@ impl Decision {
     }
 }
 
-/// Who decided. `User` = explicit modal acceptance; `Default` =
-/// auto-grant (e.g. bundled-plugin policy); `Policy` = future
-/// org-policy file (org policy).
+/// Who decided a capability grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DecidedBy {

@@ -145,8 +145,7 @@ pub struct AutocmdSummary {
     pub group_id: Option<u64>,
     /// Canonical event name resolved from the descriptor table.
     pub event: String,
-    /// Name the plugin actually subscribed under. Equal to `event`
-    /// for canonical descriptor-backed subscriptions.
+    /// Name the plugin subscribed under.
     pub subscribed_event: String,
     pub pattern: Option<String>,
     pub debounce_ms: u64,

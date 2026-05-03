@@ -1009,12 +1009,6 @@ impl CommandRunner for DispatchEnvRunner {
             .plugin_registry
             .get(plugin_id)
             .ok_or_else(|| format!("plugin `{plugin_id}` is not loaded"))?;
-        // Every command capability check routes through
-        // the guard's `check_named`, which in turn consults the host's
-        // `GrantStore`. Audit + diagnostic emission happens inside
-        // the guard so command-side and direct-API denials look
-        // identical to inspectors. The legacy `env` shortcut still
-        // works because `check_named("env")` returns the same outcome.
         ctx.capability_guard.check_named(capability)
     }
 

@@ -428,13 +428,13 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
     WidgetDescriptor {
         kind: "tablist",
         since: "1.0",
-        doc: "Tab strip widget backed by plugin-supplied tab descriptors.",
+        doc: "Tab strip widget backed by plugin-supplied tabs.",
         fields: &[
             WidgetFieldDescriptor {
                 name: "tabs",
                 lua_type: "table[]",
                 required: false,
-                doc: "Tab id/name descriptors.",
+                doc: "Tab id/name list.",
             },
             WidgetFieldDescriptor {
                 name: "active",

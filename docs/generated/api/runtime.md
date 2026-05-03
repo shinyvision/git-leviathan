@@ -60,4 +60,3 @@ Per-plugin list of modules currently cached in this generation.
 
 **Returns:**
 - `LeviathanRuntimeModuleGraphEntry[]` - One entry per plugin contributing cached modules.
-

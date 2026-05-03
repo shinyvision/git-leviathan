@@ -1,15 +1,4 @@
-//! Lua-facing API surface exposed under the `leviathan.*` global.
-//!
-//! One submodule per namespace (SOLID single-responsibility):
-//! - `ui` — descriptor-backed regions, screen registration
-//! - `fs` — filesystem operations
-//! - `env` — process environment variables
-//! - `event` — `leviathan.autocmd.*` event subscription
-//!
-//! `install_all` mounts them on a fresh `leviathan` table. Callable state
-//! that must survive `init.lua` exec (button/screen handlers, autocmd
-//! callbacks) is captured in a shared `BuildState`; the host drains it
-//! after exec.
+//! Lua API installers and init-time registration state.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -50,9 +39,6 @@ pub use health::HealthCheckRegistration;
 pub use persist::PersistContext;
 pub use services_api::ServicesContext;
 
-/// async runtime cross-plugin async-runtime handles. Cheap-clone (Arc-backed).
-/// Bundles the registries plus per-plugin callback tables so the
-/// install path doesn't grow yet another argument.
 pub struct AsyncRuntimeContext {
     pub jobs: crate::plugin::async_jobs::AsyncJobRegistry,
     pub timers: crate::plugin::timers::TimerRegistry,
@@ -70,21 +56,6 @@ pub struct ScreenDef {
     pub deserialize: Option<RegistryKey>,
 }
 
-/// Raw slot spec (region-scoped). Carries everything the host needs to
-/// place the slot in the right registry: a region name, a container key
-/// (chrome section, or "pane.section" for content regions), id,
-/// priority, widget, on_click.
-///
-/// The `widget` is either a plugin-supplied widget tree (same DSL as
-/// plugin screens) serialised to `serde_json::Value`, or a Lua function
-/// the host re-invokes to produce one. See [`WidgetSource`]. The slot is
-/// fully widget-type-agnostic: the host doesn't know whether a slot is an
-/// `icon+text` button, a bordered pill, a plain label, or a layout of
-/// nested containers — that's all the plugin's decision.
-///
-/// `on_click` is stashed as a registry key so the slot's handler can be
-/// invoked later (fired from clickable widgets inside `widget` that
-/// dispatch through the main-bar-slot scope).
 pub struct RawSlotSpec {
     pub id: String,
     pub region: String,
@@ -95,23 +66,12 @@ pub struct RawSlotSpec {
     pub source_location: Option<String>,
 }
 
-/// Where a slot's widget tree comes from.
-///
-/// - `Static` — the plugin declared a literal table once at init. The
-///   host keeps the decoded `WidgetAst` and renders from it each
-///   frame.
-/// - `Dynamic` — the plugin declared a function. The host re-invokes it
-///   whenever plugin-observable state might have changed (autocmd
-///   callbacks) and re-decodes the resulting Lua tree to an AST cached
-///   for the slot.
 pub enum WidgetSource {
     Static(crate::plugin::ui::widget_ast::WidgetAst),
     Dynamic(RegistryKey),
 }
 
-/// One hook operation as issued by a plugin's init.lua. Kept in source
-/// order so that within a single plugin, a remove issued after an add
-/// targets the already-added slot (not the other way around).
+/// Kept in source order so remove/replace can target earlier adds.
 pub enum RawSlotOp {
     Add(RawSlotSpec),
     Remove {
@@ -127,22 +87,7 @@ pub enum RawSlotOp {
     },
 }
 
-/// One autocmd subscription captured during init by
-/// `leviathan.autocmd.create`. One per (event, callback) pair — a
-/// single create call with an array of events emits one `RawAutocmd`
-/// per event so dispatch stays a plain index lookup.
-///
-/// `local_group` is a plugin-local group id minted by
-/// `leviathan.autocmd.group`; the host resolves it to a stable
-/// [`crate::plugin::events::GroupId`] at install time and writes the
-/// resolved value back onto the autocmd's options.
-///
-/// `sequence` is the plugin-local declaration sequence number,
-/// shared with [`RawAutocmdGroup`] and [`RawAutocmdClear`]. The host
-/// install path replays operations in `sequence` order so a `clear`
-/// issued *after* an `autocmd.create` correctly removes that
-/// registration (and not the unrelated one that comes after the
-/// `clear` in declaration order).
+/// Captured in source order so `autocmd.clear` applies to earlier rows only.
 pub struct RawAutocmd {
     pub event: String,
     pub callback: RegistryKey,
@@ -155,30 +100,16 @@ pub struct RawAutocmd {
     pub source_location: Option<String>,
 }
 
-/// Per-plugin record of every `leviathan.autocmd.group` call made
-/// during init. The host resolves these into stable
-/// [`crate::plugin::events::GroupId`] handles when staging commits or
-/// when the plugin first loads. Captured during init because group
-/// resolution needs the host's group table (which Lua can't reach
-/// directly).
 pub struct RawAutocmdGroup {
-    /// Local handle the plugin saw — a small integer issued by
-    /// `event.rs`'s `next_local_group_id` counter at registration
-    /// time. Autocmds reference groups through this same local id.
     pub local_id: u64,
     pub name: String,
     pub clear: bool,
-    /// Plugin-local declaration sequence number; see [`RawAutocmd`].
     pub sequence: u64,
     pub source_location: Option<String>,
 }
 
-/// One `leviathan.autocmd.clear` call. The host applies the clear
-/// after staging completes, against the resolved
-/// [`crate::plugin::events::GroupId`].
 pub struct RawAutocmdClear {
     pub local_id: u64,
-    /// Plugin-local declaration sequence number; see [`RawAutocmd`].
     pub sequence: u64,
     pub source_location: Option<String>,
 }
@@ -186,38 +117,14 @@ pub struct RawAutocmdClear {
 #[derive(Default)]
 pub struct BuildState {
     pub screens: HashMap<String, ScreenDef>,
-    /// Ordered hook operations from `leviathan.ui.regions.*`.
     pub slot_ops: Vec<RawSlotOp>,
-    /// Autocmd subscriptions from `leviathan.autocmd.create`. Each
-    /// entry's `options.group` holds the plugin-local group id
-    /// (resolved to a host-wide
-    /// [`crate::plugin::events::GroupId`] at install time).
     pub autocmds: Vec<RawAutocmd>,
-    /// `leviathan.autocmd.group(name, opts)` calls in declaration
-    /// order.
     pub autocmd_groups: Vec<RawAutocmdGroup>,
-    /// `leviathan.autocmd.clear(group)` calls in declaration order.
     pub autocmd_clears: Vec<RawAutocmdClear>,
-    /// Counter for plugin-local group ids minted by
-    /// `leviathan.autocmd.group`. Starts at 1 because `0` is the
-    /// "no group" sentinel for the autocmd `group` option.
     pub next_local_group_id: u64,
-    /// Monotonic declaration sequence shared by every autocmd /
-    /// group / clear op so the host can replay them in source
-    /// order at install time.
     pub next_autocmd_sequence: u64,
-    /// typed command registrations from
-    /// `leviathan.command.create`. The host drains this list after
-    /// init.lua and installs each entry into the unified
-    /// `CommandRegistry`.
     pub commands: Vec<crate::plugin::commands::RawCommand>,
-    /// keymap `set` rows captured from `leviathan.keymap.set`.
-    /// The host drains and installs them into the unified
-    /// `KeymapRegistry` keyed by `(plugin_id, generation_id)`.
     pub keymaps: Vec<crate::plugin::keymap::RawKeymap>,
-    /// keymap `del` rows captured from `leviathan.keymap.del`.
-    /// Applied after the staged generation's `set` rows so a plugin
-    /// can rebind its own keymap inside one init.lua run.
     pub keymap_dels: Vec<crate::plugin::keymap::RawKeymapDel>,
     /// Monotonic declaration sequence shared by every keymap `set` /
     /// `del` op so the host can replay them in source order at install

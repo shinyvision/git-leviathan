@@ -99,7 +99,7 @@
 ---Descriptor accepted by `leviathan.command.create`.
 ---@class LeviathanCommandSpec
 ---@field title? string Human-friendly palette title; defaults to the command name.
----@field description? string Long-form description shown in the palette and devtools.
+---@field description? string Description shown in the palette and devtools.
 ---@field context? string Activation context name; defaults to `global`.
 ---@field args? LeviathanCommandArg[] Argument schema validated at invocation time.
 ---@field destructive? boolean When true, the palette filters this command behind a destructive-actions toggle.
@@ -118,7 +118,7 @@
 ---@class LeviathanCommandSummary
 ---@field name string Command identifier.
 ---@field title string Palette title.
----@field description string Description text.
+---@field description string Description.
 ---@field plugin_id string Owning plugin id; `<host>` for built-in commands.
 ---@field context string Activation context.
 ---@field destructive boolean Destructive flag.
@@ -128,7 +128,7 @@
 
 ---Options table accepted by `leviathan.keymap.set`.
 ---@class LeviathanKeymapOpts
----@field description? string Human-friendly description shown in devtools and the keymap inspector.
+---@field description? string Description shown in devtools and the keymap inspector.
 ---@field args? LeviathanJson Args table forwarded verbatim to the underlying command at dispatch time.
 
 ---Compact view of a registered keymap, returned by `leviathan.keymap.list`.
@@ -139,7 +139,7 @@
 ---@field plugin_id string Owning plugin id; `<host>` for built-ins, `<user>` for user-config rows.
 ---@field source string One of `built-in`, `user`, `plugin`.
 ---@field status string One of `active`, `conflict_lost`.
----@field description string Description text supplied at registration.
+---@field description string Description supplied at registration.
 ---@field conflict_with? LeviathanKeymapConflictRef|nil When `status == conflict_lost`, points to the winning binding.
 
 ---Reference to the winning binding for a conflict-lost keymap row.
@@ -147,7 +147,7 @@
 ---@field plugin_id string Winning binding's plugin id.
 ---@field source string Winning binding's source tier.
 
----Plugin screen descriptor.
+---Plugin screen.
 ---@class LeviathanScreenSpec
 ---@field id string Screen id.
 ---@field init fun(): table Initial state callback.
@@ -156,7 +156,7 @@
 ---@field serialize? fun(state: table): LeviathanJson Reload state serializer.
 ---@field deserialize? fun(value: LeviathanJson): table Reload state deserializer.
 
----UI slot descriptor.
+---UI slot.
 ---@class LeviathanSlotSpec
 ---@field region? string Region name; inferred by direct handles.
 ---@field pane? string Content region pane.
@@ -166,13 +166,13 @@
 ---@field widget LeviathanWidget|fun(): LeviathanWidget Static or dynamic widget.
 ---@field on_click? fun(slot_id: string, event: string, value: LeviathanJson): table|nil Slot callback.
 
----UI slot target descriptor.
+---UI slot target.
 ---@class LeviathanSlotTarget
 ---@field pane? string Content region pane.
 ---@field section string Region section.
 ---@field id string Slot id.
 
----Tagged widget tree node; see widget descriptors and widget schema.
+---Tagged widget tree node.
 ---@class LeviathanWidget
 
 ---Filesystem entry metadata.
@@ -184,25 +184,25 @@
 ---@field size integer Entry size.
 ---@field modified integer Unix modification time.
 
----Open tab descriptor.
+---Open tab.
 ---@class LeviathanTab
 ---@field path string Tab repository path.
 ---@field name string Tab display name.
 
----Local branch descriptor.
+---Local branch.
 ---@class LeviathanLocalBranch
 ---@field name string Branch name.
 ---@field hash string Target hash.
 ---@field is_current boolean Whether this branch is current.
 ---@field upstream_branch LeviathanRemoteBranch|nil Upstream remote branch.
 
----Remote branch descriptor.
+---Remote branch.
 ---@class LeviathanRemoteBranch
 ---@field name string Branch name.
 ---@field remote_name string Remote name.
 ---@field hash string Target hash.
 
----Git tag descriptor.
+---Git tag.
 ---@class LeviathanTag
 ---@field name string Tag name.
 ---@field hash string Target hash.
@@ -210,7 +210,7 @@
 ---Persistence open options.
 ---@class LeviathanPersistOpenOpts
 ---@field version? integer Target store version.
----@field migrations? table[] Migration descriptors.
+---@field migrations? table[] Migrations.
 ---@field surface? string Storage surface: state, config, cache, or repo.
 ---@field repo? string Per-repo state key when surface is repo.
 
@@ -314,8 +314,8 @@ leviathan.async = leviathan.async or {}
 
 leviathan.timer = leviathan.timer or {}
 
----Return true when the host exposes a descriptor feature such as `fs.read_file@1`.
----@param feature string `module.feature@major` descriptor query.
+---Return true when the host exposes a feature such as `fs.read_file@1`.
+---@param feature string `module.feature@major` query.
 ---@return boolean Boolean result.
 function leviathan.has(feature) end
 
@@ -327,8 +327,8 @@ function leviathan.log(message) end
 ---@param callback fun() Function invoked on the next tick.
 function leviathan.schedule(callback) end
 
----Return the full host API descriptor table used for generated docs and validation metadata.
----@return table Host API descriptor.
+---Return the full host API table.
+---@return table Host API table.
 function leviathan.api.describe() end
 
 ---Run a Lua callback on the next plugin host tick.
@@ -342,7 +342,7 @@ function leviathan.api.defer_fn(ms, callback) end
 
 ---Register a typed user command in the host registry.
 ---@param name string Command identifier; unique per plugin.
----@param spec LeviathanCommandSpec Command descriptor including title, args, run.
+---@param spec LeviathanCommandSpec Command spec including title, args, run.
 function leviathan.command.create(name, spec) end
 
 ---Invoke a registered command by name through the host dispatcher.
@@ -351,7 +351,7 @@ function leviathan.command.create(name, spec) end
 ---@return boolean True when dispatch succeeded; false on validation/capability/run failure.
 function leviathan.command.invoke(name, args) end
 
----List every registered command (host + plugin) as descriptor tables.
+---List every registered command.
 ---@return LeviathanCommandSummary[] Array of command summaries.
 function leviathan.command.list() end
 
@@ -412,17 +412,17 @@ function leviathan.ui.graph_decoration(commit_hash, decoration) end
 ---@param decoration LeviathanDiffDecoration Decoration AST: line_hint / hunk_badge / line_gutter.
 function leviathan.ui.diff_decoration(decoration) end
 
----Add a slot to any descriptor-backed UI region.
----@param spec LeviathanSlotSpec Slot descriptor including region, section/pane, id, priority, and widget.
+---Add a slot to a UI region.
+---@param spec LeviathanSlotSpec Slot spec including region, section/pane, id, priority, and widget.
 function leviathan.ui.regions.add_slot(spec) end
 
----Remove a slot from any descriptor-backed UI region.
+---Remove a slot from a UI region.
 ---@param target LeviathanSlotTarget Slot address including region, section/pane, and id.
 function leviathan.ui.regions.remove_slot(target) end
 
----Replace a slot in any descriptor-backed UI region.
+---Replace a slot in a UI region.
 ---@param target LeviathanSlotTarget Existing slot address including region and id.
----@param spec LeviathanSlotSpec Replacement slot descriptor.
+---@param spec LeviathanSlotSpec Replacement slot spec.
 function leviathan.ui.regions.replace_slot(target, spec) end
 
 ---Read UTF-8 file contents. Returns content or (nil, err).

@@ -1,45 +1,10 @@
 //! Typed widget AST for plugin UI.
-//!
-//! widget AST: replaces the ad-hoc `serde_json::Value` widget tree with a
-//! typed AST that the boundary validates *once* and the renderer
-//! consumes. Plugin Lua keeps its existing table syntax — only the
-//! host-side decoding step changes.
-//!
-//! Decoder contract:
-//!
-//! - Input: `serde_json::Value` produced by `mlua::LuaSerdeExt::from_value`
-//!   from the plugin's Lua return.
-//! - Output: a `WidgetAst` (success) **or** a `WidgetDecodeError` carrying
-//!   a stable code + a JSON-pointer-ish path (`root.children[2].child`) +
-//!   a human message. The renderer never sees a raw JSON value again.
-//! - Defaults are normalised at decode time (missing `padding` → 0,
-//!   missing `spacing` → 0, missing `width`/`height` → `Auto` so the
-//!   widget can pick its own preferred default at build time).
-//!
-//! Limits live next to the AST so future changes can revisit them in one
-//! place: depth, node count, string length, image bytes. Hitting a
-//! limit produces the same kind of structured error as a malformed
-//! field; the host emits a diagnostic and renders an in-place error
-//! widget so the user sees "this slot is broken" rather than empty
-//! space.
-//!
-//! Engineering invariant 1 (host owns every effect) holds: plugin Lua
-//! never gets to construct an `iced::Element`; it only describes one.
-//! The AST is data; the renderer is host-owned.
 
 use std::fmt;
 
 use serde_json::Value;
 
-// ---------------------------------------------------------------------------
-// Limits
-// ---------------------------------------------------------------------------
-
-/// Hard ceilings on decoded widget trees. Centralised so future changes
-/// (performance budgets, per-plugin overrides) can mutate them without
-/// hunting through the renderer. Values picked to be large enough that
-/// honest plugins never see them and small enough that a runaway
-/// allocation gets caught immediately.
+/// Hard ceilings on decoded widget trees.
 #[derive(Debug, Clone, Copy)]
 pub struct WidgetLimits {
     pub max_tree_depth: usize,

@@ -569,9 +569,6 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 };
                 let target = state.target.clone();
-                // Note: legacy behaviour didn't clear the dialog here (the
-                // snapshot reload does). Preserve that — keep the overlay up
-                // until the result arrives.
                 DialogDispatch::Task(spawn_discard_task(target, ctx))
             }
             OverlayPanelAction::DiscardCanceled => {

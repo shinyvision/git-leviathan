@@ -1,25 +1,4 @@
-//! Performance budgets and circuit breakers.
-//!
-//! Every plugin callback the host invokes flows through
-//! [`BudgetTracker::track_call`]. The tracker times the call, records
-//! a per-callback rolling histogram (last 64 samples), surfaces soft /
-//! hard breach diagnostics, and trips a per-callback circuit breaker
-//! after repeated hard breaches or consecutive failures. A tripped
-//! callback is skipped on subsequent invocations until a user
-//! re-enables it from devtools (`reset_breaker(plugin_id, callback_id)`).
-//! Once a plugin accumulates `MAX_DISABLED_CALLBACKS_PER_PLUGIN`
-//! disabled callbacks in one generation, the plugin itself is marked
-//! degraded (a `plugin.degraded` diagnostic is emitted; future changes
-//! will unload it).
-//!
-//! State is keyed by `(PluginId, GenerationId, callback_id)` so reload
-//! starts fresh: a fixed plugin gets a clean breaker. Unload reaps
-//! every key for the plugin via [`BudgetTracker::drop_for_plugin`],
-//! called from the host's resource-cleanup walk.
-//!
-//! Engineering invariant 1 (host owns every effect): plugins never
-//! see this module. Only host-side code constructs trackers, records
-//! samples, and reads breaker state.
+//! Performance budgets and circuit breakers for host-invoked callbacks.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -198,10 +177,7 @@ impl Clock for MockClock {
     }
 }
 
-/// Circuit-breaker state. the performance budget tracker ships auto-trip only; explicit
-/// "disable" is left for a future devtools button (a separate variant
-/// will land then so the audit log can distinguish "user disabled" from
-/// "auto-tripped").
+/// Circuit-breaker state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BreakerState {
     Healthy,

@@ -47,9 +47,6 @@ pub(super) fn on_worktree_removed(
 ) -> Task<Message> {
     match result {
         Ok(loaded) => {
-            // Drop cached fleet entries for paths that are no longer registered.
-            // Source from the canonical worktrees list (not the rendered sidebar)
-            // so future prunable-worktree filters can't hide entries from eviction.
             let current_paths: HashSet<PathBuf> = loaded
                 .projection
                 .worktrees

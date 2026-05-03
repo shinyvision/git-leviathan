@@ -34,4 +34,3 @@ Schedule a repeating callback every `ms` milliseconds.
 
 **Returns:**
 - `LeviathanTimerHandle` - Handle with `:cancel()`.
-

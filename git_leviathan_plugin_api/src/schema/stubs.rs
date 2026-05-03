@@ -472,7 +472,7 @@ fn emit_module_doc(module: &ApiModule) -> String {
         }
     }
 
-    out
+    trim_trailing_blank_lines(out)
 }
 
 fn module_doc_filename(module: &ApiModule) -> String {
@@ -481,6 +481,16 @@ fn module_doc_filename(module: &ApiModule) -> String {
     } else {
         format!("{}.md", module.name)
     }
+}
+
+fn trim_trailing_blank_lines(mut out: String) -> String {
+    while out.ends_with("\n\n") {
+        out.pop();
+    }
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
 }
 
 #[cfg(test)]

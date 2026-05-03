@@ -1,35 +1,4 @@
-//! typed Git op surface.
-//!
-//! Plugins request a Git effect through `leviathan.git.*`. The Lua
-//! shim funnels the request to [`GitOpDispatcher::execute`], which:
-//!
-//! 1. Checks the corresponding `git:write:<op>` capability on the
-//!    plugin's [`crate::plugin::capabilities::CapabilityGuard`]
-//!    (capability grant invariant 6).
-//! 2. Consults [`DestructiveConfirmPolicy`] for destructive ops
-//!    (`delete_branch{force=true}`, `delete_tag`, `reset{mode=hard}`,
-//!    `merge`, `rebase`).
-//! 3. Records the request in the [`PendingGitWrites`] ring buffer so
-//!    devtools can show in-flight ops (cap = 32).
-//! 4. Routes through the host-supplied [`SharedRepositoryGateway`] —
-//!    this is the same gateway the built-in UI buttons use, so plugin
-//!    writes share the existing app pipeline.
-//! 5. Records an [`AuditEntry`] for both allow / deny outcomes.
-//! 6. Emits a `git.task_succeeded` (info) or `git.task_failed`
-//!    (error) [`PluginDiagnostic`].
-//! 7. Returns the typed event tuple `(event_name, payload)` to the
-//!    caller so the host can fire the corresponding autocmd event
-//!    (`HeadChanged`, `RefsChanged`, `FetchFinished`, `PushFinished`,
-//!    etc.).
-//!
-//! "Same task and message flow as built-in UI actions" interpretation:
-//! the built-in UI's checkout/fetch/branch flow lands on the
-//! [`crate::services::gateway::Repository`] trait. This dispatcher
-//! lands on the same trait. Writes currently execute synchronously on
-//! the host's main-thread tick; the result event fires immediately
-//! after, and devtools captures the request with `started_at` so the
-//! async runtime can replace this later without touching the Lua
-//! surface.
+//! Git write dispatch for `leviathan.git.*`.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -56,10 +25,7 @@ pub struct PendingGitWrite {
     pub args_json: serde_json::Value,
     pub started_at_unix_ms: u128,
     /// Set after [`GitOpDispatcher::execute`] finishes. `None` while
-    /// the op is still running. The dispatcher is synchronous today
-    /// (synchronous Git API compromise) so observers see this populated by the
-    /// time `execute` returns; async runtime will move execution off the
-    /// main thread and the field will stay `None` until completion.
+    /// the op is still running.
     pub finished_at_unix_ms: Option<u128>,
     pub outcome: Option<GitOpStatus>,
 }
@@ -369,7 +335,6 @@ impl DestructiveConfirmPolicy {
     }
 
     /// Pre-approve the next destructive op of `op` for `plugin_id`.
-    /// Used by tests + the (future) modal overlay.
     pub fn approve_next(
         &self,
         plugin_id: impl Into<String>,
@@ -454,10 +419,6 @@ impl DestructiveConfirmPolicy {
     }
 }
 
-/// Cheap-clone holder for the active repository gateway. The host
-/// updates this via [`set_active_gateway`] whenever the user opens /
-/// switches a repository tab. The plugin Lua API reads the current
-/// gateway from here at every call so it always sees the active repo.
 #[derive(Clone, Default)]
 pub struct ActiveRepositoryGateway {
     inner: Arc<Mutex<Option<SharedRepositoryGateway>>>,
@@ -490,12 +451,6 @@ pub struct GitOpsContext {
     pub diagnostics: DiagnosticStore,
 }
 
-/// Result of [`GitOpsContext::execute`]. Returned to the Lua shim so
-/// it can produce the right `(ok, err)` tuple, and consumed by the
-/// host so it can fire the resulting typed events. The full outcome
-/// (including capability/destructive/no-repo decisions) is recorded
-/// on the matching [`PendingGitWrite`] entry — observers that need
-/// the structured status read it from there.
 pub struct GitOpExecution {
     pub error: Option<String>,
     pub events: GitOpEvents,

@@ -53,4 +53,3 @@ List plugin-local secret keys without exposing values.
 
 **Returns:**
 - `string[]` - Secret keys.
-

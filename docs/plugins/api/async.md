@@ -21,4 +21,3 @@ Spawn a host-managed worker thread running a Lua body. Returns a handle with `:c
 
 **Returns:**
 - `LeviathanJobHandle` - Job handle with `:cancel()` and `:id()`.
-

@@ -1,11 +1,3 @@
--- File Explorer plugin for Git Leviathan.
--- Demonstrates the full plugin surface: fs.* Lua API, icon/scrollable/
--- mouse_area widgets, stateful navigation, destructive-op confirmation.
---
--- Style rule: padding is always a standalone `padding` widget — no widget
--- on its own carries a `padding` field. Buttons/columns/rows/containers
--- wrap padded children explicitly.
-
 local fs  = leviathan.fs
 local ui  = leviathan.ui
 local log = leviathan.log
@@ -47,9 +39,6 @@ local function icon(path, size, color)
   return { kind = "icon", path = path, size = size or 16, color = color }
 end
 
--- Pad child on all sides by `all` pixels, or asymmetrically via a table
--- ({top, right, bottom, left}, optionally with width/height for the pad
--- wrapper itself).
 local function pad(sides, child)
   if type(sides) == "number" then
     return {
@@ -70,8 +59,6 @@ local function pad(sides, child)
   }
 end
 
--- Standard in-screen text button — same look the widget-tree button used
--- to bake in, now declared explicitly.
 local function std_button(label, on_click_event)
   return {
     kind     = "button",

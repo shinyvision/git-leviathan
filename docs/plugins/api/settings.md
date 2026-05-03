@@ -58,4 +58,3 @@ Register a callback fired after validated settings are saved.
 
 **Parameters:**
 - `callback` (`fun(new_settings: table)`; required) - Change callback.
-

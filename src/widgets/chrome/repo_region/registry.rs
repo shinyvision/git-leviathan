@@ -46,9 +46,6 @@ pub fn container(pane: Pane, section: Section) -> Container {
     }
 }
 
-/// Per-render context for repo-pane slots. Empty for now — kept as a
-/// distinct type so future ctx fields (current branch, selection,
-/// commit count, etc.) can be added without changing the registry shape.
 pub struct RepoPaneCtx<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }

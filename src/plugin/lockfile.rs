@@ -34,10 +34,7 @@ pub const LOCAL_OVERRIDE_NAME: &str = "plugins.lock.local";
 pub struct LockedPlugin {
     pub id: String,
     pub version: String,
-    /// Origin of the plugin: `"local"` (this repo), `"path"` (user
-    /// development override), `"registry"` (org policy, not yet
-    /// produced). Lockfile readers preserve the value verbatim so a
-    /// future package manager can round-trip without losing it.
+    /// Origin of the plugin: `"local"`, `"path"`, or `"registry"`.
     pub source: String,
     /// `sha256:...` digest of the plugin's content (see module docs).
     pub checksum: String,

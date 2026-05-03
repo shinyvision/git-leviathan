@@ -23,9 +23,7 @@ pub struct GraphRow {
     pub upper: Vec<GraphSegment>,
     /// Segments for the lower half of the row (from commit dot to bottom).
     pub lower: Vec<GraphSegment>,
-    /// Dotted upper-half segments used for the dirty commit's future path.
     pub dotted_upper: Vec<GraphSegment>,
-    /// Dotted lower-half segments used for the dirty commit's future path.
     pub dotted_lower: Vec<GraphSegment>,
     /// Dotted merge arms used by synthetic dirty merge rows.
     pub dotted_connectors: Vec<GraphSegment>,

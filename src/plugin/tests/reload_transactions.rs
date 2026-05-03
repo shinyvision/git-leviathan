@@ -1,20 +1,4 @@
-//! reload transactions transactional reload tests.
-//!
-//! Each acceptance gate from the plan has at least one named test:
-//!
-//! - `staged_reload_succeeds_drops_old_generation_resources`
-//!   — successful reload leaves no old-generation resources behind
-//! - `staged_reload_failed_lua_syntax_keeps_old_generation`
-//!   — syntax error during reload leaves the old plugin active
-//! - `staged_reload_failed_widget_validation_keeps_old_generation`
-//!   — bad widget during reload leaves the old plugin active
-//! - `staged_reload_failed_migration_keeps_old_generation`
-//!   — failed migration leaves the old plugin active
-//!
-//! Plus per-stage rollback coverage (manifest, capability, lua-load,
-//! init-error, validation, health-fail, migration-fail) and a
-//! per-bundled-plugin reload smoke test that proves every plugin
-//! shipped with the binary survives a no-op staged reload.
+//! Transactional reload tests.
 
 use crate::plugin::devtools::ReloadOutcome;
 use crate::plugin::tests::harness::MockHost;

@@ -17,7 +17,7 @@ Tab registry namespace.
 
 ### `LeviathanTab`
 
-Open tab descriptor.
+Open tab.
 
 - `path` (`string`; required) - Tab repository path.
 - `name` (`string`; required) - Tab display name.
@@ -65,4 +65,3 @@ Reorder tabs to match the given path list.
 
 **Parameters:**
 - `paths` (`string[]`; required) - Tab paths in target order.
-

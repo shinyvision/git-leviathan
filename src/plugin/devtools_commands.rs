@@ -67,9 +67,6 @@ impl DevtoolsAction {
     }
 }
 
-/// One devtools command's static metadata. Kept separate from the
-/// runtime closures so a future doc generator can render the same
-/// table the registry sees.
 struct DevtoolsCommandSpec {
     name: &'static str,
     title: &'static str,

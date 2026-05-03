@@ -29,7 +29,7 @@ Active repository snapshot.
 
 ### `LeviathanLocalBranch`
 
-Local branch descriptor.
+Local branch.
 
 - `name` (`string`; required) - Branch name.
 - `hash` (`string`; required) - Target hash.
@@ -38,7 +38,7 @@ Local branch descriptor.
 
 ### `LeviathanRemoteBranch`
 
-Remote branch descriptor.
+Remote branch.
 
 - `name` (`string`; required) - Branch name.
 - `remote_name` (`string`; required) - Remote name.
@@ -46,7 +46,7 @@ Remote branch descriptor.
 
 ### `LeviathanTag`
 
-Git tag descriptor.
+Git tag.
 
 - `name` (`string`; required) - Tag name.
 - `hash` (`string`; required) - Target hash.
@@ -149,4 +149,3 @@ Blame is not yet wired through the host gateway. Returns (nil, "unsupported").
 **Returns:**
 - `nil` - Always nil.
 - `string` - Error message.
-

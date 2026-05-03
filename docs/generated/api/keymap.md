@@ -16,7 +16,7 @@ Context-aware keymap registry namespace.
 
 Options table accepted by `leviathan.keymap.set`.
 
-- `description` (`string`; optional) - Human-friendly description shown in devtools and the keymap inspector.
+- `description` (`string`; optional) - Description shown in devtools and the keymap inspector.
 - `args` (`LeviathanJson`; optional) - Args table forwarded verbatim to the underlying command at dispatch time.
 
 ### `LeviathanKeymapSummary`
@@ -29,7 +29,7 @@ Compact view of a registered keymap, returned by `leviathan.keymap.list`.
 - `plugin_id` (`string`; required) - Owning plugin id; `<host>` for built-ins, `<user>` for user-config rows.
 - `source` (`string`; required) - One of `built-in`, `user`, `plugin`.
 - `status` (`string`; required) - One of `active`, `conflict_lost`.
-- `description` (`string`; required) - Description text supplied at registration.
+- `description` (`string`; required) - Description supplied at registration.
 - `conflict_with` (`LeviathanKeymapConflictRef|nil`; optional) - When `status == conflict_lost`, points to the winning binding.
 
 ### `LeviathanKeymapConflictRef`
@@ -74,4 +74,3 @@ List every registered keymap (built-in, user, plugin) including conflict losers.
 
 **Returns:**
 - `LeviathanKeymapSummary[]` - Array of keymap summaries with conflict status.
-

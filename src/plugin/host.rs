@@ -1,17 +1,4 @@
-//! Plugin host — loads plugins, owns their Lua states, dispatches callbacks.
-//!
-//! Design:
-//! - Each plugin gets its own `mlua::Lua` state. All calls happen on the main
-//!   thread from `App::update`.
-//! - During `init.lua` execution, a `BuildState` collected via `Rc<RefCell<_>>`
-//!   captures registrations (main-bar buttons, screens). After `exec()`, the
-//!   host drains the BuildState into its permanent `LoadedPlugin`.
-//! - Runtime effects flow through callback return values: screen `update`
-//!   returns `{ state = ..., navigate = ... }` tables. The host interprets.
-//! - Widget trees are cached as a typed `Option<WidgetAst>` and
-//!   refreshed after every dispatch (open_screen / dispatch_event).
-//!   The boundary decoder converts the plugin's Lua return into the AST
-//!   once, so the renderer never sees a raw JSON value.
+//! Plugin loading, callback dispatch, and resource ownership.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -92,11 +79,6 @@ pub enum PluginLoadError {
     Lua(mlua::Error),
     BadManifest(String),
     Plugin(git_leviathan_plugin_api::error::PluginError),
-    /// devtools: the plugin id is on the host's
-    /// disabled-plugins set. Surfaced from
-    /// [`PluginHost::load_plugin`] when a `Plugin: Disable`
-    /// devtools command (or test fixture) marked the plugin as
-    /// disabled before this load.
     Disabled(String),
 }
 
@@ -135,49 +117,18 @@ impl std::error::Error for PluginLoadError {}
 
 struct LoadedPlugin {
     generation: PluginGeneration,
-    /// Absolute path to the plugin's directory. Used as sandbox root when
-    /// resolving plugin-bundled assets (icons, etc).
     root: PathBuf,
-    /// Parsed manifest stashed at load time. Read by `introspect()` to
-    /// surface plugin metadata (name, version, capabilities, declared
-    /// services) without re-parsing `plugin.toml` on every devtools open.
     manifest: PluginManifest,
-    /// `main_bar.add` / `main_bar.replace` handlers. Keyed by `slot_id`
-    /// (the full registry id the plugin declared).
     slot_handlers: HashMap<String, RegistryKey>,
     screens: HashMap<String, ScreenDef>,
     screen_state: HashMap<String, RegistryKey>,
-    /// Dynamic (function-backed) main-bar slot widgets. Each entry is the
-    /// Lua function registry key plus the shared cache cell the slot's
-    /// builder reads from. Populated on load; refreshed after every
-    /// autocmd fire affecting this plugin.
     dynamic_widgets: HashMap<String, (RegistryKey, DynamicAstCache)>,
-    /// Per-plugin deferred-call queue. `leviathan.api.schedule(fn)` and
-    /// `defer_fn(ms, fn)` push into this; `PluginHost::tick` drains it.
-    /// Coroutines that yielded mid-resume also live here so subsequent
-    /// ticks can resume them.
     deferred: Rc<RefCell<DeferredQueue>>,
-    /// Plugin-registered named commands (`leviathan.command.create`).
-    /// Looked up by `PluginHost::invoke_user_command`.
     user_commands: Rc<RefCell<UserCommands>>,
-    /// Health-check callbacks registered via `leviathan.health.register`.
-    /// Drained per-plugin by `PluginHost::run_health_checks`. Plugins
-    /// without any registration are absent from the resulting report.
     health_checks: Vec<HealthCheckRegistration>,
-    /// Lua loader. Owns the per-generation module cache and
-    /// the resolved runtime path. Held here so `module_graph()` and
-    /// `runtime_paths` introspection can read live state, and so the
-    /// cache drops when this `LoadedPlugin` (and its generation) is
-    /// dropped.
     lua_loader: LuaLoader,
-    /// async runtime per-plugin async-job on-complete callbacks. Keyed by
-    /// `JobId`; consumed by `tick()` when the worker thread finishes.
     job_callbacks: Rc<RefCell<JobCallbacks>>,
-    /// async runtime per-plugin timer callbacks. Keyed by `TimerId`; the
-    /// timer registry owns lifecycle, this map owns the Lua refs.
     timer_callbacks: Rc<RefCell<PluginTimerCallbacks>>,
-    /// async runtime per-plugin file-watcher callbacks. Keyed by
-    /// `WatchId`. Drained when the watcher fires or is cancelled.
     watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>>,
 }
 
@@ -250,145 +201,40 @@ impl ResourceCleaner for HostResourceCleaner<'_> {
 
 pub struct PluginHost {
     plugins: HashMap<String, LoadedPlugin>,
-    /// Ordered hook operations across every region.
     slot_ops: Vec<PreparedSlotOp>,
     active_screen: Option<(String, String)>,
     widget_tree: Option<WidgetAst>,
     split_sizes: HashMap<String, Vec<f32>>,
     split_drag: Option<SplitDragInfo>,
-    /// typed-event registry. Owns every autocmd row and the
-    /// host-side virtual clock used for debounce. Replaces the
-    /// legacy autocmd `HashMap<event, Vec<(plugin, key)>>` table.
     event_bus: EventBus,
-    /// Hash of the last `(current_branch, refs)` pushed to every plugin's
-    /// `leviathan.repository`. `None` means "not yet synced" — the first
-    /// `sync_repository` call always pushes. Used to suppress redundant
-    /// table rebuilds + `BranchChanged` fires on unchanged snapshots.
     last_repository_hash: Option<u64>,
-    /// Last `TabsSnapshot` pushed into every plugin's `leviathan.tab_registry`.
-    /// Diffed against fresh snapshots in `sync_tab_registry` to elide
-    /// redundant Lua syncs and to compute the precise `TabChange` returned
-    /// to the app for event dispatch. Default-initialized so the first
-    /// non-empty snapshot is treated as a change.
     last_tab_snapshot: TabsSnapshot,
-    /// Shared between every plugin's Lua state. `tab_registry.{add,
-    /// remove, select}` push into this; `App::update` drains via
-    /// `take_pending_tab_ops`.
     pending_tab_ops: Rc<RefCell<Vec<TabRegistryOp>>>,
-    /// Per-host capability audit log. Cloned (cheap, Arc-backed) into
-    /// every plugin's `CapabilityGuard` so allow/deny events from all
-    /// plugins land in the same log. Read by the devtools panel
-    /// (reload transactions).
     audit_log: AuditLog,
-    /// Last failed `reload_plugin` error per plugin. Cleared on a
-    /// successful reload. Devtools surfaces this so a hot-reload
-    /// failure is visible without scraping stderr.
     last_reload_errors: HashMap<String, String>,
-    /// Inter-plugin service registry. Populated by
-    /// `leviathan.services.register` calls from each plugin's init.lua;
-    /// queried by `leviathan.services.get`.
     service_registry: Rc<RefCell<ServiceRegistry>>,
     next_generation_ids: HashMap<String, u64>,
-    /// typed diagnostics. Every host-side error path that used
-    /// to `eprintln!` records a `PluginDiagnostic` here. Cheap-clone
-    /// (Arc-backed); shared into the devtools snapshot.
     diagnostics: DiagnosticStore,
-    /// plugin root map of `plugin_id -> root directory`. Read by
-    /// `PluginRuntimePath::resolve` so a plugin's declared
-    /// `requires_plugins` resolve to absolute `lua/<dep_id>/` roots.
-    /// Cheap-clone (Rc-backed); kept on the host so reload/unload can
-    /// keep it in sync with the live plugin set.
     runtime_path_registry: RuntimePathRegistry,
-    /// Reload history per plugin, capped at the most recent
-    /// `RELOAD_HISTORY_CAP` entries. Drained into the devtools
-    /// `InspectorSnapshot::reload_history` view (oldest first).
     reload_history: HashMap<String, VecDeque<ReloadEventSummary>>,
-    /// unified command registry. Holds host-side built-in
-    /// commands (registered at construction with
-    /// [`HOST_COMMAND_PLUGIN_ID`]) and every plugin-registered Lua
-    /// command. Dispatch flows through
-    /// [`commands::dispatch_command`] so the Lua API
-    /// `leviathan.command.invoke` and the Rust entry
-    /// [`PluginHost::invoke_command`] resolve the same registry.
     command_registry: Rc<RefCell<CommandRegistry>>,
-    /// Per-plugin Lua state + capability guard handles consulted by
-    /// the command dispatcher. Updated on load / reload-commit /
-    /// unload so the registry can resolve a command's owner without
-    /// borrowing `&mut self` at dispatch time.
     command_plugin_registry: CommandPluginRegistry,
-    /// Queue of `CommandExecuted` events the dispatcher pushes from
-    /// either entry path. Drained during `tick` and routed through
-    /// `fire_event_typed` so subscribers see the same autocmd event
-    /// shape regardless of where the dispatch originated.
     pending_command_events: PendingCommandEvents,
-    /// unified keymap registry. Holds built-in, user, and
-    /// plugin-registered bindings. Dispatch routes through
-    /// [`PluginHost::dispatch_key`] which calls
-    /// [`commands::dispatch_command`] for matched chords so the same
-    /// command dispatch funnel runs.
     keymap_registry: Rc<RefCell<KeymapRegistry>>,
-    /// capability grant store. Persists every `(plugin_id,
-    /// plugin_version, capability)` decision and is the only thing
-    /// every sensitive API call consults at use time. Cheap-clone
-    /// (Arc-backed); shared into every `CapabilityGuard`.
     grant_store: GrantStore,
-    /// auto-grant policy. Bundled plugins (those loaded from
-    /// a path under a trusted root) get their requested capabilities
-    /// auto-allowed with `decided_by = "default"`. Non-bundled plugins
-    /// go through the prompt path.
     auto_grant_policy: AutoGrantPolicy,
-    /// active repository gateway handle. The app calls
-    /// [`PluginHost::set_repository_gateway`] on tab switches to keep
-    /// this current. Plugin git read/write APIs route through this
-    /// handle, which is the same gateway built-in UI uses.
     active_gateway: ActiveRepositoryGateway,
-    /// destructive-op confirmation policy. Defaults reject
-    /// every destructive op until [`DestructiveConfirmPolicy::approve_next`]
-    /// is called.
     destructive_policy: DestructiveConfirmPolicy,
-    /// recent / in-flight Git write ring. Capped at
-    /// [`PendingGitWrites::CAP`].
     pending_git_writes: PendingGitWrites,
-    /// outbound queue of typed events the git Lua API queued
-    /// up for the host to fire. Drained synchronously after each
-    /// `leviathan.git.*` call (see [`Self::flush_pending_git_events`])
-    /// and on every `tick`.
     pending_git_events: crate::plugin::api::git::PendingGitEvents,
-    /// host-wide async-job registry. Cheap-clone (Arc-backed).
     async_jobs: AsyncJobRegistry,
-    /// host-wide timer registry. Cheap-clone (Arc-backed).
     timers: TimerRegistry,
-    /// host-wide file-watcher registry. Cheap-clone
-    /// (Arc-backed). Drained per `tick` to dispatch buffered notify
-    /// events to the matching plugin's Lua callback.
     watchers: FileWatcherRegistry,
-    /// plugin storage roots. Production uses OS dirs; tests can
-    /// replace these with a temp-root before loading plugins.
     storage_roots: PluginStorageRoots,
-    /// cached dependency graph from the last
-    /// [`PluginHost::resolve_and_load`] (or `load_from_dir`) call.
-    /// Surfaced by `introspect()` so devtools can render the same
-    /// structure the resolver computed.
     dependency_graph: Vec<crate::plugin::dependency::DependencySummary>,
-    /// lazy activation registry. Plugins whose manifests
-    /// declared an `[activation]` section are parked here until
-    /// their first matching trigger fires; the host then runs
-    /// `load_plugin` and re-dispatches the trigger. Stubs are
-    /// recorded against synthetic `(plugin_id, gen=0)` ledgers so
-    /// `unload_plugin` reaps them like real registrations.
     lazy_registry: crate::plugin::activation::LazyRegistry,
-    /// Lazy-stub ledgers for lazy-stub bookkeeping. One per parked
-    /// plugin id; dropped (and its records released) when the
-    /// plugin activates or is unloaded.
     lazy_ledgers: HashMap<String, ResourceLedger>,
-    /// Latest repository shape pushed in via
-    /// [`PluginHost::sync_repository`]. Used to evaluate
-    /// `activation.repository_shape` predicates against.
     last_repository_shape: Option<RepositoryShapeFacts>,
-    /// host-wide extension registry. Owns overlays,
-    /// context-menu items, and graph / diff decorations contributed
-    /// via the new `leviathan.ui.*` extension APIs. Cheap-clone
-    /// (Rc-backed); shared into every plugin's Lua factory.
     extension_registry: crate::plugin::extensions::ExtensionRegistry,
     /// performance / circuit-breaker tracker. Cheap-clone
     /// (Arc-Mutex). Every plugin callback dispatch routes through
@@ -647,9 +493,7 @@ impl PluginHost {
         self.auto_grant_policy.trust_bundled_root(root);
     }
 
-    /// capability-prompt resolution entry point used by the
-    /// (future) devtools modal. Hands the prompt back to the user
-    /// code with the current pending decisions; the caller calls
+    /// Hands pending capability decisions to the caller. The caller calls
     /// [`crate::plugin::capability_grants::PromptState::decide`] for
     /// each row, then submits via [`Self::commit_capability_prompt`].
     /// Returns `None` when no prompt is pending for that plugin
@@ -744,16 +588,6 @@ impl PluginHost {
         }
     }
 
-    /// Seed three representative built-in repository commands into the
-    /// unified registry. command registry keeps the wiring narrow: each
-    /// built-in is a no-op host body that emits a structured info
-    /// diagnostic so a `/repository.refresh` palette invocation does
-    /// _something_ visible, but the full migration of every existing
-    /// `RepositoryMessage` family to the registry is left to keymaps
-    /// (which also wires keymaps into the dispatcher). The acceptance
-    /// gate only requires that one registry can hold both kinds —
-    /// that's proven by registering at least one host command here
-    /// and exercising it through `invoke_command` in tests.
     fn register_builtin_host_commands(&mut self) {
         let commands_to_register = [
             (
@@ -1744,15 +1578,10 @@ impl PluginHost {
         }
     }
 
-    /// Cheap-clone handle to the unified command registry. Tests use
-    /// it to project summaries; the palette will too. Plugin Lua code
-    /// goes through `leviathan.command.list` instead.
     pub fn command_registry(&self) -> Rc<RefCell<CommandRegistry>> {
         Rc::clone(&self.command_registry)
     }
 
-    /// Cheap-clone handle to the unified keymap registry. Used by
-    /// devtools, tests, and the Lua `list` shim.
     pub fn keymap_registry(&self) -> Rc<RefCell<KeymapRegistry>> {
         Rc::clone(&self.keymap_registry)
     }
@@ -1764,10 +1593,6 @@ impl PluginHost {
         self.keymap_registry.borrow_mut().set_leader(leader);
     }
 
-    /// keymaps user-keymap entry point. Tests use this directly; the
-    /// capability-grant user-config loader will too. Built-in / plugin
-    /// bindings are NOT routed through here — they have their own
-    /// install paths.
     pub fn set_user_keymap(
         &mut self,
         context: impl Into<String>,
@@ -3560,11 +3385,6 @@ impl PluginHost {
         self.apply_region_slots(registry, "tab_bar", PreparedSlot::into_tab_bar);
     }
 
-    /// extension points host-level lookup: every context-menu item registered
-    /// for `region` (e.g. `"repository.diff.context_menu"`), already
-    /// sorted ascending by priority then `(plugin_id, id)`.
-    /// Renderers reach the live extension registry through this entry
-    /// rather than touching the registry directly.
     pub fn extension_context_menu_items(
         &self,
         region: &str,
@@ -3572,10 +3392,6 @@ impl PluginHost {
         self.extension_registry.context_menu_items(region)
     }
 
-    /// extension points host-level lookup: every graph decoration attached to
-    /// `commit_hash`, sorted by `(plugin_id, id)`. Lets the future
-    /// graph renderer paint per-commit decorations without iterating
-    /// the full registry on every row.
     pub fn extension_graph_decorations_for_commit(
         &self,
         commit_hash: &str,
@@ -3583,11 +3399,6 @@ impl PluginHost {
         self.extension_registry.graph_decorations_for(commit_hash)
     }
 
-    /// extension points host-level helper used by the load/unload pipeline:
-    /// drop every overlay / context-menu item / decoration owned by
-    /// `plugin_id`. Callers outside the host (e.g. an admin command
-    /// that uninstalls a plugin) reach the registry through this
-    /// shim so the registry stays a private detail of the host.
     pub fn discard_extensions_for_plugin(&self, plugin_id: &str) {
         self.extension_registry.clear_for_plugin(plugin_id);
     }
@@ -4440,8 +4251,6 @@ impl PluginHost {
         // owned by this plugin. Records came from a non-Slot ledger
         // path so the cleaner above didn't touch the registry.
         self.extension_registry.clear_for_plugin(plugin_id);
-        // Drop every breaker / trace row tied to this plugin
-        // so a future load starts with a clean slate.
         self.budget_tracker.drop_for_plugin(plugin_id);
         if self
             .active_screen
@@ -4469,7 +4278,7 @@ impl PluginHost {
         Ok(())
     }
 
-    /// reload transactions staged reload. Builds a new generation in isolation,
+    /// Builds a new generation in isolation,
     /// validates it, runs the optional `M.reload(old_state)` migration
     /// hook, and only then atomically swaps it for the previous
     /// generation. Any failure between stages aborts cleanly: the
@@ -5133,12 +4942,6 @@ impl PluginHost {
         }
     }
 
-    /// Test-only event replay hook. Same dispatch funnel as
-    /// `fire_event_typed`, exposed so plugin tests can stage event
-    /// sequences deterministically without going through the app
-    /// layer. The hook deliberately drives `fire_event_typed` (no
-    /// shortcut) so any future invariants the funnel adopts apply
-    /// to tests too.
     pub fn dispatch_test_event(&mut self, event: &str, payload: serde_json::Value) {
         let map = match payload {
             serde_json::Value::Object(m) => m,

@@ -28,10 +28,10 @@ Root host API table.
 
 ### `leviathan.has(feature)`
 
-Return true when the host exposes a descriptor feature such as `fs.read_file@1`.
+Return true when the host exposes a feature such as `fs.read_file@1`.
 
 **Parameters:**
-- `feature` (`string`; required) - `module.feature@major` descriptor query.
+- `feature` (`string`; required) - `module.feature@major` query.
 
 **Returns:**
 - `boolean` - Boolean result.
@@ -49,4 +49,3 @@ Defer a callback to the next tick (top-level alias of `leviathan.api.schedule`).
 
 **Parameters:**
 - `callback` (`fun()`; required) - Function invoked on the next tick.
-

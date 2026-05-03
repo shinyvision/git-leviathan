@@ -1,11 +1,3 @@
--- Terminal plugin for Git Leviathan.
--- Demonstrates the widget-tree main-bar hook API: adds an icon-over-label
--- action button to the Center section, immediately right of `builtin.pop`.
---
--- Widget tree: button → padding → column → { icon, text }.
--- Padding is a standalone widget wrapper — buttons/columns/etc. carry no
--- padding of their own.
-
 local TEXT_PRIMARY   = "#e1e5f4"
 local TEXT_SECONDARY = "#8b90a5"
 local TEXT_DIM       = "#585d6e"
@@ -19,7 +11,6 @@ leviathan.ui.regions.add_slot {
   section  = "center",
   priority = 60,
   on_click = function()
-    -- No-op for this prototype.
   end,
   widget = {
     kind     = "button",
@@ -28,7 +19,6 @@ leviathan.ui.regions.add_slot {
     style = {
       text_color       = TEXT_PRIMARY,
       background_hover = BG_HOVER,
-      -- No border — matches built-in action buttons (Pull/Push/Branch/…).
     },
     child = {
       kind   = "padding",

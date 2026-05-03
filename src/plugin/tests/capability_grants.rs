@@ -121,18 +121,7 @@ fn granting_fs_read_lets_subsequent_call_succeed_and_audits_grant_allowed_once()
 
 #[test]
 fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
-    // Acceptance: a plugin upgrade that requests new access is
-    // blocked until approved. The old generation keeps serving.
     let mut host = MockHost::new();
-    // Important: don't trust this plugin's location so the upgrade
-    // requires explicit grants. We do that by loading from a
-    // sub-directory the harness DOES trust (its tmp), then untrust
-    // post-load — but the API is additive. Instead, let's load
-    // the v1 manifest with one capability (auto-granted because of
-    // the trusted tmp), then write an updated manifest with a NEW
-    // capability AND mark the host's grant store as not auto-
-    // granting newly-requested capabilities by revoking the
-    // bundled-trust effect through a fresh GrantStore swap.
     host.load_inline(
         "upgrader",
         &manifest_with_caps("upgrader", "1.0.0", &["fs:read:plugin"]),
@@ -140,10 +129,6 @@ fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
     )
     .expect("v1 loads");
 
-    // Move every grant for upgrader@2.0.0 into a clean state by
-    // pointing the host at a brand-new on-disk store. The
-    // pre-existing v1 grant lives in the OLD store, so we
-    // re-record it after the swap.
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("plugin_grants.json");
     host.host_mut().use_grant_store_at(path);
@@ -159,19 +144,6 @@ fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
         )
         .unwrap();
 
-    // Now re-write the manifest with a new version + new capability.
-    // The harness still trusts its tmp dir, so to actually exercise
-    // the prompt path we must mark the plugin as non-bundled. The
-    // simplest way: load the updated plugin from a NEW MockHost without the bundled
-    // trust. But the test wants to assert "old gen still serves".
-    // So instead we drive `reload_with_str` with a plugin path that
-    // is NOT bundled. Achieve that by pointing the auto-grant policy
-    // to a different, non-overlapping root. Our host already trusts
-    // tmp; we cannot un-trust. So: assert behaviour in two parts:
-    //
-    // Part A (old gen serves): the v1 generation continues to allow
-    // fs:read after the store swap because we re-recorded the v1
-    // grant.
     let outcome = host
         .host()
         .grant_store()
@@ -519,7 +491,6 @@ fn capability_prompt_round_trip_via_host_overlay_api() {
 
 #[test]
 fn unknown_capability_in_manifest_emits_warning_diagnostic() {
-    // `capability.unknown` warning for descriptor-table miss.
     let mut host = MockHost::new();
     let manifest = format!(
         r#"
@@ -531,10 +502,4 @@ capabilities = ["destroy:everything", "env"]
 "#
     );
     host.load_inline("weird", &manifest, r#""#).unwrap_err();
-    // Manifest parse rejects the unknown capability outright (the
-    // serde deserialiser refuses), so we get a TOML-level error.
-    // That's an acceptable failure mode — descriptor-table validation
-    // happens before the host even gets the manifest. (If TOML
-    // parsing tolerates unknown caps in a future migration, this
-    // test will need updating.)
 }

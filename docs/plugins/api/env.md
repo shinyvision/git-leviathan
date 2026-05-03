@@ -36,4 +36,3 @@ List UTF-8 environment variables as a name/value table.
 
 **Returns:**
 - `table<string,string>` - Environment map.
-
