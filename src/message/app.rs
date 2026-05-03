@@ -34,9 +34,9 @@ pub enum AppMessage {
     FetchTick(Instant),
     /// Debounce timer for post-Ctrl+Tab auto-fetch fired; fetch the now-active tab.
     FetchDebounceElapsed,
-    /// Network fetch completed; app clears `fetching` then forwards to the
-    /// tab's screen as `FetchFinished`. Payload is unit — the screen handler
-    /// dispatches its own scoped refs-reload on success.
+    /// Network fetch completed; app clears `fetching`, fires a typed plugin
+    /// `FetchFinished` event, then forwards to the tab's screen. The screen
+    /// handler dispatches its own scoped refs-reload on success.
     FetchCompleted {
         tab_id: TabId,
         result: Result<(), GitError>,

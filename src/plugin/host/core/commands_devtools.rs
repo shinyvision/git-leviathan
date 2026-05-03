@@ -1,8 +1,10 @@
+use super::*;
+
 impl PluginHost {
-/// Build the [`CommandDispatchEnv`] handle plugins are handed at
-/// API install time. Cheap-clone (every member is `Rc`-backed); the
-/// host keeps its own clones in `Self`.
-fn command_dispatch_env(&self) -> CommandDispatchEnv {
+    /// Build the [`CommandDispatchEnv`] handle plugins are handed at
+    /// API install time. Cheap-clone (every member is `Rc`-backed); the
+    /// host keeps its own clones in `Self`.
+    pub(super) fn command_dispatch_env(&self) -> CommandDispatchEnv {
         CommandDispatchEnv {
             commands: Rc::clone(&self.command_registry),
             plugin_registry: self.command_plugin_registry.clone(),
@@ -12,7 +14,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
         }
     }
 
-    fn register_builtin_host_commands(&mut self) {
+    pub(super) fn register_builtin_host_commands(&mut self) {
         let commands_to_register = [
             (
                 "repository.fetch",
@@ -180,7 +182,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
     /// the body can queue an action for the host to apply (with
     /// `&mut self`) after dispatch returns. Called once from
     /// [`PluginHost::new`] after the command registry builtin commands.
-    fn register_builtin_devtools_commands(&mut self) {
+    pub(super) fn register_builtin_devtools_commands(&mut self) {
         crate::plugin::devtools_commands::register(
             &mut self.command_registry.borrow_mut(),
             Rc::clone(&self.devtools_action_queue),
@@ -216,7 +218,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
     /// last action's result is stashed in `self.last_devtools_result`
     /// for `invoke_devtools_command` to return. Empty queue is a
     /// no-op (e.g. the body short-circuited on bad args).
-    fn drain_devtools_actions(&mut self) {
+    pub(super) fn drain_devtools_actions(&mut self) {
         let actions = std::mem::take(&mut *self.devtools_action_queue.borrow_mut());
         for action in actions {
             let result = self.apply_devtools_action(action);
@@ -224,7 +226,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
         }
     }
 
-    fn apply_devtools_action(
+    pub(super) fn apply_devtools_action(
         &mut self,
         action: crate::plugin::devtools_commands::DevtoolsAction,
     ) -> serde_json::Value {
@@ -451,7 +453,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
     /// Emit a `devtools.command.unknown_plugin` diagnostic when an
     /// action references a plugin id that isn't loaded (or in the
     /// disabled set).
-    fn record_unknown_plugin(&self, command: &str, plugin_id: &str) {
+    pub(super) fn record_unknown_plugin(&self, command: &str, plugin_id: &str) {
         self.diagnostics.record(
             PluginDiagnostic::new(
                 PluginId::from(HOST_COMMAND_PLUGIN_ID),
@@ -661,7 +663,11 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
     /// surfaces, clearing each. Even when `secrets` appears in the
     /// list, the clear path goes through `reset_plugin_storage` so
     /// the same audit / fs path used by every other surface applies.
-    fn devtools_clear_state(&mut self, plugin_id: &str, surfaces: &[String]) -> serde_json::Value {
+    pub(super) fn devtools_clear_state(
+        &mut self,
+        plugin_id: &str,
+        surfaces: &[String],
+    ) -> serde_json::Value {
         if !self.plugins.contains_key(plugin_id) {
             self.record_unknown_plugin("plugin.clear_state", plugin_id);
             return serde_json::json!({
@@ -875,7 +881,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
         })
     }
 
-    fn collect_plugin_state(&self, plugin_id: Option<&str>) -> serde_json::Value {
+    pub(super) fn collect_plugin_state(&self, plugin_id: Option<&str>) -> serde_json::Value {
         let mut out = serde_json::Map::new();
         for (id, plugin) in &self.plugins {
             if let Some(pid) = plugin_id {
@@ -906,7 +912,10 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
 
     /// Runtime-path rows for `plugin_id`. Returns `None` when the
     /// plugin is not loaded.
-    fn runtime_path_entries_for(&self, plugin_id: &str) -> Option<Vec<serde_json::Value>> {
+    pub(super) fn runtime_path_entries_for(
+        &self,
+        plugin_id: &str,
+    ) -> Option<Vec<serde_json::Value>> {
         let plugin = self.plugins.get(plugin_id)?;
         Some(
             plugin
@@ -981,7 +990,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
         outcome
     }
 
-    fn flush_pending_command_events(&mut self) {
+    pub(super) fn flush_pending_command_events(&mut self) {
         let events = self.pending_command_events.drain();
         for event in events {
             let mut payload = EventPayload::new();
@@ -1153,7 +1162,7 @@ fn command_dispatch_env(&self) -> CommandDispatchEnv {
         outcome
     }
 
-    fn record_reload_event(&mut self, event: ReloadEventSummary) {
+    pub(super) fn record_reload_event(&mut self, event: ReloadEventSummary) {
         let bucket = self
             .reload_history
             .entry(event.plugin_id.clone())

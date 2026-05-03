@@ -1,6 +1,6 @@
 leviathan.autocmd.create({ "TabAdded", "TabRemoved", "TabSelected", "TabMoved" }, {
 	callback = function(event)
-		leviathan.log("tablist_demo: " .. event)
+		leviathan.log("tablist_demo: " .. event.event)
 	end,
 })
 

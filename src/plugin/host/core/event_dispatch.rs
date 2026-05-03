@@ -1,3 +1,5 @@
+use super::*;
+
 impl PluginHost {
     /// Fire a host-side event with no payload.
     /// Equivalent to `fire_event_typed(event, {})`.
@@ -82,7 +84,7 @@ impl PluginHost {
         self.event_bus.advance_clock(delta_ms);
     }
 
-    fn dispatch_for_name(
+    pub(super) fn dispatch_for_name(
         &mut self,
         canonical: &'static event_descriptor::ApiEvent,
         alias_name: Option<&'static str>,
@@ -163,7 +165,7 @@ impl PluginHost {
         }
     }
 
-    fn invoke_one_callback(
+    pub(super) fn invoke_one_callback(
         &self,
         plugin_id: &str,
         generation_id: GenerationId,
@@ -262,7 +264,12 @@ impl PluginHost {
         }
     }
 
-    fn update_runtime(&mut self, autocmd_id: u64, outcome: &DispatchOutcome, now_ms: u64) {
+    pub(super) fn update_runtime(
+        &mut self,
+        autocmd_id: u64,
+        outcome: &DispatchOutcome,
+        now_ms: u64,
+    ) {
         let entries = self.event_bus.entries_mut();
         let Some(entry) = entries.iter_mut().find(|e| e.id.get() == autocmd_id) else {
             return;
@@ -453,7 +460,7 @@ impl PluginHost {
     /// lazy loading: walk the lazy registry's repository-shape and
     /// file-presence triggers against the cached facts and activate
     /// matching plugins. Called after every `sync_repository`.
-    fn probe_lazy_repository_triggers(&mut self) {
+    pub(super) fn probe_lazy_repository_triggers(&mut self) {
         let Some(facts) = self.last_repository_shape.clone() else {
             return;
         };

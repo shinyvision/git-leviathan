@@ -32,7 +32,7 @@ checksum = "sha256:29bbfdb0ce8bfdc42534f2e5891f68ee9c6d6abdb7d28b5015a912213bbd8
 id = "tablist_demo"
 version = "0.0.1"
 source = "local"
-checksum = "sha256:afa73eb2c8782d6928e41d6cada9cdc0d90674ee368213645dc21d2ac774848e"
+checksum = "sha256:7c479972736d987395695360facec481b3dcaf9d28a9463ea125f7f09b2e2d4b"
 
 [[plugin]]
 id = "terminal"

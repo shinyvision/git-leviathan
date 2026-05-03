@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use crate::{
     config::AppConfig,
     message::Message,
+    plugin::events::EventPayload,
     plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
     plugin::PluginHost,
     screens::no_git::TargetOs,
@@ -218,6 +219,43 @@ impl App {
         );
     }
 
+    pub(super) fn fetch_remote_name_for_tab(&self, tab_id: crate::core::TabId) -> String {
+        self.tabs
+            .screen(tab_id)
+            .and_then(|screen| screen.default_remote_name())
+            .filter(|remote| !remote.is_empty())
+            .unwrap_or("origin")
+            .to_string()
+    }
+
+    pub(super) fn fetch_remote_payload(remote_name: impl Into<String>) -> EventPayload {
+        let mut payload = EventPayload::new();
+        payload.insert(
+            "remote".into(),
+            serde_json::Value::String(remote_name.into()),
+        );
+        payload
+    }
+
+    pub(super) fn tab_payload(entry: &TabSnapshotEntry) -> EventPayload {
+        let mut payload = EventPayload::new();
+        payload.insert(
+            "tab_id".into(),
+            serde_json::Value::Number(serde_json::Number::from(entry.id.raw())),
+        );
+        payload.insert("path".into(), serde_json::Value::String(entry.path.clone()));
+        payload
+    }
+
+    pub(super) fn tab_moved_payload(count: usize) -> EventPayload {
+        let mut payload = EventPayload::new();
+        payload.insert(
+            "count".into(),
+            serde_json::Value::Number(serde_json::Number::from(count as u64)),
+        );
+        payload
+    }
+
     fn snapshot_tabs(&self) -> TabsSnapshot {
         let entries: Vec<TabSnapshotEntry> = self
             .tabs
@@ -253,17 +291,21 @@ impl App {
         let Some(change) = self.plugin_host.sync_tab_registry(&current) else {
             return;
         };
-        if change.added {
-            self.plugin_host.fire_event("TabAdded");
+        if let Some(entry) = change.added_entry.as_ref() {
+            self.plugin_host
+                .fire_event_typed("TabAdded", Self::tab_payload(entry));
         }
-        if change.removed {
-            self.plugin_host.fire_event("TabRemoved");
+        if let Some(entry) = change.removed_entry.as_ref() {
+            self.plugin_host
+                .fire_event_typed("TabRemoved", Self::tab_payload(entry));
         }
         if change.reordered {
-            self.plugin_host.fire_event("TabMoved");
+            self.plugin_host
+                .fire_event_typed("TabMoved", Self::tab_moved_payload(change.count));
         }
-        if change.selected_changed {
-            self.plugin_host.fire_event("TabSelected");
+        if let Some(entry) = change.selected_entry.as_ref() {
+            self.plugin_host
+                .fire_event_typed("TabSelected", Self::tab_payload(entry));
         }
     }
 

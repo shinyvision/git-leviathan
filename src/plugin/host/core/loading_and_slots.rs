@@ -1,3 +1,5 @@
+use super::*;
+
 impl PluginHost {
     pub fn load_plugin(&mut self, dir: &Path) -> Result<(), PluginLoadError> {
         // Respect the disabled-plugins set. If the id (derived
@@ -545,7 +547,7 @@ impl PluginHost {
     /// register them. Bad descriptors emit `command.invalid_args`
     /// diagnostics and the row is dropped (registration failure
     /// must not block plugin load).
-    fn install_raw_commands(
+    pub(super) fn install_raw_commands(
         &mut self,
         plugin_id: &str,
         generation_id: GenerationId,
@@ -616,7 +618,7 @@ impl PluginHost {
         self.extension_registry.clear_for_plugin(plugin_id);
     }
 
-    fn apply_region_slots<T: IsSlot>(
+    pub(super) fn apply_region_slots<T: IsSlot>(
         &self,
         registry: &mut SlotRegistry<T>,
         region_name: &str,

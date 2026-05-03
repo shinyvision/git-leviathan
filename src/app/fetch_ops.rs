@@ -39,9 +39,11 @@ impl App {
         let Some(screen) = self.tabs.screen(tab_id) else {
             return Task::none();
         };
+        let remote_name = screen.default_remote_name().unwrap_or("origin").to_string();
         let task = self.fetch.start(screen.fetch_task());
         self.tabs.persist_most_recent_if_needed(tab_id);
-        self.plugin_host.fire_event("FetchStarted");
+        self.plugin_host
+            .fire_event_typed("FetchStarted", Self::fetch_remote_payload(remote_name));
         task
     }
 

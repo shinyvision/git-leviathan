@@ -1,8 +1,10 @@
+use super::*;
+
 /// Wall-clock timestamp (UNIX millis) used by reload-history rows. The
 /// history view sorts by this, so a non-monotonic clock just shuffles
 /// neighbouring entries — never important enough to switch to
 /// `Instant`.
-fn build_watch_event_table(
+pub(super) fn build_watch_event_table(
     lua: &Lua,
     event: &crate::plugin::watchers::WatchEvent,
 ) -> mlua::Result<Table> {
@@ -16,7 +18,7 @@ fn build_watch_event_table(
     Ok(t)
 }
 
-fn now_unix_ms() -> u128 {
+pub(super) fn now_unix_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -29,7 +31,7 @@ fn now_unix_ms() -> u128 {
 /// produce the same table anyway. Cheap on typical repos (a few dozen
 /// refs); kept self-contained so the host doesn't depend on the
 /// projection-layer `ProjectionSignature`.
-fn compute_repo_hash(
+pub(super) fn compute_repo_hash(
     repo_name: &str,
     workdir_path: &str,
     current_branch_name: &str,
@@ -57,7 +59,7 @@ fn compute_repo_hash(
 /// [`MergedAutocmdOps`] from the three streams the plugin's init
 /// produced (autocmd creates, group creates, group clears) and
 /// emitted in plugin-local declaration order.
-enum AutocmdOp {
+pub(super) enum AutocmdOp {
     Group(api::RawAutocmdGroup),
     Clear(api::RawAutocmdClear),
     Create(api::RawAutocmd),
@@ -65,7 +67,7 @@ enum AutocmdOp {
 
 /// Iterator that merges autocmd / group / clear ops into a single
 /// stream sorted by their plugin-local sequence id.
-struct MergedAutocmdOps {
+pub(super) struct MergedAutocmdOps {
     autocmds: std::vec::IntoIter<api::RawAutocmd>,
     groups: std::vec::IntoIter<api::RawAutocmdGroup>,
     clears: std::vec::IntoIter<api::RawAutocmdClear>,
@@ -75,7 +77,7 @@ struct MergedAutocmdOps {
 }
 
 impl MergedAutocmdOps {
-    fn new(
+    pub(super) fn new(
         autocmds: Vec<api::RawAutocmd>,
         groups: Vec<api::RawAutocmdGroup>,
         clears: Vec<api::RawAutocmdClear>,
@@ -140,13 +142,13 @@ impl Iterator for MergedAutocmdOps {
 /// the cold-load merger but operates on `StagedAutocmd` instead of
 /// `RawAutocmd` (the staged record carries the resolved canonical
 /// event name pre-computed during staging).
-enum StagedAutocmdOp {
+pub(super) enum StagedAutocmdOp {
     Group(api::RawAutocmdGroup),
     Clear(api::RawAutocmdClear),
     Create(staged_reload::StagedAutocmd),
 }
 
-struct MergedStagedAutocmdOps {
+pub(super) struct MergedStagedAutocmdOps {
     autocmds: std::vec::IntoIter<staged_reload::StagedAutocmd>,
     groups: std::vec::IntoIter<api::RawAutocmdGroup>,
     clears: std::vec::IntoIter<api::RawAutocmdClear>,
@@ -156,7 +158,7 @@ struct MergedStagedAutocmdOps {
 }
 
 impl MergedStagedAutocmdOps {
-    fn new(
+    pub(super) fn new(
         autocmds: Vec<staged_reload::StagedAutocmd>,
         groups: Vec<api::RawAutocmdGroup>,
         clears: Vec<api::RawAutocmdClear>,
@@ -217,23 +219,23 @@ impl Iterator for MergedStagedAutocmdOps {
 /// during dispatch. Cloning the few primitive fields up front lets
 /// the funnel hand control off to plugin Lua callbacks without
 /// holding a borrow on the EventBus across re-entrant dispatch.
-struct EntrySnapshot {
-    id: u64,
-    plugin_id: String,
-    generation_id: GenerationId,
-    once: bool,
-    debounce_ms: u64,
-    pattern_present: bool,
-    matches_pattern: bool,
-    last_fire_clock_ms: Option<u64>,
-    disabled: bool,
+pub(super) struct EntrySnapshot {
+    pub(super) id: u64,
+    pub(super) plugin_id: String,
+    pub(super) generation_id: GenerationId,
+    pub(super) once: bool,
+    pub(super) debounce_ms: u64,
+    pub(super) pattern_present: bool,
+    pub(super) matches_pattern: bool,
+    pub(super) last_fire_clock_ms: Option<u64>,
+    pub(super) disabled: bool,
 }
 
 /// Build the typed payload table the Lua callback receives. Mirrors
 /// the descriptor's `LeviathanAutocmdEvent` shape. Empty payload
 /// tables still surface as `{}` so the callback signature stays
 /// uniform across every autocmd event.
-fn build_payload_table(
+pub(super) fn build_payload_table(
     lua: &Lua,
     canonical: &'static event_descriptor::ApiEvent,
     alias_used: Option<&'static str>,
@@ -254,7 +256,7 @@ fn build_payload_table(
 /// site recorded by the resource ledger. The plugin's chunk name
 /// drives the `file` field; `line` is parsed out of the `:N:` infix
 /// when present so devtools shows the autocmd registration call site.
-fn make_lua_span(plugin_id: &str, source_location: Option<&str>) -> PluginSourceSpan {
+pub(super) fn make_lua_span(plugin_id: &str, source_location: Option<&str>) -> PluginSourceSpan {
     let file = format!("plugins/{plugin_id}/init.lua");
     let line = source_location.and_then(|raw| {
         let bytes = raw.as_bytes();
@@ -283,7 +285,7 @@ fn make_lua_span(plugin_id: &str, source_location: Option<&str>) -> PluginSource
     }
 }
 
-fn record_screen_state_resource(
+pub(super) fn record_screen_state_resource(
     ledger: &ResourceLedger,
     screen_id: &str,
     source_location: Option<String>,
@@ -298,4 +300,3 @@ fn record_screen_state_resource(
     );
     ledger.record(PluginResourceKind::LuaRegistryKey, handle, source_location);
 }
-

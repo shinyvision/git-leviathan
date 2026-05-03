@@ -39,12 +39,16 @@ pub enum TabRegistryOp {
     Reorder(Vec<String>),
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TabChange {
     pub added: bool,
     pub removed: bool,
     pub reordered: bool,
     pub selected_changed: bool,
+    pub added_entry: Option<TabSnapshotEntry>,
+    pub removed_entry: Option<TabSnapshotEntry>,
+    pub selected_entry: Option<TabSnapshotEntry>,
+    pub count: usize,
 }
 
 impl TabChange {
@@ -52,15 +56,34 @@ impl TabChange {
         use std::collections::HashSet;
         let prev_paths: HashSet<&str> = prev.paths().into_iter().collect();
         let cur_paths: HashSet<&str> = current.paths().into_iter().collect();
-        let added = cur_paths.difference(&prev_paths).next().is_some();
-        let removed = prev_paths.difference(&cur_paths).next().is_some();
+        let added_entry = current
+            .tabs
+            .iter()
+            .find(|tab| !prev_paths.contains(tab.path.as_str()))
+            .cloned();
+        let removed_entry = prev
+            .tabs
+            .iter()
+            .find(|tab| !cur_paths.contains(tab.path.as_str()))
+            .cloned();
         let reordered = prev_paths == cur_paths && prev.paths() != current.paths();
         let selected_changed = prev.active_path != current.active_path;
+        let selected_entry = if selected_changed {
+            current
+                .active_id
+                .and_then(|id| current.tabs.iter().find(|tab| tab.id == id).cloned())
+        } else {
+            None
+        };
         Self {
-            added,
-            removed,
+            added: added_entry.is_some(),
+            removed: removed_entry.is_some(),
             reordered,
             selected_changed,
+            added_entry,
+            removed_entry,
+            selected_entry,
+            count: current.tabs.len(),
         }
     }
 }

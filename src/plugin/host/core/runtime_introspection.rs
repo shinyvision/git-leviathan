@@ -1,3 +1,5 @@
+use super::*;
+
 impl PluginHost {
     /// Drain every plugin's deferred-call queue. Order per plugin:
     ///
@@ -184,7 +186,7 @@ impl PluginHost {
     /// due timers, and buffered file-watcher events. Errors are
     /// recorded as diagnostics; one buggy callback can't stall the
     /// next.
-    fn drive_async_runtime(&mut self, now: Instant) {
+    pub(super) fn drive_async_runtime(&mut self, now: Instant) {
         let mut pending: Vec<PluginDiagnostic> = Vec::new();
 
         // Async jobs.
@@ -1070,7 +1072,7 @@ impl PluginHost {
     /// `EventBus`. Records `autocmd.invalid_event` /
     /// `autocmd.invalid_pattern` diagnostics for shape errors and
     /// drops the row when the event name is unknown.
-    fn install_one_autocmd(
+    pub(super) fn install_one_autocmd(
         &mut self,
         plugin_id: &str,
         generation_id: GenerationId,
@@ -1121,7 +1123,7 @@ impl PluginHost {
         );
     }
 
-    fn refresh_dynamic_widgets_for_plugin(&self, plugin_id: &str) {
+    pub(super) fn refresh_dynamic_widgets_for_plugin(&self, plugin_id: &str) {
         let Some(plugin) = self.plugins.get(plugin_id) else {
             return;
         };
@@ -1215,7 +1217,7 @@ impl PluginHost {
 /// diagnostic. The error path is rooted at `path_root` so screen errors
 /// read `screen.<id>.view.children[2].child.label` and slot errors read
 /// `slot:<slot_id>.children[…]`.
-fn widget_decode_diagnostic(
+pub(super) fn widget_decode_diagnostic(
     plugin_id: &str,
     generation_id: GenerationId,
     path_root: &str,

@@ -135,8 +135,10 @@ impl App {
                 }
             }
             AppMessage::FetchCompleted { tab_id, result } => {
+                let remote_name = self.fetch_remote_name_for_tab(tab_id);
                 self.fetch.on_completed();
-                self.plugin_host.fire_event("FetchFinished");
+                self.plugin_host
+                    .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
                     return screen.update(RepositoryMessage::FetchFinished(result));
                 }

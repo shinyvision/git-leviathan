@@ -1,3 +1,5 @@
+use super::*;
+
 // Extra accessor/dispatch methods. Kept in a second `impl` block to
 // isolate the new hook-system additions above from the original API.
 impl PluginHost {
@@ -456,7 +458,7 @@ impl PluginHost {
     /// `reload_plugin` on a successful staging build; never invoked
     /// when staging failed (the artefacts drop and clean up on their
     /// own).
-    fn commit_staging(&mut self, artifacts: StagingArtifacts) {
+    pub(super) fn commit_staging(&mut self, artifacts: StagingArtifacts) {
         let StagingArtifacts {
             plugin_id,
             generation_id,
@@ -739,7 +741,7 @@ impl PluginHost {
         self.refresh_active_widget_tree();
     }
 
-    fn refresh_active_widget_tree(&mut self) {
+    pub(super) fn refresh_active_widget_tree(&mut self) {
         let Some((plugin_id, screen_id)) = self.active_screen.clone() else {
             self.widget_tree = None;
             return;

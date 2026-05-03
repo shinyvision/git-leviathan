@@ -130,6 +130,17 @@ fn unix_now_ms() -> u128 {
         .unwrap_or(0)
 }
 
+fn remote_event_payload(remote_name: &str) -> EventPayload {
+    let remote = if remote_name.is_empty() {
+        "origin"
+    } else {
+        remote_name
+    };
+    let mut payload = EventPayload::new();
+    payload.insert("remote".into(), serde_json::Value::String(remote.into()));
+    payload
+}
+
 /// The Git write operations the dispatcher can perform. Maps 1:1 to the
 /// `leviathan.git.*` Lua functions and to a [`Capability::GitWrite`]
 /// op.
@@ -810,18 +821,15 @@ fn run_request(
             );
             Ok(GitOpEvents::one("HeadChanged", head_payload))
         }
-        GitOpRequest::Fetch { .. } => {
-            let mut started_payload = EventPayload::new();
-            started_payload.insert(
-                "count".into(),
-                serde_json::Value::Number(serde_json::Number::from(0u64)),
-            );
+        GitOpRequest::Fetch { remote } => {
+            let remote_name = remote.as_deref().unwrap_or("origin");
+            let started_payload = remote_event_payload(remote_name);
             // Fire the started event eagerly via the returned event
             // list so the host emits it before completion. We collect
             // started + finished into the same fire list because
             // execution is currently synchronous (synchronous Git API compromise).
             let result = gateway.fetch_remotes();
-            let mut finished_payload = EventPayload::new();
+            let mut finished_payload = remote_event_payload(remote_name);
             match result {
                 Ok(()) => {
                     finished_payload.insert("ok".into(), serde_json::Value::Bool(true));
@@ -846,14 +854,11 @@ fn run_request(
                 Err(e) => Err(e.to_string()),
             }
         }
-        GitOpRequest::Push { .. } => {
-            let mut started_payload = EventPayload::new();
-            started_payload.insert(
-                "count".into(),
-                serde_json::Value::Number(serde_json::Number::from(0u64)),
-            );
+        GitOpRequest::Push { remote, .. } => {
+            let remote_name = remote.as_deref().unwrap_or("origin");
+            let started_payload = remote_event_payload(remote_name);
             let push_result = gateway.push_current_branch();
-            let mut finished_payload = EventPayload::new();
+            let mut finished_payload = remote_event_payload(remote_name);
             match push_result {
                 Ok(_) => {
                     finished_payload.insert("ok".into(), serde_json::Value::Bool(true));

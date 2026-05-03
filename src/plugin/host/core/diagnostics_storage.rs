@@ -1,3 +1,5 @@
+use super::*;
+
 impl PluginHost {
     /// Replace the diagnostic store. Tests pass a store wired to
     /// `NullSink` so test output stays quiet while every emission path
@@ -86,7 +88,7 @@ impl PluginHost {
         self.storage_paths(plugin_id, plugin_root.to_path_buf())
     }
 
-    fn storage_paths(
+    pub(super) fn storage_paths(
         &self,
         plugin_id: &str,
         plugin_root: impl Into<PathBuf>,
@@ -115,7 +117,7 @@ impl PluginHost {
         }
     }
 
-    fn allocate_generation_id(&mut self, plugin_id: &str) -> GenerationId {
+    pub(super) fn allocate_generation_id(&mut self, plugin_id: &str) -> GenerationId {
         let next = self
             .next_generation_ids
             .entry(plugin_id.to_string())
@@ -125,7 +127,7 @@ impl PluginHost {
         GenerationId::new(id)
     }
 
-    fn validate_service_dependencies(
+    pub(super) fn validate_service_dependencies(
         &self,
         manifest: &PluginManifest,
         generation_id: GenerationId,
@@ -191,7 +193,7 @@ impl PluginHost {
         Ok(())
     }
 
-    fn cleanup_ledger(&mut self, ledger: &ResourceLedger) {
+    pub(super) fn cleanup_ledger(&mut self, ledger: &ResourceLedger) {
         let mut cleaner = HostResourceCleaner {
             slot_ops: &mut self.slot_ops,
             event_bus: &mut self.event_bus,

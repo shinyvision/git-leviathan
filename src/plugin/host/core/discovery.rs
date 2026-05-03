@@ -1,3 +1,5 @@
+use super::*;
+
 impl PluginHost {
     pub fn load_from_default_dirs(&mut self) {
         let cwd_plugins = std::env::current_dir()
@@ -400,7 +402,7 @@ impl PluginHost {
     /// plugin with an activation section that has nothing usable
     /// (after validation) falls back to eager-load so users aren't
     /// surprised by a never-activating plugin.
-    fn install_lazy_stubs(
+    pub(super) fn install_lazy_stubs(
         &mut self,
         plugin_id: &str,
         plugin_dir: &Path,
@@ -653,7 +655,7 @@ impl PluginHost {
     /// are recorded on the diagnostic context and (on success) on
     /// the lazy registry row so the inspector can see what woke the
     /// plugin up.
-    fn activate_now(
+    pub(super) fn activate_now(
         &mut self,
         plugin_id: &str,
         trigger_kind: &str,
@@ -768,7 +770,7 @@ impl PluginHost {
         }
     }
 
-    fn verify_activation_promises(
+    pub(super) fn verify_activation_promises(
         &self,
         plugin_id: &str,
         entry: &crate::plugin::activation::LazyEntry,

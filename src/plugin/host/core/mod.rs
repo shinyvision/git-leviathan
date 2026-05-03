@@ -414,11 +414,14 @@ impl PluginHost {
     }
 }
 
-include!("core_parts/commands_devtools.rs");
-include!("core_parts/diagnostics_storage.rs");
-include!("core_parts/discovery.rs");
-include!("core_parts/loading_and_slots.rs");
-include!("core_parts/event_helpers.rs");
-include!("core_parts/ui_lifecycle.rs");
-include!("core_parts/event_dispatch.rs");
-include!("core_parts/runtime_introspection.rs");
+mod event_helpers;
+use event_helpers::*;
+use runtime_introspection::widget_decode_diagnostic;
+
+mod commands_devtools;
+mod diagnostics_storage;
+mod discovery;
+mod event_dispatch;
+mod loading_and_slots;
+mod runtime_introspection;
+mod ui_lifecycle;
