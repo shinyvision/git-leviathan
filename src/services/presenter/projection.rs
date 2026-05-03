@@ -13,6 +13,12 @@ use crate::view_model::{
 };
 use crate::widgets::branch_label::branch_display_rows;
 
+mod format;
+mod stash;
+
+use format::{format_date, relative_time, short_hash};
+pub use stash::stash_display_name;
+
 const DIRTY_COMMIT_HASH: &str = "__git_leviathan_dirty__";
 
 pub fn compute_signature(snapshot: &RepoSnapshot) -> ProjectionSignature {
@@ -848,26 +854,6 @@ pub fn build_sidebar_sections(
     ]
 }
 
-/// Strip the `WIP on <branch>:` / `On <branch>:` prefix from a stash message
-/// and return only the first line of whatever remains.
-pub fn stash_display_name(message: &str) -> String {
-    let first_line = message.lines().next().unwrap_or("").trim();
-    let without_prefix = strip_stash_prefix(first_line);
-    without_prefix.trim().to_string()
-}
-
-fn strip_stash_prefix(line: &str) -> &str {
-    for prefix in ["WIP on ", "On "] {
-        if let Some(rest) = line.strip_prefix(prefix) {
-            if let Some(colon_idx) = rest.find(':') {
-                return rest[colon_idx + 1..].trim_start();
-            }
-            return rest;
-        }
-    }
-    line
-}
-
 #[cfg(test)]
 fn compute_graph_rows(commits: &[CommitSnapshot]) -> (Vec<GraphRow>, usize) {
     compute_graph_rows_with_exemptions(commits, &HashSet::new())
@@ -1014,76 +1000,9 @@ fn find_free_slot_mfp(lanes: &mut Vec<Option<String>>, mfp: &mut Vec<bool>) -> u
     slot
 }
 
-fn short_hash(hash: &str) -> String {
-    hash.chars().take(7).collect()
-}
-
-fn relative_time(commit_secs: i64) -> Option<String> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
-    let diff = now - commit_secs;
-    if diff < 0 {
-        return None;
-    }
-
-    Some(relative_time_from_diff(diff))
-}
-
-fn relative_time_from_diff(diff: i64) -> String {
-    const MINUTE: i64 = 60;
-    const HOUR: i64 = 60 * MINUTE;
-    const DAY: i64 = 24 * HOUR;
-    const WEEK: i64 = 7 * DAY;
-    const MONTH: i64 = 30 * DAY;
-    const YEAR: i64 = 365 * DAY;
-
-    if diff < MINUTE {
-        "just now".to_string()
-    } else if diff < HOUR {
-        format_time_unit(diff / MINUTE, "minute")
-    } else if diff < 2 * HOUR {
-        "1 hour ago".to_string()
-    } else if diff < DAY {
-        format_time_unit(diff / HOUR, "hour")
-    } else if diff < 2 * DAY {
-        "yesterday".to_string()
-    } else if diff < WEEK {
-        format_time_unit(diff / DAY, "day")
-    } else if diff < MONTH {
-        format_time_unit(diff / WEEK, "week")
-    } else if diff < YEAR {
-        format_time_unit(diff / MONTH, "month")
-    } else {
-        format_time_unit(diff / YEAR, "year")
-    }
-}
-
-fn format_time_unit(value: i64, unit: &str) -> String {
-    let suffix = if value == 1 { "" } else { "s" };
-    format!("{} {}{} ago", value, unit, suffix)
-}
-
-fn format_date(timestamp: i64, offset_minutes: i32) -> String {
-    use chrono::{FixedOffset, TimeZone, Utc};
-
-    let offset_secs = offset_minutes * 60;
-    let Some(timezone) = FixedOffset::east_opt(offset_secs) else {
-        return timestamp.to_string();
-    };
-
-    match Utc.timestamp_opt(timestamp, 0).single() {
-        Some(datetime) => datetime
-            .with_timezone(&timezone)
-            .format("%m/%d/%Y @ %-I:%M %p")
-            .to_string(),
-        None => timestamp.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{build_ref_map, compute_graph_rows, project_repo, relative_time_from_diff};
+    use super::{build_ref_map, compute_graph_rows, format::relative_time_from_diff, project_repo};
     use crate::{
         core::{ChangeKind, ChangedFile, CommitKind},
         services::{CommitSnapshot, DirtySnapshot, RepoRef, RepoRefKind, RepoSnapshot},

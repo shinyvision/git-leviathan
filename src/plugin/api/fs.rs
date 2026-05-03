@@ -1,16 +1,24 @@
 //! `leviathan.fs` returns `(value, nil)` on success and `(nil, err)` or
 //! `(false, err)` on failure. File payloads are capped at 8 MiB.
 
-use std::cell::RefCell;
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 
-use mlua::{Function, Lua, Table};
+use mlua::{Lua, Table};
 
 use crate::plugin::capabilities::CapabilityGuard;
+
+mod file_ops;
+mod watch;
+
+use file_ops::{append_file, copy_file, list_dir, metadata, read_file, touch, write_file};
+#[cfg(test)]
+use file_ops::{
+    APPEND_FILE_BYTE_LIMIT, COPY_BYTE_LIMIT, READ_FILE_BYTE_LIMIT, WRITE_FILE_BYTE_LIMIT,
+};
+pub use watch::{install_watch, LuaWatchHandle, WatchInstallContext};
 
 pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua::Result<()> {
     let fs_tbl = lua.create_table()?;
@@ -437,105 +445,6 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     Ok(())
 }
 
-/// async runtime watch-handle userdata returned by `leviathan.fs.watch`.
-/// `:cancel()` drops the OS watcher and the parked Lua callback so
-/// further events for this watch_id stop dispatching.
-pub struct LuaWatchHandle {
-    pub watch_id: crate::plugin::watchers::WatchId,
-    pub registry: crate::plugin::watchers::FileWatcherRegistry,
-    pub callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
-}
-
-impl mlua::UserData for LuaWatchHandle {
-    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method("cancel", |_, this, ()| {
-            this.registry.cancel(this.watch_id);
-            this.callbacks.borrow_mut().remove(this.watch_id);
-            Ok(())
-        });
-        methods.add_method("id", |_, this, ()| Ok(this.watch_id.get()));
-    }
-}
-
-pub struct WatchInstallContext {
-    pub guard: Rc<CapabilityGuard>,
-    pub ledger: crate::plugin::resources::ResourceLedger,
-    pub registry: crate::plugin::watchers::FileWatcherRegistry,
-    pub callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
-    pub plugin_id: crate::plugin::resources::PluginId,
-    pub generation_id: crate::plugin::resources::GenerationId,
-}
-
-/// async runtime file-watch install. Mounts `leviathan.fs.watch(path, opts, cb)`
-/// onto the existing fs table. Each call records a [`PluginResourceKind::FileWatcher`]
-/// entry; cancellation flows through the returned userdata or
-/// `cancel_for_generation`.
-pub fn install_watch(lua: &Lua, leviathan: &Table, ctx: WatchInstallContext) -> mlua::Result<()> {
-    use crate::plugin::resources::PluginResourceKind;
-
-    let fs_tbl: Table = leviathan.get("fs")?;
-    let WatchInstallContext {
-        guard,
-        ledger,
-        registry,
-        callbacks,
-        plugin_id,
-        generation_id,
-    } = ctx;
-
-    fs_tbl.set(
-        "watch",
-        lua.create_function(
-            move |lua_inner, (path, opts, cb): (String, Option<Table>, Function)| {
-                let recursive = opts
-                    .as_ref()
-                    .and_then(|t| t.get::<Option<bool>>("recursive").ok().flatten())
-                    .unwrap_or(false);
-                let path_buf = std::path::PathBuf::from(&path);
-                guard
-                    .check_fs_watch(&path_buf)
-                    .map_err(mlua::Error::external)?;
-
-                let watch_id = registry.allocate();
-                let source = crate::plugin::resources::ResourceLedger::source_location(lua_inner);
-                let resource_id = ledger.record(
-                    PluginResourceKind::FileWatcher,
-                    format!("fs.watch:{}", path),
-                    source.clone(),
-                );
-                ledger.record(
-                    PluginResourceKind::LuaRegistryKey,
-                    format!("watch:{}", watch_id.get()),
-                    source,
-                );
-
-                if let Err(e) = registry.register(
-                    plugin_id.clone(),
-                    generation_id,
-                    watch_id,
-                    resource_id,
-                    path_buf,
-                    recursive,
-                ) {
-                    ledger.remove_resource(resource_id);
-                    return Err(mlua::Error::external(e));
-                }
-
-                let key = lua_inner.create_registry_value(cb)?;
-                callbacks.borrow_mut().insert(watch_id, key);
-
-                Ok(LuaWatchHandle {
-                    watch_id,
-                    registry: registry.clone(),
-                    callbacks: Rc::clone(&callbacks),
-                })
-            },
-        )?,
-    )?;
-
-    Ok(())
-}
-
 /// Resolve a plugin-supplied path against the plugin's root when the path
 /// is relative. Absolute paths pass through unchanged. Used by `read_file`
 /// / `read_lines` so plugins can name their bundled assets without
@@ -549,148 +458,12 @@ fn resolve_for_read(plugin_root: &Path, path: &str) -> String {
     }
 }
 
-const READ_FILE_BYTE_LIMIT: u64 = 8 * 1024 * 1024;
-const WRITE_FILE_BYTE_LIMIT: u64 = 8 * 1024 * 1024;
-const APPEND_FILE_BYTE_LIMIT: u64 = 8 * 1024 * 1024;
-const COPY_BYTE_LIMIT: u64 = 8 * 1024 * 1024;
-
-fn read_file(path: &str) -> Result<String, String> {
-    let p = Path::new(path);
-    let meta = fs::metadata(p).map_err(|e| e.to_string())?;
-    if !meta.is_file() {
-        return Err(format!("not a regular file: {path}"));
-    }
-    if meta.len() > READ_FILE_BYTE_LIMIT {
-        return Err(format!(
-            "file exceeds {READ_FILE_BYTE_LIMIT}-byte read_file limit: {path}"
-        ));
-    }
-    fs::read_to_string(p).map_err(|e| e.to_string())
-}
-
-fn copy_file(src: &str, dst: &str) -> Result<(), String> {
-    let meta = fs::symlink_metadata(src).map_err(|e| e.to_string())?;
-    if !meta.file_type().is_file() {
-        return Err(format!("not a regular file: {src}"));
-    }
-    if meta.len() > COPY_BYTE_LIMIT {
-        return Err(format!(
-            "source exceeds {COPY_BYTE_LIMIT}-byte copy limit: {src}"
-        ));
-    }
-    fs::copy(src, dst).map(|_| ()).map_err(|e| e.to_string())
-}
-
-fn write_file(path: &str, content: &str) -> Result<(), String> {
-    if content.len() as u64 > WRITE_FILE_BYTE_LIMIT {
-        return Err(format!(
-            "content exceeds {WRITE_FILE_BYTE_LIMIT}-byte write_file limit: {path}"
-        ));
-    }
-    fs::write(path, content).map_err(|e| e.to_string())
-}
-
-fn append_file(path: &str, content: &str) -> Result<(), String> {
-    if content.len() as u64 > APPEND_FILE_BYTE_LIMIT {
-        return Err(format!(
-            "content exceeds {APPEND_FILE_BYTE_LIMIT}-byte append_file limit: {path}"
-        ));
-    }
-    let mut f = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .map_err(|e| e.to_string())?;
-    f.write_all(content.as_bytes()).map_err(|e| e.to_string())
-}
-
-fn touch(path: &str) -> Result<(), String> {
-    let f = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(path)
-        .map_err(|e| e.to_string())?;
-    let times = fs::FileTimes::new().set_modified(SystemTime::now());
-    f.set_times(times).map_err(|e| e.to_string())
-}
-
-#[cfg_attr(test, derive(Debug))]
-struct Entry {
-    name: String,
-    path: String,
-    is_dir: bool,
-    is_symlink: bool,
-    size: u64,
-    modified: i64,
-}
-
-fn metadata(path: &str) -> Result<Entry, String> {
-    let p = Path::new(path);
-    let meta = fs::symlink_metadata(p).map_err(|e| e.to_string())?;
-    let name = p
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let file_type = meta.file_type();
-    let is_symlink = file_type.is_symlink();
-    let is_dir = file_type.is_dir();
-    let size = if is_dir { 0 } else { meta.len() };
-    let modified = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    Ok(Entry {
-        name,
-        path: path.to_string(),
-        is_dir,
-        is_symlink,
-        size,
-        modified,
-    })
-}
-
-fn list_dir(path: &str) -> Result<Vec<Entry>, String> {
-    let p = PathBuf::from(path);
-    let rd = fs::read_dir(&p).map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let meta = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let full = entry.path().to_string_lossy().into_owned();
-        let file_type = meta.file_type();
-        let is_symlink = file_type.is_symlink();
-        let is_dir = file_type.is_dir();
-        let size = if is_dir { 0 } else { meta.len() };
-        let modified = meta
-            .modified()
-            .ok()
-            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        out.push(Entry {
-            name,
-            path: full,
-            is_dir,
-            is_symlink,
-            size,
-            modified,
-        });
-    }
-    out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
-    Ok(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs as stdfs;
     use std::io::Write;
+    use std::time::SystemTime;
 
     fn install_unrestricted(lua: &Lua, leviathan: &Table) {
         use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};

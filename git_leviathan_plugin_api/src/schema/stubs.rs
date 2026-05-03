@@ -506,10 +506,22 @@ mod tests {
     }
 
     #[test]
-    fn stub_includes_all_regions() {
+    fn stub_includes_region_slot_api() {
         let s = emit_stubs();
+        for needle in [
+            "function leviathan.ui.regions.add_slot(spec) end",
+            "function leviathan.ui.regions.remove_slot(target) end",
+            "function leviathan.ui.regions.replace_slot(target, spec) end",
+        ] {
+            assert!(s.contains(needle), "missing {needle}");
+        }
+    }
+
+    #[test]
+    fn region_descriptor_includes_all_regions() {
+        let s = emit_region_descriptor_json();
         for region in ["main_bar", "tab_bar", "repository"] {
-            let needle = format!("function leviathan.ui.{region}.add(spec) end");
+            let needle = format!("\"name\": \"{region}\"");
             assert!(s.contains(&needle), "missing {needle}");
         }
     }
