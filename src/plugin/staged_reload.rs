@@ -257,7 +257,6 @@ impl std::error::Error for StagingFailure {}
 /// `commit_staging` to swap in, or a `StagingFailure` describing
 /// exactly which stage refused. The previous generation is never
 /// touched in this function.
-#[allow(clippy::too_many_arguments)]
 pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, StagingFailure> {
     let started_at = Instant::now();
 
@@ -534,24 +533,26 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
 
     api::install_all(
         &lua,
-        Rc::clone(&build),
-        Rc::clone(&inputs.pending_tab_ops),
-        Rc::clone(&guard),
-        services_ctx,
-        persist_ctx,
-        Rc::clone(&deferred),
-        Rc::clone(&user_commands),
-        Rc::clone(&health_checks_sink),
-        ledger.clone(),
-        inputs.command_dispatch.clone(),
-        Rc::clone(&inputs.keymap_registry),
-        inputs.git_ctx.clone(),
-        inputs.pending_git_events.clone(),
-        async_ctx,
-        inputs.plugin_id.clone(),
-        inputs.generation_id,
-        inputs.diagnostics.clone(),
-        inputs.extension_registry.clone(),
+        api::InstallAllContext {
+            build: Rc::clone(&build),
+            pending_tab_ops: Rc::clone(&inputs.pending_tab_ops),
+            guard: Rc::clone(&guard),
+            services_ctx,
+            persist_ctx,
+            deferred: Rc::clone(&deferred),
+            user_commands: Rc::clone(&user_commands),
+            health_checks: Rc::clone(&health_checks_sink),
+            ledger: ledger.clone(),
+            command_dispatch: inputs.command_dispatch.clone(),
+            keymaps: Rc::clone(&inputs.keymap_registry),
+            git_ctx: inputs.git_ctx.clone(),
+            pending_git_events: inputs.pending_git_events.clone(),
+            async_ctx,
+            plugin_id: inputs.plugin_id.clone(),
+            generation_id: inputs.generation_id,
+            diagnostics: inputs.diagnostics.clone(),
+            extension_registry: inputs.extension_registry.clone(),
+        },
     )
     .map_err(|e| {
         StagingFailure::new(

@@ -379,33 +379,33 @@ impl BudgetTracker {
 
         // Soft breach diagnostic (warning).
         if ok && duration_ms > budget.soft_ms && duration_ms <= budget.hard_ms {
-            self.emit_breach(
+            self.emit_breach(CallbackBreach {
                 plugin_id,
                 generation_id,
                 callback_id,
                 kind,
                 duration_ms,
-                budget.soft_ms,
-                "performance.soft_breach",
-                DiagnosticSeverity::Warning,
-                outcome_meta.consecutive_hard_breaches,
-            );
+                budget_ms: budget.soft_ms,
+                code: "performance.soft_breach",
+                severity: DiagnosticSeverity::Warning,
+                consecutive_hard_breaches: outcome_meta.consecutive_hard_breaches,
+            });
         }
         // Hard breach diagnostic (error). Hard breach fires regardless
         // of body's ok/err — a 4-second crash and a 4-second success
         // are both budget violations.
         if duration_ms > budget.hard_ms {
-            self.emit_breach(
+            self.emit_breach(CallbackBreach {
                 plugin_id,
                 generation_id,
                 callback_id,
                 kind,
                 duration_ms,
-                budget.hard_ms,
-                "performance.hard_breach",
-                DiagnosticSeverity::Error,
-                outcome_meta.consecutive_hard_breaches,
-            );
+                budget_ms: budget.hard_ms,
+                code: "performance.hard_breach",
+                severity: DiagnosticSeverity::Error,
+                consecutive_hard_breaches: outcome_meta.consecutive_hard_breaches,
+            });
         }
         // Trip + degrade diagnostics fire once per transition.
         if let Some(reason) = outcome_meta.tripped_reason {
@@ -643,38 +643,27 @@ impl BudgetTracker {
         );
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn emit_breach(
-        &self,
-        plugin_id: &PluginId,
-        generation_id: GenerationId,
-        callback_id: &str,
-        kind: CallbackKind,
-        duration_ms: u128,
-        budget_ms: u128,
-        code: &str,
-        severity: DiagnosticSeverity,
-        consecutive_hard_breaches: u32,
-    ) {
+    fn emit_breach(&self, breach: CallbackBreach<'_>) {
         self.diagnostics.record(
             PluginDiagnostic::new(
-                plugin_id.clone(),
-                severity,
-                code,
+                breach.plugin_id.clone(),
+                breach.severity,
+                breach.code,
                 format!(
-                    "callback `{callback_id}` exceeded budget ({duration_ms}ms > {budget_ms}ms)"
+                    "callback `{}` exceeded budget ({}ms > {}ms)",
+                    breach.callback_id, breach.duration_ms, breach.budget_ms
                 ),
             )
-            .with_generation(generation_id)
+            .with_generation(breach.generation_id)
             .with_source(PluginSourceSpan::ApiFunction {
-                name: format!("performance:{callback_id}"),
+                name: format!("performance:{}", breach.callback_id),
             })
             .with_context(serde_json::json!({
-                "callback_id": callback_id,
-                "kind": kind.as_str(),
-                "duration_ms": duration_ms as u64,
-                "budget_ms": budget_ms as u64,
-                "consecutive_hard_breaches": consecutive_hard_breaches,
+                "callback_id": breach.callback_id,
+                "kind": breach.kind.as_str(),
+                "duration_ms": breach.duration_ms as u64,
+                "budget_ms": breach.budget_ms as u64,
+                "consecutive_hard_breaches": breach.consecutive_hard_breaches,
             })),
         );
     }
@@ -756,6 +745,18 @@ impl BudgetTracker {
 struct StatsTransition {
     consecutive_hard_breaches: u32,
     tripped_reason: Option<String>,
+}
+
+struct CallbackBreach<'a> {
+    plugin_id: &'a PluginId,
+    generation_id: GenerationId,
+    callback_id: &'a str,
+    kind: CallbackKind,
+    duration_ms: u128,
+    budget_ms: u128,
+    code: &'static str,
+    severity: DiagnosticSeverity,
+    consecutive_hard_breaches: u32,
 }
 
 /// Devtools projection of one breaker row.

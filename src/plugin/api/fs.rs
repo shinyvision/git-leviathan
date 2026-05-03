@@ -457,24 +457,31 @@ impl mlua::UserData for LuaWatchHandle {
     }
 }
 
+pub struct WatchInstallContext {
+    pub guard: Rc<CapabilityGuard>,
+    pub ledger: crate::plugin::resources::ResourceLedger,
+    pub registry: crate::plugin::watchers::FileWatcherRegistry,
+    pub callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
+    pub plugin_id: crate::plugin::resources::PluginId,
+    pub generation_id: crate::plugin::resources::GenerationId,
+}
+
 /// async runtime file-watch install. Mounts `leviathan.fs.watch(path, opts, cb)`
 /// onto the existing fs table. Each call records a [`PluginResourceKind::FileWatcher`]
 /// entry; cancellation flows through the returned userdata or
 /// `cancel_for_generation`.
-#[allow(clippy::too_many_arguments)]
-pub fn install_watch(
-    lua: &Lua,
-    leviathan: &Table,
-    guard: Rc<CapabilityGuard>,
-    ledger: crate::plugin::resources::ResourceLedger,
-    registry: crate::plugin::watchers::FileWatcherRegistry,
-    callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
-    plugin_id: crate::plugin::resources::PluginId,
-    generation_id: crate::plugin::resources::GenerationId,
-) -> mlua::Result<()> {
+pub fn install_watch(lua: &Lua, leviathan: &Table, ctx: WatchInstallContext) -> mlua::Result<()> {
     use crate::plugin::resources::PluginResourceKind;
 
     let fs_tbl: Table = leviathan.get("fs")?;
+    let WatchInstallContext {
+        guard,
+        ledger,
+        registry,
+        callbacks,
+        plugin_id,
+        generation_id,
+    } = ctx;
 
     fs_tbl.set(
         "watch",

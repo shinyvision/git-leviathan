@@ -7,9 +7,8 @@ use super::read::RepoRead;
 /// into the success arm — the caller gets one message regardless of what the
 /// push needed.
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Pushed carries RepoSnapshot; boxing would churn gateway + presenter call sites.
 pub enum PushGatewayOutcome {
-    Pushed(RepoSnapshot),
+    Pushed(Box<RepoSnapshot>),
     NeedsUpstream {
         branch_name: String,
         remote_name: String,

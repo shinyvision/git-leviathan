@@ -67,18 +67,33 @@ fn side_all_checkbox<'a>(
         .into()
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct ConflictBufferPanelInput<'a> {
+    pub(super) prefix: &'a str,
+    pub(super) label: &'a str,
+    pub(super) side: Option<ConflictSide>,
+    pub(super) result: &'a ConflictResolutionResult,
+    pub(super) selections: &'a [ConflictHunkSelection],
+    pub(super) highlighted: Option<Arc<HighlightedFile>>,
+    pub(super) scroll_offset_y: f32,
+    pub(super) selection: Option<DiffSelection>,
+    pub(super) shift_held: bool,
+}
+
 pub(super) fn conflict_buffer_panel<'a>(
-    prefix: &str,
-    label: &str,
-    side: Option<ConflictSide>,
-    result: &ConflictResolutionResult,
-    selections: &[ConflictHunkSelection],
-    highlighted: Option<Arc<HighlightedFile>>,
-    scroll_offset_y: f32,
-    selection: Option<DiffSelection>,
-    shift_held: bool,
+    input: ConflictBufferPanelInput<'a>,
 ) -> Element<'a, Message> {
+    let ConflictBufferPanelInput {
+        prefix,
+        label,
+        side,
+        result,
+        selections,
+        highlighted,
+        scroll_offset_y,
+        selection,
+        shift_held,
+    } = input;
+
     let Some(side) = side else {
         return output_buffer_panel(result, selections, scroll_offset_y, selection, shift_held);
     };
@@ -119,16 +134,16 @@ pub(super) fn conflict_buffer_panel<'a>(
     let data_for_min = data.clone();
     let canvas_id = canvas_id_for_side(side);
 
-    let body = conflict_scrolled_canvas(
+    let body = conflict_scrolled_canvas(ConflictScrolledCanvasInput {
         canvas_id,
         data,
         selection,
         scroll_offset_y,
-        CONFLICT_SIDE_MIN_BUFFER_WIDTH,
-        SideOrOutput::Side(side),
-        data_for_min,
+        min_buffer_width: CONFLICT_SIDE_MIN_BUFFER_WIDTH,
+        variant: SideOrOutput::Side(side),
+        gutter_data: data_for_min,
         shift_held,
-    );
+    });
 
     let panel = container(column![header, body].spacing(0).height(Length::Fill))
         .height(Length::Fill)
@@ -177,16 +192,16 @@ pub(super) fn output_buffer_panel<'a>(
     let data = conflict_canvas::build_output_canvas_data(rows, char_w);
     let data_for_min = data.clone();
 
-    let body = conflict_scrolled_canvas(
-        CANVAS_ID_OUTPUT,
+    let body = conflict_scrolled_canvas(ConflictScrolledCanvasInput {
+        canvas_id: CANVAS_ID_OUTPUT,
         data,
         selection,
         scroll_offset_y,
-        CONFLICT_OUTPUT_MIN_BUFFER_WIDTH,
-        SideOrOutput::Output,
-        data_for_min,
+        min_buffer_width: CONFLICT_OUTPUT_MIN_BUFFER_WIDTH,
+        variant: SideOrOutput::Output,
+        gutter_data: data_for_min,
         shift_held,
-    );
+    });
 
     let panel = container(column![output_header, body].spacing(0).height(Length::Fill))
         .height(Length::FillPortion(1))
@@ -215,8 +230,7 @@ enum SideOrOutput {
 
 /// Build a `row![ sticky_gutter_canvas | scrollable(content_canvas) ]`
 /// body for a conflict buffer. Mirrors the diff-view layout.
-#[allow(clippy::too_many_arguments)]
-fn conflict_scrolled_canvas(
+struct ConflictScrolledCanvasInput {
     canvas_id: DiffCanvasId,
     data: Arc<TextCanvasData>,
     selection: Option<DiffSelection>,
@@ -225,7 +239,20 @@ fn conflict_scrolled_canvas(
     variant: SideOrOutput,
     gutter_data: Arc<TextCanvasData>,
     shift_held: bool,
-) -> Element<'static, Message> {
+}
+
+fn conflict_scrolled_canvas(input: ConflictScrolledCanvasInput) -> Element<'static, Message> {
+    let ConflictScrolledCanvasInput {
+        canvas_id,
+        data,
+        selection,
+        scroll_offset_y,
+        min_buffer_width,
+        variant,
+        gutter_data,
+        shift_held,
+    } = input;
+
     let data_for_canvas = data.clone();
     let view = iced::widget::responsive(move |size| {
         let gutter_w = data_for_canvas.gutter_width();

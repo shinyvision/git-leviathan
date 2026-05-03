@@ -19,13 +19,13 @@ impl App {
     pub(super) fn handle_tab_opened(
         &mut self,
         tab_id: TabId,
-        result: Result<LoadedRepo, GitError>,
+        result: Result<Box<LoadedRepo>, GitError>,
     ) -> Task<Message> {
         match result {
             Ok(snapshot) => {
                 let active_id = self.tabs.active_tab_id();
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
-                    let task = screen.update(RepositoryMessage::RepoLoaded(Ok(snapshot)));
+                    let task = screen.update(RepositoryMessage::RepoLoaded(Ok(*snapshot)));
                     let fetch_task = self.try_start_fetch_for_tab(tab_id);
                     if tab_id == active_id {
                         return Task::batch(vec![task, fetch_task]);

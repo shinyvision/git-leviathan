@@ -31,9 +31,8 @@ pub use push::PushOutcome;
 pub const COMMIT_LOAD_LIMIT: usize = 500;
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Success carries RepoSnapshot; boxing would churn gateway call sites.
 pub enum RemoteCheckoutOutcome {
-    Success(RepoSnapshot),
+    Success(Box<RepoSnapshot>),
     LocalAheadOfRemote {
         branch_name: String,
         remote_ref: String,
@@ -178,7 +177,7 @@ impl GitService {
     ) -> Result<RemoteCheckoutOutcome, GitError> {
         match checkout::checkout_remote_branch(self, branch_name)? {
             checkout::CheckoutRemoteBranchResult::Success => Ok(RemoteCheckoutOutcome::Success(
-                self.load_repo(COMMIT_LOAD_LIMIT),
+                Box::new(self.load_repo(COMMIT_LOAD_LIMIT)),
             )),
             checkout::CheckoutRemoteBranchResult::LocalAheadOfRemote {
                 branch_name,

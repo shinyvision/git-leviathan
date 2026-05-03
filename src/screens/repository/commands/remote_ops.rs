@@ -63,7 +63,7 @@ pub(super) fn on_push_completed(
     match result {
         Ok(LoadedPushOutcome::Pushed(loaded)) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
-            let task = super::helpers::handle_repo_loaded(screen, loaded);
+            let task = super::helpers::handle_repo_loaded(screen, *loaded);
             Task::batch(vec![
                 task,
                 Task::done(Message::show_toast(ToastData::push_succeeded(&branch_name))),
@@ -145,7 +145,7 @@ pub(super) fn on_force_push_completed(
     match result {
         Ok(LoadedPushOutcome::Pushed(loaded)) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
-            let task = super::helpers::handle_repo_loaded(screen, loaded);
+            let task = super::helpers::handle_repo_loaded(screen, *loaded);
             Task::batch(vec![
                 task,
                 Task::done(Message::show_toast(ToastData::push_succeeded(&branch_name))),

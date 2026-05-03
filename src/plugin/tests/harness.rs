@@ -527,7 +527,7 @@ api_version = "1.0"
     }
 
     #[test]
-    fn loads_every_bundled_plugin_under_api_version_2_0() {
+    fn loads_every_bundled_plugin_under_current_api_version() {
         let dirs = bundled_plugin_dirs();
         assert!(!dirs.is_empty(), "expected bundled plugins");
 

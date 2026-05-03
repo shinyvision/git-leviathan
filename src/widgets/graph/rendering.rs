@@ -410,14 +410,13 @@ pub fn draw_graph_rows(
     // around curves, both of which produce visibly uneven spacing where
     // short corners meet long straights. Manual placement keeps spacing and
     // orientation uniform.
-    #[allow(clippy::needless_range_loop)] // `ci` flows to lane_color(ci) independent of the slice.
-    for ci in 0..num_colors {
-        if dotted_polylines[ci].is_empty() {
+    for (ci, polylines) in dotted_polylines.iter().enumerate().take(num_colors) {
+        if polylines.is_empty() {
             continue;
         }
         let color = lane_color(ci);
         let mut dots: Vec<Point> = Vec::new();
-        for chain in chain_polylines(&dotted_polylines[ci]) {
+        for chain in chain_polylines(polylines) {
             place_dots_along_chain(&chain, &mut dots);
         }
         if !dots.is_empty() {

@@ -15,6 +15,7 @@ use super::super::super::{
         stash_delete, ActiveDialog,
     },
     panel_messages::CenterAction,
+    state::{CommitContextMenuState, ContextMenuState},
     RepositoryMessage,
 };
 use super::super::sidebar::{commit_selection_changed_task, load_more_commits};
@@ -153,18 +154,18 @@ pub(in crate::screens::repository) fn update(
                 && current != branch_name
                 && ctx.data.snapshot.can_fast_forward_to(&branch_name);
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
-            ctx.data.branch_popout.open_context_menu(
+            ctx.data.branch_popout.open_context_menu(ContextMenuState {
                 branch_name,
+                tag_remote_names,
+                default_remote_name,
                 is_remote,
                 has_remote,
                 is_tag,
                 remote_name,
                 remote_branch_name,
-                tag_remote_names,
-                default_remote_name,
                 can_fast_forward,
                 position,
-            );
+            });
             Task::none()
         }
         CenterAction::BranchMergeRequested {
@@ -421,15 +422,17 @@ pub(in crate::screens::repository) fn update(
                     .filter_map(|&idx| ctx.data.commit_hash(idx))
                     .collect();
                 let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
-                ctx.data.branch_popout.open_commit_context_menu(
-                    commit_idx,
-                    hash,
-                    stash_index,
-                    stash_display_name,
-                    selected_indices,
-                    selected_hashes,
-                    position,
-                );
+                ctx.data
+                    .branch_popout
+                    .open_commit_context_menu(CommitContextMenuState {
+                        commit_idx,
+                        commit_hash: hash,
+                        position,
+                        stash_index,
+                        stash_display_name,
+                        selected_indices,
+                        selected_hashes,
+                    });
             }
             Task::none()
         }

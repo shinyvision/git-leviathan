@@ -417,10 +417,12 @@ fn mark_stash_graph_paths(
             move_lane_segments(&mut row.lower, &mut row.dotted_lower, stash_lane_f);
         }
 
-        #[allow(clippy::needless_range_loop)]
-        // row_idx also compared against stop_idx for the break condition.
-        for row_idx in (stash_row_idx + 1)..=stop_idx {
-            let row = &mut rows[row_idx];
+        for (row_idx, row) in rows
+            .iter_mut()
+            .enumerate()
+            .take(stop_idx + 1)
+            .skip(stash_row_idx + 1)
+        {
             let mut converged = false;
 
             let mut i = 0;

@@ -500,7 +500,6 @@ fn compute_intra_line_diffs(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeD
 
 /// Find longest common substring between two strings.
 /// Returns (start_a, start_b, length)
-#[allow(clippy::needless_range_loop)] // DP fill uses both i (row) and j (col) to index sibling arrays.
 fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
     if a.is_empty() || b.is_empty() {
         return (0, 0, 0);
@@ -518,11 +517,11 @@ fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
     let mut best_a = 0usize;
     let mut best_b = 0usize;
 
-    for i in 0..n {
+    for (i, a_byte) in a_bytes.iter().enumerate().take(n) {
         let cur = (i + 1) % 2;
         let prev = i % 2;
-        for j in 0..m {
-            if a_bytes[i] == b_bytes[j] {
+        for (j, b_byte) in b_bytes.iter().enumerate().take(m) {
+            if a_byte == b_byte {
                 dp[cur][j + 1] = dp[prev][j] + 1;
                 if dp[cur][j + 1] as usize > best_len {
                     best_len = dp[cur][j + 1] as usize;

@@ -132,28 +132,49 @@ pub struct BuildState {
     pub next_keymap_sequence: u64,
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn install_all(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    pending_tab_ops: tab_registry::PendingOps,
-    guard: Rc<CapabilityGuard>,
-    services_ctx: ServicesContext,
-    persist_ctx: PersistContext,
-    deferred: Rc<RefCell<DeferredQueue>>,
-    user_commands: Rc<RefCell<UserCommands>>,
-    health_checks: Rc<RefCell<Vec<HealthCheckRegistration>>>,
-    ledger: ResourceLedger,
-    command_dispatch: crate::plugin::commands::CommandDispatchEnv,
-    keymaps: keymap::SharedKeymapRegistry,
-    git_ctx: GitOpsContext,
-    pending_git_events: git::PendingGitEvents,
-    async_ctx: AsyncRuntimeContext,
-    plugin_id: PluginId,
-    generation_id: GenerationId,
-    _diagnostics: DiagnosticStore,
-    extension_registry: crate::plugin::extensions::ExtensionRegistry,
-) -> mlua::Result<()> {
+pub struct InstallAllContext {
+    pub build: Rc<RefCell<BuildState>>,
+    pub pending_tab_ops: tab_registry::PendingOps,
+    pub guard: Rc<CapabilityGuard>,
+    pub services_ctx: ServicesContext,
+    pub persist_ctx: PersistContext,
+    pub deferred: Rc<RefCell<DeferredQueue>>,
+    pub user_commands: Rc<RefCell<UserCommands>>,
+    pub health_checks: Rc<RefCell<Vec<HealthCheckRegistration>>>,
+    pub ledger: ResourceLedger,
+    pub command_dispatch: crate::plugin::commands::CommandDispatchEnv,
+    pub keymaps: keymap::SharedKeymapRegistry,
+    pub git_ctx: GitOpsContext,
+    pub pending_git_events: git::PendingGitEvents,
+    pub async_ctx: AsyncRuntimeContext,
+    pub plugin_id: PluginId,
+    pub generation_id: GenerationId,
+    pub diagnostics: DiagnosticStore,
+    pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
+}
+
+pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
+    let InstallAllContext {
+        build,
+        pending_tab_ops,
+        guard,
+        services_ctx,
+        persist_ctx,
+        deferred,
+        user_commands,
+        health_checks,
+        ledger,
+        command_dispatch,
+        keymaps,
+        git_ctx,
+        pending_git_events,
+        async_ctx,
+        plugin_id,
+        generation_id,
+        diagnostics: _diagnostics,
+        extension_registry,
+    } = ctx;
+
     let leviathan = lua.create_table()?;
 
     let api_tbl = lua.create_table()?;
@@ -198,23 +219,27 @@ pub fn install_all(
     fs::install_watch(
         lua,
         &leviathan,
-        Rc::clone(&guard),
-        ledger.clone(),
-        async_ctx.watchers.clone(),
-        Rc::clone(&async_ctx.watcher_callbacks),
-        plugin_id.clone(),
-        generation_id,
+        fs::WatchInstallContext {
+            guard: Rc::clone(&guard),
+            ledger: ledger.clone(),
+            registry: async_ctx.watchers.clone(),
+            callbacks: Rc::clone(&async_ctx.watcher_callbacks),
+            plugin_id: plugin_id.clone(),
+            generation_id,
+        },
     )?;
     async_api::install(
         lua,
         &leviathan,
-        Rc::clone(&guard),
-        ledger.clone(),
-        async_ctx.jobs.clone(),
-        Rc::clone(&async_ctx.job_callbacks),
-        Rc::clone(&deferred),
-        plugin_id.clone(),
-        generation_id,
+        async_api::AsyncInstallContext {
+            guard: Rc::clone(&guard),
+            ledger: ledger.clone(),
+            registry: async_ctx.jobs.clone(),
+            job_callbacks: Rc::clone(&async_ctx.job_callbacks),
+            deferred: Rc::clone(&deferred),
+            plugin_id: plugin_id.clone(),
+            generation_id,
+        },
     )?;
     timer::install(
         lua,
@@ -377,24 +402,26 @@ mod tests {
         };
         install_all(
             lua.as_ref(),
-            build,
-            pending_tab_ops,
-            guard,
-            services_ctx,
-            persist_ctx,
-            deferred,
-            commands,
-            health,
-            ledger,
-            dispatch,
-            keymaps,
-            git_ctx,
-            pending_git_events,
-            async_ctx,
-            PluginId::from("coverage"),
-            GenerationId::new(1),
-            DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
-            crate::plugin::extensions::ExtensionRegistry::new(),
+            InstallAllContext {
+                build,
+                pending_tab_ops,
+                guard,
+                services_ctx,
+                persist_ctx,
+                deferred,
+                user_commands: commands,
+                health_checks: health,
+                ledger,
+                command_dispatch: dispatch,
+                keymaps,
+                git_ctx,
+                pending_git_events,
+                async_ctx,
+                plugin_id: PluginId::from("coverage"),
+                generation_id: GenerationId::new(1),
+                diagnostics: DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
+                extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
+            },
         )
         .unwrap();
         // The plugin package layout `leviathan.runtime` module is installed by the

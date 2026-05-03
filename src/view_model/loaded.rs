@@ -56,9 +56,8 @@ pub enum LoadedStashApplyOutcome {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Success carries LoadedRepo; boxing churns presenter + message call sites.
 pub enum LoadedRemoteCheckoutOutcome {
-    Success(LoadedRepo),
+    Success(Box<LoadedRepo>),
     LocalAheadOfRemote {
         branch_name: String,
         remote_ref: String,
@@ -66,9 +65,8 @@ pub enum LoadedRemoteCheckoutOutcome {
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Pushed carries LoadedRepo; boxing churns presenter + message call sites.
 pub enum LoadedPushOutcome {
-    Pushed(LoadedRepo),
+    Pushed(Box<LoadedRepo>),
     NeedsUpstream {
         branch_name: String,
         remote_name: String,

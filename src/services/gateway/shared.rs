@@ -464,9 +464,9 @@ impl RemoteOps for GitRepositoryGateway {
 
     fn push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| match service.push_current_branch()? {
-            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(
+            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
                 service.load_repo(COMMIT_LOAD_LIMIT),
-            )),
+            ))),
             PushOutcome::NeedsUpstream {
                 branch_name,
                 remote_name,
@@ -497,9 +497,9 @@ impl RemoteOps for GitRepositoryGateway {
 
     fn force_push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| match service.force_push_current_branch()? {
-            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(
+            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
                 service.load_repo(COMMIT_LOAD_LIMIT),
-            )),
+            ))),
             PushOutcome::NeedsUpstream {
                 branch_name,
                 remote_name,

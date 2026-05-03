@@ -12,7 +12,6 @@ use crate::services::GitError;
 use crate::view_model::LoadedRepo;
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // TabOpened carries LoadedRepo; boxing would churn every construction site.
 pub enum AppMessage {
     NoOp,
     KeyPressed(keyboard::Key, keyboard::Modifiers),
@@ -23,7 +22,7 @@ pub enum AppMessage {
     /// snapshot has already been projected off the main thread.
     TabOpened {
         tab_id: TabId,
-        result: Result<LoadedRepo, GitError>,
+        result: Result<Box<LoadedRepo>, GitError>,
     },
     TabRegistryOp(TabRegistryOp),
     AnimationTick(Instant),

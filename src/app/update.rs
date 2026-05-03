@@ -158,7 +158,7 @@ impl App {
                         return Task::none();
                     }
                     match self.tabs.active_screen_mut() {
-                        Some(screen) => screen.update(rm),
+                        Some(screen) => screen.update(*rm),
                         None => Task::none(),
                     }
                 }
@@ -167,11 +167,11 @@ impl App {
                 // File-watcher coalescer (see `reload_refs_for_tab`) holds an
                 // abortable handle; clear it once the scoped reload lands so
                 // the next burst isn't suppressed as "already in flight".
-                if matches!(rm, RepositoryMessage::RefsReloaded(_)) {
+                if matches!(&*rm, RepositoryMessage::RefsReloaded(_)) {
                     self.reload_refs_abort = None;
                 }
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
-                    return screen.update(rm);
+                    return screen.update(*rm);
                 }
                 Task::none()
             }

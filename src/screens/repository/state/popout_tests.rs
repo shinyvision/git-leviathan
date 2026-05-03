@@ -1,4 +1,4 @@
-use super::BranchPopoutController;
+use super::{BranchPopoutController, CommitContextMenuState, ContextMenuState};
 use crate::core::{Commit, CommitKind};
 use iced::{Point, Rectangle};
 
@@ -25,6 +25,33 @@ fn open_popout(controller: &mut BranchPopoutController) {
     assert_eq!(controller.active().map(|state| state.commit_idx), Some(7));
 }
 
+fn context_menu_state(branch_name: &str) -> ContextMenuState {
+    ContextMenuState {
+        branch_name: branch_name.to_string(),
+        tag_remote_names: Vec::new(),
+        default_remote_name: None,
+        is_remote: false,
+        has_remote: false,
+        is_tag: false,
+        remote_name: None,
+        remote_branch_name: None,
+        can_fast_forward: false,
+        position: Point::ORIGIN,
+    }
+}
+
+fn commit_context_menu_state() -> CommitContextMenuState {
+    CommitContextMenuState {
+        commit_idx: 5,
+        commit_hash: "abc123".to_string(),
+        position: Point::ORIGIN,
+        stash_index: None,
+        stash_display_name: None,
+        selected_indices: vec![5],
+        selected_hashes: vec!["abc123".to_string()],
+    }
+}
+
 fn sample_commit(hash: &str) -> Commit {
     Commit {
         kind: CommitKind::Commit,
@@ -46,18 +73,7 @@ fn opening_context_menu_preserves_active_popout() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
 
-    controller.open_context_menu(
-        "feature/foo".to_string(),
-        false,
-        false,
-        false,
-        None,
-        None,
-        Vec::new(),
-        None,
-        false,
-        Point::ORIGIN,
-    );
+    controller.open_context_menu(context_menu_state("feature/foo"));
 
     assert_eq!(controller.active().map(|state| state.commit_idx), Some(7));
     assert_eq!(
@@ -72,18 +88,7 @@ fn opening_context_menu_preserves_active_popout() {
 fn context_menu_prevents_popout_from_closing_on_pointer_exit() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
-    controller.open_context_menu(
-        "feature/foo".to_string(),
-        false,
-        false,
-        false,
-        None,
-        None,
-        Vec::new(),
-        None,
-        false,
-        Point::ORIGIN,
-    );
+    controller.open_context_menu(context_menu_state("feature/foo"));
 
     controller.pointer_moved(Point::new(500.0, 500.0));
 
@@ -95,18 +100,7 @@ fn context_menu_prevents_popout_from_closing_on_pointer_exit() {
 fn closing_context_menu_also_closes_popout() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
-    controller.open_context_menu(
-        "feature/foo".to_string(),
-        false,
-        false,
-        false,
-        None,
-        None,
-        Vec::new(),
-        None,
-        false,
-        Point::ORIGIN,
-    );
+    controller.open_context_menu(context_menu_state("feature/foo"));
 
     controller.close_context_menu();
 
@@ -118,18 +112,7 @@ fn closing_context_menu_also_closes_popout() {
 fn pointer_leaving_window_keeps_popout_open_while_context_menu_is_visible() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
-    controller.open_context_menu(
-        "feature/foo".to_string(),
-        false,
-        false,
-        false,
-        None,
-        None,
-        Vec::new(),
-        None,
-        false,
-        Point::ORIGIN,
-    );
+    controller.open_context_menu(context_menu_state("feature/foo"));
 
     controller.pointer_left_window();
 
@@ -141,15 +124,7 @@ fn pointer_leaving_window_keeps_popout_open_while_context_menu_is_visible() {
 fn opening_commit_context_menu_does_not_close_active_popout() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
-    controller.open_commit_context_menu(
-        5,
-        "abc123".to_string(),
-        None,
-        None,
-        vec![5],
-        vec!["abc123".to_string()],
-        Point::ORIGIN,
-    );
+    controller.open_commit_context_menu(commit_context_menu_state());
 
     assert_eq!(
         controller
@@ -167,15 +142,7 @@ fn opening_commit_context_menu_does_not_close_active_popout() {
 fn commit_context_menu_prevents_popout_from_closing_on_pointer_exit() {
     let mut controller = BranchPopoutController::default();
     open_popout(&mut controller);
-    controller.open_commit_context_menu(
-        5,
-        "abc123".to_string(),
-        None,
-        None,
-        vec![5],
-        vec!["abc123".to_string()],
-        Point::ORIGIN,
-    );
+    controller.open_commit_context_menu(commit_context_menu_state());
 
     controller.pointer_moved(Point::new(500.0, 500.0));
 

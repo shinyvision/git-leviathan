@@ -2,7 +2,7 @@ use iced::{Point, Task};
 
 use crate::message::Message;
 
-use super::super::super::state::{FocusedPanel, PendingFocus};
+use super::super::super::state::{FocusedPanel, PendingFocus, SidebarContextMenuRequest};
 use super::super::super::RepositoryMessage;
 use super::super::center::CenterPanel;
 use super::super::ScreenCtx;
@@ -202,16 +202,18 @@ pub(super) fn update(
                 && current != branch_name
                 && ctx.data.snapshot.can_fast_forward_to(&branch_name);
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
-            ctx.data.branch_popout.open_sidebar_context_menu(
-                branch_name,
-                is_remote,
-                is_tag,
-                remote_name,
-                tag_remote_names,
-                default_remote_name,
-                can_fast_forward,
-                position,
-            );
+            ctx.data
+                .branch_popout
+                .open_sidebar_context_menu(SidebarContextMenuRequest {
+                    branch_name,
+                    is_remote,
+                    is_tag,
+                    remote_name,
+                    tag_remote_names,
+                    default_remote_name,
+                    can_fast_forward,
+                    position,
+                });
             Task::none()
         }
         SidebarAction::StashPressed { hash } => {

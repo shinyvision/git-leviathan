@@ -75,19 +75,27 @@ impl UserData for JobContext {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn install(
-    lua: &Lua,
-    leviathan: &Table,
-    guard: Rc<CapabilityGuard>,
-    ledger: ResourceLedger,
-    registry: AsyncJobRegistry,
-    job_callbacks: Rc<RefCell<JobCallbacks>>,
-    deferred: Rc<RefCell<DeferredQueue>>,
-    plugin_id: PluginId,
-    generation_id: GenerationId,
-) -> mlua::Result<()> {
+pub struct AsyncInstallContext {
+    pub guard: Rc<CapabilityGuard>,
+    pub ledger: ResourceLedger,
+    pub registry: AsyncJobRegistry,
+    pub job_callbacks: Rc<RefCell<JobCallbacks>>,
+    pub deferred: Rc<RefCell<DeferredQueue>>,
+    pub plugin_id: PluginId,
+    pub generation_id: GenerationId,
+}
+
+pub fn install(lua: &Lua, leviathan: &Table, ctx: AsyncInstallContext) -> mlua::Result<()> {
     let async_tbl = lua.create_table()?;
+    let AsyncInstallContext {
+        guard,
+        ledger,
+        registry,
+        job_callbacks,
+        deferred,
+        plugin_id,
+        generation_id,
+    } = ctx;
 
     let registry_for_spawn = registry.clone();
     let ledger_for_spawn = ledger.clone();

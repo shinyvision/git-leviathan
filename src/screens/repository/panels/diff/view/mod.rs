@@ -40,7 +40,7 @@ pub(in crate::screens::repository) use rows::{
     build_conflict_rows_for_canvas, build_diff_rows_public,
 };
 
-use buffers::{conflict_buffer_panel, output_buffer_panel};
+use buffers::{conflict_buffer_panel, output_buffer_panel, ConflictBufferPanelInput};
 use styles::{diff_scrollbar_style, save_button_style, DIFF_SCROLLBAR_WIDTH};
 
 pub(in crate::screens::repository) struct DiffViewModel<'a> {
@@ -253,28 +253,28 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
     let body: Element<'a, Message> = match result {
         Some(result) => {
             use super::conflict::ConflictSide;
-            let ours = conflict_buffer_panel(
-                "A",
-                &result.ours_label,
-                Some(ConflictSide::Ours),
+            let ours = conflict_buffer_panel(ConflictBufferPanelInput {
+                prefix: "A",
+                label: &result.ours_label,
+                side: Some(ConflictSide::Ours),
                 result,
                 selections,
-                ours_highlighted.clone(),
-                ours_scroll_offset_y,
-                ours_selection,
+                highlighted: ours_highlighted.clone(),
+                scroll_offset_y: ours_scroll_offset_y,
+                selection: ours_selection,
                 shift_held,
-            );
-            let theirs = conflict_buffer_panel(
-                "B",
-                &result.theirs_label,
-                Some(ConflictSide::Theirs),
+            });
+            let theirs = conflict_buffer_panel(ConflictBufferPanelInput {
+                prefix: "B",
+                label: &result.theirs_label,
+                side: Some(ConflictSide::Theirs),
                 result,
                 selections,
-                theirs_highlighted.clone(),
-                theirs_scroll_offset_y,
-                theirs_selection,
+                highlighted: theirs_highlighted.clone(),
+                scroll_offset_y: theirs_scroll_offset_y,
+                selection: theirs_selection,
                 shift_held,
-            );
+            });
             let top_buffers = row![
                 ours,
                 container(horizontal_space())

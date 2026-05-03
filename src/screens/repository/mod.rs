@@ -155,7 +155,7 @@ impl RepositoryScreen {
         Task::perform(
             gateway_work(move || {
                 repo.load_repo(COMMIT_LOAD_LIMIT)
-                    .map(|s| presenter.project_loaded(s))
+                    .map(|s| Box::new(presenter.project_loaded(s)))
             }),
             move |result| Message::App(AppMessage::TabOpened { tab_id, result }),
         )

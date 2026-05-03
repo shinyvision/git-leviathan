@@ -160,16 +160,16 @@ fn build_list_contents<'a>(
                     && screen
                         .commit_search
                         .is_some_and(|s| !s.is_match(commit_idx));
-                message_cell(
+                message_cell(MessageCellData {
                     commit,
-                    &screen.commit_presentations[commit_idx],
-                    screen.commit_diff_states.get(commit_idx),
-                    screen.selected_indices.binary_search(&commit_idx).is_ok(),
-                    commit_idx,
-                    msg_col_w - 5.0,
-                    screen.dirty_commit_message,
+                    presentation: &screen.commit_presentations[commit_idx],
+                    diff_state: screen.commit_diff_states.get(commit_idx),
+                    is_selected: screen.selected_indices.binary_search(&commit_idx).is_ok(),
+                    idx: commit_idx,
+                    available_width: msg_col_w - 5.0,
+                    dirty_commit_message: screen.dirty_commit_message,
                     is_muted,
-                )
+                })
             }),
     );
     msg_col.push(list_vertical_spacer(bottom_spacer_h));
@@ -366,8 +366,7 @@ fn dirty_message_row<'a>(
         .width(Length::Fill)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn message_cell<'a>(
+struct MessageCellData<'a> {
     commit: &'a Commit,
     presentation: &'a CommitPresentation,
     diff_state: Option<&'a CommitDiffState>,
@@ -376,7 +375,20 @@ fn message_cell<'a>(
     available_width: f32,
     dirty_commit_message: &'a text_editor::Content,
     is_muted: bool,
-) -> Element<'a, Message> {
+}
+
+fn message_cell<'a>(data: MessageCellData<'a>) -> Element<'a, Message> {
+    let MessageCellData {
+        commit,
+        presentation,
+        diff_state,
+        is_selected,
+        idx,
+        available_width,
+        dirty_commit_message,
+        is_muted,
+    } = data;
+
     let bg = if is_selected {
         theme::BG_SELECTED
     } else {

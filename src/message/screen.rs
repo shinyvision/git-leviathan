@@ -16,13 +16,12 @@ pub enum ScreenRouted {
     Active(ScreenMessage),
     /// Dispatch to a specific tab's repository screen regardless of which
     /// tab is currently active — used by background task completions.
-    Tab(TabId, RepositoryMessage),
+    Tab(TabId, Box<RepositoryMessage>),
 }
 
 #[derive(Debug, Clone)]
-#[allow(clippy::large_enum_variant)] // Repository carries LoadedRepo; boxing shifts to widget AST.
 pub enum ScreenMessage {
     Blank(BlankMessage),
     NoGit(NoGitMessage),
-    Repository(RepositoryMessage),
+    Repository(Box<RepositoryMessage>),
 }

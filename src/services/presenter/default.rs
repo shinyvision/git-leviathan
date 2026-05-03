@@ -38,7 +38,7 @@ impl Presenter for DefaultPresenter {
     ) -> LoadedRemoteCheckoutOutcome {
         match outcome {
             RemoteCheckoutOutcome::Success(s) => {
-                LoadedRemoteCheckoutOutcome::Success(projection::project_loaded(s))
+                LoadedRemoteCheckoutOutcome::Success(Box::new(projection::project_loaded(*s)))
             }
             RemoteCheckoutOutcome::LocalAheadOfRemote {
                 branch_name,
@@ -75,7 +75,7 @@ impl Presenter for DefaultPresenter {
     fn project_push(&self, outcome: PushGatewayOutcome) -> LoadedPushOutcome {
         match outcome {
             PushGatewayOutcome::Pushed(s) => {
-                LoadedPushOutcome::Pushed(projection::project_loaded(s))
+                LoadedPushOutcome::Pushed(Box::new(projection::project_loaded(*s)))
             }
             PushGatewayOutcome::NeedsUpstream {
                 branch_name,

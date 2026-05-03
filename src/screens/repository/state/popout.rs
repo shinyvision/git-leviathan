@@ -36,6 +36,17 @@ pub(in crate::screens::repository) enum BranchPressOutcome {
     CheckoutRemote(String),
 }
 
+pub(in crate::screens::repository) struct SidebarContextMenuRequest {
+    pub(in crate::screens::repository) branch_name: String,
+    pub(in crate::screens::repository) is_remote: bool,
+    pub(in crate::screens::repository) is_tag: bool,
+    pub(in crate::screens::repository) remote_name: Option<String>,
+    pub(in crate::screens::repository) tag_remote_names: Vec<String>,
+    pub(in crate::screens::repository) default_remote_name: Option<String>,
+    pub(in crate::screens::repository) can_fast_forward: bool,
+    pub(in crate::screens::repository) position: Point,
+}
+
 #[derive(Debug, Default)]
 pub(in crate::screens::repository) struct BranchPopoutController {
     popout: Option<BranchPopoutState>,
@@ -133,68 +144,32 @@ impl BranchPopoutController {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(in crate::screens::repository) fn open_context_menu(
-        &mut self,
-        branch_name: String,
-        is_remote: bool,
-        has_remote: bool,
-        is_tag: bool,
-        remote_name: Option<String>,
-        remote_branch_name: Option<String>,
-        tag_remote_names: Vec<String>,
-        default_remote_name: Option<String>,
-        can_fast_forward: bool,
-        position: Point,
-    ) {
-        self.context_menu = Some(ContextMenuState {
-            branch_name,
-            tag_remote_names,
-            default_remote_name,
-            is_remote,
-            has_remote,
-            is_tag,
-            remote_name,
-            remote_branch_name,
-            can_fast_forward,
-            position,
-        });
+    pub(in crate::screens::repository) fn open_context_menu(&mut self, state: ContextMenuState) {
+        self.context_menu = Some(state);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::screens::repository) fn open_commit_context_menu(
         &mut self,
-        commit_idx: usize,
-        commit_hash: String,
-        stash_index: Option<usize>,
-        stash_display_name: Option<String>,
-        selected_indices: Vec<usize>,
-        selected_hashes: Vec<String>,
-        position: Point,
+        state: CommitContextMenuState,
     ) {
-        self.commit_context_menu = Some(CommitContextMenuState {
-            commit_idx,
-            commit_hash,
-            position,
-            stash_index,
-            stash_display_name,
-            selected_indices,
-            selected_hashes,
-        });
+        self.commit_context_menu = Some(state);
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(in crate::screens::repository) fn open_sidebar_context_menu(
         &mut self,
-        branch_name: String,
-        is_remote: bool,
-        is_tag: bool,
-        remote_name: Option<String>,
-        tag_remote_names: Vec<String>,
-        default_remote_name: Option<String>,
-        can_fast_forward: bool,
-        position: Point,
+        request: SidebarContextMenuRequest,
     ) {
+        let SidebarContextMenuRequest {
+            branch_name,
+            is_remote,
+            is_tag,
+            remote_name,
+            tag_remote_names,
+            default_remote_name,
+            can_fast_forward,
+            position,
+        } = request;
+
         self.context_menu = Some(ContextMenuState {
             branch_name: branch_name.clone(),
             tag_remote_names,

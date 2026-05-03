@@ -28,13 +28,15 @@ pub enum Message {
 
 impl Message {
     pub fn repo(msg: RepositoryMessage) -> Self {
-        Self::Screen(ScreenRouted::Active(ScreenMessage::Repository(msg)))
+        Self::Screen(ScreenRouted::Active(ScreenMessage::Repository(Box::new(
+            msg,
+        ))))
     }
 
     /// Deliver a repository message to a specific tab (used by background
     /// task results that fire independently of the active tab).
     pub fn tab(tab_id: TabId, msg: RepositoryMessage) -> Self {
-        Self::Screen(ScreenRouted::Tab(tab_id, msg))
+        Self::Screen(ScreenRouted::Tab(tab_id, Box::new(msg)))
     }
 
     pub fn no_git(msg: NoGitMessage) -> Self {

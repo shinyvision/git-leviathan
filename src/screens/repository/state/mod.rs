@@ -49,7 +49,7 @@ pub(crate) use gateway_fleet::GatewayFleet;
 pub(in crate::screens::repository) use merged_diff::MergedDiffCache;
 pub(in crate::screens::repository) use pending_focus::PendingFocus;
 pub(in crate::screens::repository) use popout::{
-    BranchPopoutController, BranchPopoutState, BranchPressOutcome,
+    BranchPopoutController, BranchPopoutState, BranchPressOutcome, SidebarContextMenuRequest,
 };
 pub(in crate::screens::repository) use resize::{EffectiveLayout, ResizeState};
 pub(in crate::screens::repository) use selection::SelectionState;
