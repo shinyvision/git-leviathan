@@ -284,10 +284,12 @@ fn symlink_outside_granted_scope_yields_path_outside_scope() {
             vec![Capability::FsReadDir {
                 dir: safe.to_string_lossy().into_owned(),
             }],
-            dir.path().to_path_buf(),
-            dir.path().to_path_buf(),
-            dir.path().to_path_buf(),
-            None,
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: dir.path().to_path_buf(),
+                state_dir: dir.path().to_path_buf(),
+                config_dir: dir.path().to_path_buf(),
+                workdir: None,
+            },
             store,
         );
         let target = safe.join("link/secret.txt");
@@ -492,14 +494,13 @@ fn capability_prompt_round_trip_via_host_overlay_api() {
 #[test]
 fn unknown_capability_in_manifest_emits_warning_diagnostic() {
     let mut host = MockHost::new();
-    let manifest = format!(
-        r#"
+    let manifest = r#"
 id = "weird"
 name = "weird"
 version = "0.1.0"
 api_version = "1.0"
 capabilities = ["destroy:everything", "env"]
 "#
-    );
+    .to_string();
     host.load_inline("weird", &manifest, r#""#).unwrap_err();
 }

@@ -159,12 +159,14 @@ pub struct CommandDescriptor {
     pub run: CommandBody,
 }
 
+type HostCommandCallback = dyn Fn(&serde_json::Value) -> Result<(), String>;
+
 /// A command body. Lua bodies live on the owning plugin's Lua state;
 /// host bodies are plain closures. Either way, dispatch goes through
 /// [`CommandRunner`] so the registry never knows about Lua details.
 pub enum CommandBody {
     Lua { callback: RegistryKey },
-    Host(Box<dyn Fn(&serde_json::Value) -> Result<(), String>>),
+    Host(Box<HostCommandCallback>),
 }
 
 /// What happened when [`CommandRegistry::invoke`] dispatched. Returned
@@ -1147,7 +1149,7 @@ impl PaletteState {
     /// Convenience: filter and return the first match. Used by tests
     /// and by the keyboard activation path that should run "the most
     /// likely" command for the current query.
-    pub fn first_match<'a>(&self, summaries: &'a [CommandSummary]) -> Option<CommandSummary> {
+    pub fn first_match(&self, summaries: &[CommandSummary]) -> Option<CommandSummary> {
         self.filter(summaries).into_iter().next()
     }
 }
@@ -1185,6 +1187,12 @@ mod tests {
         events: Rc<RefCell<Vec<(String, bool)>>>,
     }
 
+    type StubRunnerParts = (
+        StubRunner,
+        Rc<RefCell<Vec<String>>>,
+        Rc<RefCell<Vec<(String, bool)>>>,
+    );
+
     impl CommandRunner for StubRunner {
         fn run(&mut self, entry: &CommandEntry, _args: &serde_json::Value) -> Result<(), String> {
             self.ran.borrow_mut().push(entry.descriptor.name.clone());
@@ -1211,11 +1219,7 @@ mod tests {
         }
     }
 
-    fn stub_runner() -> (
-        StubRunner,
-        Rc<RefCell<Vec<String>>>,
-        Rc<RefCell<Vec<(String, bool)>>>,
-    ) {
+    fn stub_runner() -> StubRunnerParts {
         let ran: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
         let events: Rc<RefCell<Vec<(String, bool)>>> = Rc::new(RefCell::new(Vec::new()));
         (
@@ -1271,10 +1275,10 @@ mod tests {
             &desc,
             &serde_json::json!({ "force": true, "extra": 1 }),
         );
-        assert!(matches!(res, Err(_)));
+        assert!(res.is_err());
         // Wrong type.
         let res = CommandRegistry::validate_args(&desc, &serde_json::json!({ "force": "yes" }));
-        assert!(matches!(res, Err(_)));
+        assert!(res.is_err());
         // Default fills in.
         let merged = CommandRegistry::validate_args(&desc, &serde_json::Value::Null).unwrap();
         assert_eq!(merged["force"], serde_json::json!(false));

@@ -221,67 +221,68 @@ fn detect_cycles(by_id: &BTreeMap<String, &PluginManifest>) -> Vec<Vec<String>> 
         }
     }
 
-    let mut idx = 0usize;
-    let mut stack: Vec<usize> = Vec::new();
-    let mut on_stack: Vec<bool> = vec![false; n];
-    let mut indices: Vec<i64> = vec![-1; n];
-    let mut lowlink: Vec<i64> = vec![-1; n];
-    let mut sccs: Vec<Vec<usize>> = Vec::new();
+    struct Tarjan<'a> {
+        idx: usize,
+        stack: Vec<usize>,
+        on_stack: Vec<bool>,
+        indices: Vec<i64>,
+        lowlink: Vec<i64>,
+        adj: &'a [Vec<usize>],
+        sccs: Vec<Vec<usize>>,
+    }
 
-    fn strongconnect(
-        v: usize,
-        idx: &mut usize,
-        stack: &mut Vec<usize>,
-        on_stack: &mut [bool],
-        indices: &mut [i64],
-        lowlink: &mut [i64],
-        adj: &[Vec<usize>],
-        sccs: &mut Vec<Vec<usize>>,
-    ) {
-        indices[v] = *idx as i64;
-        lowlink[v] = *idx as i64;
-        *idx += 1;
-        stack.push(v);
-        on_stack[v] = true;
-        for &w in &adj[v] {
-            if indices[w] == -1 {
-                strongconnect(w, idx, stack, on_stack, indices, lowlink, adj, sccs);
-                lowlink[v] = lowlink[v].min(lowlink[w]);
-            } else if on_stack[w] {
-                lowlink[v] = lowlink[v].min(indices[w]);
+    impl<'a> Tarjan<'a> {
+        fn new(adj: &'a [Vec<usize>]) -> Self {
+            let n = adj.len();
+            Self {
+                idx: 0,
+                stack: Vec::new(),
+                on_stack: vec![false; n],
+                indices: vec![-1; n],
+                lowlink: vec![-1; n],
+                adj,
+                sccs: Vec::new(),
             }
         }
-        if lowlink[v] == indices[v] {
-            let mut scc = Vec::new();
-            loop {
-                let w = stack.pop().expect("stack");
-                on_stack[w] = false;
-                scc.push(w);
-                if w == v {
-                    break;
+
+        fn strongconnect(&mut self, v: usize) {
+            self.indices[v] = self.idx as i64;
+            self.lowlink[v] = self.idx as i64;
+            self.idx += 1;
+            self.stack.push(v);
+            self.on_stack[v] = true;
+            for &w in &self.adj[v] {
+                if self.indices[w] == -1 {
+                    self.strongconnect(w);
+                    self.lowlink[v] = self.lowlink[v].min(self.lowlink[w]);
+                } else if self.on_stack[w] {
+                    self.lowlink[v] = self.lowlink[v].min(self.indices[w]);
                 }
             }
-            sccs.push(scc);
+            if self.lowlink[v] == self.indices[v] {
+                let mut scc = Vec::new();
+                loop {
+                    let w = self.stack.pop().expect("stack");
+                    self.on_stack[w] = false;
+                    scc.push(w);
+                    if w == v {
+                        break;
+                    }
+                }
+                self.sccs.push(scc);
+            }
         }
     }
 
+    let mut tarjan = Tarjan::new(&adj);
     for v in 0..n {
-        if indices[v] == -1 {
-            strongconnect(
-                v,
-                &mut idx,
-                &mut stack,
-                &mut on_stack,
-                &mut indices,
-                &mut lowlink,
-                &adj,
-                &mut sccs,
-            );
+        if tarjan.indices[v] == -1 {
+            tarjan.strongconnect(v);
         }
     }
 
     let mut cycles = Vec::new();
-    for scc in sccs {
+    for scc in tarjan.sccs {
         if scc.len() > 1 {
             let mut ids: Vec<String> = scc.iter().map(|&i| nodes[i].to_string()).collect();
             ids.sort();
@@ -289,7 +290,7 @@ fn detect_cycles(by_id: &BTreeMap<String, &PluginManifest>) -> Vec<Vec<String>> 
         } else {
             // self-loop?
             let v = scc[0];
-            if adj[v].iter().any(|&w| w == v) {
+            if adj[v].contains(&v) {
                 cycles.push(vec![nodes[v].to_string()]);
             }
         }
@@ -361,7 +362,8 @@ fn topo_sort(
     let mut order = Vec::with_capacity(candidates.len());
     let mut ready: BTreeSet<String> = indeg
         .iter()
-        .filter_map(|(id, &d)| (d == 0).then(|| id.clone()))
+        .filter(|(_, &d)| d == 0)
+        .map(|(id, _)| id.clone())
         .collect();
     let mut emitted: HashSet<String> = HashSet::new();
     while !ready.is_empty() {

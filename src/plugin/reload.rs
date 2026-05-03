@@ -148,7 +148,7 @@ api_version = "1.0"
             count += 1;
         }
         assert!(
-            count >= 1 && count <= 2,
+            (1..=2).contains(&count),
             "expected debounced 1-2 events, got {count}"
         );
     }

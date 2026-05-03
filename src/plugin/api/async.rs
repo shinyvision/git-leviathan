@@ -21,7 +21,9 @@ use std::sync::mpsc::channel;
 use mlua::{Function, Lua, RegistryKey, Table, UserData, UserDataMethods};
 
 use crate::plugin::api::async_runtime::{DeferredCallback, DeferredQueue};
-use crate::plugin::async_jobs::{AsyncJobRegistry, CancellationToken, JobId, JobOutcome};
+use crate::plugin::async_jobs::{
+    AsyncJobRegistration, AsyncJobRegistry, CancellationToken, JobId, JobOutcome,
+};
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::resources::{GenerationId, PluginId, PluginResourceKind, ResourceLedger};
 
@@ -128,15 +130,15 @@ pub fn install(
                     let _ = tx.send(outcome);
                 });
 
-                registry_for_spawn.register(
-                    plugin_id_for_spawn.clone(),
+                registry_for_spawn.register(AsyncJobRegistration {
+                    plugin_id: plugin_id_for_spawn.clone(),
                     generation_id,
                     job_id,
                     resource_id,
                     cancel,
                     join,
                     rx,
-                );
+                });
 
                 Ok(LuaJobHandle {
                     job_id,
@@ -247,7 +249,7 @@ fn lua_value_to_json(value: mlua::Value) -> Result<serde_json::Value, String> {
                 }
             }
             if is_array {
-                let mut arr = Vec::with_capacity(len as usize);
+                let mut arr = Vec::with_capacity(len);
                 for i in 1..=len {
                     let v: mlua::Value = t.raw_get(i).map_err(|e| format!("table get {i}: {e}"))?;
                     arr.push(lua_value_to_json(v)?);

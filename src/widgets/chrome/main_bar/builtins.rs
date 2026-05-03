@@ -137,7 +137,7 @@ fn branch_info_slot() -> MainBarSlot {
 fn fetch_indicator_slot() -> MainBarSlot {
     MainBarSlot::new("builtin.fetch_indicator", Section::Left, 40, |ctx| {
         let inner: Element<'_, Message> = match ctx.fetch_started_at {
-            Some(started_at) => spinner::spinner(started_at, theme::TEXT_DIM, 13.0).into(),
+            Some(started_at) => spinner::spinner(started_at, theme::TEXT_DIM, 13.0),
             None => assets::tab_icon(assets::REFRESH, theme::TEXT_DIM),
         };
         container(inner).padding(Padding::from([0, 6])).into()

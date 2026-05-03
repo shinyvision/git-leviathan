@@ -53,7 +53,7 @@ impl Lockfile {
         Self::default()
     }
 
-    pub fn from_str(s: &str) -> Result<Self, toml::de::Error> {
+    pub fn parse_toml(s: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(s)
     }
 
@@ -65,7 +65,7 @@ impl Lockfile {
 
     pub fn read(path: &Path) -> Result<Self, LockfileError> {
         let raw = fs::read_to_string(path).map_err(LockfileError::Io)?;
-        Self::from_str(&raw).map_err(LockfileError::Parse)
+        Self::parse_toml(&raw).map_err(LockfileError::Parse)
     }
 
     pub fn write(&self, path: &Path) -> Result<(), LockfileError> {
@@ -204,7 +204,7 @@ mod tests {
         let z_pos = out.find("z").unwrap();
         let a_pos = out.find("0.2.0").unwrap();
         assert!(a_pos < z_pos, "expected a before z, got: {out}");
-        let parsed = Lockfile::from_str(&out).expect("decode");
+        let parsed = Lockfile::parse_toml(&out).expect("decode");
         assert_eq!(parsed.plugins.len(), 2);
         assert_eq!(parsed.lookup("a").unwrap().version, "0.2.0");
     }

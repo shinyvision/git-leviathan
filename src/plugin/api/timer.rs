@@ -16,6 +16,15 @@ pub struct LuaTimerHandle {
     pub callbacks: Rc<RefCell<PluginTimerCallbacks>>,
 }
 
+pub struct TimerInstallContext {
+    pub guard: Rc<CapabilityGuard>,
+    pub ledger: ResourceLedger,
+    pub registry: TimerRegistry,
+    pub callbacks: Rc<RefCell<PluginTimerCallbacks>>,
+    pub plugin_id: PluginId,
+    pub generation_id: GenerationId,
+}
+
 impl UserData for LuaTimerHandle {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("cancel", |_, this, ()| {
@@ -27,23 +36,15 @@ impl UserData for LuaTimerHandle {
     }
 }
 
-pub fn install(
-    lua: &Lua,
-    leviathan: &Table,
-    guard: Rc<CapabilityGuard>,
-    ledger: ResourceLedger,
-    registry: TimerRegistry,
-    callbacks: Rc<RefCell<PluginTimerCallbacks>>,
-    plugin_id: PluginId,
-    generation_id: GenerationId,
-) -> mlua::Result<()> {
+pub fn install(lua: &Lua, leviathan: &Table, ctx: TimerInstallContext) -> mlua::Result<()> {
     let timer_tbl = lua.create_table()?;
 
-    let plugin_id_after = plugin_id.clone();
-    let registry_after = registry.clone();
-    let ledger_after = ledger.clone();
-    let callbacks_after = Rc::clone(&callbacks);
-    let guard_after = Rc::clone(&guard);
+    let plugin_id_after = ctx.plugin_id.clone();
+    let registry_after = ctx.registry.clone();
+    let ledger_after = ctx.ledger.clone();
+    let callbacks_after = Rc::clone(&ctx.callbacks);
+    let guard_after = Rc::clone(&ctx.guard);
+    let generation_id = ctx.generation_id;
     timer_tbl.set(
         "after",
         lua.create_function(move |lua_inner, (ms, f): (u64, Function)| {
@@ -80,11 +81,11 @@ pub fn install(
         })?,
     )?;
 
-    let plugin_id_every = plugin_id;
-    let registry_every = registry.clone();
-    let ledger_every = ledger;
-    let callbacks_every = Rc::clone(&callbacks);
-    let guard_every = guard;
+    let plugin_id_every = ctx.plugin_id;
+    let registry_every = ctx.registry.clone();
+    let ledger_every = ctx.ledger;
+    let callbacks_every = Rc::clone(&ctx.callbacks);
+    let guard_every = ctx.guard;
     timer_tbl.set(
         "every",
         lua.create_function(move |lua_inner, (ms, f): (u64, Function)| {

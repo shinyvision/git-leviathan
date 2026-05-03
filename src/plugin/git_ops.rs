@@ -42,6 +42,16 @@ pub enum GitOpStatus {
     NoRepository,
 }
 
+struct GitDiagnostic<'a> {
+    plugin_id: &'a str,
+    generation_id: GenerationId,
+    code: &'a str,
+    severity: DiagnosticSeverity,
+    op: &'a str,
+    message: String,
+    context: serde_json::Value,
+}
+
 impl GitOpStatus {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -489,20 +499,20 @@ impl GitOpsContext {
         // record the git_write audit row + the repository Git diagnostic.
         if let Err(reason) = cap_check(cap) {
             self.record_audit(plugin_id, &op, AuditOutcome::Denied, "denied:capability");
-            self.record_diagnostic(
+            self.record_diagnostic(GitDiagnostic {
                 plugin_id,
                 generation_id,
-                "git.destructive_blocked",
-                DiagnosticSeverity::Error,
-                &op,
-                format!("git.{op} denied: capability `{cap}` not granted ({reason})"),
-                serde_json::json!({
+                code: "git.destructive_blocked",
+                severity: DiagnosticSeverity::Error,
+                op: &op,
+                message: format!("git.{op} denied: capability `{cap}` not granted ({reason})"),
+                context: serde_json::json!({
                     "op": op,
                     "capability": cap,
                     "reason": reason,
                     "args": args_json,
                 }),
-            );
+            });
             self.pending
                 .finish(plugin_id, &op, started_at, GitOpStatus::CapabilityDenied);
             return GitOpExecution {
@@ -520,20 +530,20 @@ impl GitOpsContext {
                 Some(by) => Some(by),
                 None => {
                     self.record_audit(plugin_id, &op, AuditOutcome::Denied, "denied:destructive");
-                    self.record_diagnostic(
+                    self.record_diagnostic(GitDiagnostic {
                         plugin_id,
                         generation_id,
-                        "git.destructive_blocked",
-                        DiagnosticSeverity::Error,
-                        &op,
-                        format!(
+                        code: "git.destructive_blocked",
+                        severity: DiagnosticSeverity::Error,
+                        op: &op,
+                        message: format!(
                             "git.{op} blocked: destructive op requires confirmation policy approval"
                         ),
-                        serde_json::json!({
+                        context: serde_json::json!({
                             "op": op,
                             "args": args_json,
                         }),
-                    );
+                    });
                     self.pending.finish(
                         plugin_id,
                         &op,
@@ -554,19 +564,19 @@ impl GitOpsContext {
         // no-op error.
         let Some(gateway) = self.gateway.get() else {
             self.record_audit(plugin_id, &op, AuditOutcome::Denied, "denied:no_repository");
-            self.record_diagnostic(
+            self.record_diagnostic(GitDiagnostic {
                 plugin_id,
                 generation_id,
-                "git.task_failed",
-                DiagnosticSeverity::Error,
-                &op,
-                format!("git.{op} failed: no repository open"),
-                serde_json::json!({
+                code: "git.task_failed",
+                severity: DiagnosticSeverity::Error,
+                op: &op,
+                message: format!("git.{op} failed: no repository open"),
+                context: serde_json::json!({
                     "op": op,
                     "args": args_json,
                     "cause": "no_repository",
                 }),
-            );
+            });
             self.pending
                 .finish(plugin_id, &op, started_at, GitOpStatus::NoRepository);
             return GitOpExecution {
@@ -593,15 +603,15 @@ impl GitOpsContext {
                     AuditOutcome::Allowed,
                     &format!("ok:{}ms", duration_ms),
                 );
-                self.record_diagnostic(
+                self.record_diagnostic(GitDiagnostic {
                     plugin_id,
                     generation_id,
-                    "git.task_succeeded",
-                    DiagnosticSeverity::Info,
-                    &op,
-                    format!("git.{op} completed in {duration_ms}ms"),
-                    outcome_json,
-                );
+                    code: "git.task_succeeded",
+                    severity: DiagnosticSeverity::Info,
+                    op: &op,
+                    message: format!("git.{op} completed in {duration_ms}ms"),
+                    context: outcome_json,
+                });
                 self.pending
                     .finish(plugin_id, &op, started_at, GitOpStatus::Succeeded);
                 GitOpExecution {
@@ -617,20 +627,20 @@ impl GitOpsContext {
                     AuditOutcome::Denied,
                     &format!("failed:{cause}"),
                 );
-                self.record_diagnostic(
+                self.record_diagnostic(GitDiagnostic {
                     plugin_id,
                     generation_id,
-                    "git.task_failed",
-                    DiagnosticSeverity::Error,
-                    &op,
-                    format!("git.{op} failed: {cause}"),
-                    serde_json::json!({
+                    code: "git.task_failed",
+                    severity: DiagnosticSeverity::Error,
+                    op: &op,
+                    message: format!("git.{op} failed: {cause}"),
+                    context: serde_json::json!({
                         "op": op,
                         "args": args_json,
                         "duration_ms": duration_ms,
                         "cause": cause,
                     }),
-                );
+                });
                 self.pending
                     .finish(plugin_id, &op, started_at, GitOpStatus::Failed);
                 GitOpExecution {
@@ -646,23 +656,19 @@ impl GitOpsContext {
             .record(plugin_id, format!("git_write.{op}"), target, outcome);
     }
 
-    fn record_diagnostic(
-        &self,
-        plugin_id: &str,
-        generation_id: GenerationId,
-        code: &str,
-        severity: DiagnosticSeverity,
-        op: &str,
-        message: String,
-        context: serde_json::Value,
-    ) {
+    fn record_diagnostic(&self, diagnostic: GitDiagnostic<'_>) {
         self.diagnostics.record(
-            PluginDiagnostic::new(PluginId::from(plugin_id), severity, code, message)
-                .with_generation(generation_id)
-                .with_source(PluginSourceSpan::ApiFunction {
-                    name: format!("git.{op}"),
-                })
-                .with_context(context),
+            PluginDiagnostic::new(
+                PluginId::from(diagnostic.plugin_id),
+                diagnostic.severity,
+                diagnostic.code,
+                diagnostic.message,
+            )
+            .with_generation(diagnostic.generation_id)
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("git.{}", diagnostic.op),
+            })
+            .with_context(diagnostic.context),
         );
     }
 }

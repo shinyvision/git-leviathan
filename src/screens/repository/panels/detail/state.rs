@@ -9,7 +9,7 @@ use super::super::super::{
     FileView,
 };
 use super::view as detail_view;
-use super::DetailOrientation;
+use super::{DetailOrientation, DetailViewCtx};
 
 #[derive(Debug, Clone)]
 pub(in crate::screens::repository) struct DetailViewModel<'a> {
@@ -175,23 +175,18 @@ impl DetailPanel {
 
     pub(in crate::screens::repository) fn view<'a>(
         &'a self,
-        data: &'a RepositoryData,
-        selection: &SelectionState,
-        active_diff_file_path: Option<&'a str>,
-        merged_diff: Option<&'a MergedCommitDiffResult>,
-        orientation: DetailOrientation,
-        width: f32,
+        ctx: &DetailViewCtx<'a>,
         top_slot: Option<Element<'a, Message>>,
         bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
         detail_view::detail_panel_view(
             self.detail_view_model(
-                data,
-                selection,
-                active_diff_file_path,
-                merged_diff,
-                orientation,
-                width,
+                ctx.data,
+                ctx.selection,
+                ctx.active_diff_file_path,
+                ctx.merged_diff,
+                ctx.orientation,
+                ctx.width,
             ),
             top_slot,
             bottom_slot,

@@ -43,15 +43,6 @@ impl DetailPanel {
         top_slot: Option<Element<'a, Message>>,
         bottom_slot: Option<Element<'a, Message>>,
     ) -> Element<'a, Message> {
-        self.view(
-            ctx.data,
-            ctx.selection,
-            ctx.active_diff_file_path,
-            ctx.merged_diff,
-            ctx.orientation,
-            ctx.width,
-            top_slot,
-            bottom_slot,
-        )
+        self.view(ctx, top_slot, bottom_slot)
     }
 }

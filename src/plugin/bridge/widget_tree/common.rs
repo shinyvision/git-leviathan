@@ -220,7 +220,7 @@ mod tests {
             length_or(AstLength::Auto, Length::Shrink),
             Length::Shrink
         ));
-        assert!(matches!(length_explicit(AstLength::Auto), None));
+        assert!(length_explicit(AstLength::Auto).is_none());
         assert!(matches!(
             length_explicit(AstLength::Fixed(7.5)),
             Some(Length::Fixed(_))

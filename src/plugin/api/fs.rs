@@ -720,10 +720,12 @@ mod tests {
                     scope: FsScope::Any,
                 },
             ],
-            std::env::temp_dir(),
-            std::env::temp_dir(),
-            std::env::temp_dir(),
-            None,
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: std::env::temp_dir(),
+                state_dir: std::env::temp_dir(),
+                config_dir: std::env::temp_dir(),
+                workdir: None,
+            },
             store,
         ));
         install(lua, leviathan, guard).unwrap();

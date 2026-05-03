@@ -127,6 +127,16 @@ pub struct DrainedJob {
     pub outcome: JobOutcome,
 }
 
+pub struct AsyncJobRegistration {
+    pub plugin_id: PluginId,
+    pub generation_id: GenerationId,
+    pub job_id: JobId,
+    pub resource_id: ResourceId,
+    pub cancel: CancellationToken,
+    pub join: JoinHandle<()>,
+    pub rx: Receiver<JobOutcome>,
+}
+
 impl AsyncJobRegistry {
     pub fn new() -> Self {
         Self::default()
@@ -141,29 +151,20 @@ impl AsyncJobRegistry {
     /// Record a freshly spawned job so the host can later drain its
     /// completion. `join` is the worker thread; `rx` is the receiver
     /// the worker sends its `JobOutcome` on.
-    pub fn register(
-        &self,
-        plugin_id: PluginId,
-        generation_id: GenerationId,
-        job_id: JobId,
-        resource_id: ResourceId,
-        cancel: CancellationToken,
-        join: JoinHandle<()>,
-        rx: Receiver<JobOutcome>,
-    ) {
+    pub fn register(&self, registration: AsyncJobRegistration) {
         let record = JobRecord {
-            plugin_id,
-            generation_id,
-            job_id,
-            resource_id,
+            plugin_id: registration.plugin_id,
+            generation_id: registration.generation_id,
+            job_id: registration.job_id,
+            resource_id: registration.resource_id,
             status: JobStatus::Running,
             started_at: SystemTime::now(),
-            cancel,
-            join: Mutex::new(Some(join)),
-            rx: Mutex::new(Some(rx)),
+            cancel: registration.cancel,
+            join: Mutex::new(Some(registration.join)),
+            rx: Mutex::new(Some(registration.rx)),
         };
         let mut inner = self.inner.lock().expect("async registry poisoned");
-        inner.jobs.insert(job_id, record);
+        inner.jobs.insert(registration.job_id, record);
     }
 
     /// Trip the cancel token for `job_id`. The worker thread's body
@@ -331,15 +332,15 @@ mod tests {
         let handle = std::thread::spawn(move || {
             let _ = tx.send(JobOutcome::Ok(serde_json::Value::Null));
         });
-        reg.register(
-            plugin.clone(),
-            gen,
+        reg.register(AsyncJobRegistration {
+            plugin_id: plugin.clone(),
+            generation_id: gen,
             job_id,
-            ResourceId::new(1),
+            resource_id: ResourceId::new(1),
             cancel,
-            handle,
+            join: handle,
             rx,
-        );
+        });
         let removed = reg.cancel_for_generation(&plugin, gen);
         assert_eq!(removed, vec![job_id]);
         assert!(!reg.is_alive(job_id));

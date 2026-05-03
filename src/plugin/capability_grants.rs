@@ -97,7 +97,7 @@ impl AutoGrantPolicy {
     pub fn trust_bundled_root(&mut self, root: impl Into<PathBuf>) {
         let path = root.into();
         let canon = fs::canonicalize(&path).unwrap_or(path);
-        if !self.bundled_roots.iter().any(|p| *p == canon) {
+        if !self.bundled_roots.contains(&canon) {
             self.bundled_roots.push(canon);
         }
     }
@@ -695,7 +695,7 @@ impl ScopeResolver<'_> {
                     let want_canon = fs::canonicalize(dir).unwrap_or_else(|_| PathBuf::from(dir));
                     if canon.starts_with(&want_canon) {
                         return Ok(canon);
-                    } else if PathBuf::from(&resolved).starts_with(&PathBuf::from(dir)) {
+                    } else if PathBuf::from(&resolved).starts_with(PathBuf::from(dir)) {
                         // Path looks like it should be inside the scope but
                         // canonicalisation moved it out: the symlink-defeat
                         // path. Surface that distinct code.
@@ -713,7 +713,7 @@ impl ScopeResolver<'_> {
                     let want_canon = fs::canonicalize(dir).unwrap_or_else(|_| PathBuf::from(dir));
                     if canon.starts_with(&want_canon) {
                         return Ok(canon);
-                    } else if PathBuf::from(&resolved).starts_with(&PathBuf::from(dir)) {
+                    } else if PathBuf::from(&resolved).starts_with(PathBuf::from(dir)) {
                         return Err((
                             "capability.path_outside_scope".to_string(),
                             format!(
@@ -764,7 +764,7 @@ impl ScopeResolver<'_> {
                     let want_canon = fs::canonicalize(dir).unwrap_or_else(|_| PathBuf::from(dir));
                     if canon.starts_with(&want_canon) {
                         return Ok(canon);
-                    } else if PathBuf::from(&resolved).starts_with(&PathBuf::from(dir)) {
+                    } else if PathBuf::from(&resolved).starts_with(PathBuf::from(dir)) {
                         return Err((
                             "capability.path_outside_scope".to_string(),
                             format!(

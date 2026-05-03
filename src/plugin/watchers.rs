@@ -186,17 +186,14 @@ impl FileWatcherRegistry {
         let inner = self.inner.lock().expect("watcher registry poisoned");
         for record in inner.watchers.values() {
             let rx_guard = record.rx.lock().expect("rx mutex");
-            loop {
-                match rx_guard.try_recv() {
-                    Ok(event) => out.push(DrainedWatchEvent {
-                        plugin_id: record.plugin_id.clone(),
-                        generation_id: record.generation_id,
-                        watch_id: record.watch_id,
-                        resource_id: record.resource_id,
-                        event,
-                    }),
-                    Err(_) => break,
-                }
+            while let Ok(event) = rx_guard.try_recv() {
+                out.push(DrainedWatchEvent {
+                    plugin_id: record.plugin_id.clone(),
+                    generation_id: record.generation_id,
+                    watch_id: record.watch_id,
+                    resource_id: record.resource_id,
+                    event,
+                });
             }
         }
         out

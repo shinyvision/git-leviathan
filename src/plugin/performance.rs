@@ -447,13 +447,14 @@ impl BudgetTracker {
         let mut inner = self.inner.lock().expect("budget tracker poisoned");
         let mut affected: Vec<u64> = Vec::new();
         for (key, stats) in inner.stats.iter_mut() {
-            if key.plugin_id == plugin_id.as_str() && key.callback_id == callback_id {
-                if stats.is_active_breach() {
-                    stats.state = Some(BreakerState::Healthy);
-                    stats.consecutive_failures = 0;
-                    stats.consecutive_hard_breaches = 0;
-                    affected.push(key.generation_id);
-                }
+            if key.plugin_id == plugin_id.as_str()
+                && key.callback_id == callback_id
+                && stats.is_active_breach()
+            {
+                stats.state = Some(BreakerState::Healthy);
+                stats.consecutive_failures = 0;
+                stats.consecutive_hard_breaches = 0;
+                affected.push(key.generation_id);
             }
         }
         // Allow `plugin.degraded` to fire again if the plugin trips

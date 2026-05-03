@@ -88,10 +88,12 @@ mod tests {
             plugin_id,
             plugin_version,
             requested,
-            root,
-            state,
-            config,
-            None,
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: root,
+                state_dir: state,
+                config_dir: config,
+                workdir: None,
+            },
             store,
         )
         .with_audit(log)
@@ -147,7 +149,18 @@ mod tests {
         let log = AuditLog::new();
         let store = GrantStore::new_in_memory();
         let (root, state, config) = dirs();
-        let guard = CapabilityGuard::new("p", "0.1.0", vec![], root, state, config, None, store);
+        let guard = CapabilityGuard::new(
+            "p",
+            "0.1.0",
+            vec![],
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: root,
+                state_dir: state,
+                config_dir: config,
+                workdir: None,
+            },
+            store,
+        );
         let _ = guard.check_fs_read(Path::new("/x"));
         assert!(
             log.entries().is_empty(),

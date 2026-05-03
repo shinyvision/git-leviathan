@@ -105,7 +105,8 @@ impl ServiceRegistry {
         let keys: Vec<String> = self
             .handles
             .iter()
-            .filter_map(|(key, handle)| (handle.plugin_id == plugin_id).then(|| key.clone()))
+            .filter(|(_, handle)| handle.plugin_id == plugin_id)
+            .map(|(key, _)| key.clone())
             .collect();
         for key in keys {
             if let Some(handle) = self.handles.remove(&key) {

@@ -478,10 +478,12 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             manifest.id.clone(),
             plugin_version_str.clone(),
             manifest.capabilities.clone(),
-            plugin_root.clone(),
-            state_dir,
-            config_dir,
-            None,
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: plugin_root.clone(),
+                state_dir,
+                config_dir,
+                workdir: None,
+            },
             inputs.grant_store.clone(),
         )
         .with_audit(inputs.audit_log.clone())

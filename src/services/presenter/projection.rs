@@ -2040,25 +2040,27 @@ mod tests {
         let primary_path = PathBuf::from("/tmp/primary");
         let wt_path = PathBuf::from("/tmp/wt");
 
-        let mut snapshot = RepoSnapshot::default();
-        snapshot.worktrees = vec![
-            WorktreeInfo {
-                path: primary_path,
-                branch_name: "main".into(),
-                head_hash: "abc".into(),
-                is_primary: true,
-                is_locked: false,
-                is_prunable: false,
-            },
-            WorktreeInfo {
-                path: wt_path.clone(),
-                branch_name: "feature-x".into(),
-                head_hash: "def".into(),
-                is_primary: false,
-                is_locked: false,
-                is_prunable: false,
-            },
-        ];
+        let snapshot = RepoSnapshot {
+            worktrees: vec![
+                WorktreeInfo {
+                    path: primary_path,
+                    branch_name: "main".into(),
+                    head_hash: "abc".into(),
+                    is_primary: true,
+                    is_locked: false,
+                    is_prunable: false,
+                },
+                WorktreeInfo {
+                    path: wt_path.clone(),
+                    branch_name: "feature-x".into(),
+                    head_hash: "def".into(),
+                    is_primary: false,
+                    is_locked: false,
+                    is_prunable: false,
+                },
+            ],
+            ..RepoSnapshot::default()
+        };
 
         use crate::view_model::SidebarSectionKind;
         let sections =

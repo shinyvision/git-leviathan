@@ -213,7 +213,7 @@ fn fuzz_random_trees_never_panic_renderer() {
 
     for seed in 1..=1500u64 {
         let mut rng = Lcg::new(seed);
-        let depth_remaining = (rng.range(7) + 1) as u32;
+        let depth_remaining = rng.range(7) + 1;
         let value = random_node(&mut rng, depth_remaining);
 
         match decode(&value) {

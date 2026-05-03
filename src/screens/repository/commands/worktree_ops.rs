@@ -98,7 +98,7 @@ mod tests {
 
         // Mimic the handler's Err branch:
         state.submitting = false;
-        state.error = Some(format!("{}", "worktree path exists"));
+        state.error = Some("worktree path exists".to_string());
 
         assert!(!state.submitting);
         assert_eq!(state.error.as_deref(), Some("worktree path exists"));

@@ -185,7 +185,7 @@ fn lockfile_round_trips_loaded_plugins() {
     let lock_path = host.lockfile_dir().join(LOCKFILE_NAME);
     assert!(lock_path.is_file(), "lockfile must be written");
     let raw = fs::read_to_string(&lock_path).expect("read");
-    let lock = Lockfile::from_str(&raw).expect("parse lockfile");
+    let lock = Lockfile::parse_toml(&raw).expect("parse lockfile");
     let entries: Vec<&str> = lock.plugins.iter().map(|p| p.id.as_str()).collect();
     assert_eq!(entries, vec!["a", "b"]);
     let b_entry = lock.lookup("b").expect("b in lock");

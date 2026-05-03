@@ -102,7 +102,7 @@ fn read_widget(
             // registration so the plugin author sees a precise reason.
             let ast = widget_ast::decode(&json)
                 .map_err(|e| mlua::Error::external(format!("invalid widget tree: {e}")))?;
-            WidgetSource::Static(ast)
+            WidgetSource::Static(Box::new(ast))
         }
     })
 }

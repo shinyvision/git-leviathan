@@ -34,7 +34,7 @@ pub type DynamicAstCache = Rc<RefCell<Option<WidgetAst>>>;
 
 #[derive(Clone)]
 pub enum SlotWidget {
-    Static(WidgetAst),
+    Static(Box<WidgetAst>),
     Dynamic(DynamicAstCache),
 }
 

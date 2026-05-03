@@ -10,7 +10,7 @@
 //! - after/ order                        -> `after_plugin_files_run_in_lexical_order`
 //! - module cache cleared on reload     -> `module_cache_drops_on_reload`
 //! - strict-global denial               -> `strict_globals_block_undeclared_global_write`
-//!                                         + `strict_globals_block_undeclared_global_read`
+//!   + `strict_globals_block_undeclared_global_read`
 
 use crate::plugin::diagnostic::DiagnosticSeverity;
 use crate::plugin::tests::harness::MockHost;

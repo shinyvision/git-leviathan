@@ -67,7 +67,7 @@ pub struct RawSlotSpec {
 }
 
 pub enum WidgetSource {
-    Static(crate::plugin::ui::widget_ast::WidgetAst),
+    Static(Box<crate::plugin::ui::widget_ast::WidgetAst>),
     Dynamic(RegistryKey),
 }
 
@@ -219,12 +219,14 @@ pub fn install_all(
     timer::install(
         lua,
         &leviathan,
-        Rc::clone(&guard),
-        ledger.clone(),
-        async_ctx.timers.clone(),
-        Rc::clone(&async_ctx.timer_callbacks),
-        plugin_id.clone(),
-        generation_id,
+        timer::TimerInstallContext {
+            guard: Rc::clone(&guard),
+            ledger: ledger.clone(),
+            registry: async_ctx.timers.clone(),
+            callbacks: Rc::clone(&async_ctx.timer_callbacks),
+            plugin_id: plugin_id.clone(),
+            generation_id,
+        },
     )?;
     env::install(lua, &leviathan, Rc::clone(&guard))?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
@@ -312,10 +314,12 @@ mod tests {
             "coverage",
             "0.0.0",
             Vec::<Capability>::new(),
-            tmp.path().to_path_buf(),
-            tmp.path().join("state"),
-            tmp.path().join("config"),
-            None,
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: tmp.path().to_path_buf(),
+                state_dir: tmp.path().join("state"),
+                config_dir: tmp.path().join("config"),
+                workdir: None,
+            },
             grant_store,
         ));
         let services_ctx = ServicesContext {

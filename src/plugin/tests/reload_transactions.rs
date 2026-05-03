@@ -368,7 +368,10 @@ return M
         .map(String::from)
         .unwrap();
     assert_eq!(stage, "migration");
-    assert!(host.diagnostics().by_code("reload.migration_failed").len() >= 1);
+    assert!(!host
+        .diagnostics()
+        .by_code("reload.migration_failed")
+        .is_empty());
 }
 
 #[test]

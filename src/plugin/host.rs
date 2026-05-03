@@ -2991,10 +2991,12 @@ impl PluginHost {
                 manifest.id.clone(),
                 plugin_version.clone(),
                 manifest.capabilities.clone(),
-                plugin_root.clone(),
-                state_dir,
-                config_dir,
-                workdir,
+                crate::plugin::capabilities::CapabilityPaths {
+                    plugin_root: plugin_root.clone(),
+                    state_dir,
+                    config_dir,
+                    workdir,
+                },
                 self.grant_store.clone(),
             )
             .with_audit(self.audit_log.clone())
@@ -3227,8 +3229,8 @@ impl PluginHost {
             )
         };
         let mut local_to_host: HashMap<u64, GroupId> = HashMap::new();
-        let mut autocmd_ops = MergedAutocmdOps::new(autocmds, raw_groups, raw_clears);
-        while let Some(op) = autocmd_ops.next() {
+        let autocmd_ops = MergedAutocmdOps::new(autocmds, raw_groups, raw_clears);
+        for op in autocmd_ops {
             match op {
                 AutocmdOp::Group(grp) => {
                     let host_id = self
@@ -4541,12 +4543,12 @@ impl PluginHost {
         // Group handles are minted per-plugin so a fresh generation
         // always sees a fresh handle namespace.
         let mut local_to_host: HashMap<u64, GroupId> = HashMap::new();
-        let mut staged_walk = MergedStagedAutocmdOps::new(
+        let staged_walk = MergedStagedAutocmdOps::new(
             staged_autocmds,
             staged_autocmd_groups,
             staged_autocmd_clears,
         );
-        while let Some(op) = staged_walk.next() {
+        for op in staged_walk {
             match op {
                 StagedAutocmdOp::Group(grp) => {
                     let host_id = self

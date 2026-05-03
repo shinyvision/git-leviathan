@@ -51,15 +51,20 @@ pub struct CapabilityGuard {
     grant_store: GrantStore,
 }
 
+#[derive(Debug, Clone)]
+pub struct CapabilityPaths {
+    pub plugin_root: PathBuf,
+    pub state_dir: PathBuf,
+    pub config_dir: PathBuf,
+    pub workdir: Option<PathBuf>,
+}
+
 impl CapabilityGuard {
     pub fn new(
         plugin_id: impl Into<String>,
         plugin_version: impl Into<String>,
         requested: Vec<Capability>,
-        plugin_root: PathBuf,
-        state_dir: PathBuf,
-        config_dir: PathBuf,
-        workdir: Option<PathBuf>,
+        paths: CapabilityPaths,
         grant_store: GrantStore,
     ) -> Self {
         let requested_set: HashSet<String> =
@@ -69,10 +74,10 @@ impl CapabilityGuard {
             plugin_version: plugin_version.into(),
             requested,
             requested_set,
-            plugin_root,
-            state_dir,
-            config_dir,
-            workdir,
+            plugin_root: paths.plugin_root,
+            state_dir: paths.state_dir,
+            config_dir: paths.config_dir,
+            workdir: paths.workdir,
             audit: None,
             diagnostics: None,
             grant_store,
@@ -385,10 +390,12 @@ mod tests {
             plugin_id,
             plugin_version,
             requested,
-            tmp.clone(),
-            tmp.clone(),
-            tmp,
-            None,
+            CapabilityPaths {
+                plugin_root: tmp.clone(),
+                state_dir: tmp.clone(),
+                config_dir: tmp,
+                workdir: None,
+            },
             store.clone(),
         )
     }
@@ -440,10 +447,12 @@ mod tests {
             vec![Capability::FsRead {
                 scope: FsScope::Plugin,
             }],
-            plugin_root.clone(),
-            plugin_root.clone(),
-            plugin_root.clone(),
-            None,
+            CapabilityPaths {
+                plugin_root: plugin_root.clone(),
+                state_dir: plugin_root.clone(),
+                config_dir: plugin_root.clone(),
+                workdir: None,
+            },
             store.clone(),
         );
         // Without a grant: deny.
