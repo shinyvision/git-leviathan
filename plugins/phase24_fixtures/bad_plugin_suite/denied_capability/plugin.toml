@@ -1,7 +1,7 @@
 id = "bad_denied_capability"
 name = "Bad Denied Capability"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 
 [runtime]
 strict_globals = false

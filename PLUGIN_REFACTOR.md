@@ -115,19 +115,19 @@ Goal: capture what exists before changing it.
 - Inventory every widget kind and field.
 - Inventory every plugin-owned resource currently stored by `PluginHost`.
 - Inventory bundled plugins and which APIs they use.
-- Write `docs/plugin-api-v1.md`.
-- Write `docs/plugin-widget-v1.md`.
+- Write generated plugin API docs.
+- Write generated plugin widget docs.
 - Add Lua type annotations for the current API under `docs/lua/`.
-- Add a compatibility test that loads every bundled plugin.
+- Add a bundled-plugin smoke test.
 - Add a snapshot test for current slot registrations from bundled plugins.
 - Add a snapshot test for current region descriptors.
 
 ### Deliverables
 
-- `docs/plugin-api-v1.md`
-- `docs/plugin-widget-v1.md`
-- generated or handwritten Lua annotations for v1
-- compatibility test harness for bundled plugins
+- generated plugin API docs
+- generated plugin widget docs
+- generated or handwritten Lua annotations
+- bundled-plugin test harness
 - baseline snapshots
 
 ### Acceptance Gate
@@ -135,7 +135,7 @@ Goal: capture what exists before changing it.
 - The existing plugin system is documented well enough that future migrations
   can be intentional.
 - Every bundled plugin loads in tests.
-- Current APIs have a named compatibility surface: `api_version = "1.0"`.
+- Current APIs have a named surface: `api_version = "1.0"`.
 
 ## Phase 1: Plugin Identity, Generations, And Resource Ledger
 
@@ -237,7 +237,7 @@ ApiModule {
 - Docs, Lua annotations, and runtime validation are generated from the same
   descriptors.
 - Adding a host API without a descriptor fails tests.
-- Existing plugin APIs remain available under compatibility descriptors.
+- Existing plugin APIs remain available under versioned descriptors.
 
 ## Phase 3: Typed Error Model And Diagnostics
 
@@ -384,7 +384,7 @@ Goal: make hot reload reliable enough for daily plugin development.
 - Reload algorithm:
   1. keep old generation active
   2. parse new manifest
-  3. resolve compatibility and capabilities
+  3. resolve API version and capabilities
   4. create new Lua state
   5. install APIs
   6. run init in staging mode
@@ -1108,7 +1108,7 @@ Goal: make authoring and publishing practical.
 
 - A new plugin can be scaffolded, tested, linted, packaged, and installed from
   local files.
-- Generated templates follow the final architecture, not compatibility-only v1.
+- Generated templates follow the final architecture.
 
 ## Phase 22: Registry, Signing, And Supply Chain
 
@@ -1144,34 +1144,30 @@ Goal: make the ecosystem trustworthy.
 - Tampered packages are rejected.
 - Capability changes are shown before upgrade.
 
-## Phase 23: Compatibility And Migration
+## Phase 23: API Migration
 
 Goal: bring existing plugins forward without freezing the new system in old
 shapes.
 
 ### Work
 
-- Keep `api_version = "1.0"` compatibility shim.
-- Write migration guide from v1 to v2.
-- Migrate bundled plugins to v2 APIs.
-- Add deprecation diagnostics for v1-only APIs.
-- Add compatibility tests:
-  - v1 plugins still load
-  - v2 plugins use new descriptors
-  - mixed v1 and v2 plugins can coexist
+- Reject incompatible plugin API manifests.
+- Migrate bundled plugins to v1 APIs.
+- Add boundary tests:
+  - incompatible plugin API manifests are rejected
+  - v1 plugins use new descriptors
+  - multiple v1 plugins can coexist
 - Add `leviathan.has(...)` examples.
 
 ### Deliverables
 
-- `docs/plugin-migration-v1-to-v2.md`
 - migrated bundled plugins
-- compatibility shim tests
+- v1 boundary tests
 
 ### Acceptance Gate
 
-- Existing bundled plugins have v2 versions.
-- v1 remains supported through a documented shim.
-- New plugin templates use v2 only.
+- Existing bundled plugins declare the v1 API.
+- New plugin templates use v1 only.
 
 ## Phase 24: Full System Acceptance
 
@@ -1181,7 +1177,7 @@ Goal: prove the dream system exists.
 
 Build and ship these as fixtures:
 
-1. `repository_info_v2`
+1. `repository_info_v1`
 
    Replaces built-in repo info through typed slots and dynamic AST.
 
@@ -1258,7 +1254,7 @@ The system is accepted only when all statements are true:
 The phases above are ordered for dependency safety. The shortest credible path
 is:
 
-1. Baseline and freeze v1.
+1. Baseline and freeze the current API surface.
 2. Add generations and the resource ledger.
 3. Add descriptors, schemas, diagnostics.
 4. Type the widget AST.
@@ -1270,7 +1266,7 @@ is:
 10. Add persistence, settings, services, dependencies, lazy loading.
 11. Expand extension points.
 12. Add performance budgets and devtools.
-13. Add tests, tooling, packaging, registry, and compatibility migration.
+13. Add tests, tooling, packaging, registry, and API migration.
 14. Pass full system acceptance.
 
 Do not swap steps 2 and 4. The resource ledger needs to exist before more
@@ -1284,13 +1280,12 @@ application stable.
 
 ## Risk Register
 
-### Risk: The host accumulates compatibility hacks
+### Risk: The host accumulates stale API hacks
 
 Mitigation:
 
-- put v1 shims behind explicit compatibility modules
-- keep v2 descriptors clean
-- make new templates v2 only
+- keep v1 descriptors clean
+- make new templates v1 only
 
 ### Risk: Capability prompts become annoying
 

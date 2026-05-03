@@ -20,10 +20,23 @@
     ]
   },
   {
+    "kind": "chrome",
+    "name": "status_bar",
+    "panes": [],
+    "sections": [
+      "left",
+      "center",
+      "right"
+    ]
+  },
+  {
     "kind": "content",
     "name": "repository",
     "panes": [
       {
+        "dynamic_section_prefixes": [
+          "section:"
+        ],
         "name": "sidebar",
         "sections": [
           "top",
@@ -35,6 +48,56 @@
         "sections": [
           "top",
           "bottom"
+        ]
+      }
+    ],
+    "sections": []
+  },
+  {
+    "kind": "content",
+    "name": "repository.graph",
+    "panes": [
+      {
+        "dynamic_section_prefixes": [
+          "row:"
+        ],
+        "name": "graph",
+        "sections": [
+          "top",
+          "decorations",
+          "context_menu"
+        ]
+      }
+    ],
+    "sections": []
+  },
+  {
+    "kind": "content",
+    "name": "repository.details",
+    "panes": [
+      {
+        "name": "details",
+        "sections": [
+          "commit_header",
+          "files"
+        ]
+      }
+    ],
+    "sections": []
+  },
+  {
+    "kind": "content",
+    "name": "repository.diff",
+    "panes": [
+      {
+        "dynamic_section_prefixes": [
+          "line:",
+          "hunk:"
+        ],
+        "name": "diff",
+        "sections": [
+          "toolbar",
+          "context_menu"
         ]
       }
     ],

@@ -346,7 +346,7 @@ fn reload_swaps_keymaps_atomically_with_generation_keys() {
         entry.generation_id.unwrap()
     };
 
-    // Rewrite plugin to a v2 with a different keymap, reload.
+    // Rewrite plugin with a different keymap, reload.
     let dir = host.plugin_dir("p").expect("dir").to_path_buf();
     std::fs::write(dir.join("plugin.toml"), {
         let mut m = manifest("p");
@@ -357,8 +357,8 @@ fn reload_swaps_keymaps_atomically_with_generation_keys() {
     std::fs::write(
         dir.join("init.lua"),
         r#"
-        leviathan.command.create("p.v2", { run = function() end })
-        leviathan.keymap.set("global", "gb", "p.v2")
+        leviathan.command.create("p.next", { run = function() end })
+        leviathan.keymap.set("global", "gb", "p.next")
         "#,
     )
     .unwrap();
@@ -372,7 +372,7 @@ fn reload_swaps_keymaps_atomically_with_generation_keys() {
         .collect();
     assert_eq!(plugin_rows.len(), 1, "exactly one row for plugin p");
     let row = plugin_rows[0];
-    assert_eq!(row.command, "p.v2");
+    assert_eq!(row.command, "p.next");
     assert_ne!(
         row.generation_id.unwrap(),
         v1_gen,
@@ -435,7 +435,7 @@ fn keymap_triggered_event_fires_with_typed_payload() {
         _G.fires = 0
         leviathan.command.create("p.go", { run = function() end })
         leviathan.keymap.set("repository", "gl", "p.go")
-        leviathan.api.create_autocmd({ "KeymapTriggered" }, {
+        leviathan.autocmd.create("KeymapTriggered", {
             callback = function(ev)
                 _G.fires = _G.fires + 1
                 _G.last_payload_context = ev.payload.context or ""

@@ -4,8 +4,7 @@
 //! whenever the host detects the repository changed (HEAD moved, local
 //! branch created/deleted, fetch updated remote refs, upstream config
 //! changed). Plugins observe changes via the `BranchChanged` autocmd and
-//! re-read the globals inside their dynamic widget fn — the idiom is the
-//! same one `dancing_banana_test` uses for `FetchStart`/`FetchEnd`.
+//! re-read the globals inside their dynamic widget fn.
 //!
 //! Shape (see the spec brainstormed with the user):
 //!

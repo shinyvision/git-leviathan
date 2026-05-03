@@ -28,7 +28,7 @@ fn service_version_matching_uses_new_name_version_api() {
           lookup = function(commit) return "v1:" .. commit end,
         })
         leviathan.services.register("issue_tracker", 2, {
-          lookup = function(commit) return "v2:" .. commit end,
+          lookup = function(commit) return "service2:" .. commit end,
         })
         "#,
     )
@@ -46,7 +46,7 @@ fn service_version_matching_uses_new_name_version_api() {
 
     assert_eq!(
         host.read_global_string("consumer", "lookup").as_deref(),
-        Some("v2:abc123")
+        Some("service2:abc123")
     );
 }
 

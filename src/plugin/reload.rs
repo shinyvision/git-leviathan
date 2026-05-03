@@ -117,7 +117,7 @@ api_version = "1.0"
 
         // Give notify a beat to register before mutation.
         tokio::time::sleep(Duration::from_millis(50)).await;
-        std::fs::write(dir.path().join("init.lua"), "-- v2").unwrap();
+        std::fs::write(dir.path().join("init.lua"), "-- updated").unwrap();
         let evt = tokio::time::timeout(Duration::from_secs(3), rx.recv())
             .await
             .expect("watcher channel should produce within 3s")

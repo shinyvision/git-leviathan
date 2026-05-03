@@ -52,20 +52,48 @@ List names of registered UI regions.
 **Returns:**
 - `string[]` - Region names in descriptor order.
 
-### `leviathan.ui.region(name)`
-
-Look up a region handle by descriptor name.
-
-**Parameters:**
-- `name` (`string`; required) - Region name.
-
-**Returns:**
-- `table` - Region handle with add/remove/replace.
-
 ### `leviathan.ui.register_screen(spec)`
 
 Register a plugin screen with init/view/update lifecycle callbacks.
 
 **Parameters:**
 - `spec` (`LeviathanScreenSpec`; required) - Screen descriptor.
+
+### `leviathan.ui.overlay(spec)`
+
+Register an overlay widget the host renders above the active screen.
+
+**Capabilities:** `ui:overlay`
+
+**Parameters:**
+- `spec` (`LeviathanOverlaySpec`; required) - Overlay descriptor (id, widget, dismissible, priority).
+
+### `leviathan.ui.context_menu(region, item)`
+
+Contribute a context-menu item at an extension point.
+
+**Capabilities:** `ui:context_menu`
+
+**Parameters:**
+- `region` (`string`; required) - Extension point address (e.g. "repository.diff.context_menu").
+- `item` (`LeviathanContextMenuItem`; required) - Menu item (id, label, command, priority, condition_capability).
+
+### `leviathan.ui.graph_decoration(commit_hash, decoration)`
+
+Attach a decoration to a commit row (badge / icon / marker / lane).
+
+**Capabilities:** `ui:graph_decoration`
+
+**Parameters:**
+- `commit_hash` (`string`; required) - Commit row hash the decoration applies to.
+- `decoration` (`LeviathanGraphDecoration`; required) - Decoration AST: badge / icon / marker / lane.
+
+### `leviathan.ui.diff_decoration(decoration)`
+
+Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).
+
+**Capabilities:** `ui:diff_decoration`
+
+**Parameters:**
+- `decoration` (`LeviathanDiffDecoration`; required) - Decoration AST: line_hint / hunk_badge / line_gutter.
 

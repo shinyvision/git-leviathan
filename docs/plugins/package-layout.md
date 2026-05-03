@@ -66,7 +66,7 @@ The Lua stdlib (`string`, `table`, `math`, `pairs`, `ipairs`, `print`,
 captured at install time. Plugin code should use `local` for everything
 else and surface state through returned modules.
 
-To opt out (e.g. for legacy plugins that intentionally use `_G`), add to
+To opt out (e.g. for plugins that intentionally use `_G`), add to
 `plugin.toml`:
 
 ```toml

@@ -244,7 +244,9 @@ fn timer_every_fires_repeatedly_and_cancels() {
         r#"
         _G.ticks = 0
         local handle = leviathan.timer.every(10, function() _G.ticks = _G.ticks + 1 end)
-        leviathan.api.create_user_command("kill", function() handle:cancel() end)
+        leviathan.command.create("kill", {
+            run = function() handle:cancel() end,
+        })
         "#,
     )
     .expect("load");

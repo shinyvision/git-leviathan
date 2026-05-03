@@ -388,19 +388,18 @@ fn command_executed_event_fires_after_success_and_failure() {
 }
 
 #[test]
-fn legacy_create_user_command_shim_registers_global_no_args_command() {
-    // Bundled-plugin compatibility. The v1 shim lives in
-    // `leviathan.api.create_user_command` and must continue to
-    // register a no-args, non-destructive, `global`-context command.
+fn command_create_registers_global_no_args_command() {
     let mut host = MockHost::new();
     host.load_inline(
-        "v1plug",
-        &manifest("v1plug"),
+        "cmdplug",
+        &manifest("cmdplug"),
         r#"
-        _G.legacy_ran = 0
-        leviathan.api.create_user_command("v1plug.legacy", function()
-            _G.legacy_ran = _G.legacy_ran + 1
-        end)
+        _G.command_ran = 0
+        leviathan.command.create("cmdplug.basic", {
+            run = function()
+                _G.command_ran = _G.command_ran + 1
+            end,
+        })
         "#,
     )
     .expect("load");
@@ -409,15 +408,15 @@ fn legacy_create_user_command_shim_registers_global_no_args_command() {
     let summaries = registry.borrow().summaries();
     let entry = summaries
         .iter()
-        .find(|s| s.name == "v1plug.legacy")
-        .expect("legacy command in registry");
+        .find(|s| s.name == "cmdplug.basic")
+        .expect("command in registry");
     assert_eq!(entry.context, "global");
     assert!(!entry.destructive);
     assert!(entry.args.is_empty());
 
-    let out = host.invoke_command("v1plug.legacy", serde_json::Value::Null);
+    let out = host.invoke_command("cmdplug.basic", serde_json::Value::Null);
     assert!(matches!(out, InvokeOutcome::Ok));
-    assert_eq!(host.read_global_i64("v1plug", "legacy_ran"), Some(1));
+    assert_eq!(host.read_global_i64("cmdplug", "command_ran"), Some(1));
 }
 
 #[test]

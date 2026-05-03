@@ -121,7 +121,7 @@ fn incompatible_version_emits_conflict_diagnostic() {
         (
             "consumer",
             &manifest("consumer", "1.0.0", "[dependencies]\ndep = \">=2.0\""),
-            r#"-- needs v2"#,
+            r#"-- needs newer dependency"#,
         ),
     ])
     .expect("resolve_and_load should not error out on conflicts");

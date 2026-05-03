@@ -1,7 +1,7 @@
 id = "repo_guard"
 name = "Repo Guard"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 description = "Phase 24 fixture exercising Git write APIs, capability checks, and destructive confirmation policy."
 capabilities = ["git:write:branch", "git:write:reset"]
 

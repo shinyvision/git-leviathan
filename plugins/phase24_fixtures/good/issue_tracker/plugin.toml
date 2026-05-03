@@ -1,7 +1,7 @@
 id = "issue_tracker"
 name = "Issue Tracker"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 description = "Phase 24 fixture providing a versioned issue service."
 provides_services = ["issue_tracker@1"]
 

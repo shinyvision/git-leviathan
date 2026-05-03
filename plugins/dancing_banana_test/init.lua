@@ -11,13 +11,13 @@ local TEXT_DIM = "#585d6e"
 
 local fetching = false
 
-leviathan.autocmd.create("FetchStart", {
+leviathan.autocmd.create("FetchStarted", {
   callback = function()
     fetching = true
   end,
 })
 
-leviathan.autocmd.create("FetchEnd", {
+leviathan.autocmd.create("FetchFinished", {
   callback = function()
     fetching = false
   end,

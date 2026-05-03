@@ -201,7 +201,7 @@ version = "0.1.0"
 api_version = "1.0"
 "#,
         r#"
-        leviathan.api.create_autocmd({ "BranchChanged" }, {
+        leviathan.autocmd.create({ "BranchChanged" }, {
             callback = function() error("kaboom from autocmd") end,
         })
         "#,
@@ -306,7 +306,7 @@ version = "0.1.0"
 api_version = "1.0"
 "#,
         r#"
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "rel.slot",
             section = "left",
             priority = 10,

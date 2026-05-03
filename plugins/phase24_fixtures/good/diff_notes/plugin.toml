@@ -1,7 +1,7 @@
 id = "diff_notes"
 name = "Diff Notes"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 description = "Phase 24 fixture exercising diff decorations and context menu actions."
 capabilities = ["ui:diff_decoration", "ui:context_menu"]
 

@@ -1,8 +1,0 @@
-id = "repository_info_v2"
-name = "Repository Info v2"
-version = "0.1.0"
-api_version = "2.0"
-description = "Phase 24 fixture replacing the built-in repo info slot with a dynamic v2 AST."
-
-[runtime]
-strict_globals = false

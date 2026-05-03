@@ -2,6 +2,79 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": true,
   "properties": {
+    "activation": {
+      "additionalProperties": false,
+      "description": "Phase 16 lazy-activation triggers. When omitted, the plugin loads eagerly.",
+      "properties": {
+        "commands": {
+          "description": "Command ids the plugin will register on activation. The host installs stubs for each so palette and keymap dispatch can activate the plugin.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "events": {
+          "description": "Canonical event names. The host validates against the descriptor table.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "files": {
+          "description": "Relative paths in the working tree whose presence triggers activation.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "keymaps": {
+          "description": "(context, key) pairs. The host installs lazy keymap stubs.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "context": {
+                "type": "string"
+              },
+              "key": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "context",
+              "key"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "manual": {
+          "default": false,
+          "description": "When true, the plugin only activates on explicit user action.",
+          "type": "boolean"
+        },
+        "regions": {
+          "description": "Region keys (`main_bar`, `tab_bar`, `repository`) whose first paint triggers activation.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "repository_shape": {
+          "additionalProperties": false,
+          "description": "Boolean predicates over the active repository.",
+          "properties": {
+            "has_branch": {
+              "type": "string"
+            },
+            "has_remote": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "api_version": {
       "pattern": "^[0-9]+\\.[0-9]+$",
       "type": "string"
@@ -55,7 +128,11 @@
           "async:spawn",
           "timer:create",
           "fs:watch",
-          "fs:watch:scope:<dir>"
+          "fs:watch:scope:<dir>",
+          "ui:overlay",
+          "ui:context_menu",
+          "ui:graph_decoration",
+          "ui:diff_decoration"
         ],
         "type": "string"
       },
@@ -82,6 +159,12 @@
     },
     "name": {
       "type": "string"
+    },
+    "optional_dependencies": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
     },
     "provides_services": {
       "items": {

@@ -2,8 +2,7 @@
 //!
 //! Each visual element in the default tab bar is registered as a named
 //! slot — same `builtin.<name>` convention as `main_bar/builtins.rs` —
-//! so plugins can replace any of them via
-//! `leviathan.ui.tab_bar.replace("builtin.tab_list", { ... })`.
+//! so plugins can replace any of them via `leviathan.ui.regions.replace_slot`.
 //!
 //! ## Priority map
 //!

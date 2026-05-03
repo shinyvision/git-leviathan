@@ -18,17 +18,11 @@
 //!   disabled after 5 consecutive failures, plugin keeps running.
 //! - `reload_drops_old_generation_autocmds` — reload drops every
 //!   old-generation autocmd.
-//! - `alias_fires_when_canonical_dispatched` — alias `FetchStart`
-//!   still fires when `FetchStarted` is dispatched.
+//! - `canonical_fetch_event_dispatches_to_canonical_listener` —
+//!   canonical fetch events dispatch to canonical listeners.
 //! - `devtools_autocmds_reflects_state` — devtools `autocmds` field
 //!   reflects every Phase 7 surface above.
 //!
-//! Plus the compatibility test the report calls out:
-//!
-//! - `legacy_create_autocmd_compat_shim_still_works` — bundled
-//!   plugins that subscribe through `leviathan.api.create_autocmd`
-//!   keep firing through the new typed funnel.
-
 use crate::plugin::tests::harness::MockHost;
 
 const NO_RUNTIME: &str = ""; // marker for "no [runtime] override needed"
@@ -287,11 +281,11 @@ fn reload_drops_old_generation_autocmds() {
         &manifest("rel"),
         r#"
         leviathan.autocmd.create("ThemeChanged", {
-            callback = function() _G.gen = "v2" end,
+            callback = function() _G.gen = "updated" end,
         })
         "#,
     )
-    .expect("v2 reloads");
+    .expect("updated plugin reloads");
 
     let snap = host.introspect();
     let rows: Vec<_> = snap
@@ -303,22 +297,19 @@ fn reload_drops_old_generation_autocmds() {
     assert_eq!(rows[0].generation_id, 2);
 
     host.dispatch_test_event("ThemeChanged", serde_json::json!({ "name": "y" }));
-    assert_eq!(host.read_global_string("rel", "gen").as_deref(), Some("v2"));
+    assert_eq!(
+        host.read_global_string("rel", "gen").as_deref(),
+        Some("updated")
+    );
 }
 
 #[test]
-fn alias_fires_when_canonical_dispatched() {
+fn canonical_fetch_event_dispatches_to_canonical_listener() {
     let mut host = MockHost::new();
     host.load_inline(
-        "alias",
-        &manifest("alias"),
+        "fetch_listener",
+        &manifest("fetch_listener"),
         r#"
-        leviathan.api.create_autocmd({ "FetchStart" }, {
-            callback = function(ev)
-                _G.legacy_fires = (_G.legacy_fires or 0) + 1
-                _G.legacy_alias = ev.alias or ""
-            end,
-        })
         leviathan.autocmd.create("FetchStarted", {
             callback = function(ev)
                 _G.canonical_fires = (_G.canonical_fires or 0) + 1
@@ -331,16 +322,12 @@ fn alias_fires_when_canonical_dispatched() {
 
     host.dispatch_test_event("FetchStarted", serde_json::json!({ "remote": "origin" }));
 
-    assert_eq!(host.read_global_i64("alias", "canonical_fires"), Some(1));
-    assert_eq!(host.read_global_i64("alias", "legacy_fires"), Some(1));
-    // The legacy listener saw the alias name in `ev.alias`; the
-    // canonical listener saw an empty string.
     assert_eq!(
-        host.read_global_string("alias", "legacy_alias").as_deref(),
-        Some("FetchStart")
+        host.read_global_i64("fetch_listener", "canonical_fires"),
+        Some(1)
     );
     assert_eq!(
-        host.read_global_string("alias", "canonical_alias")
+        host.read_global_string("fetch_listener", "canonical_alias")
             .as_deref(),
         Some("")
     );
@@ -405,43 +392,7 @@ fn devtools_autocmds_reflects_state() {
 }
 
 #[test]
-fn legacy_create_autocmd_compat_shim_still_works() {
-    // This test mirrors the bundled `dancing_banana_test` plugin's
-    // pattern: subscribe through the v1 API and expect the new typed
-    // funnel to invoke the callback on every fire — including when
-    // the host fires the alias (`FetchStart`) directly.
-    let mut host = MockHost::new();
-    host.load_inline(
-        "compat",
-        &manifest("compat"),
-        r#"
-        leviathan.api.create_autocmd({ "FetchStart", "FetchEnd" }, {
-            callback = function(ev)
-                _G.last = ev.event
-                _G.fires = (_G.fires or 0) + 1
-            end,
-        })
-        "#,
-    )
-    .expect("load");
-
-    host.dispatch_test_event("FetchStart", serde_json::json!({ "remote": "origin" }));
-    host.dispatch_test_event("FetchEnd", serde_json::json!({ "remote": "origin" }));
-    assert_eq!(host.read_global_i64("compat", "fires"), Some(2));
-    // `ev.event` is always the canonical name, even when the
-    // listener subscribed via the alias.
-    assert_eq!(
-        host.read_global_string("compat", "last").as_deref(),
-        Some("FetchFinished")
-    );
-}
-
-#[test]
-fn bundled_dancing_banana_listens_via_legacy_shim() {
-    // Regression guard: ensure the bundled plugin that subscribes
-    // through `leviathan.api.create_autocmd` survives the Phase 7
-    // refactor end-to-end (no init failure, autocmd row registered
-    // against the typed `FetchStarted` canonical).
+fn bundled_dancing_banana_listens_to_canonical_fetch_events() {
     let mut host = MockHost::new();
     host.host_mut()
         .load_plugin(&std::path::PathBuf::from("plugins/dancing_banana_test"))

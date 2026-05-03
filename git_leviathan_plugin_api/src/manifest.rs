@@ -71,8 +71,7 @@ pub struct PluginActivation {
     /// first paint triggers activation.
     #[serde(default)]
     pub regions: Vec<String>,
-    /// Boolean predicates over the active repository. v1 ships only
-    /// boolean predicates; future versions can grow this.
+    /// Boolean predicates over the active repository.
     #[serde(default)]
     pub repository_shape: Option<RepositoryShapePredicate>,
     /// Relative paths whose presence in the active repository's
@@ -126,7 +125,7 @@ pub struct PluginRuntimeConfig {
     /// When `true` (the default), reading or writing an undeclared Lua
     /// global from plugin code raises an error and emits a structured
     /// diagnostic. Setting this to `false` is the documented escape
-    /// hatch for legacy plugins that intentionally use `_G`.
+    /// hatch for plugins that intentionally use `_G`.
     #[serde(default = "default_strict_globals")]
     pub strict_globals: bool,
 }

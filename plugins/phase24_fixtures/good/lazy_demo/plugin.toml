@@ -1,7 +1,7 @@
 id = "lazy_demo"
 name = "Lazy Demo"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 description = "Phase 24 fixture proving lazy activation through command, keymap, or event."
 
 [activation]

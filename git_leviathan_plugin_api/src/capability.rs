@@ -10,8 +10,7 @@ use serde::{Deserialize, Serialize};
 #[serde(try_from = "String", into = "String")]
 pub enum Capability {
     /// `fs:read[:scope]`. `scope` defaults to `plugin` for the bare
-    /// `fs:read` form (compatibility with v1 manifests that pre-date
-    /// the typed scopes).
+    /// `fs:read` form.
     FsRead { scope: FsScope },
     /// `fs:read:scope:<dir>` — read paths under an explicit user-chosen
     /// directory. Canonicalised at check time.
@@ -378,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_fs_read_alias_decodes_to_plugin_scope() {
+    fn bare_fs_read_alias_decodes_to_plugin_scope() {
         assert_eq!(
             Capability::try_from("fs:read".to_string()).unwrap(),
             Capability::FsRead {

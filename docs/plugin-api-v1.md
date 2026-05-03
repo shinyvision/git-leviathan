@@ -1,304 +1,179 @@
-# Plugin API v1
-
-Compatibility surface: plugin manifests target `api_version = "1.0"`.
-The current host compatibility version is `1.0`; future plugin migrations
-should either preserve this surface or explicitly version-gate changes.
-
-This document freezes the Lua APIs and host-owned plugin resources that exist
-before the plugin refactor begins.
-
-## Lua Global
-
-Every plugin runs in its own Lua state with a global `leviathan` table.
-
-- `leviathan.log(message)` logs to host stderr.
-- `leviathan.repository` starts as an empty repository snapshot and is replaced
-  by the host after repository sync.
-- `leviathan.tab_registry` starts as an empty tab snapshot and is refreshed by
-  the host after tab changes.
-
-## `leviathan.api`
-
-- `create_autocmd(events, opts)` registers `opts.callback` once per event name.
-- `schedule(fn)` queues `fn` for the next host tick.
-- `defer_fn(ms, fn)` queues `fn` after `ms` milliseconds have elapsed.
-- `create_user_command(name, fn)` registers a named coroutine-backed command.
-
-Current host event names used by bundled plugins and app code:
-
-- `BranchChanged`
-- `FetchStart`
-- `FetchEnd`
-- `TabAdded`
-- `TabRemoved`
-- `TabReordered`
-- `TabSwitched`
-
-## `leviathan.ui`
-
-- `list_regions()` returns the region names in descriptor order.
-- `region(name)` returns the matching region handle or errors.
-- `register_screen(spec)` stores a plugin screen definition.
-
-Screen spec fields:
-
-- `id`: screen id local to the plugin.
-- `init`: function returning initial screen state.
-- `view`: function receiving state and returning a widget tree.
-- `update`: function receiving `(state, event, value)` and returning either a
-  state table or `{ state = ..., navigate = ... }`.
-- `serialize`: optional function returning persisted screen state for reload.
-- `deserialize`: optional function rebuilding state from serialized data.
-
-Each region handle exposes:
-
-- `add(spec)`
-- `remove(target)`
-- `replace(target, spec)`
-
-Slot spec fields:
-
-- `id`: slot id.
-- `section`: required for chrome regions.
-- `pane`: required for content regions.
-- `priority`: integer ordering key.
-- `widget`: widget tree table or function returning a widget tree.
-- `on_click`: optional slot callback function.
-
-Slot callbacks receive `(slot_id, event, value)`. Returning
-`{ navigate = "screen_id" }` opens that plugin screen.
-
-Current region descriptors:
-
-| Region | Type | Address |
-| --- | --- | --- |
-| `main_bar` | chrome | `section = "left" / "center" / "right"` |
-| `tab_bar` | chrome | `section = "left" / "center" / "right"` |
-| `repository` | content | `pane = "sidebar" / "main"`, `section = "top" / "bottom"` |
-
-The tables are available as `leviathan.ui.main_bar`,
-`leviathan.ui.tab_bar`, and `leviathan.ui.repository`.
-
-## `leviathan.fs`
-
-Filesystem APIs use Lua-style result pairs for fallible operations:
-`(value, nil)` or `(nil, err)`, and `(true, nil)` or `(false, err)` for
-mutations.
-
-Read operations:
-
-- `read_file(path)`
-- `read_lines(path)`
-- `list_dir(path)`
-- `exists(path)`
-- `is_file(path)`
-- `is_dir(path)`
-- `is_symlink(path)`
-- `size(path)`
-- `modified(path)`
-- `metadata(path)`
-- `read_link(path)`
-- `copy(src, dst)` also requires write access to `dst`.
-
-Write operations:
-
-- `write_file(path, content)`
-- `append_file(path, content)`
-- `delete(path)`
-- `mkdir(path)`
-- `rename(src, dst)`
-- `touch(path)`
-
-Path helpers and locations:
-
-- `parent(path)`
-- `basename(path)`
-- `stem(path)`
-- `extension(path)`
-- `join(a, b)`
-- `relative_to(path, base)`
-- `with_extension(path, ext)`
-- `with_file_name(path, name)`
-- `is_absolute(path)`
-- `canonicalize(path)`
-- `cwd()`
-- `home()`
-- `temp_dir()`
-- `config_dir()`
-- `cache_dir()`
-- `data_dir()`
-- `state_dir()`
-
-File content operations are capped at 8 MiB per call for read, write, append,
-and copy. Relative paths passed to `read_file` and `read_lines` resolve under
-the plugin root.
-
-## `leviathan.env`
-
-Requires the `env` capability.
-
-- `get(name)` returns `(value, nil)`, `(nil, nil)` when missing, or
-  `(nil, err)` for non-UTF-8 values.
-- `list()` returns a table of UTF-8 environment variables.
-
-## `leviathan.repository`
-
-Read-only snapshot fields:
-
-- `name`
-- `workdir_path`
-- `current_branch_name`
-- `current_branch`
-- `is_open`
-- `is_detached`
-- `is_unborn`
-- `is_bare`
-- `head_hash`
-- `default_remote_name`
-- `local_branches`
-- `remote_branches`
-- `tags`
-
-Local branch fields:
-
-- `name`
-- `hash`
-- `is_current`
-- `upstream_branch`
-
-Remote branch fields:
-
-- `name`
-- `remote_name`
-- `hash`
-
-Tag fields:
-
-- `name`
-- `hash`
-
-## `leviathan.tab_registry`
-
-Snapshot fields:
-
-- `list`: array of `{ path, name }`.
-- `current`: current `{ path, name }` or nil.
-
-Mutation functions queue host tab operations:
-
-- `add(path)`
-- `remove(path)`
-- `select(path)`
-- `reorder(paths)`
-
-## `leviathan.services`
-
-- `register(name, version, methods)` publishes a service declared in
-  `provides_services`.
-- `get(name, version)` returns a proxy for a service declared in
-  `consumes_services`, or `nil` for declared optional consumers whose
-  provider is absent.
-
-The legacy `"name@version"` form still works for both functions. Required
-consumers block load/reload when missing; optional consumers can use
-`{ service = "name@version", optional = true }` in `plugin.toml`.
-
-## `leviathan.persist`
-
-- `open(name, opts)` opens a plugin-local JSON store in the plugin state dir.
-
-Options:
-
-- `version`: target integer version, default `1`.
-- `migrations`: array of `{ from, to, transform }`.
-
-Returned store userdata:
-
-- `store:get(key)`
-- `store:set(key, value)`
-- `store:version()`
-
-## `leviathan.health`
-
-- `register(fn)` stores a health-check callback.
-
-The host calls the callback with a context userdata exposing:
-
-- `ctx:ok(message)`
-- `ctx:info(message)`
-- `ctx:warn(message)`
-- `ctx:error(message)`
-
-## Manifest Surface
-
-Current manifest fields:
-
-- `id`
-- `name`
-- `version`
-- `api_version`
-- `description`
-- `capabilities`
-- `provides_services`
-- `consumes_services`
-- `dependencies`
-
-Current capability strings:
-
-- `fs:read` and `fs:read:plugin`
-- `fs:read:state`
-- `fs:read:config`
-- `fs:read:workdir`
-- `fs:read:any`
-- `fs:write:plugin`
-- `fs:write:state`
-- `fs:write:config`
-- `fs:write:workdir`
-- `fs:write:any`
-- `process:spawn`
-- `net:fetch`
-- `clipboard`
-- `notify`
-- `env`
-
-## PluginHost Resource Inventory
-
-`PluginHost` currently stores these plugin-owned resources directly or in
-host-wide collections:
-
-- Loaded plugin table: plugin id, root path, manifest, Lua state.
-- Slot handlers: registry keys keyed by `region:container:id`.
-- Screen definitions: `init`, `view`, `update`, optional `serialize`, optional
-  `deserialize` registry keys.
-- Screen state: per-screen Lua registry keys.
-- Dynamic widgets: widget function registry keys plus cached JSON widget trees.
-- Deferred queue: immediate callbacks, delayed callbacks, suspended coroutines.
-- User commands: names mapped to Lua registry keys.
-- Health checks: Lua registry keys.
-- Slot operation log: add, replace, and remove operations for every region.
-- Autocmd map: event names mapped to `(plugin_id, callback)` entries.
-- Active screen and current widget tree.
-- Split widget sizes and current split drag state.
-- Shared pending tab operations queue.
-- Service registry entries published by plugins.
-- Capability audit log entries.
-- Last reload error per plugin.
-
-`last_repository_hash` and `last_tab_snapshot` are host sync caches, not
-plugin-owned public resources, but they affect when observable tables and
-autocmds are refreshed.
-
-## Bundled Plugin API Usage
-
-| Plugin | APIs used |
-| --- | --- |
-| `dancing_banana_test` | `leviathan.api.create_autocmd`, `leviathan.ui.main_bar.replace`, `leviathan.log` |
-| `file_explorer` | `leviathan.fs.list_dir`, `home`, `parent`, `delete`; `leviathan.ui.main_bar.add`, `register_screen`; `leviathan.log` |
-| `foo_demo` | `leviathan.ui.main_bar.add`, `register_screen`, `leviathan.log` |
-| `regions_demo` | `leviathan.ui.tab_bar.add`, `leviathan.ui.repository.add` |
-| `repository_info` | `leviathan.ui.main_bar.replace`, `remove`; `leviathan.repository`; `leviathan.log` |
-| `tablist_demo` | `leviathan.api.create_autocmd`, `leviathan.ui.tab_bar.replace`, `leviathan.tab_registry.list/current/select/remove/reorder`, `leviathan.log` |
-| `terminal` | `leviathan.ui.main_bar.add`, `leviathan.log` |
-
-Bundled plugins now declare `api_version = "2.0"`; keep this page as the
-frozen v1 compatibility reference for older public plugins.
+# Leviathan Plugin API v1
+
+Auto-generated by `cargo xtask gen-docs`. Do not edit by hand.
+
+## Modules
+
+- `root` (1.0) - Root host API table.
+- `api` (1.0) - Descriptor and scheduling APIs.
+- `command` (1.0) - Phase 8 typed command registry and palette dispatch.
+- `keymap` (1.0) - Phase 9 context-aware keymap registry.
+- `autocmd` (1.0) - Phase 7 autocmd group, typed-event registration namespace.
+- `ui` (1.0) - UI region and plugin screen APIs.
+- `ui.regions` (1.0) - Descriptor-backed region slot API.
+- `fs` (1.0) - Filesystem and path helper APIs.
+- `env` (1.0) - Process environment access.
+- `repository` (1.0) - Active repository snapshot plus typed read APIs (Phase 11).
+- `git` (1.0) - Phase 11 typed Git write APIs. All routes capability-checked, audited, and (when destructive) gated by the host's confirmation policy.
+- `tab_registry` (1.0) - Read-only tab snapshot plus queued tab mutation APIs.
+- `services` (1.0) - Inter-plugin service registry APIs.
+- `persist` (1.0) - Versioned per-plugin persistence APIs.
+- `settings` (1.0) - Schema-backed plugin settings APIs.
+- `secrets` (1.0) - Plugin-local secret APIs. Devtools exposes metadata only.
+- `health` (1.0) - Plugin health-check APIs.
+- `runtime` (1.0) - Runtimepath, module-loader, and after-directory introspection.
+- `async` (1.0) - Phase 12 host-managed background workers.
+- `timer` (1.0) - Phase 12 one-shot and repeating timers.
+
+## Events
+
+- `AppStarted` (table) - Fired once after the host app finishes starting up.
+- `AppWillQuit` (table) - Fired immediately before the host app shuts down.
+- `RepositoryOpened` (table) - Fired after a repository is opened.
+  - payload:
+    - `name` (`string`; required) - Repository display name.
+    - `path` (`string`; required) - Repository workdir path.
+- `RepositoryClosed` (table) - Fired after a repository is closed.
+  - payload:
+    - `name` (`string`; required) - Repository display name.
+    - `path` (`string`; required) - Repository workdir path.
+- `RepositoryChanged` (table) - Fired after the active repository changes.
+  - payload:
+    - `name` (`string`; required) - Repository display name.
+    - `path` (`string`; required) - Repository workdir path.
+- `RefsChanged` (table) - Fired after the repository ref set changes (push/fetch/branch ops).
+  - payload:
+    - `count` (`integer`; required) - Number of refs after the change.
+- `HeadChanged` (table) - Fired after the resolved HEAD commit hash changes.
+  - payload:
+    - `hash` (`string`; required) - New HEAD commit hash.
+- `BranchChanged` (table) - Fired after the current branch or its head hash changes.
+  - payload:
+    - `name` (`string`; required) - Branch name.
+    - `head_hash` (`string`; required) - Resolved HEAD commit hash.
+- `CommitSelected` (table) - Fired after the user selects a commit in the history view.
+  - payload:
+    - `hash` (`string`; required) - Selected commit hash.
+- `CommitListChanged` (table) - Fired after the visible commit list changes.
+  - payload:
+    - `count` (`integer`; required) - Number of commits in the new list.
+- `DiffLoaded` (table) - Fired after a diff finishes loading.
+  - payload:
+    - `hash` (`string`; required) - Hash of the diff target.
+- `WorktreeChanged` (table) - Fired when the worktree contents change.
+  - payload:
+    - `path` (`string`; required) - Worktree path that changed.
+- `FetchStarted` (table) - Fired when a repository fetch starts.
+  - payload:
+    - `remote` (`string`; required) - Remote name involved in the fetch.
+- `FetchFinished` (table) - Fired when a repository fetch finishes (success or failure).
+  - payload:
+    - `remote` (`string`; required) - Remote name involved in the fetch.
+- `PushStarted` (table) - Fired when a push starts.
+  - payload:
+    - `remote` (`string`; required) - Remote name involved in the push.
+- `PushFinished` (table) - Fired when a push finishes (success or failure).
+  - payload:
+    - `remote` (`string`; required) - Remote name involved in the push.
+- `TabAdded` (table) - Fired after a tab is added.
+  - payload:
+    - `tab_id` (`integer`; required) - Tab id.
+    - `path` (`string`; optional) - Repository path the tab is bound to, when known.
+- `TabRemoved` (table) - Fired after a tab is removed.
+  - payload:
+    - `tab_id` (`integer`; required) - Tab id.
+    - `path` (`string`; optional) - Repository path the tab is bound to, when known.
+- `TabSelected` (table) - Fired after the active tab changes.
+  - payload:
+    - `tab_id` (`integer`; required) - Tab id.
+    - `path` (`string`; optional) - Repository path the tab is bound to, when known.
+- `TabMoved` (table) - Fired after tabs are reordered.
+  - payload:
+    - `count` (`integer`; required) - Number of open tabs after the move.
+- `ThemeChanged` (table) - Fired after the active theme changes.
+  - payload:
+    - `name` (`string`; required) - Active theme identifier.
+- `SettingsChanged` (table) - Fired after a settings entry is updated.
+  - payload:
+    - `key` (`string`; required) - Dotted setting key that changed.
+- `CommandExecuted` (table) - Fired after a host or plugin command finishes executing.
+  - payload:
+    - `name` (`string`; required) - Executed command name.
+    - `plugin_id` (`string`; optional) - Owning plugin id when known.
+- `KeymapTriggered` (table) - Fired after a keymap chord matches and the host dispatches the underlying command.
+  - payload:
+    - `context` (`string`; required) - Active context the chord matched in.
+    - `key` (`string`; required) - Rendered chord (vim-style notation).
+    - `command` (`string`; required) - Command the chord dispatched to.
+    - `plugin_id` (`string`; required) - Owning plugin id of the matched keymap; `<host>` for built-ins, `<user>` for user-config.
+    - `ok` (`boolean`; required) - True when the underlying command dispatch returned `Ok`.
+
+## Capabilities
+
+- `fs:read` - Alias for fs:read:plugin.
+- `fs:read:plugin` - Read paths under the plugin directory.
+- `fs:read:state` - Read paths under the plugin state directory.
+- `fs:read:config` - Read paths under the plugin config directory.
+- `fs:read:workdir` - Read paths under the active workdir when configured.
+- `fs:read:any` - Read any host path.
+- `fs:read:scope:<dir>` - Read paths under an explicit user-chosen directory (canonicalised; symlinks escaping the scope are denied).
+- `fs:write:plugin` - Write paths under the plugin directory.
+- `fs:write:state` - Write paths under the plugin state directory.
+- `fs:write:config` - Write paths under the plugin config directory.
+- `fs:write:workdir` - Write paths under the active workdir when configured.
+- `fs:write:any` - Write any host path.
+- `fs:write:scope:<dir>` - Write paths under an explicit user-chosen directory (canonicalised; symlinks escaping the scope are denied).
+- `process:spawn` - Reserved process-spawn capability (any binary).
+- `process:spawn:<binary>` - Spawn a specific binary by basename (e.g. `process:spawn:git`). Phase 12 will enforce.
+- `net:fetch` - Reserved network-fetch capability (any host).
+- `net:fetch:<domain>` - Fetch from a specific domain (e.g. `net:fetch:github.com`). Phase 12 will enforce.
+- `clipboard` - Alias for clipboard read+write.
+- `clipboard:read` - Read the system clipboard.
+- `clipboard:write` - Write to the system clipboard.
+- `notify` - Surface a host notification banner.
+- `env` - Read every process environment variable.
+- `env:<glob>` - Read environment variables whose name matches the glob (e.g. `env:GIT_*`).
+- `credentials` - Read host-stored credentials (Phase 13 secrets).
+- `repo:read` - Observe the active repository projection (refs, head, status).
+- `git:read:status` - Read working tree status. Phase 11 wires the typed API.
+- `git:read:log` - Read commit history. Phase 11 wires the typed API.
+- `git:read:diff` - Read diffs between commits or against the index. Phase 11 wires the typed API.
+- `git:read:show` - Read a commit's tree or a file at a commit. Phase 11 wires the typed API.
+- `git:read:blame` - Read line-level blame for a tracked file. Phase 11 wires the typed API.
+- `git:write:checkout` - Move HEAD to a ref or commit. Phase 11 wires the typed API.
+- `git:write:branch` - Create / delete / rename branches. Phase 11 wires the typed API.
+- `git:write:tag` - Create / delete tags. Phase 11 wires the typed API.
+- `git:write:commit` - Create commits. Phase 11 wires the typed API.
+- `git:write:stash` - Push / pop / drop stashes. Phase 11 wires the typed API.
+- `git:write:reset` - Reset the index or working tree. Phase 11 wires the typed API.
+- `git:write:fetch` - Fetch from a remote. Phase 11 wires the typed API.
+- `git:write:push` - Push to a remote. Phase 11 wires the typed API.
+- `git:write:merge` - Merge refs into HEAD. Phase 11 wires the typed API.
+- `git:write:rebase` - Rebase HEAD. Phase 11 wires the typed API.
+- `ui:region:<region>` - Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`).
+- `services:provide:<service@version>` - Provide a versioned service to other plugins (Phase 14).
+- `services:consume:<service@version>` - Consume a versioned service from another plugin (Phase 14).
+- `async:spawn` - Spawn a host-managed background worker thread (Phase 12).
+- `timer:create` - Schedule one-shot or repeating timers (Phase 12).
+- `fs:watch` - Watch paths for filesystem events (Phase 12, plugin scope).
+- `fs:watch:scope:<dir>` - Watch paths under an explicit user-chosen directory (Phase 12).
+- `ui:overlay` - Register modal overlays that the host renders above the active screen (Phase 17).
+- `ui:context_menu` - Contribute items to host-rendered context menus at extension points (Phase 17).
+- `ui:graph_decoration` - Attach badges / icons / markers / lanes to commit rows in the graph (Phase 17).
+- `ui:diff_decoration` - Attach line hints / hunk badges / line gutters to the diff view (Phase 17).
+
+## Widgets
+
+- `text` - Static text label.
+- `button` - Clickable button that emits a widget event.
+- `row` - Horizontal widget layout.
+- `column` - Vertical widget layout.
+- `container` - Single-child layout and background wrapper.
+- `padding` - Single-child padding wrapper.
+- `space` - Empty spacer.
+- `icon` - SVG icon loaded from plugin assets.
+- `image` - Raster image loaded from plugin assets.
+- `scrollable` - Scrollable single-child container.
+- `mouse_area` - Clickable wrapper around a child widget.
+- `tablist` - Tab strip widget backed by plugin-supplied tab descriptors.
+- `resizable_split` - Resizable split layout.

@@ -19,7 +19,7 @@ Service registry namespace.
 Publish a declared inter-plugin service.
 
 **Parameters:**
-- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or legacy declaration (`greeter@1`).
+- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
 - `version` (`integer`; optional) - Integer service version when the first argument is a bare service name.
 - `methods` (`table<string,function>`; required) - Service method table.
 
@@ -28,10 +28,8 @@ Publish a declared inter-plugin service.
 Look up a declared inter-plugin service proxy.
 
 **Parameters:**
-- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or legacy declaration (`greeter@1`).
+- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
 - `version` (`integer`; optional) - Integer service version when the first argument is a bare service name.
 
 **Returns:**
 - `table|nil` - Service proxy, or nil for declared optional consumers when the provider is absent.
-
-Required `consumes_services` entries block plugin load/reload when missing. Optional entries can use table syntax, for example `{ service = "greeter@1", optional = true }`, and return `nil` from `get` until a provider is present. Provider method calls are traced in devtools and run under the caller's active capabilities.

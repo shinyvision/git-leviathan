@@ -20,7 +20,7 @@ use crate::services::test_support::init_test_repo;
 
 const GOOD: &[&str] = &[
     "issue_tracker",
-    "repository_info_v2",
+    "repository_info_v1",
     "commit_lens",
     "diff_notes",
     "repo_guard",
@@ -109,7 +109,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         assert!(
             snap.plugins
                 .iter()
-                .any(|p| p.id == *id && p.api_version == "2.0"),
+                .any(|p| p.id == *id && p.api_version == "1.0"),
             "{id} should be eagerly loaded; plugins={:?}; diagnostics={:?}",
             snap.plugins
                 .iter()
@@ -134,7 +134,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     );
 
     assert!(host.has_slot(
-        "repository_info_v2",
+        "repository_info_v1",
         "main_bar",
         "left",
         "builtin.repo_info"
@@ -350,7 +350,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     let final_snap = host.introspect();
     for id in [
         "issue_tracker",
-        "repository_info_v2",
+        "repository_info_v1",
         "commit_lens",
         "diff_notes",
         "repo_guard",
@@ -391,7 +391,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         "repo_guard",
         "diff_notes",
         "commit_lens",
-        "repository_info_v2",
+        "repository_info_v1",
         "issue_tracker",
     ] {
         host.unload_plugin(id)
@@ -505,7 +505,7 @@ fn capability_revocation_and_upgrade_prompts_are_enforced() {
 id = "repo_guard_upgrade"
 name = "Repo Guard Upgrade"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 capabilities = ["git:write:branch"]
 
 [runtime]
@@ -528,14 +528,14 @@ strict_globals = false
 id = "repo_guard_upgrade"
 name = "Repo Guard Upgrade"
 version = "0.2.0"
-api_version = "2.0"
+api_version = "1.0"
 capabilities = ["git:write:branch", "env"]
 
 [runtime]
 strict_globals = false
 "#,
     )
-    .expect("write v2 manifest");
+    .expect("write updated manifest");
     let result = host.host_mut().reload_plugin("repo_guard_upgrade");
     assert!(result.is_err(), "capability widening should block reload");
     assert!(host

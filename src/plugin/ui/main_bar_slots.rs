@@ -56,13 +56,6 @@ pub enum PreparedSlotOp {
         container: Container,
         id: String,
     },
-    /// Compat removal where the user did not specify a container (legacy
-    /// `main_bar.remove("id")`). The applier scans every container in the
-    /// region.
-    RemoveAnyContainer {
-        region: String,
-        id: String,
-    },
     Replace {
         region: String,
         container: Container,

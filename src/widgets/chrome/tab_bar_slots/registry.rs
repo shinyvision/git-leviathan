@@ -13,7 +13,7 @@ use crate::plugin::tab_snapshot::TabsSnapshot;
 /// Where on the tab bar a slot sits. `Left`/`Right` are the chrome edges
 /// (plus button, version label by default); `Center` is the tab list
 /// itself (`builtin.tab_list` by default — replaced via
-/// `leviathan.ui.tab_bar.replace`).
+/// `leviathan.ui.regions.replace_slot`).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Section {
     Left,

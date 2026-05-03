@@ -1,134 +1,10 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use git_leviathan_plugin_api::descriptor::region::RegionDescriptor;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
-use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::widget_ast;
 
-use super::{record_deprecation, BuildState, RawSlotOp, RawSlotSpec, WidgetSource};
-
-#[derive(Clone)]
-pub struct DeprecationContext {
-    pub diagnostics: DiagnosticStore,
-    pub plugin_id: crate::plugin::resources::PluginId,
-    pub generation_id: crate::plugin::resources::GenerationId,
-    pub api_prefix: &'static str,
-    pub replacement: &'static str,
-}
-
-impl DeprecationContext {
-    fn record(&self, verb: &'static str) {
-        let api_name = match (self.api_prefix, verb) {
-            ("leviathan.ui.main_bar", "add") => "leviathan.ui.main_bar.add",
-            ("leviathan.ui.main_bar", "remove") => "leviathan.ui.main_bar.remove",
-            ("leviathan.ui.main_bar", "replace") => "leviathan.ui.main_bar.replace",
-            ("leviathan.ui.tab_bar", "add") => "leviathan.ui.tab_bar.add",
-            ("leviathan.ui.tab_bar", "remove") => "leviathan.ui.tab_bar.remove",
-            ("leviathan.ui.tab_bar", "replace") => "leviathan.ui.tab_bar.replace",
-            ("leviathan.ui.repository", "add") => "leviathan.ui.repository.add",
-            ("leviathan.ui.repository", "remove") => "leviathan.ui.repository.remove",
-            ("leviathan.ui.repository", "replace") => "leviathan.ui.repository.replace",
-            _ => self.api_prefix,
-        };
-        record_deprecation(
-            &self.diagnostics,
-            &self.plugin_id,
-            self.generation_id,
-            api_name,
-            self.replacement,
-        );
-    }
-}
-
-pub fn make_region_handle(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    ledger: ResourceLedger,
-    desc: &'static RegionDescriptor,
-    deprecation: Option<DeprecationContext>,
-) -> mlua::Result<Table> {
-    let tbl = lua.create_table()?;
-
-    let b = Rc::clone(&build);
-    let ledger_for_add = ledger.clone();
-    let add_deprecation = deprecation.clone();
-    tbl.set(
-        "add",
-        lua.create_function(move |lua, spec: Table| {
-            if let Some(ctx) = &add_deprecation {
-                ctx.record("add");
-            }
-            let raw = read_spec(lua, &spec, desc, &ledger_for_add)?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    let ledger_for_remove = ledger.clone();
-    let remove_deprecation = deprecation.clone();
-    tbl.set(
-        "remove",
-        lua.create_function(move |_, args: Table| {
-            if let Some(ctx) = &remove_deprecation {
-                ctx.record("remove");
-            }
-            let (pane, section, id) = read_address_with_id(&args, desc)?;
-            let container = compose_container(pane.as_deref(), &section);
-            let handle = slot_handle(desc.name, &container, &id);
-            ledger_for_remove.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
-            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
-                region: desc.name.to_string(),
-                container,
-                id,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    let ledger_for_replace = ledger;
-    let replace_deprecation = deprecation;
-    tbl.set(
-        "replace",
-        lua.create_function(move |lua, (target, spec): (Table, Table)| {
-            if let Some(ctx) = &replace_deprecation {
-                ctx.record("replace");
-            }
-            let (pane, section, id) = read_address_with_id(&target, desc)?;
-            let container = compose_container(pane.as_deref(), &section);
-            let mut raw = read_spec(lua, &spec, desc, &ledger_for_replace)?;
-            if raw.container != container {
-                return Err(mlua::Error::external(format!(
-                    "{}.replace: spec container '{}' != target '{}'",
-                    desc.name, raw.container, container
-                )));
-            }
-            let spec_handle = slot_handle(&raw.region, &raw.container, &raw.id);
-            ledger_for_replace.remove_by_kind_handle(PluginResourceKind::Slot, &spec_handle);
-            raw.id = id.clone();
-            let handle = slot_handle(desc.name, &container, &id);
-            ledger_for_replace.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
-            ledger_for_replace.record(
-                PluginResourceKind::Slot,
-                handle,
-                raw.source_location.clone(),
-            );
-            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
-                region: desc.name.to_string(),
-                container,
-                id,
-                spec: raw,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    Ok(tbl)
-}
+use super::{RawSlotSpec, WidgetSource};
 
 pub(super) fn read_address_with_id(
     t: &Table,
@@ -236,61 +112,55 @@ mod tests {
     use super::*;
     use git_leviathan_plugin_api::descriptor::region::REGIONS;
     use mlua::Lua;
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
-    fn fresh() -> (Lua, Rc<RefCell<BuildState>>) {
+    fn ledger() -> ResourceLedger {
+        ResourceLedger::new(
+            "test".into(),
+            crate::plugin::resources::GenerationId::new(1),
+        )
+    }
+
+    #[test]
+    fn read_spec_decodes_region_slot() {
         let lua = Lua::new();
-        let build = Rc::new(RefCell::new(BuildState::default()));
-        (lua, build)
+        let desc = REGIONS.get("main_bar").unwrap();
+        let spec: Table = lua
+            .load(r#"return { id = "x", section = "left", priority = 0, widget = { kind = "text", text = "hi" } }"#)
+            .eval()
+            .unwrap();
+        let raw = read_spec(&lua, &spec, desc, &ledger()).unwrap();
+        assert_eq!(raw.id, "x");
+        assert_eq!(raw.region, "main_bar");
+        assert_eq!(raw.container, "left");
     }
 
     #[test]
-    fn handle_add_records_op() {
-        let (lua, build) = fresh();
+    fn read_spec_rejects_bad_section() {
+        let lua = Lua::new();
         let desc = REGIONS.get("main_bar").unwrap();
-        let ledger = ResourceLedger::new(
-            "test".into(),
-            crate::plugin::resources::GenerationId::new(1),
-        );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
-        lua.globals().set("h", handle).unwrap();
-        lua.load(r#"h.add{ id = "x", section = "left", priority = 0, widget = { kind = "text", text = "hi" } }"#)
-            .exec().unwrap();
-        let ops = &build.borrow().slot_ops;
-        assert_eq!(ops.len(), 1);
-    }
-
-    #[test]
-    fn handle_rejects_bad_section() {
-        let (lua, build) = fresh();
-        let desc = REGIONS.get("main_bar").unwrap();
-        let ledger = ResourceLedger::new(
-            "test".into(),
-            crate::plugin::resources::GenerationId::new(1),
-        );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
-        lua.globals().set("h", handle).unwrap();
-        let err = lua.load(r#"h.add{ id = "x", section = "nope", priority = 0, widget = { kind = "text", text = "hi" } }"#)
-            .exec().unwrap_err().to_string();
+        let spec: Table = lua
+            .load(r#"return { id = "x", section = "nope", priority = 0, widget = { kind = "text", text = "hi" } }"#)
+            .eval()
+            .unwrap();
+        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+            Ok(_) => panic!("expected invalid section to fail"),
+            Err(err) => err.to_string(),
+        };
         assert!(err.contains("unknown section 'nope'"), "got: {err}");
     }
 
     #[test]
     fn factory_rejects_unknown_widget_kind() {
-        let (lua, build) = fresh();
+        let lua = Lua::new();
         let desc = REGIONS.get("main_bar").unwrap();
-        let ledger = ResourceLedger::new(
-            "test".into(),
-            crate::plugin::resources::GenerationId::new(1),
-        );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
-        lua.globals().set("h", handle).unwrap();
-        let err = lua
-            .load(r#"h.add{ id = "x", section = "left", priority = 0, widget = { kind = "rwo", value = "hi" } }"#)
-            .exec()
-            .unwrap_err()
-            .to_string();
+        let spec: Table = lua
+            .load(r#"return { id = "x", section = "left", priority = 0, widget = { kind = "rwo", value = "hi" } }"#)
+            .eval()
+            .unwrap();
+        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+            Ok(_) => panic!("expected invalid widget to fail"),
+            Err(err) => err.to_string(),
+        };
         assert!(
             err.contains("invalid widget tree") || err.contains("unknown variant"),
             "got: {err}"
@@ -299,16 +169,16 @@ mod tests {
 
     #[test]
     fn content_region_requires_pane() {
-        let (lua, build) = fresh();
+        let lua = Lua::new();
         let desc = REGIONS.get("repository").unwrap();
-        let ledger = ResourceLedger::new(
-            "test".into(),
-            crate::plugin::resources::GenerationId::new(1),
-        );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
-        lua.globals().set("h", handle).unwrap();
-        let err = lua.load(r#"h.add{ id = "x", section = "top", priority = 0, widget = { kind = "text", text = "hi" } }"#)
-            .exec().unwrap_err().to_string();
+        let spec: Table = lua
+            .load(r#"return { id = "x", section = "top", priority = 0, widget = { kind = "text", text = "hi" } }"#)
+            .eval()
+            .unwrap();
+        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+            Ok(_) => panic!("expected missing pane to fail"),
+            Err(err) => err.to_string(),
+        };
         assert!(err.contains("unknown pane"), "got: {err}");
     }
 }

@@ -182,16 +182,18 @@ fn reset_hard_blocked_until_policy_approves() {
         _G.first_err = ""
         _G.second_ok = -1
         _G.second_err = ""
-        leviathan.api.create_user_command("do_reset", function()
-            local ok, err = leviathan.git.reset({{ ref = "{head_hash}", mode = "hard" }})
-            if _G.first_ok == -1 then
-                _G.first_ok = ok and 1 or 0
-                _G.first_err = err or ""
-            else
-                _G.second_ok = ok and 1 or 0
-                _G.second_err = err or ""
-            end
-        end)
+        leviathan.command.create("do_reset", {{
+            run = function()
+                local ok, err = leviathan.git.reset({{ ref = "{head_hash}", mode = "hard" }})
+                if _G.first_ok == -1 then
+                    _G.first_ok = ok and 1 or 0
+                    _G.first_err = err or ""
+                else
+                    _G.second_ok = ok and 1 or 0
+                    _G.second_err = err or ""
+                end
+            end,
+        }})
         "#
         ),
     )

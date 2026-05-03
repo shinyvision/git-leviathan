@@ -4,8 +4,8 @@
 //! toolbar-styled container; every visual piece is a slot in
 //! `TabBarRegistry`. Built-ins (`builtin.plus_button` / `builtin.tab_list`
 //! / `builtin.version_label`) are registered at app startup; plugins
-//! contribute or replace by id via `leviathan.ui.tab_bar.{add,remove,
-//! replace}`. Drag-reorder, click selection, close button — all live
+//! contribute or replace by id via `leviathan.ui.regions.*`.
+//! Drag-reorder, click selection, close button — all live
 //! inside the `builtin.tab_list` slot's `TabBar` widget.
 
 use iced::{

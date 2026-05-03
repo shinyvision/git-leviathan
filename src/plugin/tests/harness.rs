@@ -42,9 +42,8 @@ impl MockHost {
         // call `host_mut().revoke_capability(…)` after load.
         host.trust_bundled_plugin_root(tmp.path());
         // Also trust the workspace's `plugins/` directory so the
-        // bundled-plugin compatibility tests (which load straight
-        // from there) get the same auto-grant treatment as
-        // production.
+        // bundled-plugin tests (which load straight from there) get
+        // the same auto-grant treatment as production.
         if let Ok(cwd) = std::env::current_dir() {
             host.trust_bundled_plugin_root(cwd.join("plugins"));
         }
@@ -533,7 +532,7 @@ api_version = "1.0"
     }
 
     #[test]
-    fn compatibility_loads_every_bundled_plugin_under_api_version_2_0() {
+    fn loads_every_bundled_plugin_under_api_version_2_0() {
         let dirs = bundled_plugin_dirs();
         assert!(!dirs.is_empty(), "expected bundled plugins");
 
@@ -559,8 +558,8 @@ api_version = "1.0"
         assert!(
             snap.plugins
                 .iter()
-                .all(|plugin| plugin.api_version == "2.0"),
-            "all bundled plugins should use the v2 authoring surface"
+                .all(|plugin| plugin.api_version == "1.0"),
+            "all bundled plugins should use the v1 authoring surface"
         );
     }
 
@@ -568,10 +567,10 @@ api_version = "1.0"
     fn bundled_plugin_manifest_api_version_snapshot() {
         use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 
-        assert_eq!(HOST_API_VERSION.major, 2);
+        assert_eq!(HOST_API_VERSION.major, 1);
         assert_eq!(HOST_API_VERSION.minor, 0);
 
-        let mut snapshot = String::from("api_version = \"2.0\"\n");
+        let mut snapshot = String::from("api_version = \"1.0\"\n");
         for dir in bundled_plugin_dirs() {
             let manifest_path = dir.join("plugin.toml");
             let raw = std::fs::read_to_string(&manifest_path).expect("manifest");
@@ -590,14 +589,14 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-                "api_version = \"2.0\"\n",
-                "dancing_banana_test: api_version=2.0\n",
-                "file_explorer: api_version=2.0\n",
-                "foo_demo: api_version=2.0\n",
-                "regions_demo: api_version=2.0\n",
-                "repository_info: api_version=2.0\n",
-                "tablist_demo: api_version=2.0\n",
-                "terminal: api_version=2.0\n",
+                "api_version = \"1.0\"\n",
+                "dancing_banana_test: api_version=1.0\n",
+                "file_explorer: api_version=1.0\n",
+                "foo_demo: api_version=1.0\n",
+                "regions_demo: api_version=1.0\n",
+                "repository_info: api_version=1.0\n",
+                "tablist_demo: api_version=1.0\n",
+                "terminal: api_version=1.0\n",
             )
         );
     }
@@ -606,7 +605,7 @@ api_version = "1.0"
     fn bundled_plugin_slot_registration_snapshot() {
         let host = load_all_bundled_plugins();
         let snap = host.introspect();
-        let mut snapshot = String::from("api_version = \"2.0\"\n");
+        let mut snapshot = String::from("api_version = \"1.0\"\n");
         for slot in snap.slots {
             snapshot.push_str(&format!(
                 "{} {} {} priority={} owner={}\n",
@@ -617,7 +616,7 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-				"api_version = \"2.0\"\n",
+				"api_version = \"1.0\"\n",
 				"main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
 				"main_bar left builtin.fetch_indicator priority=40 owner=dancing_banana_test\n",
 				"main_bar left builtin.repo_info priority=10 owner=repository_info\n",
@@ -634,7 +633,7 @@ api_version = "1.0"
     fn region_descriptor_snapshot() {
         use git_leviathan_plugin_api::descriptor::region::{RegionKind, REGIONS};
 
-        let mut snapshot = String::from("api_version = \"2.0\"\n");
+        let mut snapshot = String::from("api_version = \"1.0\"\n");
         for region in REGIONS.iter() {
             match &region.kind {
                 RegionKind::Chrome {
@@ -677,7 +676,7 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-                "api_version = \"2.0\"\n",
+                "api_version = \"1.0\"\n",
                 "main_bar: chrome sections=[left, center, right]\n",
                 "tab_bar: chrome sections=[left, center, right]\n",
                 "status_bar: chrome sections=[left, center, right]\n",
@@ -721,7 +720,7 @@ api_version = "1.0"
 		api_version = "1.0"
 
 		[init.lua]
-		leviathan.ui.main_bar.add{ id = "x", section = "nope", priority = 0, widget = { kind = "text", value = "hi" } }
+		leviathan.ui.regions.add_slot{ region = "main_bar", id = "x", section = "nope", priority = 0, widget = { kind = "text", value = "hi" } }
 		"#,
         );
         let s = match r {
@@ -819,7 +818,7 @@ api_version = "1.0"
 			api_version = "1.0"
 			"#,
             r#"
-			leviathan.ui.main_bar.add{
+			leviathan.ui.regions.add_slot{ region = "main_bar",
 				id = "v1.slot",
 				section = "left",
 				priority = 50,
@@ -1050,12 +1049,14 @@ api_version = "1.0"
 			"#,
             r#"
 			_G.steps = 0
-			leviathan.api.create_user_command("slow", function()
-				for i = 1, 5 do
-					_G.steps = _G.steps + 1
-					coroutine.yield()
-				end
-			end)
+			leviathan.command.create("slow", {
+				run = function()
+					for i = 1, 5 do
+						_G.steps = _G.steps + 1
+						coroutine.yield()
+					end
+				end,
+			})
 			"#,
         )
         .expect("load");
@@ -1232,7 +1233,7 @@ api_version = "1.0"
 			api_version = "1.0"
 			"#,
             r#"
-			leviathan.ui.main_bar.add{
+			leviathan.ui.regions.add_slot{ region = "main_bar",
 				id = "owner.slot",
 				section = "left",
 				priority = 50,

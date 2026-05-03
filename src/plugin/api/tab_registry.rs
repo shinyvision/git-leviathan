@@ -3,8 +3,8 @@
 //!
 //! Mirrors the `leviathan.repository` shape: passive table is rebuilt by
 //! [`PluginHost::sync_tab_registry`](crate::plugin::PluginHost::sync_tab_registry)
-//! on every change, so plugins re-read the globals from a `TabSwitched` /
-//! `TabAdded` / `TabRemoved` / `TabReordered` autocmd to observe state.
+//! on every change, so plugins re-read the globals from a `TabSelected` /
+//! `TabAdded` / `TabRemoved` / `TabMoved` autocmd to observe state.
 //!
 //! Functions never mutate `TabManager` directly. They push a
 //! [`TabRegistryOp`] into a shared `Rc<RefCell<Vec<_>>>` the host hands to

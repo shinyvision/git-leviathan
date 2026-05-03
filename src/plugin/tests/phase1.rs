@@ -21,13 +21,15 @@ fn ledger_introspection_lists_phase_one_resources() {
         r#"
         local n = 0
 
-        leviathan.api.create_autocmd({ "FetchStart" }, {
+        leviathan.autocmd.create({ "FetchStarted" }, {
             callback = function() n = n + 1 end,
         })
 
-        leviathan.api.create_user_command("hello", function()
-            _G.command_ran = 1
-        end)
+        leviathan.command.create("hello", {
+            run = function()
+                _G.command_ran = 1
+            end,
+        })
 
         leviathan.api.schedule(function() _G.scheduled = 1 end)
         leviathan.api.defer_fn(1000, function() _G.deferred = 1 end)
@@ -40,7 +42,7 @@ fn ledger_introspection_lists_phase_one_resources() {
             ctx:ok("ok")
         end)
 
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "ledger.slot",
             section = "left",
             priority = 10,
@@ -104,10 +106,10 @@ fn unload_removes_all_ledger_resources_and_host_state() {
         leviathan.services.register("math@1", {
             add = function(a, b) return a + b end,
         })
-        leviathan.api.create_autocmd({ "FetchStart" }, {
+        leviathan.autocmd.create({ "FetchStarted" }, {
             callback = function() end,
         })
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "unload.slot",
             section = "left",
             priority = 10,
@@ -186,10 +188,12 @@ fn unload_clears_split_state_and_pending_callbacks_without_running_them() {
         r#"
         leviathan.api.schedule(function() error("scheduled callback should not run") end)
         leviathan.api.defer_fn(0, function() error("timer callback should not run") end)
-        leviathan.api.create_user_command("later", function()
-            coroutine.yield()
-            error("coroutine should not resume")
-        end)
+        leviathan.command.create("later", {
+            run = function()
+                coroutine.yield()
+                error("coroutine should not resume")
+            end,
+        })
         "#,
     )
     .expect("load");
@@ -226,7 +230,7 @@ fn reload_cleanup_survives_failing_lua_serialize_callback() {
         &manifest("reload_cleanup"),
         r#"
         leviathan.services.register("math@1", { id = function() return 1 end })
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "old.slot",
             section = "left",
             priority = 10,
@@ -250,7 +254,7 @@ fn reload_cleanup_survives_failing_lua_serialize_callback() {
         &manifest("reload_cleanup"),
         r#"
         leviathan.services.register("math@1", { id = function() return 2 end })
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "new.slot",
             section = "left",
             priority = 10,

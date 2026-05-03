@@ -10,7 +10,7 @@ leviathan.ui.regions.replace_slot(
     widget = function()
       render_count = render_count + 1
       _G.render_count = render_count
-      return { kind = "text", value = "Repo v2 #" .. tostring(render_count) }
+      return { kind = "text", value = "Repo v1 #" .. tostring(render_count) }
     end,
   }
 )

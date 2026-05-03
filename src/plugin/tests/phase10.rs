@@ -129,7 +129,7 @@ fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
     // sub-directory the harness DOES trust (its tmp), then untrust
     // post-load — but the API is additive. Instead, let's load
     // the v1 manifest with one capability (auto-granted because of
-    // the trusted tmp), then write a v2 manifest with a NEW
+    // the trusted tmp), then write an updated manifest with a NEW
     // capability AND mark the host's grant store as not auto-
     // granting newly-requested capabilities by revoking the
     // bundled-trust effect through a fresh GrantStore swap.
@@ -162,7 +162,7 @@ fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
     // Now re-write the manifest with a new version + new capability.
     // The harness still trusts its tmp dir, so to actually exercise
     // the prompt path we must mark the plugin as non-bundled. The
-    // simplest way: load v2 from a NEW MockHost without the bundled
+    // simplest way: load the updated plugin from a NEW MockHost without the bundled
     // trust. But the test wants to assert "old gen still serves".
     // So instead we drive `reload_with_str` with a plugin path that
     // is NOT bundled. Achieve that by pointing the auto-grant policy
@@ -182,7 +182,7 @@ fn upgrade_widening_halts_staging_until_user_grants_then_reload_commits() {
     ));
 
     // Part B (widening halt): emulate the staging widening check
-    // directly. The grant store has no row for v2.0.0 +
+    // directly. The grant store has no row for plugin version 2.0.0 +
     // git:write:checkout, so `undecided_for` reports it.
     let undecided = host.host().grant_store().undecided_for(
         "upgrader",

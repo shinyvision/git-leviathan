@@ -233,7 +233,7 @@ mod tests {
         std::fs::write(dir.join("plugin.toml"), "id = \"x\"\n").unwrap();
         std::fs::write(dir.join("init.lua"), "v1").unwrap();
         let h1 = compute_plugin_checksum(dir).unwrap();
-        std::fs::write(dir.join("init.lua"), "v2").unwrap();
+        std::fs::write(dir.join("init.lua"), "updated").unwrap();
         let h2 = compute_plugin_checksum(dir).unwrap();
         assert_ne!(h1, h2);
     }

@@ -1,7 +1,7 @@
 {
   "capabilities": [
     {
-      "doc": "Compatibility alias for fs:read:plugin.",
+      "doc": "Alias for fs:read:plugin.",
       "name": "fs:read",
       "since": "1.0"
     },
@@ -86,7 +86,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Compatibility alias for clipboard read+write.",
+      "doc": "Alias for clipboard read+write.",
       "name": "clipboard",
       "since": "1.0"
     },
@@ -121,7 +121,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Observe the active repository projection (refs, head, status). Implicit for repository slot widgets in v1.",
+      "doc": "Observe the active repository projection (refs, head, status).",
       "name": "repo:read",
       "since": "1.0"
     },
@@ -201,7 +201,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`). Backwards-compat: omitting it leaves the legacy unrestricted v1 access in place.",
+      "doc": "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`).",
       "name": "ui:region:<region>",
       "since": "1.0"
     },
@@ -234,6 +234,26 @@
       "doc": "Watch paths under an explicit user-chosen directory (Phase 12).",
       "name": "fs:watch:scope:<dir>",
       "since": "1.12"
+    },
+    {
+      "doc": "Register modal overlays that the host renders above the active screen (Phase 17).",
+      "name": "ui:overlay",
+      "since": "1.0"
+    },
+    {
+      "doc": "Contribute items to host-rendered context menus at extension points (Phase 17).",
+      "name": "ui:context_menu",
+      "since": "1.0"
+    },
+    {
+      "doc": "Attach badges / icons / markers / lanes to commit rows in the graph (Phase 17).",
+      "name": "ui:graph_decoration",
+      "since": "1.0"
+    },
+    {
+      "doc": "Attach line hints / hunk badges / line gutters to the diff view (Phase 17).",
+      "name": "ui:diff_decoration",
+      "since": "1.0"
     }
   ],
   "events": [
@@ -440,9 +460,7 @@
       "since": "1.7"
     },
     {
-      "aliases": [
-        "FetchStart"
-      ],
+      "aliases": [],
       "doc": "Fired when a repository fetch starts.",
       "is_alias": false,
       "name": "FetchStarted",
@@ -458,9 +476,7 @@
       "since": "1.7"
     },
     {
-      "aliases": [
-        "FetchEnd"
-      ],
+      "aliases": [],
       "doc": "Fired when a repository fetch finishes (success or failure).",
       "is_alias": false,
       "name": "FetchFinished",
@@ -552,9 +568,7 @@
       "since": "1.0"
     },
     {
-      "aliases": [
-        "TabSwitched"
-      ],
+      "aliases": [],
       "doc": "Fired after the active tab changes.",
       "is_alias": false,
       "name": "TabSelected",
@@ -576,9 +590,7 @@
       "since": "1.7"
     },
     {
-      "aliases": [
-        "TabReordered"
-      ],
+      "aliases": [],
       "doc": "Fired after tabs are reordered.",
       "is_alias": false,
       "name": "TabMoved",
@@ -686,76 +698,6 @@
       ],
       "payload_type": "table",
       "since": "1.9"
-    },
-    {
-      "aliases": [],
-      "doc": "Compatibility alias of `FetchStarted`.",
-      "is_alias": true,
-      "name": "FetchStart",
-      "payload_fields": [
-        {
-          "doc": "Remote name involved in the fetch.",
-          "lua_type": "string",
-          "name": "remote",
-          "required": true
-        }
-      ],
-      "payload_type": "table",
-      "since": "1.0"
-    },
-    {
-      "aliases": [],
-      "doc": "Compatibility alias of `FetchFinished`.",
-      "is_alias": true,
-      "name": "FetchEnd",
-      "payload_fields": [
-        {
-          "doc": "Remote name involved in the fetch.",
-          "lua_type": "string",
-          "name": "remote",
-          "required": true
-        }
-      ],
-      "payload_type": "table",
-      "since": "1.0"
-    },
-    {
-      "aliases": [],
-      "doc": "Compatibility alias of `TabMoved`.",
-      "is_alias": true,
-      "name": "TabReordered",
-      "payload_fields": [
-        {
-          "doc": "Number of open tabs after the move.",
-          "lua_type": "integer",
-          "name": "count",
-          "required": true
-        }
-      ],
-      "payload_type": "table",
-      "since": "1.0"
-    },
-    {
-      "aliases": [],
-      "doc": "Compatibility alias of `TabSelected`.",
-      "is_alias": true,
-      "name": "TabSwitched",
-      "payload_fields": [
-        {
-          "doc": "Tab id.",
-          "lua_type": "integer",
-          "name": "tab_id",
-          "required": true
-        },
-        {
-          "doc": "Repository path the tab is bound to, when known.",
-          "lua_type": "string",
-          "name": "path",
-          "required": false
-        }
-      ],
-      "payload_type": "table",
-      "since": "1.0"
     }
   ],
   "host_api_version": {
@@ -862,16 +804,8 @@
     },
     {
       "capabilities": [],
-      "doc": "Descriptor, event, scheduling, and command registration APIs.",
-      "events": [
-        "BranchChanged",
-        "FetchStart",
-        "FetchEnd",
-        "TabAdded",
-        "TabRemoved",
-        "TabReordered",
-        "TabSwitched"
-      ],
+      "doc": "Descriptor and scheduling APIs.",
+      "events": [],
       "functions": [
         {
           "capabilities": [],
@@ -895,39 +829,6 @@
             "returns": [
               "HostApiDescription"
             ]
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Subscribe to host events. Callback fires once per event firing.",
-          "name": "create_autocmd",
-          "params": [
-            {
-              "doc": "List of event names to subscribe to.",
-              "lua_type": "string[]",
-              "name": "events",
-              "required": true
-            },
-            {
-              "doc": "Options table containing `callback`.",
-              "lua_type": "LeviathanAutocmdOpts",
-              "name": "opts",
-              "required": true
-            }
-          ],
-          "path": "leviathan.api.create_autocmd",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "events must be an array-like table of strings",
-              "opts.callback must be a function"
-            ],
-            "notes": [
-              "One registry callback is stored per event."
-            ],
-            "returns": []
           }
         },
         {
@@ -985,39 +886,6 @@
             ],
             "notes": [
               "The callback is recorded in the resource ledger as a timer."
-            ],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Register a named coroutine-driven plugin command.",
-          "name": "create_user_command",
-          "params": [
-            {
-              "doc": "Command name.",
-              "lua_type": "string",
-              "name": "name",
-              "required": true
-            },
-            {
-              "doc": "Command callback.",
-              "lua_type": "fun()",
-              "name": "callback",
-              "required": true
-            }
-          ],
-          "path": "leviathan.api.create_user_command",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "name must be a string",
-              "callback must be a function"
-            ],
-            "notes": [
-              "Commands can yield; resumable coroutines are parked in the plugin queue."
             ],
             "returns": []
           }
@@ -1456,39 +1324,6 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Look up a region handle by descriptor name.",
-          "name": "region",
-          "params": [
-            {
-              "doc": "Region name.",
-              "lua_type": "string",
-              "name": "name",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.region",
-          "returns": [
-            {
-              "doc": "Region handle with add/remove/replace.",
-              "lua_type": "table"
-            }
-          ],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "name must match a region descriptor"
-            ],
-            "notes": [
-              "Unknown names raise an error."
-            ],
-            "returns": [
-              "region handle table"
-            ]
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
           "doc": "Register a plugin screen with init/view/update lifecycle callbacks.",
           "name": "register_screen",
           "params": [
@@ -1512,6 +1347,135 @@
             ],
             "returns": []
           }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Register an overlay widget the host renders above the active screen.",
+          "name": "overlay",
+          "params": [
+            {
+              "doc": "Overlay descriptor (id, widget, dismissible, priority).",
+              "lua_type": "LeviathanOverlaySpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.overlay",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.widget must be a LeviathanWidget table",
+              "spec.dismissible must be boolean",
+              "spec.priority must be a number"
+            ],
+            "notes": [
+              "Host owns Esc / click-outside dismissal."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:context_menu"
+          ],
+          "compatibility": "v1",
+          "doc": "Contribute a context-menu item at an extension point.",
+          "name": "context_menu",
+          "params": [
+            {
+              "doc": "Extension point address (e.g. \"repository.diff.context_menu\").",
+              "lua_type": "string",
+              "name": "region",
+              "required": true
+            },
+            {
+              "doc": "Menu item (id, label, command, priority, condition_capability).",
+              "lua_type": "LeviathanContextMenuItem",
+              "name": "item",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.context_menu",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "region must address a known *.context_menu section",
+              "item.id / label / command must be strings",
+              "item.priority must be a number"
+            ],
+            "notes": [
+              "Items sorted by priority ascending; capability-gated by condition_capability if set."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:graph_decoration"
+          ],
+          "compatibility": "v1",
+          "doc": "Attach a decoration to a commit row (badge / icon / marker / lane).",
+          "name": "graph_decoration",
+          "params": [
+            {
+              "doc": "Commit row hash the decoration applies to.",
+              "lua_type": "string",
+              "name": "commit_hash",
+              "required": true
+            },
+            {
+              "doc": "Decoration AST: badge / icon / marker / lane.",
+              "lua_type": "LeviathanGraphDecoration",
+              "name": "decoration",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.graph_decoration",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "decoration.kind must be one of badge / icon / marker / lane"
+            ],
+            "notes": [
+              "Bound to repository.graph.row:<commit_hash>."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:diff_decoration"
+          ],
+          "compatibility": "v1",
+          "doc": "Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).",
+          "name": "diff_decoration",
+          "params": [
+            {
+              "doc": "Decoration AST: line_hint / hunk_badge / line_gutter.",
+              "lua_type": "LeviathanDiffDecoration",
+              "name": "decoration",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.diff_decoration",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "decoration.kind must be one of line_hint / hunk_badge / line_gutter"
+            ],
+            "notes": [
+              "Bound to repository.diff.line:<file>:<line> or repository.diff.hunk:<id>."
+            ],
+            "returns": []
+          }
         }
       ],
       "name": "ui",
@@ -1531,23 +1495,23 @@
     },
     {
       "capabilities": [],
-      "doc": "Main bar region handle.",
+      "doc": "Descriptor-backed region slot API.",
       "events": [],
       "functions": [
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Add a slot to the main bar region.",
-          "name": "add",
+          "doc": "Add a slot to any descriptor-backed UI region.",
+          "name": "add_slot",
           "params": [
             {
-              "doc": "Slot descriptor.",
+              "doc": "Slot descriptor including region, section/pane, id, priority, and widget.",
               "lua_type": "LeviathanSlotSpec",
               "name": "spec",
               "required": true
             }
           ],
-          "path": "leviathan.ui.main_bar.add",
+          "path": "leviathan.ui.regions.add_slot",
           "returns": [],
           "since": "1.0",
           "validation": {
@@ -1565,17 +1529,17 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Remove a slot from the main bar region.",
-          "name": "remove",
+          "doc": "Remove a slot from any descriptor-backed UI region.",
+          "name": "remove_slot",
           "params": [
             {
-              "doc": "Slot address and id.",
+              "doc": "Slot address including region, section/pane, and id.",
               "lua_type": "LeviathanSlotTarget",
               "name": "target",
               "required": true
             }
           ],
-          "path": "leviathan.ui.main_bar.remove",
+          "path": "leviathan.ui.regions.remove_slot",
           "returns": [],
           "since": "1.0",
           "validation": {
@@ -1593,11 +1557,11 @@
         {
           "capabilities": [],
           "compatibility": "v1",
-          "doc": "Replace a slot in the main bar region.",
-          "name": "replace",
+          "doc": "Replace a slot in any descriptor-backed UI region.",
+          "name": "replace_slot",
           "params": [
             {
-              "doc": "Existing slot address and id.",
+              "doc": "Existing slot address including region and id.",
               "lua_type": "LeviathanSlotTarget",
               "name": "target",
               "required": true
@@ -1609,7 +1573,7 @@
               "required": true
             }
           ],
-          "path": "leviathan.ui.main_bar.replace",
+          "path": "leviathan.ui.regions.replace_slot",
           "returns": [],
           "since": "1.0",
           "validation": {
@@ -1625,226 +1589,12 @@
           }
         }
       ],
-      "name": "ui.main_bar",
-      "table": "leviathan.ui.main_bar",
+      "name": "ui.regions",
+      "table": "leviathan.ui.regions",
       "types": [
-        "leviathan.ui.main_bar"
-      ],
-      "version": {
-        "compatibility": "v1",
-        "label": "1.0",
-        "major": 1,
-        "minor": 0
-      }
-    },
-    {
-      "capabilities": [],
-      "doc": "Tab bar region handle.",
-      "events": [],
-      "functions": [
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Add a slot to the tab bar region.",
-          "name": "add",
-          "params": [
-            {
-              "doc": "Slot descriptor.",
-              "lua_type": "LeviathanSlotSpec",
-              "name": "spec",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.tab_bar.add",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Remove a slot from the tab bar region.",
-          "name": "remove",
-          "params": [
-            {
-              "doc": "Slot address and id.",
-              "lua_type": "LeviathanSlotTarget",
-              "name": "target",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.tab_bar.remove",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Replace a slot in the tab bar region.",
-          "name": "replace",
-          "params": [
-            {
-              "doc": "Existing slot address and id.",
-              "lua_type": "LeviathanSlotTarget",
-              "name": "target",
-              "required": true
-            },
-            {
-              "doc": "Replacement slot descriptor.",
-              "lua_type": "LeviathanSlotSpec",
-              "name": "spec",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.tab_bar.replace",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        }
-      ],
-      "name": "ui.tab_bar",
-      "table": "leviathan.ui.tab_bar",
-      "types": [
-        "leviathan.ui.tab_bar"
-      ],
-      "version": {
-        "compatibility": "v1",
-        "label": "1.0",
-        "major": 1,
-        "minor": 0
-      }
-    },
-    {
-      "capabilities": [],
-      "doc": "Repository content region handle.",
-      "events": [],
-      "functions": [
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Add a slot to the repository content region.",
-          "name": "add",
-          "params": [
-            {
-              "doc": "Slot descriptor.",
-              "lua_type": "LeviathanSlotSpec",
-              "name": "spec",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.repository.add",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Remove a slot from the repository content region.",
-          "name": "remove",
-          "params": [
-            {
-              "doc": "Slot address and id.",
-              "lua_type": "LeviathanSlotTarget",
-              "name": "target",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.repository.remove",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Replace a slot in the repository content region.",
-          "name": "replace",
-          "params": [
-            {
-              "doc": "Existing slot address and id.",
-              "lua_type": "LeviathanSlotTarget",
-              "name": "target",
-              "required": true
-            },
-            {
-              "doc": "Replacement slot descriptor.",
-              "lua_type": "LeviathanSlotSpec",
-              "name": "spec",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.repository.replace",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
-            ],
-            "notes": [
-              "Slot ownership is recorded in the Phase 1 resource ledger."
-            ],
-            "returns": []
-          }
-        }
-      ],
-      "name": "ui.repository",
-      "table": "leviathan.ui.repository",
-      "types": [
-        "leviathan.ui.repository"
+        "leviathan.ui.regions",
+        "LeviathanSlotSpec",
+        "LeviathanSlotTarget"
       ],
       "version": {
         "compatibility": "v1",
@@ -2905,7 +2655,7 @@
               "path must be a string"
             ],
             "notes": [
-              "Compatibility note: v1 canonicalize is ungated even though it reads filesystem state."
+              "Canonicalize is ungated even though it reads filesystem state."
             ],
             "returns": [
               "string|nil",
@@ -3779,8 +3529,8 @@
       "events": [
         "TabAdded",
         "TabRemoved",
-        "TabReordered",
-        "TabSwitched"
+        "TabMoved",
+        "TabSelected"
       ],
       "functions": [
         {
@@ -3897,10 +3647,16 @@
           "name": "register",
           "params": [
             {
-              "doc": "Service declaration such as `greeter@1`.",
+              "doc": "Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).",
               "lua_type": "string",
-              "name": "name_at_version",
+              "name": "name_or_name_at_version",
               "required": true
+            },
+            {
+              "doc": "Integer service version when the first argument is a bare service name.",
+              "lua_type": "integer",
+              "name": "version",
+              "required": false
             },
             {
               "doc": "Service method table.",
@@ -3914,7 +3670,7 @@
           "since": "1.0",
           "validation": {
             "args": [
-              "name_at_version must be declared in provides_services",
+              "service key must be declared in provides_services",
               "methods values must be functions"
             ],
             "notes": [
@@ -3930,29 +3686,38 @@
           "name": "get",
           "params": [
             {
-              "doc": "Service declaration such as `greeter@1`.",
+              "doc": "Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).",
               "lua_type": "string",
-              "name": "name_at_version",
+              "name": "name_or_name_at_version",
               "required": true
+            },
+            {
+              "doc": "Integer service version when the first argument is a bare service name.",
+              "lua_type": "integer",
+              "name": "version",
+              "required": false
             }
           ],
           "path": "leviathan.services.get",
           "returns": [
             {
-              "doc": "Service proxy.",
-              "lua_type": "table"
+              "doc": "Service proxy, or nil for declared optional consumers when the provider is absent.",
+              "lua_type": "table|nil"
             }
           ],
           "since": "1.0",
           "validation": {
             "args": [
-              "name_at_version must be declared in consumes_services"
+              "service key must be declared in consumes_services"
             ],
             "notes": [
-              "Proxy method arguments and results are converted through JSON values."
+              "Proxy method arguments and results are converted through JSON values.",
+              "Required consumers are validated at plugin load/reload time.",
+              "Provider method calls are traced and run under the caller's active capabilities."
             ],
             "returns": [
-              "table"
+              "table",
+              "nil for optional missing services"
             ]
           }
         }
@@ -4007,7 +3772,7 @@
               "opts.version defaults to 1"
             ],
             "notes": [
-              "The default state surface preserves the v1 state-dir path."
+              "The default state surface uses the plugin state directory."
             ],
             "returns": [
               "PersistStore userdata"
@@ -4640,10 +4405,23 @@
       ]
     },
     {
+      "kind": "chrome",
+      "name": "status_bar",
+      "panes": [],
+      "sections": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    {
       "kind": "content",
       "name": "repository",
       "panes": [
         {
+          "dynamic_section_prefixes": [
+            "section:"
+          ],
           "name": "sidebar",
           "sections": [
             "top",
@@ -4655,6 +4433,56 @@
           "sections": [
             "top",
             "bottom"
+          ]
+        }
+      ],
+      "sections": []
+    },
+    {
+      "kind": "content",
+      "name": "repository.graph",
+      "panes": [
+        {
+          "dynamic_section_prefixes": [
+            "row:"
+          ],
+          "name": "graph",
+          "sections": [
+            "top",
+            "decorations",
+            "context_menu"
+          ]
+        }
+      ],
+      "sections": []
+    },
+    {
+      "kind": "content",
+      "name": "repository.details",
+      "panes": [
+        {
+          "name": "details",
+          "sections": [
+            "commit_header",
+            "files"
+          ]
+        }
+      ],
+      "sections": []
+    },
+    {
+      "kind": "content",
+      "name": "repository.diff",
+      "panes": [
+        {
+          "dynamic_section_prefixes": [
+            "line:",
+            "hunk:"
+          ],
+          "name": "diff",
+          "sections": [
+            "toolbar",
+            "context_menu"
           ]
         }
       ],
@@ -4748,27 +4576,6 @@
       "fields": [],
       "methods": [],
       "name": "leviathan.ui",
-      "since": "1.0"
-    },
-    {
-      "doc": "Main bar region handle.",
-      "fields": [],
-      "methods": [],
-      "name": "leviathan.ui.main_bar",
-      "since": "1.0"
-    },
-    {
-      "doc": "Tab bar region handle.",
-      "fields": [],
-      "methods": [],
-      "name": "leviathan.ui.tab_bar",
-      "since": "1.0"
-    },
-    {
-      "doc": "Repository content region handle.",
-      "fields": [],
-      "methods": [],
-      "name": "leviathan.ui.repository",
       "since": "1.0"
     },
     {

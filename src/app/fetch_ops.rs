@@ -41,7 +41,7 @@ impl App {
         };
         let task = self.fetch.start(screen.fetch_task());
         self.tabs.persist_most_recent_if_needed(tab_id);
-        self.plugin_host.fire_event("FetchStart");
+        self.plugin_host.fire_event("FetchStarted");
         task
     }
 

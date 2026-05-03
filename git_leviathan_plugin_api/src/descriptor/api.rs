@@ -59,21 +59,16 @@ pub struct ApiEvent {
     pub since: &'static str,
     pub doc: &'static str,
     /// Top-level Lua type of the payload table the host hands the
-    /// callback. Always `"table"` for the typed Phase 7 events; legacy
-    /// v1 aliases inherit this from the canonical event they alias.
+    /// callback. Always `"table"` for typed events.
     pub payload_type: &'static str,
     /// Schema for the payload table fields. `&[]` for events with no
     /// payload (the host still hands the callback an empty table so
     /// the call signature stays uniform).
     pub payload_fields: &'static [ApiTypeField],
-    /// Compatibility aliases — when the host fires this event, every
-    /// listed alias also fires for v1 listeners. Empty for events
-    /// introduced in Phase 7 with no v1 predecessor, and for events
-    /// that *are* themselves aliases.
+    /// Additional dispatch names for this event. Empty for current
+    /// descriptor-backed events.
     pub aliases: &'static [&'static str],
-    /// True for legacy v1 names retained as aliases of a canonical
-    /// Phase 7 event. The runtime registry skips firing them as
-    /// canonicals (they only fire when their canonical fires).
+    /// True for descriptor aliases that should not fire as canonicals.
     pub is_alias: bool,
 }
 
@@ -158,13 +153,6 @@ const V1: ApiVersionInfo = ApiVersionInfo {
     minor: 0,
     label: "1.0",
     compatibility: "v1",
-};
-
-const V2: ApiVersionInfo = ApiVersionInfo {
-    major: 2,
-    minor: 0,
-    label: "2.0",
-    compatibility: "v2",
 };
 
 const NO_VALIDATION: ApiValidation = ApiValidation {
@@ -289,34 +277,6 @@ const API_FUNCTIONS: &[ApiFunction] = &[
         },
     },
     ApiFunction {
-        path: "leviathan.api.create_autocmd",
-        name: "create_autocmd",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Subscribe to host events. Callback fires once per event firing.",
-        params: &[
-            ApiParam {
-                name: "events",
-                lua_type: "string[]",
-                required: true,
-                doc: "List of event names to subscribe to.",
-            },
-            ApiParam {
-                name: "opts",
-                lua_type: "LeviathanAutocmdOpts",
-                required: true,
-                doc: "Options table containing `callback`.",
-            },
-        ],
-        returns: &[],
-        capabilities: &[],
-        validation: ApiValidation {
-            args: &["events must be an array-like table of strings", "opts.callback must be a function"],
-            returns: &[],
-            notes: &["One registry callback is stored per event."],
-        },
-    },
-    ApiFunction {
         path: "leviathan.api.schedule",
         name: "schedule",
         since: "1.0",
@@ -364,34 +324,6 @@ const API_FUNCTIONS: &[ApiFunction] = &[
             notes: &["The callback is recorded in the resource ledger as a timer."],
         },
     },
-    ApiFunction {
-        path: "leviathan.api.create_user_command",
-        name: "create_user_command",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Register a named coroutine-driven plugin command.",
-        params: &[
-            ApiParam {
-                name: "name",
-                lua_type: "string",
-                required: true,
-                doc: "Command name.",
-            },
-            ApiParam {
-                name: "callback",
-                lua_type: "fun()",
-                required: true,
-                doc: "Command callback.",
-            },
-        ],
-        returns: &[],
-        capabilities: &[],
-        validation: ApiValidation {
-            args: &["name must be a string", "callback must be a function"],
-            returns: &[],
-            notes: &["Commands can yield; resumable coroutines are parked in the plugin queue."],
-        },
-    },
 ];
 
 const UI_FUNCTIONS: &[ApiFunction] = &[
@@ -408,29 +340,6 @@ const UI_FUNCTIONS: &[ApiFunction] = &[
         }],
         capabilities: &[],
         validation: NO_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.region",
-        name: "region",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Look up a region handle by descriptor name.",
-        params: &[ApiParam {
-            name: "name",
-            lua_type: "string",
-            required: true,
-            doc: "Region name.",
-        }],
-        returns: &[ApiReturn {
-            lua_type: "table",
-            doc: "Region handle with add/remove/replace.",
-        }],
-        capabilities: &[],
-        validation: ApiValidation {
-            args: &["name must match a region descriptor"],
-            returns: &["region handle table"],
-            notes: &["Unknown names raise an error."],
-        },
     },
     ApiFunction {
         path: "leviathan.ui.register_screen",
@@ -528,35 +437,6 @@ const UI_FUNCTIONS: &[ApiFunction] = &[
     },
 ];
 
-const REGION_ADD_PARAM: &[ApiParam] = &[ApiParam {
-    name: "spec",
-    lua_type: "LeviathanSlotSpec",
-    required: true,
-    doc: "Slot descriptor.",
-}];
-
-const REGION_REMOVE_PARAM: &[ApiParam] = &[ApiParam {
-    name: "target",
-    lua_type: "LeviathanSlotTarget",
-    required: true,
-    doc: "Slot address and id.",
-}];
-
-const REGION_REPLACE_PARAMS: &[ApiParam] = &[
-    ApiParam {
-        name: "target",
-        lua_type: "LeviathanSlotTarget",
-        required: true,
-        doc: "Existing slot address and id.",
-    },
-    ApiParam {
-        name: "spec",
-        lua_type: "LeviathanSlotSpec",
-        required: true,
-        doc: "Replacement slot descriptor.",
-    },
-];
-
 const REGION_ADD_SLOT_PARAM: &[ApiParam] = &[ApiParam {
     name: "spec",
     lua_type: "LeviathanSlotSpec",
@@ -596,48 +476,12 @@ const REGION_VALIDATION: ApiValidation = ApiValidation {
     notes: &["Slot ownership is recorded in the Phase 1 resource ledger."],
 };
 
-const MAIN_BAR_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.main_bar.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the main bar region.",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.main_bar.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the main bar region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.main_bar.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the main bar region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
 const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.ui.regions.add_slot",
         name: "add_slot",
-        since: "2.0",
-        compatibility: "v2",
+        since: "1.0",
+        compatibility: "v1",
         doc: "Add a slot to any descriptor-backed UI region.",
         params: REGION_ADD_SLOT_PARAM,
         returns: &[],
@@ -647,8 +491,8 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.ui.regions.remove_slot",
         name: "remove_slot",
-        since: "2.0",
-        compatibility: "v2",
+        since: "1.0",
+        compatibility: "v1",
         doc: "Remove a slot from any descriptor-backed UI region.",
         params: REGION_REMOVE_SLOT_PARAM,
         returns: &[],
@@ -658,230 +502,10 @@ const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.ui.regions.replace_slot",
         name: "replace_slot",
-        since: "2.0",
-        compatibility: "v2",
+        since: "1.0",
+        compatibility: "v1",
         doc: "Replace a slot in any descriptor-backed UI region.",
         params: REGION_REPLACE_SLOT_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-const TAB_BAR_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.tab_bar.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the tab bar region.",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.tab_bar.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the tab bar region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.tab_bar.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the tab bar region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-const REPOSITORY_REGION_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.repository.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the repository content region.",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the repository content region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the repository content region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-// Phase 17: status_bar / repository.graph / repository.details /
-// repository.diff descriptor function tables. Each region exposes
-// the same {add, remove, replace} surface as the existing chrome /
-// content regions.
-const STATUS_BAR_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.status_bar.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the status bar region.",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.status_bar.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the status bar region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.status_bar.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the status bar region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-const REPOSITORY_GRAPH_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.repository.graph.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the repository.graph region (commit row decorations).",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.graph.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the repository.graph region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.graph.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the repository.graph region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-const REPOSITORY_DETAILS_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.repository.details.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the repository.details region (commit header / files).",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.details.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the repository.details region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.details.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the repository.details region.",
-        params: REGION_REPLACE_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-];
-
-const REPOSITORY_DIFF_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.repository.diff.add",
-        name: "add",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Add a slot to the repository.diff region (toolbar / hunk / line / context menu).",
-        params: REGION_ADD_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.diff.remove",
-        name: "remove",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Remove a slot from the repository.diff region.",
-        params: REGION_REMOVE_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.repository.diff.replace",
-        name: "replace",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Replace a slot in the repository.diff region.",
-        params: REGION_REPLACE_PARAMS,
         returns: &[],
         capabilities: &[],
         validation: REGION_VALIDATION,
@@ -946,41 +570,586 @@ const FS_READ_WRITE_CAP: &[&str] = &["fs:read", "fs:write:*"];
 const ENV_CAP: &[&str] = &["env"];
 
 const FS_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction { path: "leviathan.fs.read_file", name: "read_file", since: "1.0", compatibility: "v1", doc: "Read UTF-8 file contents. Returns content or (nil, err).", params: STRING_PATH, returns: NILABLE_STRING_ERR_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.read_lines", name: "read_lines", since: "1.0", compatibility: "v1", doc: "Read a UTF-8 file as an array of lines.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "string[]|nil", doc: "Lines on success." }, ApiReturn { lua_type: "string|nil", doc: "Error message on failure." }], capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.write_file", name: "write_file", since: "1.0", compatibility: "v1", doc: "Write content to a file, replacing existing contents.", params: &[ApiParam { name: "path", lua_type: "string", required: true, doc: "Target path." }, ApiParam { name: "content", lua_type: "string", required: true, doc: "UTF-8 content." }], returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.append_file", name: "append_file", since: "1.0", compatibility: "v1", doc: "Append content to a file, creating it when absent.", params: &[ApiParam { name: "path", lua_type: "string", required: true, doc: "Target path." }, ApiParam { name: "content", lua_type: "string", required: true, doc: "UTF-8 content." }], returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.delete", name: "delete", since: "1.0", compatibility: "v1", doc: "Delete a file or directory tree.", params: STRING_PATH, returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.mkdir", name: "mkdir", since: "1.0", compatibility: "v1", doc: "Create a directory and missing parents.", params: STRING_PATH, returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.copy", name: "copy", since: "1.0", compatibility: "v1", doc: "Copy a regular file.", params: &[ApiParam { name: "src", lua_type: "string", required: true, doc: "Source path." }, ApiParam { name: "dst", lua_type: "string", required: true, doc: "Destination path." }], returns: OK_ERR_RET, capabilities: FS_READ_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.rename", name: "rename", since: "1.0", compatibility: "v1", doc: "Move or rename a path.", params: &[ApiParam { name: "src", lua_type: "string", required: true, doc: "Source path." }, ApiParam { name: "dst", lua_type: "string", required: true, doc: "Destination path." }], returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.touch", name: "touch", since: "1.0", compatibility: "v1", doc: "Create a file or update its modification time.", params: STRING_PATH, returns: OK_ERR_RET, capabilities: FS_WRITE_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.read_link", name: "read_link", since: "1.0", compatibility: "v1", doc: "Read a symlink target without following it.", params: STRING_PATH, returns: NILABLE_STRING_ERR_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.list_dir", name: "list_dir", since: "1.0", compatibility: "v1", doc: "List directory entries sorted with directories first.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "LeviathanFsEntry[]|nil", doc: "Directory entries on success." }, ApiReturn { lua_type: "string|nil", doc: "Error message on failure." }], capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.exists", name: "exists", since: "1.0", compatibility: "v1", doc: "Return whether a path exists.", params: STRING_PATH, returns: BOOL_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.is_file", name: "is_file", since: "1.0", compatibility: "v1", doc: "Return whether a path is a regular file.", params: STRING_PATH, returns: BOOL_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.is_dir", name: "is_dir", since: "1.0", compatibility: "v1", doc: "Return whether a path is a directory.", params: STRING_PATH, returns: BOOL_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.is_symlink", name: "is_symlink", since: "1.0", compatibility: "v1", doc: "Return whether a path itself is a symlink.", params: STRING_PATH, returns: BOOL_RET, capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.size", name: "size", since: "1.0", compatibility: "v1", doc: "Return symlink metadata size in bytes.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "integer|nil", doc: "Byte size on success." }, ApiReturn { lua_type: "string|nil", doc: "Error message on failure." }], capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.modified", name: "modified", since: "1.0", compatibility: "v1", doc: "Return modification time as Unix seconds.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "number|nil", doc: "Unix timestamp on success." }, ApiReturn { lua_type: "string|nil", doc: "Error message on failure." }], capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.metadata", name: "metadata", since: "1.0", compatibility: "v1", doc: "Return metadata shaped like a single list_dir entry.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "LeviathanFsEntry|nil", doc: "Entry metadata on success." }, ApiReturn { lua_type: "string|nil", doc: "Error message on failure." }], capabilities: FS_READ_CAP, validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.is_absolute", name: "is_absolute", since: "1.0", compatibility: "v1", doc: "Return whether a path string is absolute.", params: STRING_PATH, returns: BOOL_RET, capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.parent", name: "parent", since: "1.0", compatibility: "v1", doc: "Return the parent path string, or nil.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "string|nil", doc: "Parent path." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.basename", name: "basename", since: "1.0", compatibility: "v1", doc: "Return the final path component, or nil.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "string|nil", doc: "File name." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.stem", name: "stem", since: "1.0", compatibility: "v1", doc: "Return the file stem, or nil.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "string|nil", doc: "File stem." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.extension", name: "extension", since: "1.0", compatibility: "v1", doc: "Return the final file extension, or nil.", params: STRING_PATH, returns: &[ApiReturn { lua_type: "string|nil", doc: "File extension." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.join", name: "join", since: "1.0", compatibility: "v1", doc: "Join two path strings.", params: &[ApiParam { name: "a", lua_type: "string", required: true, doc: "Base path." }, ApiParam { name: "b", lua_type: "string", required: true, doc: "Child path." }], returns: &[ApiReturn { lua_type: "string", doc: "Joined path." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.relative_to", name: "relative_to", since: "1.0", compatibility: "v1", doc: "Return path relative to base when path is under base.", params: &[ApiParam { name: "path", lua_type: "string", required: true, doc: "Path to rewrite." }, ApiParam { name: "base", lua_type: "string", required: true, doc: "Base directory." }], returns: &[ApiReturn { lua_type: "string|nil", doc: "Relative path or nil." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.with_extension", name: "with_extension", since: "1.0", compatibility: "v1", doc: "Return path with its final extension replaced.", params: &[ApiParam { name: "path", lua_type: "string", required: true, doc: "Path to rewrite." }, ApiParam { name: "ext", lua_type: "string", required: true, doc: "New extension." }], returns: &[ApiReturn { lua_type: "string|nil", doc: "Rewritten path or nil." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.with_file_name", name: "with_file_name", since: "1.0", compatibility: "v1", doc: "Return path with its final component replaced.", params: &[ApiParam { name: "path", lua_type: "string", required: true, doc: "Path to rewrite." }, ApiParam { name: "name", lua_type: "string", required: true, doc: "Replacement file name." }], returns: &[ApiReturn { lua_type: "string|nil", doc: "Rewritten path or nil." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.cwd", name: "cwd", since: "1.0", compatibility: "v1", doc: "Return the process current working directory.", params: &[], returns: NILABLE_STRING_ERR_RET, capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.home", name: "home", since: "1.0", compatibility: "v1", doc: "Return the user home directory, or nil.", params: &[], returns: &[ApiReturn { lua_type: "string|nil", doc: "Home directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.temp_dir", name: "temp_dir", since: "1.0", compatibility: "v1", doc: "Return the process temporary directory.", params: &[], returns: &[ApiReturn { lua_type: "string", doc: "Temporary directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.config_dir", name: "config_dir", since: "1.0", compatibility: "v1", doc: "Return the standard user config directory, or nil.", params: &[], returns: &[ApiReturn { lua_type: "string|nil", doc: "Config directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.cache_dir", name: "cache_dir", since: "1.0", compatibility: "v1", doc: "Return the standard user cache directory, or nil.", params: &[], returns: &[ApiReturn { lua_type: "string|nil", doc: "Cache directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.data_dir", name: "data_dir", since: "1.0", compatibility: "v1", doc: "Return the standard user data directory, or nil.", params: &[], returns: &[ApiReturn { lua_type: "string|nil", doc: "Data directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.state_dir", name: "state_dir", since: "1.0", compatibility: "v1", doc: "Return the standard user state directory, or nil.", params: &[], returns: &[ApiReturn { lua_type: "string|nil", doc: "State directory." }], capabilities: &[], validation: NO_VALIDATION },
-    ApiFunction { path: "leviathan.fs.canonicalize", name: "canonicalize", since: "1.0", compatibility: "v1", doc: "Resolve a path to an absolute canonical path.", params: STRING_PATH, returns: NILABLE_STRING_ERR_RET, capabilities: &[], validation: ApiValidation { args: &["path must be a string"], returns: &["string|nil", "string|nil"], notes: &["Compatibility note: v1 canonicalize is ungated even though it reads filesystem state."] } },
+    ApiFunction {
+        path: "leviathan.fs.read_file",
+        name: "read_file",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Read UTF-8 file contents. Returns content or (nil, err).",
+        params: STRING_PATH,
+        returns: NILABLE_STRING_ERR_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.read_lines",
+        name: "read_lines",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Read a UTF-8 file as an array of lines.",
+        params: STRING_PATH,
+        returns: &[
+            ApiReturn {
+                lua_type: "string[]|nil",
+                doc: "Lines on success.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.write_file",
+        name: "write_file",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Write content to a file, replacing existing contents.",
+        params: &[
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Target path.",
+            },
+            ApiParam {
+                name: "content",
+                lua_type: "string",
+                required: true,
+                doc: "UTF-8 content.",
+            },
+        ],
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.append_file",
+        name: "append_file",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Append content to a file, creating it when absent.",
+        params: &[
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Target path.",
+            },
+            ApiParam {
+                name: "content",
+                lua_type: "string",
+                required: true,
+                doc: "UTF-8 content.",
+            },
+        ],
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.delete",
+        name: "delete",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Delete a file or directory tree.",
+        params: STRING_PATH,
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.mkdir",
+        name: "mkdir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Create a directory and missing parents.",
+        params: STRING_PATH,
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.copy",
+        name: "copy",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Copy a regular file.",
+        params: &[
+            ApiParam {
+                name: "src",
+                lua_type: "string",
+                required: true,
+                doc: "Source path.",
+            },
+            ApiParam {
+                name: "dst",
+                lua_type: "string",
+                required: true,
+                doc: "Destination path.",
+            },
+        ],
+        returns: OK_ERR_RET,
+        capabilities: FS_READ_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.rename",
+        name: "rename",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Move or rename a path.",
+        params: &[
+            ApiParam {
+                name: "src",
+                lua_type: "string",
+                required: true,
+                doc: "Source path.",
+            },
+            ApiParam {
+                name: "dst",
+                lua_type: "string",
+                required: true,
+                doc: "Destination path.",
+            },
+        ],
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.touch",
+        name: "touch",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Create a file or update its modification time.",
+        params: STRING_PATH,
+        returns: OK_ERR_RET,
+        capabilities: FS_WRITE_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.read_link",
+        name: "read_link",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Read a symlink target without following it.",
+        params: STRING_PATH,
+        returns: NILABLE_STRING_ERR_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.list_dir",
+        name: "list_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "List directory entries sorted with directories first.",
+        params: STRING_PATH,
+        returns: &[
+            ApiReturn {
+                lua_type: "LeviathanFsEntry[]|nil",
+                doc: "Directory entries on success.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.exists",
+        name: "exists",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a path exists.",
+        params: STRING_PATH,
+        returns: BOOL_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.is_file",
+        name: "is_file",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a path is a regular file.",
+        params: STRING_PATH,
+        returns: BOOL_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.is_dir",
+        name: "is_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a path is a directory.",
+        params: STRING_PATH,
+        returns: BOOL_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.is_symlink",
+        name: "is_symlink",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a path itself is a symlink.",
+        params: STRING_PATH,
+        returns: BOOL_RET,
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.size",
+        name: "size",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return symlink metadata size in bytes.",
+        params: STRING_PATH,
+        returns: &[
+            ApiReturn {
+                lua_type: "integer|nil",
+                doc: "Byte size on success.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.modified",
+        name: "modified",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return modification time as Unix seconds.",
+        params: STRING_PATH,
+        returns: &[
+            ApiReturn {
+                lua_type: "number|nil",
+                doc: "Unix timestamp on success.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.metadata",
+        name: "metadata",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return metadata shaped like a single list_dir entry.",
+        params: STRING_PATH,
+        returns: &[
+            ApiReturn {
+                lua_type: "LeviathanFsEntry|nil",
+                doc: "Entry metadata on success.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+        capabilities: FS_READ_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.is_absolute",
+        name: "is_absolute",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a path string is absolute.",
+        params: STRING_PATH,
+        returns: BOOL_RET,
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.parent",
+        name: "parent",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the parent path string, or nil.",
+        params: STRING_PATH,
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Parent path.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.basename",
+        name: "basename",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the final path component, or nil.",
+        params: STRING_PATH,
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "File name.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.stem",
+        name: "stem",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the file stem, or nil.",
+        params: STRING_PATH,
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "File stem.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.extension",
+        name: "extension",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the final file extension, or nil.",
+        params: STRING_PATH,
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "File extension.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.join",
+        name: "join",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Join two path strings.",
+        params: &[
+            ApiParam {
+                name: "a",
+                lua_type: "string",
+                required: true,
+                doc: "Base path.",
+            },
+            ApiParam {
+                name: "b",
+                lua_type: "string",
+                required: true,
+                doc: "Child path.",
+            },
+        ],
+        returns: &[ApiReturn {
+            lua_type: "string",
+            doc: "Joined path.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.relative_to",
+        name: "relative_to",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return path relative to base when path is under base.",
+        params: &[
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Path to rewrite.",
+            },
+            ApiParam {
+                name: "base",
+                lua_type: "string",
+                required: true,
+                doc: "Base directory.",
+            },
+        ],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Relative path or nil.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.with_extension",
+        name: "with_extension",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return path with its final extension replaced.",
+        params: &[
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Path to rewrite.",
+            },
+            ApiParam {
+                name: "ext",
+                lua_type: "string",
+                required: true,
+                doc: "New extension.",
+            },
+        ],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Rewritten path or nil.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.with_file_name",
+        name: "with_file_name",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return path with its final component replaced.",
+        params: &[
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Path to rewrite.",
+            },
+            ApiParam {
+                name: "name",
+                lua_type: "string",
+                required: true,
+                doc: "Replacement file name.",
+            },
+        ],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Rewritten path or nil.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.cwd",
+        name: "cwd",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the process current working directory.",
+        params: &[],
+        returns: NILABLE_STRING_ERR_RET,
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.home",
+        name: "home",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the user home directory, or nil.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Home directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.temp_dir",
+        name: "temp_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the process temporary directory.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string",
+            doc: "Temporary directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.config_dir",
+        name: "config_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the standard user config directory, or nil.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Config directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.cache_dir",
+        name: "cache_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the standard user cache directory, or nil.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Cache directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.data_dir",
+        name: "data_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the standard user data directory, or nil.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "Data directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.state_dir",
+        name: "state_dir",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return the standard user state directory, or nil.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "string|nil",
+            doc: "State directory.",
+        }],
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.fs.canonicalize",
+        name: "canonicalize",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Resolve a path to an absolute canonical path.",
+        params: STRING_PATH,
+        returns: NILABLE_STRING_ERR_RET,
+        capabilities: &[],
+        validation: ApiValidation {
+            args: &["path must be a string"],
+            returns: &["string|nil", "string|nil"],
+            notes: &["Canonicalize is ungated even though it reads filesystem state."],
+        },
+    },
     ApiFunction {
         path: "leviathan.fs.watch",
         name: "watch",
@@ -988,16 +1157,36 @@ const FS_FUNCTIONS: &[ApiFunction] = &[
         compatibility: "v1",
         doc: "Watch a path for filesystem changes and dispatch events to a callback.",
         params: &[
-            ApiParam { name: "path", lua_type: "string", required: true, doc: "Path to watch (file or directory)." },
-            ApiParam { name: "opts", lua_type: "LeviathanFsWatchOpts|nil", required: false, doc: "{ recursive = bool }." },
-            ApiParam { name: "callback", lua_type: "fun(event: LeviathanFsWatchEvent)", required: true, doc: "Callback invoked on each event." },
+            ApiParam {
+                name: "path",
+                lua_type: "string",
+                required: true,
+                doc: "Path to watch (file or directory).",
+            },
+            ApiParam {
+                name: "opts",
+                lua_type: "LeviathanFsWatchOpts|nil",
+                required: false,
+                doc: "{ recursive = bool }.",
+            },
+            ApiParam {
+                name: "callback",
+                lua_type: "fun(event: LeviathanFsWatchEvent)",
+                required: true,
+                doc: "Callback invoked on each event.",
+            },
         ],
-        returns: &[ApiReturn { lua_type: "LeviathanFsWatchHandle", doc: "Handle with `:cancel()` method." }],
+        returns: &[ApiReturn {
+            lua_type: "LeviathanFsWatchHandle",
+            doc: "Handle with `:cancel()` method.",
+        }],
         capabilities: &["fs:watch"],
         validation: ApiValidation {
             args: &["path must resolve under a granted fs:watch scope"],
             returns: &["FsWatchHandle"],
-            notes: &["Cancel via the returned handle; the host also cancels on plugin reload/unload."],
+            notes: &[
+                "Cancel via the returned handle; the host also cancels on plugin reload/unload.",
+            ],
         },
     },
 ];
@@ -1456,7 +1645,7 @@ const SERVICES_FUNCTIONS: &[ApiFunction] = &[
                 name: "name_or_name_at_version",
                 lua_type: "string",
                 required: true,
-                doc: "Service name (`greeter`) with a separate version, or legacy declaration (`greeter@1`).",
+                doc: "Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).",
             },
             ApiParam {
                 name: "version",
@@ -1493,7 +1682,7 @@ const SERVICES_FUNCTIONS: &[ApiFunction] = &[
                 name: "name_or_name_at_version",
                 lua_type: "string",
                 required: true,
-                doc: "Service name (`greeter`) with a separate version, or legacy declaration (`greeter@1`).",
+                doc: "Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).",
             },
             ApiParam {
                 name: "version",
@@ -1548,7 +1737,7 @@ const PERSIST_FUNCTIONS: &[ApiFunction] = &[
         validation: ApiValidation {
             args: &["name must be a string", "opts.version defaults to 1"],
             returns: &["PersistStore userdata"],
-            notes: &["The default state surface preserves the v1 state-dir path."],
+            notes: &["The default state surface uses the plugin state directory."],
         },
     },
     ApiFunction {
@@ -2188,17 +2377,9 @@ pub const API_MODULES: &[ApiModule] = &[
         name: "api",
         table: "leviathan.api",
         version: V1,
-        doc: "Descriptor, event, scheduling, and command registration APIs.",
+        doc: "Descriptor and scheduling APIs.",
         functions: API_FUNCTIONS,
-        events: &[
-            "BranchChanged",
-            "FetchStart",
-            "FetchEnd",
-            "TabAdded",
-            "TabRemoved",
-            "TabReordered",
-            "TabSwitched",
-        ],
+        events: &[],
         types: &["leviathan.api", "LeviathanAutocmdOpts", "LeviathanAutocmdEvent"],
         capabilities: &[],
     },
@@ -2275,7 +2456,7 @@ pub const API_MODULES: &[ApiModule] = &[
     ApiModule {
         name: "ui",
         table: "leviathan.ui",
-        version: V2,
+        version: V1,
         doc: "UI region and plugin screen APIs.",
         functions: UI_FUNCTIONS,
         events: &[],
@@ -2290,82 +2471,11 @@ pub const API_MODULES: &[ApiModule] = &[
     ApiModule {
         name: "ui.regions",
         table: "leviathan.ui.regions",
-        version: V2,
-        doc: "Descriptor-backed v2 region slot API.",
+        version: V1,
+        doc: "Descriptor-backed region slot API.",
         functions: UI_REGIONS_FUNCTIONS,
         events: &[],
         types: &["leviathan.ui.regions", "LeviathanSlotSpec", "LeviathanSlotTarget"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.main_bar",
-        table: "leviathan.ui.main_bar",
-        version: V1,
-        doc: "Main bar region handle.",
-        functions: MAIN_BAR_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.main_bar"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.tab_bar",
-        table: "leviathan.ui.tab_bar",
-        version: V1,
-        doc: "Tab bar region handle.",
-        functions: TAB_BAR_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.tab_bar"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.repository",
-        table: "leviathan.ui.repository",
-        version: V1,
-        doc: "Repository content region handle.",
-        functions: REPOSITORY_REGION_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.repository"],
-        capabilities: &[],
-    },
-    // Phase 17 region modules.
-    ApiModule {
-        name: "ui.status_bar",
-        table: "leviathan.ui.status_bar",
-        version: V1,
-        doc: "Status bar chrome region handle (left / center / right).",
-        functions: STATUS_BAR_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.status_bar"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.repository.graph",
-        table: "leviathan.ui.repository.graph",
-        version: V1,
-        doc: "Repository graph region handle (rows, decorations, context menu).",
-        functions: REPOSITORY_GRAPH_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.repository.graph"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.repository.details",
-        table: "leviathan.ui.repository.details",
-        version: V1,
-        doc: "Repository details region handle (commit header, files).",
-        functions: REPOSITORY_DETAILS_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.repository.details"],
-        capabilities: &[],
-    },
-    ApiModule {
-        name: "ui.repository.diff",
-        table: "leviathan.ui.repository.diff",
-        version: V1,
-        doc: "Repository diff region handle (toolbar, hunks, lines, context menu).",
-        functions: REPOSITORY_DIFF_FUNCTIONS,
-        events: &[],
-        types: &["leviathan.ui.repository.diff"],
         capabilities: &[],
     },
     ApiModule {
@@ -2444,7 +2554,7 @@ pub const API_MODULES: &[ApiModule] = &[
         version: V1,
         doc: "Read-only tab snapshot plus queued tab mutation APIs.",
         functions: TAB_REGISTRY_FUNCTIONS,
-        events: &["TabAdded", "TabRemoved", "TabReordered", "TabSwitched"],
+        events: &["TabAdded", "TabRemoved", "TabMoved", "TabSelected"],
         types: &["leviathan.tab_registry", "LeviathanTab"],
         capabilities: &[],
     },
@@ -2837,7 +2947,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired when a repository fetch starts.",
         payload_type: "table",
         payload_fields: PAYLOAD_FETCH,
-        aliases: &["FetchStart"],
+        aliases: &[],
         is_alias: false,
     },
     ApiEvent {
@@ -2846,7 +2956,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired when a repository fetch finishes (success or failure).",
         payload_type: "table",
         payload_fields: PAYLOAD_FETCH,
-        aliases: &["FetchEnd"],
+        aliases: &[],
         is_alias: false,
     },
     ApiEvent {
@@ -2892,7 +3002,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired after the active tab changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_TAB,
-        aliases: &["TabSwitched"],
+        aliases: &[],
         is_alias: false,
     },
     ApiEvent {
@@ -2901,7 +3011,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired after tabs are reordered.",
         payload_type: "table",
         payload_fields: PAYLOAD_TAB_MOVED,
-        aliases: &["TabReordered"],
+        aliases: &[],
         is_alias: false,
     },
     // ---- App state ----
@@ -2941,47 +3051,6 @@ pub const API_EVENTS: &[ApiEvent] = &[
         aliases: &[],
         is_alias: false,
     },
-    // ---- v1 alias entries ----
-    // These are the legacy v1 names retained for plugins that still
-    // subscribe through the original `leviathan.api.create_autocmd`
-    // shim. The runtime fires them as side-effects of their canonical
-    // event so old listeners keep working unchanged.
-    ApiEvent {
-        name: "FetchStart",
-        since: "1.0",
-        doc: "Compatibility alias of `FetchStarted`.",
-        payload_type: "table",
-        payload_fields: PAYLOAD_FETCH,
-        aliases: &[],
-        is_alias: true,
-    },
-    ApiEvent {
-        name: "FetchEnd",
-        since: "1.0",
-        doc: "Compatibility alias of `FetchFinished`.",
-        payload_type: "table",
-        payload_fields: PAYLOAD_FETCH,
-        aliases: &[],
-        is_alias: true,
-    },
-    ApiEvent {
-        name: "TabReordered",
-        since: "1.0",
-        doc: "Compatibility alias of `TabMoved`.",
-        payload_type: "table",
-        payload_fields: PAYLOAD_TAB_MOVED,
-        aliases: &[],
-        is_alias: true,
-    },
-    ApiEvent {
-        name: "TabSwitched",
-        since: "1.0",
-        doc: "Compatibility alias of `TabSelected`.",
-        payload_type: "table",
-        payload_fields: PAYLOAD_TAB,
-        aliases: &[],
-        is_alias: true,
-    },
 ];
 
 /// Look up an event descriptor by name. Includes alias entries.
@@ -2998,7 +3067,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "fs:read",
         since: "1.0",
-        doc: "Compatibility alias for fs:read:plugin.",
+        doc: "Alias for fs:read:plugin.",
     },
     ApiCapability {
         name: "fs:read:plugin",
@@ -3083,7 +3152,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "clipboard",
         since: "1.0",
-        doc: "Compatibility alias for clipboard read+write.",
+        doc: "Alias for clipboard read+write.",
     },
     ApiCapability {
         name: "clipboard:read",
@@ -3118,7 +3187,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "repo:read",
         since: "1.0",
-        doc: "Observe the active repository projection (refs, head, status). Implicit for repository slot widgets in v1.",
+        doc: "Observe the active repository projection (refs, head, status).",
     },
     ApiCapability {
         name: "git:read:status",
@@ -3198,7 +3267,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "ui:region:<region>",
         since: "1.0",
-        doc: "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`). Backwards-compat: omitting it leaves the legacy unrestricted v1 access in place.",
+        doc: "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`).",
     },
     ApiCapability {
         name: "services:provide:<service@version>",
@@ -4053,27 +4122,6 @@ pub const API_TYPES: &[ApiType] = &[
         methods: &[],
     },
     ApiType {
-        name: "leviathan.ui.main_bar",
-        since: "1.0",
-        doc: "Main bar region handle.",
-        fields: &[],
-        methods: &[],
-    },
-    ApiType {
-        name: "leviathan.ui.tab_bar",
-        since: "1.0",
-        doc: "Tab bar region handle.",
-        fields: &[],
-        methods: &[],
-    },
-    ApiType {
-        name: "leviathan.ui.repository",
-        since: "1.0",
-        doc: "Repository content region handle.",
-        fields: &[],
-        methods: &[],
-    },
-    ApiType {
         name: "leviathan.fs",
         since: "1.0",
         doc: "Filesystem namespace.",
@@ -4439,7 +4487,7 @@ pub fn has_feature(feature: &str) -> bool {
     let Ok(major) = version.parse::<u32>() else {
         return false;
     };
-    if major != HOST_API_VERSION.major && major != 1 {
+    if major != HOST_API_VERSION.major {
         return false;
     }
     let name = name.strip_prefix("leviathan.").unwrap_or(name);
@@ -4521,14 +4569,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_feature_accepts_v1_compat_and_current_v2_functions() {
+    fn has_feature_accepts_current_v1_functions() {
         assert!(has_feature("fs.read_file@1"));
-        assert!(has_feature("fs.read_file@2"));
         assert!(has_feature("leviathan.fs.read_file@1"));
         assert!(has_feature("api.describe@1"));
-        assert!(has_feature("ui.main_bar.add@1"));
-        assert!(has_feature("ui.regions.add_slot@2"));
-        assert!(!has_feature("ui.regions.add_slot@1"));
+        assert!(has_feature("ui.regions.add_slot@1"));
+        assert!(!has_feature("ui.regions.add_slot@2"));
         assert!(has_feature("log@1"));
     }
 
@@ -4541,15 +4587,12 @@ mod tests {
     }
 
     #[test]
-    fn every_region_has_compat_module_descriptors() {
+    fn regions_are_described_without_direct_handle_modules() {
         let modules = module_names();
-        for region in REGIONS.iter() {
-            let expected = format!("ui.{}", region.name);
-            assert!(
-                modules.iter().any(|module| *module == expected),
-                "missing module descriptor for region {expected}"
-            );
-        }
+        let removed_module = ["ui", "main_bar"].join(".");
+        assert!(!modules.iter().any(|module| *module == removed_module));
+        let regions = describe_regions();
+        assert!(regions.iter().any(|region| region.name == "main_bar"));
     }
 
     #[test]

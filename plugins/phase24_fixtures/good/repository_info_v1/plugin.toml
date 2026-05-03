@@ -1,0 +1,8 @@
+id = "repository_info_v1"
+name = "Repository Info v1"
+version = "0.1.0"
+api_version = "1.0"
+description = "Phase 24 fixture replacing the built-in repo info slot with a dynamic AST."
+
+[runtime]
+strict_globals = false

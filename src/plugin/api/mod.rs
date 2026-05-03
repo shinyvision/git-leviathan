@@ -1,10 +1,10 @@
 //! Lua-facing API surface exposed under the `leviathan.*` global.
 //!
 //! One submodule per namespace (SOLID single-responsibility):
-//! - `ui` — main-bar buttons, screen registration
+//! - `ui` — descriptor-backed regions, screen registration
 //! - `fs` — filesystem operations
 //! - `env` — process environment variables
-//! - `event` — `leviathan.api.create_autocmd` event subscription
+//! - `event` — `leviathan.autocmd.*` event subscription
 //!
 //! `install_all` mounts them on a fresh `leviathan` table. Callable state
 //! that must survive `init.lua` exec (button/screen handlers, autocmd
@@ -19,9 +19,7 @@ use git_leviathan_plugin_api::descriptor::api as api_descriptor;
 use mlua::{Lua, LuaSerdeExt, RegistryKey};
 
 use crate::plugin::capabilities::CapabilityGuard;
-use crate::plugin::diagnostic::{
-    DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
-};
+use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId, ResourceLedger};
 
@@ -129,11 +127,10 @@ pub enum RawSlotOp {
     },
 }
 
-/// One autocmd subscription captured during init by either
-/// `leviathan.api.create_autocmd` (compatibility shim) or
-/// `leviathan.autocmd.create` (Phase 7). One per (event, callback)
-/// pair — a single create call with an array of events emits one
-/// `RawAutocmd` per event so dispatch stays a plain index lookup.
+/// One autocmd subscription captured during init by
+/// `leviathan.autocmd.create`. One per (event, callback) pair — a
+/// single create call with an array of events emits one `RawAutocmd`
+/// per event so dispatch stays a plain index lookup.
 ///
 /// `local_group` is a plugin-local group id minted by
 /// `leviathan.autocmd.group`; the host resolves it to a stable
@@ -189,12 +186,11 @@ pub struct RawAutocmdClear {
 #[derive(Default)]
 pub struct BuildState {
     pub screens: HashMap<String, ScreenDef>,
-    /// Ordered hook operations from `leviathan.ui.regions.*` (and the
-    /// back-compat `leviathan.ui.main_bar.{add,remove,replace}` shim).
+    /// Ordered hook operations from `leviathan.ui.regions.*`.
     pub slot_ops: Vec<RawSlotOp>,
-    /// Autocmd subscriptions from either `leviathan.api.create_autocmd`
-    /// or `leviathan.autocmd.create`. Each entry's `options.group`
-    /// holds the plugin-local group id (resolved to a host-wide
+    /// Autocmd subscriptions from `leviathan.autocmd.create`. Each
+    /// entry's `options.group` holds the plugin-local group id
+    /// (resolved to a host-wide
     /// [`crate::plugin::events::GroupId`] at install time).
     pub autocmds: Vec<RawAutocmd>,
     /// `leviathan.autocmd.group(name, opts)` calls in declaration
@@ -211,9 +207,8 @@ pub struct BuildState {
     /// order at install time.
     pub next_autocmd_sequence: u64,
     /// Phase 8 typed user-command registrations from
-    /// `leviathan.command.create` and the v1 shim
-    /// `leviathan.api.create_user_command`. The host drains this list
-    /// after init.lua and installs each entry into the unified
+    /// `leviathan.command.create`. The host drains this list after
+    /// init.lua and installs each entry into the unified
     /// `CommandRegistry`.
     pub commands: Vec<crate::plugin::commands::RawCommand>,
     /// Phase 9 keymap `set` rows captured from `leviathan.keymap.set`.
@@ -228,31 +223,6 @@ pub struct BuildState {
     /// `del` op so the host can replay them in source order at install
     /// time and so the resolver's per-plugin tie-break is stable.
     pub next_keymap_sequence: u64,
-}
-
-pub fn record_deprecation(
-    diagnostics: &DiagnosticStore,
-    plugin_id: &PluginId,
-    generation_id: GenerationId,
-    api_name: &'static str,
-    replacement: &'static str,
-) {
-    diagnostics.record(
-        PluginDiagnostic::new(
-            plugin_id.clone(),
-            DiagnosticSeverity::Warning,
-            "api.deprecated",
-            format!("`{api_name}` is deprecated; use `{replacement}`"),
-        )
-        .with_generation(generation_id)
-        .with_source(PluginSourceSpan::ApiFunction {
-            name: api_name.to_string(),
-        })
-        .with_context(serde_json::json!({
-            "api": api_name,
-            "replacement": replacement,
-        })),
-    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -274,7 +244,7 @@ pub fn install_all(
     async_ctx: AsyncRuntimeContext,
     plugin_id: PluginId,
     generation_id: GenerationId,
-    diagnostics: DiagnosticStore,
+    _diagnostics: DiagnosticStore,
     extension_registry: crate::plugin::extensions::ExtensionRegistry,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
@@ -288,28 +258,15 @@ pub fn install_all(
             lua_inner.to_value(&value)
         })?,
     )?;
-    event::install(
-        lua,
-        Rc::clone(&build),
-        ledger.clone(),
-        &api_tbl,
-        &leviathan,
-        diagnostics.clone(),
-        plugin_id.clone(),
-        generation_id,
-    )?;
+    event::install(lua, Rc::clone(&build), ledger.clone(), &leviathan)?;
     async_runtime::install(lua, Rc::clone(&deferred), ledger.clone(), &api_tbl)?;
     command::install(
         lua,
         Rc::clone(&user_commands),
         Rc::clone(&build),
         ledger.clone(),
-        &api_tbl,
         &leviathan,
         command_dispatch,
-        diagnostics.clone(),
-        plugin_id.clone(),
-        generation_id,
     )?;
     leviathan.set("api", api_tbl)?;
 
@@ -318,15 +275,7 @@ pub fn install_all(
         lua.create_function(|_, feature: String| Ok(api_descriptor::has_feature(&feature)))?,
     )?;
 
-    ui::install(
-        lua,
-        Rc::clone(&build),
-        ledger.clone(),
-        &leviathan,
-        diagnostics,
-        plugin_id.clone(),
-        generation_id,
-    )?;
+    ui::install(lua, Rc::clone(&build), ledger.clone(), &leviathan)?;
     {
         let ui_table: mlua::Table = leviathan.get("ui")?;
         ui_ext::install(
@@ -591,8 +540,8 @@ mod tests {
             .load(r#"return leviathan.has("fs.read_file@1")"#)
             .eval()
             .unwrap();
-        let has_regions_v2: bool = lua
-            .load(r#"return leviathan.has("ui.regions.add_slot@2")"#)
+        let has_regions_v1: bool = lua
+            .load(r#"return leviathan.has("ui.regions.add_slot@1")"#)
             .eval()
             .unwrap();
         let has_unknown: bool = lua
@@ -605,7 +554,7 @@ mod tests {
             .unwrap();
 
         assert!(has_read_file);
-        assert!(has_regions_v2);
+        assert!(has_regions_v1);
         assert!(!has_unknown);
         assert_eq!(module_count, api_descriptor::API_MODULES.len());
     }

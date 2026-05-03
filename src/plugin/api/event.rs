@@ -1,5 +1,4 @@
-//! `leviathan.api.create_autocmd` (legacy) and `leviathan.autocmd.*`
-//! (Phase 7) — plugin-side typed-event subscription.
+//! `leviathan.autocmd.*` plugin-side typed-event subscription.
 //!
 //! Phase 7 introduced typed event descriptors (see
 //! [`git_leviathan_plugin_api::descriptor::api::API_EVENTS`]) and the
@@ -19,10 +18,6 @@
 //! })
 //! ```
 //!
-//! The legacy shim `leviathan.api.create_autocmd({ "FetchStart" }, …)`
-//! still works and routes through the same dispatch funnel — Phase 7
-//! is purely additive on the v1 surface.
-//!
 //! ## ELM discipline
 //!
 //! Callbacks mutate Lua-side plugin state. After every fire the host
@@ -35,95 +30,23 @@ use std::rc::Rc;
 
 use mlua::{Function, Lua, Table, Value as LuaValue};
 
-use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::events::AutocmdOptions;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
-use super::{record_deprecation, BuildState, RawAutocmd, RawAutocmdClear, RawAutocmdGroup};
+use super::{BuildState, RawAutocmd, RawAutocmdClear, RawAutocmdGroup};
 
 pub fn install(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
-    api: &Table,
     leviathan: &Table,
-    diagnostics: DiagnosticStore,
-    plugin_id: crate::plugin::resources::PluginId,
-    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
-    install_legacy_create_autocmd(
-        lua,
-        Rc::clone(&build),
-        ledger.clone(),
-        api,
-        diagnostics,
-        plugin_id,
-        generation_id,
-    )?;
-
     let autocmd_tbl = lua.create_table()?;
     install_autocmd_group(lua, Rc::clone(&build), &autocmd_tbl)?;
     install_autocmd_create(lua, Rc::clone(&build), ledger.clone(), &autocmd_tbl)?;
     install_autocmd_clear(lua, Rc::clone(&build), &autocmd_tbl)?;
 
     leviathan.set("autocmd", autocmd_tbl)?;
-    Ok(())
-}
-
-fn install_legacy_create_autocmd(
-    lua: &Lua,
-    build: Rc<RefCell<BuildState>>,
-    ledger: ResourceLedger,
-    api: &Table,
-    diagnostics: DiagnosticStore,
-    plugin_id: crate::plugin::resources::PluginId,
-    generation_id: crate::plugin::resources::GenerationId,
-) -> mlua::Result<()> {
-    api.set(
-        "create_autocmd",
-        lua.create_function(move |lua_inner, (events, opts): (Table, Table)| {
-            record_deprecation(
-                &diagnostics,
-                &plugin_id,
-                generation_id,
-                "leviathan.api.create_autocmd",
-                "leviathan.autocmd.create",
-            );
-            let callback: Function = opts.get("callback")?;
-            let source = ResourceLedger::source_location(lua_inner);
-            // Decode options once; every event in the events array
-            // shares the same options struct (cloning the few small
-            // fields is cheap; the registry key is per-event).
-            let opts_snapshot = decode_options(lua_inner, &opts, &build)?;
-            for ev in events.sequence_values::<String>() {
-                let ev = ev?;
-                let key = lua_inner.create_registry_value(callback.clone())?;
-                ledger.record(PluginResourceKind::Autocmd, ev.clone(), source.clone());
-                ledger.record(
-                    PluginResourceKind::LuaRegistryKey,
-                    format!("autocmd:{ev}"),
-                    source.clone(),
-                );
-                let sequence = {
-                    let mut state = build.borrow_mut();
-                    state.next_autocmd_sequence += 1;
-                    state.next_autocmd_sequence
-                };
-                build.borrow_mut().autocmds.push(RawAutocmd {
-                    event: ev,
-                    callback: key,
-                    local_group: opts_snapshot.local_group,
-                    once: opts_snapshot.once,
-                    pattern: opts_snapshot.pattern.clone(),
-                    debounce_ms: opts_snapshot.debounce_ms,
-                    priority: opts_snapshot.priority,
-                    sequence,
-                    source_location: source.clone(),
-                });
-            }
-            Ok(())
-        })?,
-    )?;
     Ok(())
 }
 

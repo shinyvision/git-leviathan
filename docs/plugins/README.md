@@ -14,7 +14,7 @@ Create `plugins/hello_world/plugin.toml`:
 id = "hello_world"
 name = "Hello World"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 ```
 
 And `plugins/hello_world/init.lua`:

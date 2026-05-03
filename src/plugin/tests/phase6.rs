@@ -27,7 +27,7 @@ api_version = "1.0"
 "#;
 
 const NOOP_INIT: &str = r#"
-leviathan.ui.main_bar.add{
+leviathan.ui.regions.add_slot{ region = "main_bar",
     id = "p6.slot",
     section = "left",
     priority = 10,
@@ -62,15 +62,15 @@ fn staged_reload_succeeds_drops_old_generation_resources() {
         "p6",
         BASE_MANIFEST,
         r#"
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "p6.slot",
             section = "left",
             priority = 10,
-            widget = { kind = "text", value = "v2" },
+            widget = { kind = "text", value = "updated" },
         }
         "#,
     )
-    .expect("reload v2");
+    .expect("reload the updated plugin");
 
     let snap = host.introspect();
     let gens: std::collections::BTreeSet<u64> = snap
@@ -230,7 +230,7 @@ fn staged_reload_failed_widget_validation_keeps_old_generation() {
         "p6",
         BASE_MANIFEST,
         r#"
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "p6.dyn",
             section = "left",
             priority = 10,
@@ -492,7 +492,7 @@ fn staged_reload_history_capped_per_plugin() {
     for i in 0..5 {
         let init = format!(
             r#"
-            leviathan.ui.main_bar.add{{
+            leviathan.ui.regions.add_slot{{ region = "main_bar",
                 id = "p6.slot",
                 section = "left",
                 priority = 10,
@@ -524,7 +524,7 @@ strict_globals = true
     let mut host = MockHost::new();
     host.load_inline_strict("strict", strict_manifest, "-- v1")
         .expect("v1 loads");
-    // v2 tries to write a brand-new global; staging exec must fail.
+    // the staged plugin tries to write a brand-new global; staging exec must fail.
     let r = host.reload_with_str(
         "strict",
         strict_manifest,
@@ -573,7 +573,7 @@ api_version = "1.0"
 leviathan.ui.register_screen{
     id = "main",
     init = function() return { } end,
-    view = function() return { kind = "text", value = "v2" } end,
+    view = function() return { kind = "text", value = "updated" } end,
     update = function(s) return s end,
 }
 "#,
@@ -620,7 +620,7 @@ api_version = "1.0"
 leviathan.ui.register_screen{
     id = "different",
     init = function() return { } end,
-    view = function() return { kind = "text", value = "v2" } end,
+    view = function() return { kind = "text", value = "updated" } end,
     update = function(s) return s end,
 }
 "#,

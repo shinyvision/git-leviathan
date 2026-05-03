@@ -136,7 +136,7 @@ impl App {
             }
             AppMessage::FetchCompleted { tab_id, result } => {
                 self.fetch.on_completed();
-                self.plugin_host.fire_event("FetchEnd");
+                self.plugin_host.fire_event("FetchFinished");
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
                     return screen.update(RepositoryMessage::FetchFinished(result));
                 }

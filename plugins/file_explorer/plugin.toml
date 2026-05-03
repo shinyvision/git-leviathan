@@ -1,5 +1,5 @@
 id = "file_explorer"
 name = "File Explorer"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 capabilities = ["fs:read:any", "fs:write:any"]

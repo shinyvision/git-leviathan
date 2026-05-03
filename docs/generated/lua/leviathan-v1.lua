@@ -23,15 +23,6 @@
 ---UI namespace.
 ---@class leviathan.ui
 
----Main bar region handle.
----@class leviathan.ui.main_bar
-
----Tab bar region handle.
----@class leviathan.ui.tab_bar
-
----Repository content region handle.
----@class leviathan.ui.repository
-
 ---Filesystem namespace.
 ---@class leviathan.fs
 
@@ -295,11 +286,7 @@ leviathan.autocmd = leviathan.autocmd or {}
 
 leviathan.ui = leviathan.ui or {}
 
-leviathan.ui.main_bar = leviathan.ui.main_bar or {}
-
-leviathan.ui.tab_bar = leviathan.ui.tab_bar or {}
-
-leviathan.ui.repository = leviathan.ui.repository or {}
+leviathan.ui.regions = leviathan.ui.regions or {}
 
 leviathan.fs = leviathan.fs or {}
 
@@ -344,11 +331,6 @@ function leviathan.schedule(callback) end
 ---@return table Host API descriptor.
 function leviathan.api.describe() end
 
----Subscribe to host events. Callback fires once per event firing.
----@param events string[] List of event names to subscribe to.
----@param opts LeviathanAutocmdOpts Options table containing `callback`.
-function leviathan.api.create_autocmd(events, opts) end
-
 ---Run a Lua callback on the next plugin host tick.
 ---@param callback fun() Callback to enqueue.
 function leviathan.api.schedule(callback) end
@@ -357,11 +339,6 @@ function leviathan.api.schedule(callback) end
 ---@param ms integer Delay in milliseconds.
 ---@param callback fun() Callback to enqueue.
 function leviathan.api.defer_fn(ms, callback) end
-
----Register a named coroutine-driven plugin command.
----@param name string Command name.
----@param callback fun() Command callback.
-function leviathan.api.create_user_command(name, callback) end
 
 ---Register a typed user command in the host registry.
 ---@param name string Command identifier; unique per plugin.
@@ -413,53 +390,40 @@ function leviathan.autocmd.clear(group) end
 ---@return string[] Region names in descriptor order.
 function leviathan.ui.list_regions() end
 
----Look up a region handle by descriptor name.
----@param name string Region name.
----@return table Region handle with add/remove/replace.
-function leviathan.ui.region(name) end
-
 ---Register a plugin screen with init/view/update lifecycle callbacks.
 ---@param spec LeviathanScreenSpec Screen descriptor.
 function leviathan.ui.register_screen(spec) end
 
----Add a slot to the main bar region.
----@param spec LeviathanSlotSpec Slot descriptor.
-function leviathan.ui.main_bar.add(spec) end
+---Register an overlay widget the host renders above the active screen.
+---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority).
+function leviathan.ui.overlay(spec) end
 
----Remove a slot from the main bar region.
----@param target LeviathanSlotTarget Slot address and id.
-function leviathan.ui.main_bar.remove(target) end
+---Contribute a context-menu item at an extension point.
+---@param region string Extension point address (e.g. "repository.diff.context_menu").
+---@param item LeviathanContextMenuItem Menu item (id, label, command, priority, condition_capability).
+function leviathan.ui.context_menu(region, item) end
 
----Replace a slot in the main bar region.
----@param target LeviathanSlotTarget Existing slot address and id.
+---Attach a decoration to a commit row (badge / icon / marker / lane).
+---@param commit_hash string Commit row hash the decoration applies to.
+---@param decoration LeviathanGraphDecoration Decoration AST: badge / icon / marker / lane.
+function leviathan.ui.graph_decoration(commit_hash, decoration) end
+
+---Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).
+---@param decoration LeviathanDiffDecoration Decoration AST: line_hint / hunk_badge / line_gutter.
+function leviathan.ui.diff_decoration(decoration) end
+
+---Add a slot to any descriptor-backed UI region.
+---@param spec LeviathanSlotSpec Slot descriptor including region, section/pane, id, priority, and widget.
+function leviathan.ui.regions.add_slot(spec) end
+
+---Remove a slot from any descriptor-backed UI region.
+---@param target LeviathanSlotTarget Slot address including region, section/pane, and id.
+function leviathan.ui.regions.remove_slot(target) end
+
+---Replace a slot in any descriptor-backed UI region.
+---@param target LeviathanSlotTarget Existing slot address including region and id.
 ---@param spec LeviathanSlotSpec Replacement slot descriptor.
-function leviathan.ui.main_bar.replace(target, spec) end
-
----Add a slot to the tab bar region.
----@param spec LeviathanSlotSpec Slot descriptor.
-function leviathan.ui.tab_bar.add(spec) end
-
----Remove a slot from the tab bar region.
----@param target LeviathanSlotTarget Slot address and id.
-function leviathan.ui.tab_bar.remove(target) end
-
----Replace a slot in the tab bar region.
----@param target LeviathanSlotTarget Existing slot address and id.
----@param spec LeviathanSlotSpec Replacement slot descriptor.
-function leviathan.ui.tab_bar.replace(target, spec) end
-
----Add a slot to the repository content region.
----@param spec LeviathanSlotSpec Slot descriptor.
-function leviathan.ui.repository.add(spec) end
-
----Remove a slot from the repository content region.
----@param target LeviathanSlotTarget Slot address and id.
-function leviathan.ui.repository.remove(target) end
-
----Replace a slot in the repository content region.
----@param target LeviathanSlotTarget Existing slot address and id.
----@param spec LeviathanSlotSpec Replacement slot descriptor.
-function leviathan.ui.repository.replace(target, spec) end
+function leviathan.ui.regions.replace_slot(target, spec) end
 
 ---Read UTF-8 file contents. Returns content or (nil, err).
 ---@param path string Path string.
@@ -808,14 +772,16 @@ function leviathan.tab_registry.select(path) end
 function leviathan.tab_registry.reorder(paths) end
 
 ---Publish a declared inter-plugin service.
----@param name_at_version string Service declaration such as `greeter@1`.
+---@param name_or_name_at_version string Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
+---@param version integer Integer service version when the first argument is a bare service name.
 ---@param methods table<string,function> Service method table.
-function leviathan.services.register(name_at_version, methods) end
+function leviathan.services.register(name_or_name_at_version, version, methods) end
 
 ---Look up a declared inter-plugin service proxy.
----@param name_at_version string Service declaration such as `greeter@1`.
----@return table Service proxy.
-function leviathan.services.get(name_at_version) end
+---@param name_or_name_at_version string Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
+---@param version integer Integer service version when the first argument is a bare service name.
+---@return table|nil Service proxy, or nil for declared optional consumers when the provider is absent.
+function leviathan.services.get(name_or_name_at_version, version) end
 
 ---Open or create a versioned per-plugin key-value store.
 ---@param name string Plugin-local store name.

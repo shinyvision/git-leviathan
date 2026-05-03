@@ -1,133 +1,82 @@
-//! Phase 23 compatibility and v2 migration tests.
+//! Phase 23 v1 API boundary tests.
 
-use crate::plugin::diagnostic::DiagnosticSeverity;
 use crate::plugin::tests::harness::MockHost;
 
 #[test]
-fn v1_plugin_still_loads_and_warns_on_legacy_apis() {
+fn v1_plugin_uses_descriptor_region_api() {
     let mut host = MockHost::new();
     host.load_inline(
-        "v1_compat",
+        "v1_regions",
         r#"
-id = "v1_compat"
-name = "v1 compat"
+id = "v1_regions"
+name = "v1 regions"
 version = "0.1.0"
 api_version = "1.0"
 "#,
         r#"
-leviathan.api.create_user_command("v1_compat.hello", function() end)
-leviathan.api.create_autocmd({ "FetchStart" }, { callback = function() end })
-leviathan.ui.main_bar.add{
-    id = "v1_compat.slot",
-    section = "left",
-    priority = 10,
+assert(leviathan.has("ui.regions.add_slot@1"))
+assert(leviathan.has("autocmd.create@1"))
+assert(not leviathan.has("ui.regions.add_slot@2"))
+leviathan.autocmd.create("FetchStarted", { callback = function() end })
+leviathan.ui.regions.add_slot{
+    region = "main_bar",
+    id = "v1_regions.slot",
+    section = "right",
+    priority = 20,
     widget = { kind = "text", value = "v1" },
 }
 "#,
     )
     .expect("v1 plugin loads");
 
-    assert!(host.has_slot("v1_compat", "main_bar", "left", "v1_compat.slot"));
-    let deprecations = host.diagnostics().by_code("api.deprecated");
-    assert!(deprecations
-        .iter()
-        .any(|d| d.plugin_id.as_str() == "v1_compat"
-            && d.severity == DiagnosticSeverity::Warning
-            && d.message.contains("leviathan.api.create_user_command")));
-    assert!(deprecations
-        .iter()
-        .any(|d| d.plugin_id.as_str() == "v1_compat"
-            && d.message.contains("leviathan.api.create_autocmd")));
-    assert!(deprecations
-        .iter()
-        .any(|d| d.plugin_id.as_str() == "v1_compat"
-            && d.message.contains("leviathan.ui.main_bar.add")));
+    assert!(host.has_slot("v1_regions", "main_bar", "right", "v1_regions.slot"));
 }
 
 #[test]
-fn v2_plugin_uses_descriptor_region_api_without_deprecation() {
-    let mut host = MockHost::new();
-    host.load_inline(
-        "v2_regions",
-        r#"
-id = "v2_regions"
-name = "v2 regions"
-version = "0.1.0"
-api_version = "2.0"
-"#,
-        r#"
-assert(leviathan.has("ui.regions.add_slot@2"))
-assert(leviathan.has("autocmd.create@2"))
-leviathan.autocmd.create("FetchStart", { callback = function() end })
-leviathan.ui.regions.add_slot{
-    region = "main_bar",
-    id = "v2_regions.slot",
-    section = "right",
-    priority = 20,
-    widget = { kind = "text", value = "v2" },
-}
-"#,
-    )
-    .expect("v2 plugin loads");
-
-    assert!(host.has_slot("v2_regions", "main_bar", "right", "v2_regions.slot"));
-    assert!(
-        host.diagnostics().by_code("api.deprecated").is_empty(),
-        "v2 descriptor APIs should not emit deprecations"
-    );
-}
-
-#[test]
-fn mixed_v1_and_v2_plugins_coexist() {
+fn multiple_v1_plugins_coexist() {
     let mut host = MockHost::new();
     host.load_inline_set(&[
         (
-            "mixed_v1",
+            "left",
             r#"
-id = "mixed_v1"
-name = "mixed v1"
+id = "left"
+name = "left"
 version = "0.1.0"
 api_version = "1.0"
 "#,
             r#"
-leviathan.ui.main_bar.add{
-    id = "mixed.v1",
+leviathan.ui.regions.add_slot{
+    region = "main_bar",
+    id = "mixed.left",
     section = "left",
     priority = 1,
-    widget = { kind = "text", value = "v1" },
+    widget = { kind = "text", value = "left" },
 }
 "#,
         ),
         (
-            "mixed_v2",
+            "right",
             r#"
-id = "mixed_v2"
-name = "mixed v2"
+id = "right"
+name = "right"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 "#,
             r#"
 leviathan.ui.regions.add_slot{
     region = "main_bar",
-    id = "mixed.v2",
+    id = "mixed.right",
     section = "right",
     priority = 2,
-    widget = { kind = "text", value = "v2" },
+    widget = { kind = "text", value = "right" },
 }
 "#,
         ),
     ])
     .expect("fixtures written");
 
-    assert!(host.has_slot("mixed_v1", "main_bar", "left", "mixed.v1"));
-    assert!(host.has_slot("mixed_v2", "main_bar", "right", "mixed.v2"));
+    assert!(host.has_slot("left", "main_bar", "left", "mixed.left"));
+    assert!(host.has_slot("right", "main_bar", "right", "mixed.right"));
     let snap = host.introspect();
-    assert!(snap
-        .plugins
-        .iter()
-        .any(|p| p.id == "mixed_v1" && p.api_version == "1.0"));
-    assert!(snap
-        .plugins
-        .iter()
-        .any(|p| p.id == "mixed_v2" && p.api_version == "2.0"));
+    assert!(snap.plugins.iter().all(|p| p.api_version == "1.0"));
 }

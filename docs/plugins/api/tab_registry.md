@@ -30,9 +30,9 @@ Open tab descriptor.
 - `TabRemoved` (table) - Fired after a tab is removed.
   - `tab_id` (`integer`; required) - Tab id.
   - `path` (`string`; optional) - Repository path the tab is bound to, when known.
-- `TabReordered` (table) - Compatibility alias of `TabMoved`.
+- `TabMoved` (table) - Fired after tabs are reordered.
   - `count` (`integer`; required) - Number of open tabs after the move.
-- `TabSwitched` (table) - Compatibility alias of `TabSelected`.
+- `TabSelected` (table) - Fired after the active tab changes.
   - `tab_id` (`integer`; required) - Tab id.
   - `path` (`string`; optional) - Repository path the tab is bound to, when known.
 

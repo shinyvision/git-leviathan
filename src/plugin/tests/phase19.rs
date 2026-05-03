@@ -174,7 +174,7 @@ fn inspect_ui_tree_returns_widget_ast_inventory() {
         "p",
         SMOKE_MANIFEST,
         r#"
-            leviathan.ui.main_bar.add{
+            leviathan.ui.regions.add_slot{ region = "main_bar",
                 id = "p.slot",
                 section = "left",
                 priority = 5,
@@ -415,7 +415,7 @@ capabilities = ["async:spawn", "timer:create", "fs:watch:plugin", "ui:overlay", 
 "#;
     let init = r#"
         -- Slot
-        leviathan.ui.main_bar.add{
+        leviathan.ui.regions.add_slot{ region = "main_bar",
             id = "ks.slot",
             section = "left",
             priority = 5,

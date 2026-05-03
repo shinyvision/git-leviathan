@@ -478,7 +478,7 @@ impl Template {
             _ => String::new(),
         };
         format!(
-            "id = \"{id}\"\nname = \"{}\"\nversion = \"0.1.0\"\napi_version = \"2.0\"\ndescription = \"Generated Git Leviathan plugin.\"\n{capabilities}{services}{activation}",
+            "id = \"{id}\"\nname = \"{}\"\nversion = \"0.1.0\"\napi_version = \"1.0\"\ndescription = \"Generated Git Leviathan plugin.\"\n{capabilities}{services}{activation}",
             title_case_id(id)
         )
     }
@@ -2560,7 +2560,7 @@ mod tests {
         fs::write(
             dir.join("plugin.toml"),
             format!(
-                "id = \"{id}\"\nname = \"{id}\"\nversion = \"{version}\"\napi_version = \"2.0\"\n{caps}{deps}"
+                "id = \"{id}\"\nname = \"{id}\"\nversion = \"{version}\"\napi_version = \"1.0\"\n{caps}{deps}"
             ),
         )
         .expect("manifest");

@@ -31,7 +31,7 @@ impl App {
             let was_fetching = self.fetch.is_fetching();
             self.fetch.cancel();
             if was_fetching {
-                self.plugin_host.fire_event("FetchEnd");
+                self.plugin_host.fire_event("FetchFinished");
             }
             let screen_task = self.tabs.activate_tab(target);
             let debounce_task = self

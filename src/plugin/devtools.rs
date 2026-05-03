@@ -146,9 +146,7 @@ pub struct AutocmdSummary {
     /// Canonical event name resolved from the descriptor table.
     pub event: String,
     /// Name the plugin actually subscribed under. Equal to `event`
-    /// for plugins that used the canonical name; equal to a v1
-    /// alias (e.g. `FetchStart`) for plugins still on the legacy
-    /// shim.
+    /// for canonical descriptor-backed subscriptions.
     pub subscribed_event: String,
     pub pattern: Option<String>,
     pub debounce_ms: u64,

@@ -2,9 +2,8 @@
 //!
 //! Every fire of a host event flows through [`EventBus::dispatch`].
 //! That includes:
-//! - The legacy `PluginHost::fire_event(name)` shim used by Phase 1
-//!   call sites that haven't been upgraded yet (it now constructs an
-//!   empty payload and routes through the funnel).
+//! - `PluginHost::fire_event(name)`, which constructs an empty payload
+//!   and routes through the funnel.
 //! - The new `PluginHost::fire_event_typed(name, payload)` API that
 //!   the app uses to fire fully-typed Phase 7 events.
 //! - The test-only `PluginHost::dispatch_test_event(name, payload)`
@@ -13,14 +12,12 @@
 //! Responsibilities owned here (Invariant 1: the host owns every
 //! effect):
 //! - validate event name against the descriptor table;
-//! - resolve aliases (`FetchStart` -> `FetchStarted`);
 //! - check the pattern glob against any string field on the payload;
 //! - apply per-autocmd debounce against the host-owned virtual clock;
 //! - drop `once = true` entries after they fire;
 //! - count consecutive failures per autocmd, disabling at the
 //!   `MAX_CONSECUTIVE_FAILURES` threshold and emitting a structured
 //!   diagnostic;
-//! - fan out to every alias entry so v1 listeners keep working.
 //!
 //! Autocmd entries are owned by `(plugin_id, generation_id)` (Invariant
 //! 2). The resource ledger drives cleanup; on reload swap, the host
@@ -84,12 +81,10 @@ pub struct AutocmdOptions {
 /// key references a Lua function on the plugin's per-generation Lua
 /// state.
 ///
-/// `event` is the **subscribed** name — the exact string the plugin
-/// passed to `leviathan.autocmd.create` / `leviathan.api.create_autocmd`.
-/// It's either a canonical event name or one of the v1 aliases.
-/// `canonical_event` is always the canonical name resolved at
-/// registration time; it drives payload schema validation and the
-/// devtools row's primary event column.
+/// `event` is the exact canonical event name the plugin passed to
+/// `leviathan.autocmd.create`. `canonical_event` mirrors it and drives
+/// payload schema validation and the devtools row's primary event
+/// column.
 pub struct AutocmdEntry {
     pub id: AutocmdId,
     pub plugin_id: String,
@@ -262,8 +257,7 @@ impl EventBus {
     }
 }
 
-/// Resolve an event name (canonical or alias) to its canonical
-/// descriptor and the alias name the caller used (if any).
+/// Resolve a canonical event name to its descriptor.
 ///
 /// Returns `Err(name)` for unknown events; the caller turns that
 /// into an `autocmd.invalid_event` diagnostic at the registration
@@ -274,21 +268,7 @@ pub fn resolve_event(
     let Some(descriptor) = event_descriptor::event_descriptor(name) else {
         return Err(name.to_string());
     };
-    if descriptor.is_alias {
-        // Find the canonical that lists this name as an alias.
-        for canonical in event_descriptor::canonical_events() {
-            if canonical.aliases.iter().any(|a| *a == descriptor.name) {
-                return Ok((canonical, Some(descriptor.name)));
-            }
-        }
-        // No canonical owns this alias — descriptor inconsistency.
-        // Fall back to treating it as canonical so dispatch still
-        // works; the test that asserts every alias has a canonical
-        // owner catches the misconfiguration.
-        Ok((descriptor, None))
-    } else {
-        Ok((descriptor, None))
-    }
+    Ok((descriptor, None))
 }
 
 /// Validate the payload against the canonical event's
@@ -462,15 +442,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_alias_back_to_canonical() {
-        let (canonical, alias) = resolve_event("FetchStart").expect("alias known");
-        assert_eq!(canonical.name, "FetchStarted");
-        assert_eq!(alias, Some("FetchStart"));
-
+    fn resolve_event_accepts_canonical_names_only() {
         let (canonical, alias) = resolve_event("FetchStarted").expect("canonical known");
         assert_eq!(canonical.name, "FetchStarted");
         assert!(alias.is_none());
 
+        assert!(resolve_event("FetchStart").is_err());
         assert!(resolve_event("DefinitelyNotAnEvent").is_err());
     }
 

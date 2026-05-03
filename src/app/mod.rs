@@ -274,10 +274,10 @@ impl App {
             self.plugin_host.fire_event("TabRemoved");
         }
         if change.reordered {
-            self.plugin_host.fire_event("TabReordered");
+            self.plugin_host.fire_event("TabMoved");
         }
         if change.selected_changed {
-            self.plugin_host.fire_event("TabSwitched");
+            self.plugin_host.fire_event("TabSelected");
         }
     }
 

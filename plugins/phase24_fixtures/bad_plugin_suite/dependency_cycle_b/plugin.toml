@@ -1,7 +1,7 @@
 id = "bad_cycle_b"
 name = "Bad Cycle B"
 version = "0.1.0"
-api_version = "2.0"
+api_version = "1.0"
 
 [dependencies]
 bad_cycle_a = ">=0.1.0"

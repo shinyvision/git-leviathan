@@ -157,7 +157,7 @@ struct LoadedPlugin {
     /// Coroutines that yielded mid-resume also live here so subsequent
     /// ticks can resume them.
     deferred: Rc<RefCell<DeferredQueue>>,
-    /// Plugin-registered named commands (`leviathan.api.create_user_command`).
+    /// Plugin-registered named commands (`leviathan.command.create`).
     /// Looked up by `PluginHost::invoke_user_command`.
     user_commands: Rc<RefCell<UserCommands>>,
     /// Health-check callbacks registered via `leviathan.health.register`.
@@ -3379,7 +3379,7 @@ impl PluginHost {
                         )
                         .with_generation(generation_id)
                         .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.ui.regions.add".into(),
+                            name: "leviathan.ui.regions.add_slot".into(),
                         }),
                     );
                 }
@@ -3547,17 +3547,17 @@ impl PluginHost {
 
     /// Apply every collected `main_bar` op to a `MainBarRegistry`.
     pub fn apply_main_bar_slots(&self, registry: &mut MainBarRegistry) {
-        self.apply_region_slots(registry, "main_bar", true, PreparedSlot::into_main_bar);
+        self.apply_region_slots(registry, "main_bar", PreparedSlot::into_main_bar);
     }
 
     /// Apply every collected `repository` op to a `RepoRegionRegistry`.
     pub fn apply_repo_region_slots(&self, registry: &mut RepoRegionRegistry) {
-        self.apply_region_slots(registry, "repository", false, PreparedSlot::into_repo_pane);
+        self.apply_region_slots(registry, "repository", PreparedSlot::into_repo_pane);
     }
 
     /// Apply every collected `tab_bar` op to a `TabBarRegistry`.
     pub fn apply_tab_bar_slots(&self, registry: &mut TabBarRegistry) {
-        self.apply_region_slots(registry, "tab_bar", false, PreparedSlot::into_tab_bar);
+        self.apply_region_slots(registry, "tab_bar", PreparedSlot::into_tab_bar);
     }
 
     /// Phase 17 host-level lookup: every context-menu item registered
@@ -3596,7 +3596,6 @@ impl PluginHost {
         &self,
         registry: &mut SlotRegistry<T>,
         region_name: &str,
-        handle_any_container: bool,
         convert: impl Fn(PreparedSlot) -> T,
     ) {
         for op in &self.slot_ops {
@@ -3620,7 +3619,7 @@ impl PluginHost {
                             )
                             .with_source(
                                 PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.ui.regions.replace".into(),
+                                    name: "leviathan.ui.regions.replace_slot".into(),
                                 },
                             ),
                         );
@@ -3640,26 +3639,7 @@ impl PluginHost {
                             )
                             .with_source(
                                 PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.ui.regions.remove".into(),
-                                },
-                            ),
-                        );
-                    }
-                }
-                PreparedSlotOp::RemoveAnyContainer { region, id }
-                    if handle_any_container && region == region_name =>
-                {
-                    if !registry.remove(id) {
-                        self.diagnostics.record(
-                            PluginDiagnostic::new(
-                                PluginId::from("<unknown>"),
-                                DiagnosticSeverity::Warning,
-                                "schema.slot_remove_missing",
-                                format!("{region_name}.remove(\"{id}\") — no such slot"),
-                            )
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: format!("leviathan.ui.{region_name}.remove"),
+                                    name: "leviathan.ui.regions.remove_slot".into(),
                                 },
                             ),
                         );
@@ -3986,10 +3966,9 @@ struct EntrySnapshot {
 }
 
 /// Build the typed payload table the Lua callback receives. Mirrors
-/// the descriptor's `LeviathanAutocmdEvent` shape: `{ event = "...",
-/// alias = "...", payload = { … } }`. Empty payload tables still
-/// surface as `{}` so the callback signature stays uniform across
-/// every Phase 7 event.
+/// the descriptor's `LeviathanAutocmdEvent` shape. Empty payload
+/// tables still surface as `{}` so the callback signature stays
+/// uniform across every Phase 7 event.
 fn build_payload_table(
     lua: &Lua,
     canonical: &'static event_descriptor::ApiEvent,
@@ -4059,16 +4038,15 @@ fn record_screen_state_resource(
 /// True when this slot op was registered by `plugin_id`. Used by
 /// `reload_plugin` to park / restore plugin-owned host state.
 ///
-/// `Remove` and `RemoveAnyContainer` carry no plugin id; they're
-/// considered "host-owned" and never parked. Practical consequence: a
-/// plugin's own removals against its slots aren't moved on reload, but
-/// since the corresponding `Add` is parked alongside, the resulting
-/// state is consistent.
+/// `Remove` carries no plugin id; it's considered "host-owned" and
+/// never parked. Practical consequence: a plugin's own removals against
+/// its slots aren't moved on reload, but since the corresponding `Add`
+/// is parked alongside, the resulting state is consistent.
 fn op_belongs_to(op: &PreparedSlotOp, plugin_id: &str) -> bool {
     match op {
         PreparedSlotOp::Add(p) => p.plugin_id == plugin_id,
         PreparedSlotOp::Replace { spec, .. } => spec.plugin_id == plugin_id,
-        PreparedSlotOp::Remove { .. } | PreparedSlotOp::RemoveAnyContainer { .. } => false,
+        PreparedSlotOp::Remove { .. } => false,
     }
 }
 
@@ -4091,7 +4069,7 @@ fn op_matches_slot_resource(op: &PreparedSlotOp, plugin_id: &str, handle: &str) 
             spec.plugin_id == plugin_id
                 && prepared_slot_handle(region, &container.key(), id) == handle
         }
-        PreparedSlotOp::Remove { .. } | PreparedSlotOp::RemoveAnyContainer { .. } => false,
+        PreparedSlotOp::Remove { .. } => false,
     }
 }
 
@@ -4119,17 +4097,11 @@ pub(crate) fn prepare_op(
             region,
             container,
             id,
-        } => {
-            if container.is_empty() {
-                Ok(PreparedSlotOp::RemoveAnyContainer { region, id })
-            } else {
-                Ok(PreparedSlotOp::Remove {
-                    region,
-                    container: parse_container(&container),
-                    id,
-                })
-            }
-        }
+        } => Ok(PreparedSlotOp::Remove {
+            region,
+            container: parse_container(&container),
+            id,
+        }),
         RawSlotOp::Replace {
             region,
             container,
@@ -4398,11 +4370,6 @@ impl PluginHost {
                     container: c,
                     id,
                 } if r == region && c.key() == container && id == slot_id => {
-                    return false;
-                }
-                PreparedSlotOp::RemoveAnyContainer { region: r, id }
-                    if r == region && id == slot_id =>
-                {
                     return false;
                 }
                 _ => {}
@@ -4747,9 +4714,8 @@ impl PluginHost {
         }
         // Defensive sweep: remove any straggler slot_ops/autocmds for
         // this plugin id that the ledger walk did not own (e.g. raw
-        // `Remove`/`RemoveAnyContainer` ops, which are host-owned and
-        // not ledger-tracked). Safe even when the cleanup already
-        // emptied them.
+        // `Remove` ops, which are host-owned and not ledger-tracked).
+        // Safe even when the cleanup already emptied them.
         self.slot_ops
             .retain(|op| !op_belongs_to(op, &plugin_id_str));
         // Drop *every* prior autocmd row for this plugin id regardless
@@ -5103,33 +5069,26 @@ impl PluginHost {
             .map(|d| (d.split_key.as_str(), d.divider_index))
     }
 
-    /// Fire a host-side event with no payload (legacy entry point).
+    /// Fire a host-side event with no payload.
     /// Equivalent to `fire_event_typed(event, {})`.
     pub fn fire_event(&mut self, event: &str) {
         self.fire_event_typed(event, EventPayload::new());
     }
 
     /// Fire a host-side typed event. The funnel:
-    /// 1. resolves the event name (canonical or alias) against the
-    ///    descriptor table;
+    /// 1. resolves the event name against the descriptor table;
     /// 2. validates the payload shape against the descriptor (records
     ///    `autocmd.payload_mismatch` for shape errors but proceeds);
     /// 3. invokes every matching autocmd in (priority desc, id asc)
     ///    order, honouring `pattern`, `debounce_ms`, `once`, and the
     ///    consecutive-failure disable threshold;
-    /// 4. fans out to every alias the canonical event lists so v1
-    ///    listeners (e.g. `FetchStart` after `FetchStarted`) keep
-    ///    working unchanged;
-    /// 5. refreshes dynamic widgets for every plugin whose callbacks
+    /// 4. refreshes dynamic widgets for every plugin whose callbacks
     ///    actually ran.
     pub fn fire_event_typed(&mut self, event: &str, payload: EventPayload) {
         // Phase 16: probe the lazy registry for a plugin that
-        // declared this event as an activation trigger. We check the
-        // canonical resolution name to match plugins that declared
-        // either an alias or canonical form. Activation re-fires the
-        // event through this same funnel so the now-live autocmds
-        // observe it. Track activated plugins in `last_repository_shape`
-        // (no — track in a local set so each fire activates at most one).
+        // declared this event as an activation trigger. Activation
+        // re-fires the event through this same funnel so the now-live
+        // autocmds observe it.
         if let Ok((canonical, _)) = events::resolve_event(event) {
             let canonical_name = canonical.name;
             let activate = self
@@ -5167,14 +5126,7 @@ impl PluginHost {
         let _validated = events::validate_payload(canonical, &payload, &self.diagnostics);
 
         let mut affected: HashSet<String> = HashSet::new();
-        // Fire under the canonical name first, then under each alias
-        // so v1 listeners observe the same payload they always have.
-        // The alias dispatch carries `alias_used = Some(alias)` to the
-        // payload table so plugins can tell which name they're seeing.
         self.dispatch_for_name(canonical, None, &payload, &mut affected);
-        for alias in canonical.aliases {
-            self.dispatch_for_name(canonical, Some(alias), &payload, &mut affected);
-        }
 
         for pid in affected {
             self.refresh_dynamic_widgets_for_plugin(&pid);
@@ -6317,9 +6269,6 @@ impl PluginHost {
                     id,
                 } => {
                     slot_map.remove(&(region.clone(), container.key(), id.clone()));
-                }
-                PreparedSlotOp::RemoveAnyContainer { region, id } => {
-                    slot_map.retain(|(r, _, i), _| !(r == region && i == id));
                 }
             }
         }

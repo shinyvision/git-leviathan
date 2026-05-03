@@ -1,17 +1,11 @@
 //! User commands.
 //!
-//! Two surfaces:
-//!
-//! - `leviathan.api.create_user_command(name, fn)` — Phase 1 v1 shim
-//!   that registers a no-args, non-destructive, `global`-context
-//!   command. Kept verbatim so bundled plugins keep working.
-//! - `leviathan.command.{create, invoke, list}` — Phase 8 typed
-//!   surface. `create` captures a [`crate::plugin::commands::RawCommand`]
-//!   into the per-plugin `BuildState`; the host moves it into the
-//!   shared command registry once init completes. `invoke` and
-//!   `list` borrow the live registry through the shared
-//!   [`crate::plugin::commands::CommandDispatchEnv`] handle so every
-//!   entry point routes through the same dispatcher.
+//! `leviathan.command.{create, invoke, list}` captures typed command
+//! registrations into the per-plugin `BuildState`; the host moves them
+//! into the shared command registry once init completes. `invoke` and
+//! `list` borrow the live registry through the shared
+//! [`crate::plugin::commands::CommandDispatchEnv`] handle so every
+//! entry point routes through the same dispatcher.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -22,23 +16,15 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 use crate::plugin::commands::{
     dispatch_command, CommandDispatchEnv, InvokeOutcome, RawCommand, RawCommandArg,
 };
-use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
-use super::{record_deprecation, BuildState};
+use super::BuildState;
 
-/// Compatibility shim. v1 plugins call
-/// `leviathan.api.create_user_command(name, fn)`; we route those
-/// through the same Phase 8 path by emitting a [`RawCommand`] with
-/// no args, no capabilities, and `context = "global"`. This means
-/// every command — host, plugin, legacy — lives in the same registry.
 #[derive(Default)]
 pub struct UserCommands {
     /// Lua registry-key index keyed by command name. Kept around for
-    /// the legacy `host.invoke_user_command` entry point that pre-dates
-    /// the unified registry; the entries here are also mirrored as
-    /// `RawCommand` rows on `BuildState.commands` so the host
-    /// installs them into the unified registry.
+    /// `host.invoke_user_command`, which runs plugin command callbacks
+    /// directly in tests and devtools helpers.
     pub commands: HashMap<String, RegistryKey>,
 }
 
@@ -47,26 +33,11 @@ pub fn install(
     commands: Rc<RefCell<UserCommands>>,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
-    api: &Table,
     leviathan: &Table,
     dispatch: CommandDispatchEnv,
-    diagnostics: DiagnosticStore,
-    plugin_id: crate::plugin::resources::PluginId,
-    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
-    install_legacy_create_user_command(
-        lua,
-        Rc::clone(&commands),
-        Rc::clone(&build),
-        ledger.clone(),
-        api,
-        diagnostics,
-        plugin_id,
-        generation_id,
-    )?;
-
     let command_tbl = lua.create_table()?;
-    install_command_create(lua, Rc::clone(&build), ledger, &command_tbl)?;
+    install_command_create(lua, commands, Rc::clone(&build), ledger, &command_tbl)?;
     install_command_invoke(lua, dispatch.clone(), &command_tbl)?;
     install_command_list(lua, dispatch, &command_tbl)?;
 
@@ -74,64 +45,9 @@ pub fn install(
     Ok(())
 }
 
-fn install_legacy_create_user_command(
-    lua: &Lua,
-    commands: Rc<RefCell<UserCommands>>,
-    build: Rc<RefCell<BuildState>>,
-    ledger: ResourceLedger,
-    api: &Table,
-    diagnostics: DiagnosticStore,
-    plugin_id: crate::plugin::resources::PluginId,
-    generation_id: crate::plugin::resources::GenerationId,
-) -> mlua::Result<()> {
-    api.set(
-        "create_user_command",
-        lua.create_function(move |lua_inner, (name, f): (String, Function)| {
-            record_deprecation(
-                &diagnostics,
-                &plugin_id,
-                generation_id,
-                "leviathan.api.create_user_command",
-                "leviathan.command.create",
-            );
-            let key = lua_inner.create_registry_value(f.clone())?;
-            let source = ResourceLedger::source_location(lua_inner);
-            ledger.remove_by_kind_handle(PluginResourceKind::Command, &name);
-            ledger.remove_by_kind_handle(
-                PluginResourceKind::LuaRegistryKey,
-                &format!("command:{name}"),
-            );
-            ledger.record(PluginResourceKind::Command, name.clone(), source.clone());
-            ledger.record(
-                PluginResourceKind::LuaRegistryKey,
-                format!("command:{name}"),
-                source.clone(),
-            );
-            commands.borrow_mut().commands.insert(name.clone(), key);
-            // Also record the v1 shim into the typed pending list so
-            // the host installs it into the unified registry as a
-            // global, no-args, non-destructive command — preserving
-            // every property the v1 contract promised.
-            let typed_key = lua_inner.create_registry_value(f)?;
-            build.borrow_mut().commands.push(RawCommand {
-                name,
-                title: None,
-                description: None,
-                context: None,
-                destructive: false,
-                capabilities: Vec::new(),
-                args: Vec::new(),
-                callback: typed_key,
-                source_location: source,
-            });
-            Ok(())
-        })?,
-    )?;
-    Ok(())
-}
-
 fn install_command_create(
     lua: &Lua,
+    commands: Rc<RefCell<UserCommands>>,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     command: &Table,
@@ -158,6 +74,7 @@ fn install_command_create(
                 None => Vec::new(),
             };
             let callback: Function = spec.get("run")?;
+            let direct_key = lua_inner.create_registry_value(callback.clone())?;
             let key = lua_inner.create_registry_value(callback)?;
             let source = ResourceLedger::source_location(lua_inner);
             ledger.remove_by_kind_handle(PluginResourceKind::Command, &name);
@@ -171,6 +88,10 @@ fn install_command_create(
                 format!("command:{name}"),
                 source.clone(),
             );
+            commands
+                .borrow_mut()
+                .commands
+                .insert(name.clone(), direct_key);
             build.borrow_mut().commands.push(RawCommand {
                 name,
                 title,

@@ -14,21 +14,23 @@ Service registry namespace.
 
 ## Functions
 
-### `leviathan.services.register(name_at_version, methods)`
+### `leviathan.services.register(name_or_name_at_version, version, methods)`
 
 Publish a declared inter-plugin service.
 
 **Parameters:**
-- `name_at_version` (`string`; required) - Service declaration such as `greeter@1`.
+- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
+- `version` (`integer`; optional) - Integer service version when the first argument is a bare service name.
 - `methods` (`table<string,function>`; required) - Service method table.
 
-### `leviathan.services.get(name_at_version)`
+### `leviathan.services.get(name_or_name_at_version, version)`
 
 Look up a declared inter-plugin service proxy.
 
 **Parameters:**
-- `name_at_version` (`string`; required) - Service declaration such as `greeter@1`.
+- `name_or_name_at_version` (`string`; required) - Service name (`greeter`) with a separate version, or combined declaration (`greeter@1`).
+- `version` (`integer`; optional) - Integer service version when the first argument is a bare service name.
 
 **Returns:**
-- `table` - Service proxy.
+- `table|nil` - Service proxy, or nil for declared optional consumers when the provider is absent.
 
