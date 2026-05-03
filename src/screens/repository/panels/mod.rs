@@ -62,7 +62,7 @@ impl Panels {
 /// Arc-clone is cheap so ownership is acceptable.
 pub(in crate::screens::repository) struct ScreenCtx<'a> {
     pub tab_id: TabId,
-    pub repository: SharedRepositoryGateway,  // OWNED (Arc clone from fleet.active())
+    pub repository: SharedRepositoryGateway, // OWNED (Arc clone from fleet.active())
     pub presenter: &'a Arc<dyn Presenter>,
     pub data: &'a mut RepositoryData,
     pub overlay_manager: &'a mut OverlayManager,

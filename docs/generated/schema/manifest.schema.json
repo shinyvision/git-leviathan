@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": true,
+  "properties": {
+    "api_version": {
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "type": "string"
+    },
+    "capabilities": {
+      "items": {
+        "enum": [
+          "fs:read",
+          "fs:read:plugin",
+          "fs:read:state",
+          "fs:read:config",
+          "fs:read:workdir",
+          "fs:read:any",
+          "fs:read:scope:<dir>",
+          "fs:write:plugin",
+          "fs:write:state",
+          "fs:write:config",
+          "fs:write:workdir",
+          "fs:write:any",
+          "fs:write:scope:<dir>",
+          "process:spawn",
+          "process:spawn:<binary>",
+          "net:fetch",
+          "net:fetch:<domain>",
+          "clipboard",
+          "clipboard:read",
+          "clipboard:write",
+          "notify",
+          "env",
+          "env:<glob>",
+          "credentials",
+          "repo:read",
+          "git:read:status",
+          "git:read:log",
+          "git:read:diff",
+          "git:read:show",
+          "git:read:blame",
+          "git:write:checkout",
+          "git:write:branch",
+          "git:write:tag",
+          "git:write:commit",
+          "git:write:stash",
+          "git:write:reset",
+          "git:write:fetch",
+          "git:write:push",
+          "git:write:merge",
+          "git:write:rebase",
+          "ui:region:<region>",
+          "services:provide:<service@version>",
+          "services:consume:<service@version>",
+          "async:spawn",
+          "timer:create",
+          "fs:watch",
+          "fs:watch:scope:<dir>"
+        ],
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "consumes_services": {
+      "items": {
+        "pattern": "^[A-Za-z0-9_.:-]+@[0-9]+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "dependencies": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "provides_services": {
+      "items": {
+        "pattern": "^[A-Za-z0-9_.:-]+@[0-9]+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "requires_plugins": {
+      "description": "Other plugin ids whose `lua/<id>/` modules this plugin may `require`.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "runtime": {
+      "additionalProperties": false,
+      "description": "Per-plugin Lua runtime configuration.",
+      "properties": {
+        "strict_globals": {
+          "default": true,
+          "description": "When true (default), reads/writes of undeclared Lua globals raise.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "version": {
+      "description": "SemVer plugin version.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "version",
+    "api_version"
+  ],
+  "title": "Git Leviathan plugin.toml",
+  "type": "object"
+}

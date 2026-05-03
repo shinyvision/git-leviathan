@@ -22,7 +22,7 @@ use iced::{
 
 use crate::style;
 use crate::theme;
-use crate::widgets::primitives::hoverable::{Hoverable, HoverStatus};
+use crate::widgets::primitives::hoverable::{HoverStatus, Hoverable};
 use crate::widgets::shared::horizontal_space;
 
 use super::state::{DragOutcome, DragState};
@@ -135,11 +135,7 @@ impl<'a, K: Eq + Hash + Copy + 'static, M: Clone + 'a> TabBar<'a, K, M> {
     /// using each tab's actual width. The dragged tab's width therefore
     /// determines the gap left behind, regardless of which tab(s) it
     /// displaces.
-    fn working_slots(
-        &self,
-        working_order: Option<&[K]>,
-        layout: Layout<'_>,
-    ) -> Vec<(K, f32, f32)> {
+    fn working_slots(&self, working_order: Option<&[K]>, layout: Layout<'_>) -> Vec<(K, f32, f32)> {
         let (Some(start), widths) = self.strip_metrics(layout) else {
             return Vec::new();
         };
@@ -322,9 +318,8 @@ where
                     .collect();
                 let now_inst = Instant::now();
                 let TabBarState { drag, tracker } = &mut *state;
-                let changed = drag.on_cursor_moved(pos, &slots, |k| {
-                    tracker.is_animating_key(k, now_inst)
-                });
+                let changed =
+                    drag.on_cursor_moved(pos, &slots, |k| tracker.is_animating_key(k, now_inst));
                 if changed {
                     shell.invalidate_layout();
                     shell.request_redraw();
@@ -352,7 +347,9 @@ where
                 shell.request_redraw();
             }
             Event::Window(window::Event::RedrawRequested(now)) => {
-                state.drag.clear_committed_if_matches(&self.tab_input_order());
+                state
+                    .drag
+                    .clear_committed_if_matches(&self.tab_input_order());
                 let working = state.drag.working_order().map(|s| s.to_vec());
                 let sim = self.simulated_positions(working.as_deref(), layout);
                 state.tracker.settle(&sim, *now);
@@ -404,10 +401,13 @@ where
             .zip(tree.children.iter())
             .zip(layout.children())
         {
-            let inner =
-                child
-                    .as_widget()
-                    .mouse_interaction(child_tree, child_layout, cursor, viewport, renderer);
+            let inner = child.as_widget().mouse_interaction(
+                child_tree,
+                child_layout,
+                cursor,
+                viewport,
+                renderer,
+            );
             if inner != mouse::Interaction::None {
                 best = inner;
             }
@@ -569,33 +569,28 @@ where
         row_children.push(t);
     }
 
-    let inner = container(
-        row(row_children)
-            .spacing(4)
-            .align_y(Alignment::Center),
-    )
-    .height(Length::Fill)
-    .padding(Padding::from([0, 10]))
-    .align_y(iced::alignment::Vertical::Center);
+    let inner = container(row(row_children).spacing(4).align_y(Alignment::Center))
+        .height(Length::Fill)
+        .padding(Padding::from([0, 10]))
+        .align_y(iced::alignment::Vertical::Center);
 
-    let visual: Element<'a, M> =
-        Hoverable::new(inner, move |_: &Theme, status: HoverStatus| {
-            let bg = if active || status.is_hovered() {
-                theme::BG_HOVER
-            } else {
-                theme::BG_BASE
-            };
-            iced::widget::container::Style {
-                background: Some(bg.into()),
-                border: Border {
-                    color: theme::BORDER,
-                    width: 1.0,
-                    radius: 0.0.into(),
-                },
-                ..Default::default()
-            }
-        })
-        .into();
+    let visual: Element<'a, M> = Hoverable::new(inner, move |_: &Theme, status: HoverStatus| {
+        let bg = if active || status.is_hovered() {
+            theme::BG_HOVER
+        } else {
+            theme::BG_BASE
+        };
+        iced::widget::container::Style {
+            background: Some(bg.into()),
+            border: Border {
+                color: theme::BORDER,
+                width: 1.0,
+                radius: 0.0.into(),
+            },
+            ..Default::default()
+        }
+    })
+    .into();
 
     container(visual)
         .height(Length::Fixed(theme::TAB_HEIGHT as f32))

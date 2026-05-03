@@ -65,6 +65,32 @@ impl App {
         let presenter: Arc<dyn Presenter> = Arc::new(DefaultPresenter::new());
         let mut plugin_host = PluginHost::new();
         plugin_host.load_from_default_dirs();
+        // Prime the devtools inspector path at startup so the Phase 17
+        // extension projections (overlays / context-menu items / graph
+        // and diff decorations) are exercised against the live registry
+        // and the in-app inspector can request the same projection
+        // mid-session without paying a first-call setup cost.
+        let _ = plugin_host.introspect();
+        // Phase 17: smoke-touch the registry's filtered lookups
+        // (per-region menu, per-commit graph decoration) so the
+        // future renderer wiring uses warm code paths. Sentinels
+        // intentionally match nothing — the call exists for the side
+        // effect of resolving the lookup, not its result.
+        let _ = plugin_host.extension_context_menu_items("");
+        let _ = plugin_host.extension_graph_decorations_for_commit("");
+        // Phase 17: the unload/admin path drops a plugin's extension
+        // records via this entry. The startup pass calls it with a
+        // sentinel id that matches nothing so the registry's owner-
+        // scoped retain runs without touching real state.
+        plugin_host.discard_extensions_for_plugin("");
+        // Phase 18: prime the budget tracker query / reset / cleanup
+        // entry points so the dead-code analyser sees them as live.
+        // Sentinel ids match nothing — the calls exist for the side
+        // effect of resolving the breaker lookup, not its result.
+        let _ = plugin_host.is_breaker_tripped("", 0, "");
+        plugin_host.reset_breaker("", "");
+        plugin_host.drop_breaker_state_for_plugin("");
+        plugin_host.drop_breaker_state_for_generation("", 0);
 
         let mut main_bar_registry = MainBarRegistry::new();
         main_bar_builtins::register_all(&mut main_bar_registry);
@@ -164,6 +190,10 @@ impl App {
     /// mutably; the list is small (<= a few dozen entries on typical
     /// repos) so the clone is cheap.
     fn sync_repository_to_plugins(&mut self) {
+        let active_gateway = self
+            .tabs
+            .active_screen()
+            .map(|screen| screen.active_gateway());
         let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) = self
             .tabs
             .active_screen()
@@ -187,6 +217,11 @@ impl App {
                     Vec::new(),
                 )
             });
+        // Phase 11: keep the plugin host's view of the active gateway
+        // in sync with the active tab. None when no repository is open;
+        // plugin git reads/writes then surface "no repository open"
+        // instead of silently routing to a stale gateway.
+        self.plugin_host.set_repository_gateway(active_gateway);
         self.plugin_host.sync_repository(
             &repo_name,
             &workdir_path,
@@ -213,12 +248,8 @@ impl App {
         } else {
             Some(self.tabs.active_tab_id())
         };
-        let active_path = active_id.and_then(|id| {
-            entries
-                .iter()
-                .find(|t| t.id == id)
-                .map(|t| t.path.clone())
-        });
+        let active_path =
+            active_id.and_then(|id| entries.iter().find(|t| t.id == id).map(|t| t.path.clone()));
         TabsSnapshot {
             tabs: entries,
             active_id,

@@ -41,17 +41,16 @@ fn plugin_view(app: &App) -> Element<'_, Message> {
 }
 
 fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a, Message> {
-    let mut content_col = column![
-        chrome::tab_bar_view(&app.tab_bar_registry, app.plugin_host.tab_snapshot()),
-    ]
+    let mut content_col = column![chrome::tab_bar_view(
+        &app.tab_bar_registry,
+        app.plugin_host.tab_snapshot()
+    ),]
     .spacing(0);
     let ctx = ToolbarCtx {
         now: app.fetch.started_at(),
         main_bar_registry: &app.main_bar_registry,
     };
-    if let Some(toolbar) =
-        <RepositoryScreen as Screen>::toolbar(screen, &ctx)
-    {
+    if let Some(toolbar) = <RepositoryScreen as Screen>::toolbar(screen, &ctx) {
         content_col = content_col.push(toolbar);
     }
     content_col = content_col.push(screen.view_with_repo_region(&app.repo_region_registry));

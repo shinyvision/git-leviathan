@@ -1,10 +1,15 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-pub struct ApiVersion { pub major: u32, pub minor: u32 }
+pub struct ApiVersion {
+    pub major: u32,
+    pub minor: u32,
+}
 
 impl ApiVersion {
-    pub const fn new(major: u32, minor: u32) -> Self { Self { major, minor } }
+    pub const fn new(major: u32, minor: u32) -> Self {
+        Self { major, minor }
+    }
     pub fn is_compatible_with(self, host: ApiVersion) -> bool {
         self.major == host.major && self.minor <= host.minor
     }
@@ -13,8 +18,9 @@ impl ApiVersion {
 impl<'de> Deserialize<'de> for ApiVersion {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        let (maj, min) = s.split_once('.').ok_or_else(|| serde::de::Error::custom(
-            format!("api_version must be 'MAJOR.MINOR', got {s:?}")))?;
+        let (maj, min) = s.split_once('.').ok_or_else(|| {
+            serde::de::Error::custom(format!("api_version must be 'MAJOR.MINOR', got {s:?}"))
+        })?;
         Ok(Self::new(
             maj.parse().map_err(serde::de::Error::custom)?,
             min.parse().map_err(serde::de::Error::custom)?,

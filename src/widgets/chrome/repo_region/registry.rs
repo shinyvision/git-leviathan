@@ -61,17 +61,20 @@ pub struct RepoPaneCtx<'a> {
 #[allow(dead_code)]
 impl<'a> RepoPaneCtx<'a> {
     pub fn new() -> Self {
-        Self { _marker: std::marker::PhantomData }
+        Self {
+            _marker: std::marker::PhantomData,
+        }
     }
 }
 
 impl<'a> Default for RepoPaneCtx<'a> {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
-pub type RepoPaneBuilder = Box<
-    dyn for<'ctx, 'data> Fn(&'ctx RepoPaneCtx<'data>) -> Element<'data, Message> + 'static,
->;
+pub type RepoPaneBuilder =
+    Box<dyn for<'ctx, 'data> Fn(&'ctx RepoPaneCtx<'data>) -> Element<'data, Message> + 'static>;
 
 #[allow(dead_code)]
 pub struct RepoPaneSlot {
@@ -104,9 +107,15 @@ impl RepoPaneSlot {
 
 #[allow(dead_code)]
 impl IsSlot for RepoPaneSlot {
-    fn id(&self) -> &str { &self.id }
-    fn container(&self) -> &Container { &self.container }
-    fn priority(&self) -> i32 { self.priority }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn container(&self) -> &Container {
+        &self.container
+    }
+    fn priority(&self) -> i32 {
+        self.priority
+    }
 }
 
 #[allow(dead_code)]

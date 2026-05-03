@@ -275,18 +275,15 @@ fn conflict_scrolled_canvas(
             SideOrOutput::Side(ConflictSide::Theirs) => ConflictScrollTarget::Theirs,
             SideOrOutput::Output => ConflictScrollTarget::Output,
         };
-        let scroller_el = crate::widgets::text::shift_wheel_lock(
-            scroller,
-            shift_held,
-            move |delta_lines| {
+        let scroller_el =
+            crate::widgets::text::shift_wheel_lock(scroller, shift_held, move |delta_lines| {
                 Message::repo(RepositoryMessage::DiffPanel(
                     DiffPanelAction::ConflictShiftWheel {
                         target,
                         delta_lines,
                     },
                 ))
-            },
-        );
+            });
 
         row![
             conflict_gutter_canvas(canvas_id, gutter_data.clone(), scroll_offset_y),

@@ -75,7 +75,9 @@ impl BranchPopoutController {
         self.worktree_context_menu.as_ref()
     }
 
-    pub(in crate::screens::repository) fn active_reset_submenu(&self) -> Option<&ResetSubmenuState> {
+    pub(in crate::screens::repository) fn active_reset_submenu(
+        &self,
+    ) -> Option<&ResetSubmenuState> {
         self.reset_submenu.as_ref()
     }
 
@@ -331,7 +333,10 @@ impl BranchPopoutController {
         }
     }
 
-    pub(in crate::screens::repository) fn update_content_bounds(&mut self, bounds: Option<Rectangle>) {
+    pub(in crate::screens::repository) fn update_content_bounds(
+        &mut self,
+        bounds: Option<Rectangle>,
+    ) {
         if let Some(state) = self.popout.as_mut() {
             state.content_bounds = bounds;
         }

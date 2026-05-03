@@ -111,7 +111,12 @@ pub(super) fn on_branch_merged(
     result: Result<LoadedBranchMergeOutcome, GitError>,
 ) -> Task<Message> {
     match result {
-        Ok(outcome) => super::helpers::handle_branch_merge_outcome(screen, source_branch, target_branch, outcome),
+        Ok(outcome) => super::helpers::handle_branch_merge_outcome(
+            screen,
+            source_branch,
+            target_branch,
+            outcome,
+        ),
         Err(e) => {
             eprintln!("git_leviathan: branch merge failed: {}", e);
             Task::done(Message::show_toast(ToastData::error(

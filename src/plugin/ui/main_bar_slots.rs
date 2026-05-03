@@ -5,6 +5,11 @@
 //! `crate::plugin::host` consume the ops and produce concrete slots
 //! (`MainBarSlot`, `TabBarSlot`, ...) using the region-specific
 //! `into_*` shims on `PreparedSlot`.
+//!
+//! Phase 4: every cached widget is a typed [`WidgetAst`]. The dynamic
+//! variant carries an `Option<WidgetAst>` so the host can store `None`
+//! before the first refresh, then a real AST after re-decoding the
+//! plugin's Lua return.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -12,19 +17,25 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use iced::Element;
-use serde_json::Value;
 
 use crate::message::Message;
-use crate::plugin::bridge::widget_tree::{self, BuildCtx, DispatchScope};
+use crate::plugin::bridge::widget_tree::{self, build_error_widget, BuildCtx, DispatchScope};
 use crate::plugin::slots::Container;
+use crate::plugin::ui::widget_ast::WidgetAst;
 use crate::widgets::chrome::main_bar::{MainBarSlot, SlotCtx as MainBarSlotCtx};
 use crate::widgets::chrome::repo_region::{RepoPaneCtx, RepoPaneSlot};
 use crate::widgets::chrome::tab_bar_slots::{TabBarCtx, TabBarSlot};
 
+/// Cache cell shared between the host (writer, on dynamic refresh) and
+/// the slot's render closure (reader). `None` means "not yet refreshed
+/// successfully" — the renderer falls back to the error widget so the
+/// user sees something explicit.
+pub type DynamicAstCache = Rc<RefCell<Option<WidgetAst>>>;
+
 #[derive(Clone)]
 pub enum SlotWidget {
-    Static(Value),
-    Dynamic(Rc<RefCell<Value>>),
+    Static(WidgetAst),
+    Dynamic(DynamicAstCache),
 }
 
 #[derive(Clone)]
@@ -38,15 +49,26 @@ pub struct PreparedSlot {
     pub plugin_root: PathBuf,
 }
 
-#[allow(dead_code)]
 pub enum PreparedSlotOp {
     Add(PreparedSlot),
-    Remove { region: String, container: Container, id: String },
+    Remove {
+        region: String,
+        container: Container,
+        id: String,
+    },
     /// Compat removal where the user did not specify a container (legacy
     /// `main_bar.remove("id")`). The applier scans every container in the
     /// region.
-    RemoveAnyContainer { region: String, id: String },
-    Replace { region: String, container: Container, id: String, spec: PreparedSlot },
+    RemoveAnyContainer {
+        region: String,
+        id: String,
+    },
+    Replace {
+        region: String,
+        container: Container,
+        id: String,
+        spec: PreparedSlot,
+    },
 }
 
 impl PreparedSlot {
@@ -65,10 +87,16 @@ impl PreparedSlot {
             active_drag: None,
         };
         match &self.widget {
-            SlotWidget::Static(tree) => widget_tree::build(tree, &bc),
+            SlotWidget::Static(ast) => widget_tree::build(ast, &bc),
             SlotWidget::Dynamic(cache) => {
                 let guard = cache.borrow();
-                widget_tree::build(&guard, &bc)
+                match guard.as_ref() {
+                    Some(ast) => widget_tree::build(ast, &bc),
+                    None => build_error_widget(
+                        "widget.invalid_tree",
+                        "dynamic widget has no valid AST yet (check diagnostics)",
+                    ),
+                }
             }
         }
     }

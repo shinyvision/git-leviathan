@@ -467,4 +467,3 @@ pub fn draw_graph_rows(
         }
     }
 }
-

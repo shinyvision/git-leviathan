@@ -17,7 +17,9 @@ use crate::{
     services::{HighlightedFile, WorkingTreeDiffLine},
     style, theme,
     widgets::{
-        diff_canvas::{self, diff_char_width, diff_content_canvas, diff_gutter_canvas, DiffSelection},
+        diff_canvas::{
+            self, diff_char_width, diff_content_canvas, diff_gutter_canvas, DiffSelection,
+        },
         shared::horizontal_space,
     },
 };
@@ -34,7 +36,9 @@ mod buffers;
 mod rows;
 mod styles;
 
-pub(in crate::screens::repository) use rows::{build_conflict_rows_for_canvas, build_diff_rows_public};
+pub(in crate::screens::repository) use rows::{
+    build_conflict_rows_for_canvas, build_diff_rows_public,
+};
 
 use buffers::{conflict_buffer_panel, output_buffer_panel};
 use styles::{diff_scrollbar_style, save_button_style, DIFF_SCROLLBAR_WIDTH};
@@ -172,15 +176,12 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
                         DiffPanelAction::DiffContentScrolled { viewport },
                     ))
                 });
-            let scroller_el = crate::widgets::text::shift_wheel_lock(
-                scroller,
-                shift_held,
-                |delta_lines| {
+            let scroller_el =
+                crate::widgets::text::shift_wheel_lock(scroller, shift_held, |delta_lines| {
                     Message::repo(RepositoryMessage::DiffPanel(
                         DiffPanelAction::DiffShiftWheel { delta_lines },
                     ))
-                },
-            );
+                });
 
             row![
                 diff_gutter_canvas(gutter_data.clone(), scroll_y),

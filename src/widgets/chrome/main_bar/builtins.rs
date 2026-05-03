@@ -32,9 +32,7 @@ use iced::{
 use crate::{
     assets,
     message::Message,
-    screens::repository::{
-        panel_messages::CenterAction as CenterAct, RepositoryMessage,
-    },
+    screens::repository::{panel_messages::CenterAction as CenterAct, RepositoryMessage},
     style as shared_style, theme,
     widgets::primitives::spinner,
 };
@@ -60,10 +58,7 @@ fn dim(c: Color, enabled: bool) -> Color {
 }
 
 /// Wrap a spinner in the 2px inset container the monolith used for pull/push.
-fn spinner_inset<'a>(
-    started_at: std::time::Instant,
-    color: Color,
-) -> Element<'a, Message> {
+fn spinner_inset<'a>(started_at: std::time::Instant, color: Color) -> Element<'a, Message> {
     container(spinner::spinner(started_at, color, 16.0))
         .padding(Padding {
             top: 2.0,
@@ -194,7 +189,9 @@ fn stash_slot() -> MainBarSlot {
         // function — matching the monolith exactly.
         let col = column![
             icon,
-            text("Stash").size(theme::FONT_XS).style(shared_style::dim_text),
+            text("Stash")
+                .size(theme::FONT_XS)
+                .style(shared_style::dim_text),
         ]
         .spacing(3)
         .align_x(iced::Alignment::Center);
@@ -214,7 +211,9 @@ fn pop_slot() -> MainBarSlot {
         let icon = assets::toolbar_icon(assets::POP, theme::TEXT_SECONDARY);
         let col = column![
             icon,
-            text("Pop").size(theme::FONT_XS).style(shared_style::dim_text),
+            text("Pop")
+                .size(theme::FONT_XS)
+                .style(shared_style::dim_text),
         ]
         .spacing(3)
         .align_x(iced::Alignment::Center);

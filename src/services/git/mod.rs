@@ -14,8 +14,8 @@ mod reword;
 mod squash;
 mod stashes;
 mod tags;
-pub mod working_tree_diff;
 mod working_tree;
+pub mod working_tree_diff;
 mod worktrees;
 
 use git2::Repository;
@@ -24,8 +24,8 @@ use crate::services::git::working_tree_diff::WorkingTreeDiffResult;
 use crate::{core::ChangedFile, services::git_error::GitError, services::RepoSnapshot};
 
 pub use checkout::ResetMode;
-pub use helpers::kill_running_git_processes;
 pub use conflict_resolution::{ConflictBlock, ConflictResolutionResult};
+pub use helpers::kill_running_git_processes;
 pub use push::PushOutcome;
 
 pub const COMMIT_LOAD_LIMIT: usize = 500;
@@ -161,11 +161,7 @@ impl GitService {
         worktrees::add_worktree(self, path, new_branch_name, ref_to_checkout)
     }
 
-    pub fn remove_worktree(
-        &self,
-        path: &std::path::Path,
-        force: bool,
-    ) -> Result<(), GitError> {
+    pub fn remove_worktree(&self, path: &std::path::Path, force: bool) -> Result<(), GitError> {
         worktrees::remove_worktree(self, path, force)
     }
 

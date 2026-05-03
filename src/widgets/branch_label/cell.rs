@@ -490,6 +490,10 @@ mod tests {
         // `Element` internals aren't identity-comparable, so we verify
         // count + shape as a smoke check. Full rendering is visual.
         let icons = branch_stack_icons(&row, Color::WHITE);
-        assert_eq!(icons.len(), 1, "local+worktree should emit a single icon slot");
+        assert_eq!(
+            icons.len(),
+            1,
+            "local+worktree should emit a single icon slot"
+        );
     }
 }

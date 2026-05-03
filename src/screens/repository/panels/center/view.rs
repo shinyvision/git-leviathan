@@ -1,8 +1,7 @@
 use iced::{
     advanced::text::Shaping,
     widget::{
-        button, column, container, responsive, row, scrollable, text, text_editor, MouseArea,
-        Stack,
+        button, column, container, responsive, row, scrollable, text, text_editor, MouseArea, Stack,
     },
     Border, Color, Element, Length, Padding, Theme,
 };

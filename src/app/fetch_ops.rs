@@ -55,8 +55,7 @@ impl App {
     ///   • Otherwise, abort any already-queued `reload_refs_task`. Bursts of
     ///     `.git` events then collapse to the single most-recent reload.
     pub(super) fn reload_refs_for_tab(&mut self, tab_id: TabId) -> Task<Message> {
-        let network_op_active =
-            tab_id == self.tabs.active_tab_id() && self.fetch.is_fetching();
+        let network_op_active = tab_id == self.tabs.active_tab_id() && self.fetch.is_fetching();
         let screen_busy = self
             .tabs
             .screen(tab_id)

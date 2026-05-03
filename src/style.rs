@@ -101,4 +101,3 @@ pub fn sidebar_container(_: &Theme) -> container::Style {
         ..Default::default()
     }
 }
-

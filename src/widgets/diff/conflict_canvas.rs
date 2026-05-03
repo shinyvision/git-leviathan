@@ -295,17 +295,11 @@ pub fn side_for_canvas_id(id: CanvasId) -> Option<ConflictSide> {
     }
 }
 
-pub fn build_side_canvas_data(
-    rows: Vec<ConflictRow>,
-    char_width: f32,
-) -> Arc<TextCanvasData> {
+pub fn build_side_canvas_data(rows: Vec<ConflictRow>, char_width: f32) -> Arc<TextCanvasData> {
     build_canvas_data(rows, char_width, GUTTER_WIDTH_SIDE)
 }
 
-pub fn build_output_canvas_data(
-    rows: Vec<ConflictRow>,
-    char_width: f32,
-) -> Arc<TextCanvasData> {
+pub fn build_output_canvas_data(rows: Vec<ConflictRow>, char_width: f32) -> Arc<TextCanvasData> {
     build_canvas_data(rows, char_width, GUTTER_WIDTH_OUTPUT)
 }
 

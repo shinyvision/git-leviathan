@@ -69,7 +69,8 @@ pub(in crate::screens::repository) fn update(
                 .any(|file| file.path == path);
 
             ctx.data.commit_search = None;
-            let follow_up = diff_panel.open_dirty_file_view(path, is_staged, selected_idx, is_conflicted);
+            let follow_up =
+                diff_panel.open_dirty_file_view(path, is_staged, selected_idx, is_conflicted);
             update_diff(diff_panel, follow_up, ctx)
         }
         DetailAction::DirtyFileRightClicked(path) => {
@@ -85,7 +86,8 @@ pub(in crate::screens::repository) fn update(
                 ctx.overlay_manager.close();
             }
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
-            ctx.data.branch_popout
+            ctx.data
+                .branch_popout
                 .open_dirty_file_context_menu(path, position);
             Task::none()
         }
@@ -115,7 +117,10 @@ pub(in crate::screens::repository) fn update(
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || repo.unstage_file(&path).map(|s| presenter.project_loaded(s))),
+                gateway_work(move || {
+                    repo.unstage_file(&path)
+                        .map(|s| presenter.project_loaded(s))
+                }),
                 move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
             )
         }
@@ -157,16 +162,18 @@ pub(in crate::screens::repository) fn update(
         }
         DetailAction::DiscardAllRequested => {
             ctx.data.branch_popout.close_context_menu();
-            ctx.overlay_manager.open(ActiveDialog::Discard(discard::State {
-                target: discard::Target::All,
-            }));
+            ctx.overlay_manager
+                .open(ActiveDialog::Discard(discard::State {
+                    target: discard::Target::All,
+                }));
             Task::none()
         }
         DetailAction::DiscardFileRequested(path) => {
             ctx.data.branch_popout.close_context_menu();
-            ctx.overlay_manager.open(ActiveDialog::Discard(discard::State {
-                target: discard::Target::File(path),
-            }));
+            ctx.overlay_manager
+                .open(ActiveDialog::Discard(discard::State {
+                    target: discard::Target::File(path),
+                }));
             Task::none()
         }
         DetailAction::DiscardConfirmed => {
@@ -244,7 +251,8 @@ pub(in crate::screens::repository) fn update(
 
             let commit_hash = commit.hash.clone();
             ctx.data.commit_search = None;
-            let follow_up = diff_panel.open_commit_file(commit_idx, commit_hash, path, selected_idx);
+            let follow_up =
+                diff_panel.open_commit_file(commit_idx, commit_hash, path, selected_idx);
             update_diff(diff_panel, follow_up, ctx)
         }
         DetailAction::CloseDirtyFileDiff => {

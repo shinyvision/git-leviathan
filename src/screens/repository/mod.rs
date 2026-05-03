@@ -38,7 +38,6 @@ pub enum FileView {
 
 pub use panels::diff::CenterViewMode;
 
-
 /// Eight fields, one purpose each: identity (`tab_id`), collaborators
 /// (`fleet`, `presenter`), domain state (`data`), UI composition
 /// (`panels`, `overlay_manager`), transient input (`input`), and the
@@ -67,7 +66,9 @@ pub struct RepositoryScreen {
 /// Reads persisted sidebar section expanded/collapsed state for `repo_path`
 /// from the sqlite settings store. Falls back to `SidebarPanel::default_expanded`
 /// when no rows exist yet, or when the settings layer fails to open.
-fn load_sidebar_expanded(repo_path: &std::path::Path) -> std::collections::HashSet<SidebarSectionKind> {
+fn load_sidebar_expanded(
+    repo_path: &std::path::Path,
+) -> std::collections::HashSet<SidebarSectionKind> {
     let key = repo_path.to_string_lossy();
     let settings = match SettingsService::new() {
         Ok(s) => s,
@@ -263,6 +264,15 @@ impl RepositoryScreen {
         self.fleet.active_path()
     }
 
+    /// Cheap-clone of the active gateway. Phase 11 wires this into the
+    /// plugin host every time the active screen changes so plugin
+    /// `leviathan.git.*` and `leviathan.repository.{status,...}` calls
+    /// route through the same `SharedRepositoryGateway` the built-in UI
+    /// already uses.
+    pub fn active_gateway(&self) -> crate::services::SharedRepositoryGateway {
+        self.fleet.active().clone()
+    }
+
     pub fn subscription(&self) -> Subscription<Message> {
         event::listen_with(|event, _status, _window| match event {
             iced::Event::Mouse(mouse::Event::CursorMoved { position }) => Some(Message::repo(
@@ -351,7 +361,6 @@ impl RepositoryScreen {
         panels::diff::update_diff(&mut panels.diff, action, &mut ctx)
     }
 
-
     fn dispatch_overlay_action(&mut self, action: OverlayPanelAction) -> Task<Message> {
         // Close any open context menu when triggering a dialog from one of its
         // items — otherwise the menu's backdrop stays as an invisible input sink
@@ -378,7 +387,6 @@ impl RepositoryScreen {
             }
         }
     }
-
 
     pub fn on_modifiers_changed(&mut self, modifiers: keyboard::Modifiers) {
         input::on_modifiers_changed(self, modifiers);

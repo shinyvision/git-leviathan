@@ -166,9 +166,12 @@ pub(super) fn on_force_push_completed(
                 }));
             Task::none()
         }
-        Ok(LoadedPushOutcome::BehindRemote { .. }) => Task::done(Message::show_toast(
-            ToastData::error("Force Push Failed", "Branch is still behind remote".to_string()),
-        )),
+        Ok(LoadedPushOutcome::BehindRemote { .. }) => {
+            Task::done(Message::show_toast(ToastData::error(
+                "Force Push Failed",
+                "Branch is still behind remote".to_string(),
+            )))
+        }
         Err(e) => {
             eprintln!("git_leviathan: force push failed: {}", e);
             Task::done(Message::show_toast(ToastData::error(

@@ -56,7 +56,9 @@ pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, 
         .worktrees()
         .map_err(|e| wrap_git2_error("enumerate worktrees", e))?;
     for i in 0..names.len() {
-        let Some(name) = names.get(i) else { continue; };
+        let Some(name) = names.get(i) else {
+            continue;
+        };
         let worktree = service
             .repo
             .find_worktree(name)
@@ -72,9 +74,7 @@ pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, 
         } else {
             head_info_for_workdir(&path)?
         };
-        let canonical = path
-            .canonicalize()
-            .unwrap_or_else(|_| path.clone());
+        let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
         results.push(WorktreeInfo {
             path: canonical,
             branch_name,
@@ -212,10 +212,7 @@ pub(super) fn add_worktree(
                         .find_reference(&format!("refs/remotes/{ref_to_checkout}"))
                         .is_ok()
                 {
-                    if let Ok(mut b) = service
-                        .repo
-                        .find_branch(new_name, git2::BranchType::Local)
-                    {
+                    if let Ok(mut b) = service.repo.find_branch(new_name, git2::BranchType::Local) {
                         let _ = b.set_upstream(Some(ref_to_checkout));
                     }
                 }
@@ -256,7 +253,9 @@ pub(super) fn remove_worktree(
         .map_err(|e| wrap_git2_error("enumerate worktrees", e))?;
     let mut found_name: Option<String> = None;
     for i in 0..names.len() {
-        let Some(name) = names.get(i) else { continue; };
+        let Some(name) = names.get(i) else {
+            continue;
+        };
         let wt = service
             .repo
             .find_worktree(name)
@@ -267,10 +266,7 @@ pub(super) fn remove_worktree(
         }
     }
     let name = found_name.ok_or_else(|| {
-        GitError::Other(format!(
-            "no worktree registered at '{}'",
-            path.display(),
-        ))
+        GitError::Other(format!("no worktree registered at '{}'", path.display(),))
     })?;
 
     let wt = service
@@ -288,7 +284,10 @@ pub(super) fn remove_worktree(
 
     if canonical.exists() {
         std::fs::remove_dir_all(&canonical).map_err(|e| {
-            GitError::Other(format!("remove worktree dir '{}': {e}", canonical.display()))
+            GitError::Other(format!(
+                "remove worktree dir '{}': {e}",
+                canonical.display()
+            ))
         })?;
     }
 
@@ -343,22 +342,21 @@ mod tests {
     #[test]
     fn list_worktrees_from_secondary_includes_primary() {
         let (temp, repo) = init_test_repo("worktrees_list_from_secondary");
-        let default_branch = repo
-            .head()
-            .unwrap()
-            .shorthand()
-            .unwrap()
-            .to_string();
-        let primary_service =
-            GitService::open(temp.path_str()).expect("open primary service");
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
+        let primary_service = GitService::open(temp.path_str()).expect("open primary service");
         let wt_path = unique_wt_path("from_secondary");
         let _cleanup = CleanupDir(wt_path.clone());
-        add_worktree(&primary_service, &wt_path, Some("feat-sec"), &default_branch)
-            .expect("add secondary");
+        add_worktree(
+            &primary_service,
+            &wt_path,
+            Some("feat-sec"),
+            &default_branch,
+        )
+        .expect("add secondary");
 
         // Open service FROM the secondary worktree path.
-        let secondary_service = GitService::open(wt_path.to_str().unwrap())
-            .expect("open secondary service");
+        let secondary_service =
+            GitService::open(wt_path.to_str().unwrap()).expect("open secondary service");
         let worktrees = list_worktrees(&secondary_service).expect("list from secondary");
 
         // Must include an entry flagged is_primary=true whose path is the
@@ -468,12 +466,7 @@ mod tests {
     #[test]
     fn add_worktree_creates_missing_parent_dirs() {
         let (temp, repo) = init_test_repo("worktrees_add_missing_parent");
-        let default_branch = repo
-            .head()
-            .unwrap()
-            .shorthand()
-            .unwrap()
-            .to_string();
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
         let service = GitService::open(temp.path_str()).expect("open service");
         // Path whose parent (and grandparent) doesn't exist yet.
         let base = unique_wt_path("missing_parent");
@@ -489,12 +482,7 @@ mod tests {
     #[test]
     fn add_worktree_succeeds_when_path_exists_but_empty() {
         let (temp, repo) = init_test_repo("worktrees_add_empty_existing");
-        let default_branch = repo
-            .head()
-            .unwrap()
-            .shorthand()
-            .unwrap()
-            .to_string();
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
         let service = GitService::open(temp.path_str()).expect("open service");
         let wt_path = unique_wt_path("empty_existing");
         let _cleanup = CleanupDir(wt_path.clone());
@@ -509,12 +497,7 @@ mod tests {
     #[test]
     fn add_worktree_clears_stale_metadata_and_retries() {
         let (temp, repo) = init_test_repo("worktrees_stale_meta");
-        let default_branch = repo
-            .head()
-            .unwrap()
-            .shorthand()
-            .unwrap()
-            .to_string();
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
         let service = GitService::open(temp.path_str()).expect("open service");
         let wt_path = unique_wt_path("stale_meta");
         let _cleanup = CleanupDir(wt_path.clone());
@@ -555,8 +538,7 @@ mod tests {
         let wt_path = unique_wt_path("remove");
         let _cleanup = CleanupDir(wt_path.clone());
 
-        add_worktree(&service, &wt_path, Some("tmp"), &default_branch)
-            .expect("add worktree");
+        add_worktree(&service, &wt_path, Some("tmp"), &default_branch).expect("add worktree");
 
         remove_worktree(&service, &wt_path, false).expect("remove worktree");
 
@@ -587,10 +569,7 @@ mod tests {
             .expect("add_worktree with None branch_name should succeed");
 
         let worktrees = list_worktrees(&service).expect("list after add");
-        let secondary = worktrees
-            .iter()
-            .find(|w| !w.is_primary)
-            .expect("secondary");
+        let secondary = worktrees.iter().find(|w| !w.is_primary).expect("secondary");
         assert_eq!(secondary.branch_name, default_branch);
     }
 
@@ -613,11 +592,11 @@ mod tests {
         let names = service.repo.worktrees().expect("worktrees list");
         let mut locked_name: Option<String> = None;
         for i in 0..names.len() {
-            let Some(name) = names.get(i) else { continue; };
+            let Some(name) = names.get(i) else {
+                continue;
+            };
             let wt = service.repo.find_worktree(name).expect("find");
-            if wt.path().canonicalize().ok().as_deref()
-                == wt_path.canonicalize().ok().as_deref()
-            {
+            if wt.path().canonicalize().ok().as_deref() == wt_path.canonicalize().ok().as_deref() {
                 wt.lock(Some("test lock")).expect("lock");
                 locked_name = Some(name.to_string());
                 break;
@@ -626,7 +605,10 @@ mod tests {
         locked_name.expect("locked a worktree for the test");
 
         let result = remove_worktree(&service, &wt_path, false);
-        assert!(result.is_err(), "remove should refuse a locked worktree when !force");
+        assert!(
+            result.is_err(),
+            "remove should refuse a locked worktree when !force"
+        );
 
         // Unlock for cleanup — CleanupDir will drop the dir; the metadata stays
         // but that's acceptable for test isolation.

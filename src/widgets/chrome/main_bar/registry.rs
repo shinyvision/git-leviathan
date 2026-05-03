@@ -33,7 +33,9 @@ mod tests {
     fn add_then_iter_yields_slot() {
         let mut reg = MainBarRegistry::new();
         reg.add(slot("a", Section::Center, 10));
-        let ids: Vec<&str> = iter_section(&reg, Section::Center).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = iter_section(&reg, Section::Center)
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["a"]);
     }
 
@@ -42,7 +44,9 @@ mod tests {
         let mut reg = MainBarRegistry::new();
         reg.add(slot("a", Section::Left, 10));
         reg.add(slot("b", Section::Center, 10));
-        let ids: Vec<&str> = iter_section(&reg, Section::Center).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = iter_section(&reg, Section::Center)
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["b"]);
     }
 
@@ -52,7 +56,9 @@ mod tests {
         reg.add(slot("c", Section::Center, 30));
         reg.add(slot("a", Section::Center, 10));
         reg.add(slot("b", Section::Center, 20));
-        let ids: Vec<&str> = iter_section(&reg, Section::Center).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = iter_section(&reg, Section::Center)
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
     }
 }

@@ -1,0 +1,43 @@
+[
+  {
+    "kind": "chrome",
+    "name": "main_bar",
+    "panes": [],
+    "sections": [
+      "left",
+      "center",
+      "right"
+    ]
+  },
+  {
+    "kind": "chrome",
+    "name": "tab_bar",
+    "panes": [],
+    "sections": [
+      "left",
+      "center",
+      "right"
+    ]
+  },
+  {
+    "kind": "content",
+    "name": "repository",
+    "panes": [
+      {
+        "name": "sidebar",
+        "sections": [
+          "top",
+          "bottom"
+        ]
+      },
+      {
+        "name": "main",
+        "sections": [
+          "top",
+          "bottom"
+        ]
+      }
+    ],
+    "sections": []
+  }
+]

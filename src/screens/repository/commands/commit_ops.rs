@@ -77,7 +77,9 @@ pub(super) fn on_cherry_pick_completed(
     result: Result<LoadedCherryPickOutcome, GitError>,
 ) -> Task<Message> {
     match result {
-        Ok(LoadedCherryPickOutcome::Committed(loaded)) => super::helpers::handle_repo_loaded(screen, loaded),
+        Ok(LoadedCherryPickOutcome::Committed(loaded)) => {
+            super::helpers::handle_repo_loaded(screen, loaded)
+        }
         Ok(LoadedCherryPickOutcome::Conflicted(loaded)) => {
             let load_task = super::helpers::handle_repo_loaded(screen, loaded);
             let toast_task = Task::done(Message::show_toast(ToastData::error(

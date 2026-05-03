@@ -9,6 +9,8 @@ use std::rc::Rc;
 
 use mlua::{Function, Lua, RegistryKey, Table, UserData, UserDataMethods};
 
+use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     Ok,
@@ -90,6 +92,7 @@ pub struct HealthCheckRegistration {
 pub fn install(
     lua: &Lua,
     sink: Rc<RefCell<Vec<HealthCheckRegistration>>>,
+    ledger: ResourceLedger,
     leviathan: &Table,
 ) -> mlua::Result<()> {
     let health = lua.create_table()?;
@@ -97,7 +100,19 @@ pub fn install(
         "register",
         lua.create_function(move |lua_inner, f: Function| {
             let key = lua_inner.create_registry_value(f)?;
-            sink.borrow_mut().push(HealthCheckRegistration { callback: key });
+            let source = ResourceLedger::source_location(lua_inner);
+            let resource_id = ledger.record(
+                PluginResourceKind::HealthCheck,
+                "health.register",
+                source.clone(),
+            );
+            ledger.record(
+                PluginResourceKind::LuaRegistryKey,
+                format!("health:{resource_id}"),
+                source,
+            );
+            sink.borrow_mut()
+                .push(HealthCheckRegistration { callback: key });
             Ok(())
         })?,
     )?;

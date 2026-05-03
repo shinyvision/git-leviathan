@@ -67,15 +67,30 @@ mod tests {
     use super::*;
 
     fn build_lua() -> Lua {
+        use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};
         use git_leviathan_plugin_api::capability::Capability;
         let lua = Lua::new();
         let leviathan = lua.create_table().unwrap();
+        let store = GrantStore::new_in_memory();
+        store
+            .record_decision(
+                "test",
+                "0.1.0",
+                "env",
+                Decision::Allow,
+                DecidedBy::Default,
+                None,
+            )
+            .unwrap();
         let guard = Rc::new(CapabilityGuard::new(
+            "test",
+            "0.1.0",
             vec![Capability::Env],
             std::env::temp_dir(),
             std::env::temp_dir(),
             std::env::temp_dir(),
             None,
+            store,
         ));
         install(&lua, &leviathan, guard).unwrap();
         lua.globals().set("leviathan", leviathan).unwrap();
@@ -189,6 +204,8 @@ mod tests {
             std::env::remove_var(key);
         }
         assert!(got.is_none());
-        assert!(err.expect("expected error string").contains("not valid UTF-8"));
+        assert!(err
+            .expect("expected error string")
+            .contains("not valid UTF-8"));
     }
 }

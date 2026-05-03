@@ -202,13 +202,14 @@
 //! `mkdir` first. Pairs with `write_file`/`append_file`/`delete` to
 //! complete the create/write/append/remove primitive set.
 
+use std::cell::RefCell;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use mlua::{Lua, Table};
+use mlua::{Function, Lua, Table};
 
 use crate::plugin::capabilities::CapabilityGuard;
 
@@ -547,50 +548,44 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     let g = Rc::clone(&guard);
     fs_tbl.set(
         "write_file",
-        lua.create_function(
-            move |_, (path, content): (String, String)| {
-                g.check_fs_write(Path::new(&path))
-                    .map_err(mlua::Error::external)?;
-                match write_file(&path, &content) {
-                    Ok(()) => Ok((true, None::<String>)),
-                    Err(e) => Ok((false, Some(e))),
-                }
-            },
-        )?,
+        lua.create_function(move |_, (path, content): (String, String)| {
+            g.check_fs_write(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match write_file(&path, &content) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e))),
+            }
+        })?,
     )?;
 
     let g = Rc::clone(&guard);
     fs_tbl.set(
         "rename",
-        lua.create_function(
-            move |_, (src, dst): (String, String)| {
-                g.check_fs_write(Path::new(&src))
-                    .map_err(mlua::Error::external)?;
-                g.check_fs_write(Path::new(&dst))
-                    .map_err(mlua::Error::external)?;
-                match fs::rename(&src, &dst) {
-                    Ok(()) => Ok((true, None::<String>)),
-                    Err(e) => Ok((false, Some(e.to_string()))),
-                }
-            },
-        )?,
+        lua.create_function(move |_, (src, dst): (String, String)| {
+            g.check_fs_write(Path::new(&src))
+                .map_err(mlua::Error::external)?;
+            g.check_fs_write(Path::new(&dst))
+                .map_err(mlua::Error::external)?;
+            match fs::rename(&src, &dst) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e.to_string()))),
+            }
+        })?,
     )?;
 
     let g = Rc::clone(&guard);
     fs_tbl.set(
         "copy",
-        lua.create_function(
-            move |_, (src, dst): (String, String)| {
-                g.check_fs_read(Path::new(&src))
-                    .map_err(mlua::Error::external)?;
-                g.check_fs_write(Path::new(&dst))
-                    .map_err(mlua::Error::external)?;
-                match copy_file(&src, &dst) {
-                    Ok(()) => Ok((true, None::<String>)),
-                    Err(e) => Ok((false, Some(e))),
-                }
-            },
-        )?,
+        lua.create_function(move |_, (src, dst): (String, String)| {
+            g.check_fs_read(Path::new(&src))
+                .map_err(mlua::Error::external)?;
+            g.check_fs_write(Path::new(&dst))
+                .map_err(mlua::Error::external)?;
+            match copy_file(&src, &dst) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e))),
+            }
+        })?,
     )?;
 
     let g = Rc::clone(&guard);
@@ -618,16 +613,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     let g = Rc::clone(&guard);
     fs_tbl.set(
         "append_file",
-        lua.create_function(
-            move |_, (path, content): (String, String)| {
-                g.check_fs_write(Path::new(&path))
-                    .map_err(mlua::Error::external)?;
-                match append_file(&path, &content) {
-                    Ok(()) => Ok((true, None::<String>)),
-                    Err(e) => Ok((false, Some(e))),
-                }
-            },
-        )?,
+        lua.create_function(move |_, (path, content): (String, String)| {
+            g.check_fs_write(Path::new(&path))
+                .map_err(mlua::Error::external)?;
+            match append_file(&path, &content) {
+                Ok(()) => Ok((true, None::<String>)),
+                Err(e) => Ok((false, Some(e))),
+            }
+        })?,
     )?;
 
     let g = Rc::clone(&guard);
@@ -644,6 +637,98 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     leviathan.set("fs", fs_tbl)?;
+    Ok(())
+}
+
+/// Phase 12 watch-handle userdata returned by `leviathan.fs.watch`.
+/// `:cancel()` drops the OS watcher and the parked Lua callback so
+/// further events for this watch_id stop dispatching.
+pub struct LuaWatchHandle {
+    pub watch_id: crate::plugin::watchers::WatchId,
+    pub registry: crate::plugin::watchers::FileWatcherRegistry,
+    pub callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
+}
+
+impl mlua::UserData for LuaWatchHandle {
+    fn add_methods<M: mlua::UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_method("cancel", |_, this, ()| {
+            this.registry.cancel(this.watch_id);
+            this.callbacks.borrow_mut().remove(this.watch_id);
+            Ok(())
+        });
+        methods.add_method("id", |_, this, ()| Ok(this.watch_id.get()));
+    }
+}
+
+/// Phase 12 file-watch install. Mounts `leviathan.fs.watch(path, opts, cb)`
+/// onto the existing fs table. Each call records a [`PluginResourceKind::FileWatcher`]
+/// entry; cancellation flows through the returned userdata or
+/// `cancel_for_generation`.
+#[allow(clippy::too_many_arguments)]
+pub fn install_watch(
+    lua: &Lua,
+    leviathan: &Table,
+    guard: Rc<CapabilityGuard>,
+    ledger: crate::plugin::resources::ResourceLedger,
+    registry: crate::plugin::watchers::FileWatcherRegistry,
+    callbacks: Rc<RefCell<crate::plugin::watchers::PluginWatcherCallbacks>>,
+    plugin_id: crate::plugin::resources::PluginId,
+    generation_id: crate::plugin::resources::GenerationId,
+) -> mlua::Result<()> {
+    use crate::plugin::resources::PluginResourceKind;
+
+    let fs_tbl: Table = leviathan.get("fs")?;
+
+    fs_tbl.set(
+        "watch",
+        lua.create_function(
+            move |lua_inner, (path, opts, cb): (String, Option<Table>, Function)| {
+                let recursive = opts
+                    .as_ref()
+                    .and_then(|t| t.get::<Option<bool>>("recursive").ok().flatten())
+                    .unwrap_or(false);
+                let path_buf = std::path::PathBuf::from(&path);
+                guard
+                    .check_fs_watch(&path_buf)
+                    .map_err(mlua::Error::external)?;
+
+                let watch_id = registry.allocate();
+                let source = crate::plugin::resources::ResourceLedger::source_location(lua_inner);
+                let resource_id = ledger.record(
+                    PluginResourceKind::FileWatcher,
+                    format!("fs.watch:{}", path),
+                    source.clone(),
+                );
+                ledger.record(
+                    PluginResourceKind::LuaRegistryKey,
+                    format!("watch:{}", watch_id.get()),
+                    source,
+                );
+
+                if let Err(e) = registry.register(
+                    plugin_id.clone(),
+                    generation_id,
+                    watch_id,
+                    resource_id,
+                    path_buf,
+                    recursive,
+                ) {
+                    ledger.remove_resource(resource_id);
+                    return Err(mlua::Error::external(e));
+                }
+
+                let key = lua_inner.create_registry_value(cb)?;
+                callbacks.borrow_mut().insert(watch_id, key);
+
+                Ok(LuaWatchHandle {
+                    watch_id,
+                    registry: registry.clone(),
+                    callbacks: Rc::clone(&callbacks),
+                })
+            },
+        )?,
+    )?;
+
     Ok(())
 }
 
@@ -784,7 +869,14 @@ fn list_dir(path: &str) -> Result<Vec<Entry>, String> {
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
-        out.push(Entry { name, path: full, is_dir, is_symlink, size, modified });
+        out.push(Entry {
+            name,
+            path: full,
+            is_dir,
+            is_symlink,
+            size,
+            modified,
+        });
     }
     out.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
     Ok(out)
@@ -797,16 +889,45 @@ mod tests {
     use std::io::Write;
 
     fn install_unrestricted(lua: &Lua, leviathan: &Table) {
+        use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};
         use git_leviathan_plugin_api::capability::{Capability, FsScope};
+        let store = GrantStore::new_in_memory();
+        store
+            .record_decision(
+                "test",
+                "0.1.0",
+                "fs:read:any",
+                Decision::Allow,
+                DecidedBy::Default,
+                None,
+            )
+            .unwrap();
+        store
+            .record_decision(
+                "test",
+                "0.1.0",
+                "fs:write:any",
+                Decision::Allow,
+                DecidedBy::Default,
+                None,
+            )
+            .unwrap();
         let guard = Rc::new(CapabilityGuard::new(
+            "test",
+            "0.1.0",
             vec![
-                Capability::FsRead { scope: FsScope::Any },
-                Capability::FsWrite { scope: FsScope::Any },
+                Capability::FsRead {
+                    scope: FsScope::Any,
+                },
+                Capability::FsWrite {
+                    scope: FsScope::Any,
+                },
             ],
             std::env::temp_dir(),
             std::env::temp_dir(),
             std::env::temp_dir(),
             None,
+            store,
         ));
         install(lua, leviathan, guard).unwrap();
     }
@@ -1057,9 +1178,7 @@ mod tests {
         let messy_str = messy.to_str().unwrap();
 
         let (got, err): (Option<String>, Option<String>) = lua
-            .load(format!(
-                "return leviathan.fs.canonicalize({messy_str:?})"
-            ))
+            .load(format!("return leviathan.fs.canonicalize({messy_str:?})"))
             .eval()
             .unwrap();
         assert!(err.is_none());
@@ -1090,10 +1209,8 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let (got, err): (Option<String>, Option<String>) = lua
-            .load("return leviathan.fs.cwd()")
-            .eval()
-            .unwrap();
+        let (got, err): (Option<String>, Option<String>) =
+            lua.load("return leviathan.fs.cwd()").eval().unwrap();
         assert!(err.is_none());
         let resolved = got.expect("cwd returned nil");
         let expected = std::env::current_dir().unwrap();
@@ -1107,10 +1224,7 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let got: String = lua
-            .load("return leviathan.fs.temp_dir()")
-            .eval()
-            .unwrap();
+        let got: String = lua.load("return leviathan.fs.temp_dir()").eval().unwrap();
         let expected = std::env::temp_dir();
         assert_eq!(got, expected.to_string_lossy());
         assert!(!got.is_empty());
@@ -1123,10 +1237,7 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let got: Option<String> = lua
-            .load("return leviathan.fs.config_dir()")
-            .eval()
-            .unwrap();
+        let got: Option<String> = lua.load("return leviathan.fs.config_dir()").eval().unwrap();
         let expected = dirs::config_dir().map(|p| p.to_string_lossy().into_owned());
         assert_eq!(got, expected);
     }
@@ -1138,10 +1249,7 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let got: Option<String> = lua
-            .load("return leviathan.fs.cache_dir()")
-            .eval()
-            .unwrap();
+        let got: Option<String> = lua.load("return leviathan.fs.cache_dir()").eval().unwrap();
         let expected = dirs::cache_dir().map(|p| p.to_string_lossy().into_owned());
         assert_eq!(got, expected);
     }
@@ -1153,10 +1261,7 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let got: Option<String> = lua
-            .load("return leviathan.fs.data_dir()")
-            .eval()
-            .unwrap();
+        let got: Option<String> = lua.load("return leviathan.fs.data_dir()").eval().unwrap();
         let expected = dirs::data_dir().map(|p| p.to_string_lossy().into_owned());
         assert_eq!(got, expected);
     }
@@ -1168,10 +1273,7 @@ mod tests {
         install_unrestricted(&lua, &leviathan);
         lua.globals().set("leviathan", leviathan).unwrap();
 
-        let got: Option<String> = lua
-            .load("return leviathan.fs.state_dir()")
-            .eval()
-            .unwrap();
+        let got: Option<String> = lua.load("return leviathan.fs.state_dir()").eval().unwrap();
         let expected = dirs::state_dir().map(|p| p.to_string_lossy().into_owned());
         assert_eq!(got, expected);
     }
@@ -1269,7 +1371,10 @@ mod tests {
             .unwrap();
         assert!(err.is_none());
         let n = got.expect("size returned nil for symlink");
-        assert!(n < 4096, "symlink size should be link length, not target length");
+        assert!(
+            n < 4096,
+            "symlink size should be link length, not target length"
+        );
     }
 
     #[test]
@@ -1504,7 +1609,10 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        assert!((now - secs).abs() < 60, "mtime {secs} not close to now {now}");
+        assert!(
+            (now - secs).abs() < 60,
+            "mtime {secs} not close to now {now}"
+        );
     }
 
     #[test]
@@ -2236,10 +2344,7 @@ mod tests {
         let before = stdfs::metadata(&path).unwrap().modified().unwrap();
 
         let lua = build_lua();
-        let script = format!(
-            "return leviathan.fs.touch({:?})",
-            path.to_str().unwrap()
-        );
+        let script = format!("return leviathan.fs.touch({:?})", path.to_str().unwrap());
         let _: bool = lua.load(script).eval().unwrap();
 
         let after = stdfs::metadata(&path).unwrap().modified().unwrap();

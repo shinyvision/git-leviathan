@@ -9,9 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::services::{
-    GitError, GitRepositoryGateway, Presenter, SharedRepositoryGateway,
-};
+use crate::services::{GitError, GitRepositoryGateway, Presenter, SharedRepositoryGateway};
 
 pub(crate) struct GatewayFleet {
     primary_path: PathBuf,
@@ -71,10 +69,7 @@ impl GatewayFleet {
 
     /// Build (or fetch cached) gateway for `path`. Does NOT change the active
     /// pointer — caller follows with `swap_active` if appropriate.
-    pub(crate) fn ensure(
-        &mut self,
-        path: PathBuf,
-    ) -> Result<&SharedRepositoryGateway, GitError> {
+    pub(crate) fn ensure(&mut self, path: PathBuf) -> Result<&SharedRepositoryGateway, GitError> {
         Ok(self.gateways.entry(path.clone()).or_insert_with(|| {
             let path_str = path.to_string_lossy().to_string();
             GitRepositoryGateway::from_path(path_str)
@@ -109,7 +104,6 @@ impl GatewayFleet {
         }
         self.gateways.remove(path);
     }
-
 }
 
 #[cfg(test)]
@@ -119,7 +113,8 @@ mod tests {
 
     fn sample_fleet() -> GatewayFleet {
         let primary = PathBuf::from("/tmp/primary");
-        let primary_gateway = GitRepositoryGateway::from_path(primary.to_string_lossy().to_string());
+        let primary_gateway =
+            GitRepositoryGateway::from_path(primary.to_string_lossy().to_string());
         GatewayFleet::new(
             primary.clone(),
             primary_gateway.clone(),
@@ -152,7 +147,10 @@ mod tests {
         let wt = PathBuf::from("/tmp/not-yet-cached");
         let err = fleet.swap_active(wt).expect_err("swap without ensure");
         let rendered = format!("{:?}", err);
-        assert!(rendered.contains("uncached"), "err should mention uncached: {rendered}");
+        assert!(
+            rendered.contains("uncached"),
+            "err should mention uncached: {rendered}"
+        );
     }
 
     #[test]
@@ -196,7 +194,10 @@ mod tests {
         let _ = fleet.ensure(wt.clone()).expect("ensure");
         fleet.drop_path(&wt);
         let paths = fleet.cached_paths();
-        assert!(!paths.contains(&wt), "dropped path should not appear in cached_paths");
+        assert!(
+            !paths.contains(&wt),
+            "dropped path should not appear in cached_paths"
+        );
     }
 
     #[test]

@@ -56,6 +56,11 @@ impl TabChange {
         let removed = prev_paths.difference(&cur_paths).next().is_some();
         let reordered = prev_paths == cur_paths && prev.paths() != current.paths();
         let selected_changed = prev.active_path != current.active_path;
-        Self { added, removed, reordered, selected_changed }
+        Self {
+            added,
+            removed,
+            reordered,
+            selected_changed,
+        }
     }
 }

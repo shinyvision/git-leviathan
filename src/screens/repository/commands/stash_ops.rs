@@ -11,7 +11,9 @@ pub(super) fn on_stash_apply_completed(
     result: Result<LoadedStashApplyOutcome, GitError>,
 ) -> Task<Message> {
     match result {
-        Ok(LoadedStashApplyOutcome::Applied(loaded)) => super::helpers::handle_repo_loaded(screen, loaded),
+        Ok(LoadedStashApplyOutcome::Applied(loaded)) => {
+            super::helpers::handle_repo_loaded(screen, loaded)
+        }
         Ok(LoadedStashApplyOutcome::Conflicted(loaded)) => {
             let load_task = super::helpers::handle_repo_loaded(screen, loaded);
             let toast_task = Task::done(Message::show_toast(ToastData::error(
@@ -35,7 +37,9 @@ pub(super) fn on_stash_pop_completed(
     result: Result<LoadedStashApplyOutcome, GitError>,
 ) -> Task<Message> {
     match result {
-        Ok(LoadedStashApplyOutcome::Applied(loaded)) => super::helpers::handle_repo_loaded(screen, loaded),
+        Ok(LoadedStashApplyOutcome::Applied(loaded)) => {
+            super::helpers::handle_repo_loaded(screen, loaded)
+        }
         Ok(LoadedStashApplyOutcome::Conflicted(loaded)) => {
             let load_task = super::helpers::handle_repo_loaded(screen, loaded);
             let toast_task = Task::done(Message::show_toast(ToastData::error(

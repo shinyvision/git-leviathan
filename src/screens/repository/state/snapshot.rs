@@ -91,7 +91,10 @@ impl RepositorySnapshot {
     /// set are intentionally NOT touched — a fetch cannot change any of them,
     /// and keeping them out of the mutation set is what lets an open overlay
     /// or in-progress commit message survive a fetch completion.
-    pub(in crate::screens::repository) fn apply_refs_update(&mut self, refs: LoadedRefs) -> Vec<crate::view_model::CommitDiffState> {
+    pub(in crate::screens::repository) fn apply_refs_update(
+        &mut self,
+        refs: LoadedRefs,
+    ) -> Vec<crate::view_model::CommitDiffState> {
         let LoadedRefs {
             commits,
             commit_presentations,
@@ -247,5 +250,4 @@ impl RepositorySnapshot {
             }
         }
     }
-
 }

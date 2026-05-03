@@ -1,60 +1,30 @@
 //! `{kind = "button", on_click?, text?, child?, width?, height?, style?}`
-//! — fully configurable themed button.
-//!
-//! Content: either `child` (any widget) OR `text` (shortcut — equivalent to
-//! `child = {kind = "text", value = "..."}` with `size = 14`). If both are
-//! set, `child` wins.
-//!
-//! Padding is **not** a property of the button. Plugins wrap the child in a
-//! `padding` widget (or rely on the child's own intrinsic size). This
-//! keeps layout concerns orthogonal — the button owns its visual/clickable
-//! rect + style, the padding widget owns spacing.
-//!
-//! `on_click` dispatches according to the current scope:
-//! - Screen → `PluginMessage::Event { plugin_id, screen_id, event, value }`
-//! - Slot → `PluginMessage::SlotClicked { plugin_id, region, container, slot_id }`
-//!
-//! Empty/absent `on_click` renders a non-interactive button (no on_press
-//! handler; iced disables hover highlight automatically).
-//!
-//! Styling is controlled by the `style` sub-table:
-//! ```text
-//! style = {
-//!   background       = "#RRGGBB",  -- base background, default none
-//!   background_hover = "#RRGGBB",  -- hover background, default none
-//!   text_color       = "#RRGGBB",  -- foreground, default theme TEXT_PRIMARY
-//!   border           = { width=1, radius=4, color="#RRGGBB" },
-//! }
-//! ```
+//! — fully configurable themed button. Routes clicks per dispatch scope.
 
 use iced::{
     widget::{button, text, Space},
     Element, Length, Padding, Theme,
 };
-use serde_json::Value;
 
 use crate::message::Message;
 use crate::plugin::message::PluginMessage;
+use crate::plugin::ui::widget_ast::ButtonNode;
 use crate::theme;
 
-use super::common::{parse_border, parse_color, parse_length};
+use super::common::{border_to_iced, length_explicit, opt_color_to_iced};
 use super::{BuildCtx, DispatchScope};
 
-pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
-    let content: Element<'static, Message> = if let Some(child_node) = node.get("child") {
-        super::build(child_node, ctx)
-    } else if let Some(label) = node.get("text").and_then(Value::as_str) {
-        text(label.to_string()).size(14.0).into()
+pub(super) fn build(node: &ButtonNode, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
+    let content: Element<'static, Message> = if let Some(child_ast) = &node.child {
+        super::build(child_ast, ctx)
+    } else if let Some(label) = &node.text {
+        text(label.clone()).size(14.0).into()
     } else {
         Space::new().into()
     };
 
-    let event = node
-        .get("on_click")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string();
-    let value = node.get("value").cloned().unwrap_or(Value::Null);
+    let event = node.on_click.clone().unwrap_or_default();
+    let value = node.value.clone();
     let plugin_id = ctx.plugin_id.to_string();
     let on_press: Option<Message> = if event.is_empty() {
         None
@@ -81,23 +51,17 @@ pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Messag
         })
     };
 
-    let width = parse_length(node.get("width"));
-    let height = parse_length(node.get("height"));
+    let width = length_explicit(node.width);
+    let height = length_explicit(node.height);
 
-    let style_node = node.get("style");
-    let background = style_node
-        .and_then(|s| s.get("background"))
-        .and_then(|v| parse_color(Some(v)));
-    let background_hover = style_node
-        .and_then(|s| s.get("background_hover"))
-        .and_then(|v| parse_color(Some(v)));
-    let text_color = style_node
-        .and_then(|s| s.get("text_color"))
-        .and_then(|v| parse_color(Some(v)))
-        .unwrap_or(theme::TEXT_PRIMARY);
-    let border = style_node
-        .and_then(|s| s.get("border"))
-        .map(|b| parse_border(Some(b)))
+    let background = opt_color_to_iced(&node.style.background);
+    let background_hover = opt_color_to_iced(&node.style.background_hover);
+    let text_color = opt_color_to_iced(&node.style.text_color).unwrap_or(theme::TEXT_PRIMARY);
+    let border = node
+        .style
+        .border
+        .as_ref()
+        .map(border_to_iced)
         .unwrap_or_default();
 
     let style_fn = move |_: &Theme, status: button::Status| {
@@ -114,9 +78,6 @@ pub(super) fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Messag
         }
     };
 
-    // Zero intrinsic padding — the plugin must wrap `child` in a `padding`
-    // widget if it wants breathing room. Iced's button default padding is
-    // non-zero; force it to zero so Lua has total control.
     let mut btn = button(content).padding(Padding::ZERO).style(style_fn);
     if let Some(w) = width {
         btn = btn.width(w);

@@ -47,6 +47,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 git_leviathan_plugin_api = { path = "git_leviathan_plugin_api" }
+sha2 = "0.10"
+semver = { workspace = true }
 
 [package.metadata.deb]
 name = "git-leviathan"

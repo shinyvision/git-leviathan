@@ -388,10 +388,7 @@ fn commit_message_label<'a>() -> Element<'a, Message> {
     .into()
 }
 
-fn commit_action_row<'a>(
-    can_commit: bool,
-    is_merge_in_progress: bool,
-) -> Element<'a, Message> {
+fn commit_action_row<'a>(can_commit: bool, is_merge_in_progress: bool) -> Element<'a, Message> {
     let mut commit_button = button(dirty_commit_action_label("Commit All Changes"))
         .style(green_button_style(can_commit))
         .padding(Padding::from([0, 16]))

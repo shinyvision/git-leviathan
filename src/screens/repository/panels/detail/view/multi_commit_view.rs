@@ -12,10 +12,10 @@ use crate::{
     assets,
     core::Commit,
     message::Message,
+    services::git::MergedCommitDiffResult,
     services::text_measurement::{cached_measure_width, FontFamily},
     style, theme,
     utils::initials,
-    services::git::MergedCommitDiffResult,
     widgets::shared::{h_divider, horizontal_space, scrollbar_style, v_divider},
 };
 
@@ -44,11 +44,8 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
         let commit_height = commit_list_natural_height.min(max_commit_height);
         let remaining_height = (size.height - commit_height).max(0.0);
 
-        let commit_list = scrollable_commit_rows(
-            &multi_commits,
-            size.width,
-            Length::Fixed(commit_height),
-        );
+        let commit_list =
+            scrollable_commit_rows(&multi_commits, size.width, Length::Fixed(commit_height));
 
         let cl_container = container(commit_list)
             .width(Length::Fill)
@@ -86,18 +83,15 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
         .into()
 }
 
-fn multi_commit_detail_panel_horizontal<'a>(
-    screen: DetailViewModel<'a>,
-) -> Element<'a, Message> {
+fn multi_commit_detail_panel_horizontal<'a>(screen: DetailViewModel<'a>) -> Element<'a, Message> {
     let width = screen.width;
     let count = screen.multi_commits.len();
     let multi_commits = screen.multi_commits;
     let merged_diff = screen.merged_diff;
     let active_diff_file_path = screen.active_diff_file_path;
 
-    let commit_list = responsive(move |size| {
-        scrollable_commit_rows(&multi_commits, size.width, Length::Fill)
-    });
+    let commit_list =
+        responsive(move |size| scrollable_commit_rows(&multi_commits, size.width, Length::Fill));
 
     let commit_list_container = container(commit_list)
         .width(Length::Fill)

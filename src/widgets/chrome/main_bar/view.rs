@@ -34,15 +34,9 @@ pub fn main_bar_view<'data>(
     let right_row = render_section(registry, ctx, Section::Right, 6.0);
     let right = container(right_row).padding(Padding::from([0, 10]));
 
-    let bar = row![
-        left,
-        horizontal_space(),
-        center,
-        horizontal_space(),
-        right,
-    ]
-    .align_y(iced::Alignment::Center)
-    .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32));
+    let bar = row![left, horizontal_space(), center, horizontal_space(), right,]
+        .align_y(iced::Alignment::Center)
+        .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32));
 
     container(bar)
         .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32))

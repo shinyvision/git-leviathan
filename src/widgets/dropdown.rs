@@ -135,12 +135,9 @@ impl<'a> Widget<Message, Theme, iced::Renderer> for Dropdown<'a> {
         renderer: &iced::Renderer,
         operation: &mut dyn Operation,
     ) {
-        self.trigger.as_widget_mut().operate(
-            &mut tree.children[0],
-            layout,
-            renderer,
-            operation,
-        );
+        self.trigger
+            .as_widget_mut()
+            .operate(&mut tree.children[0], layout, renderer, operation);
     }
 
     fn update(
@@ -424,10 +421,7 @@ pub fn dropdown_menu<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Messag
 
 /// One clickable row inside a dropdown menu. Caller supplies row content
 /// (usually `row![icon, text]`) and the message dispatched on click.
-pub fn dropdown_item<'a>(
-    content: Element<'a, Message>,
-    on_press: Message,
-) -> Element<'a, Message> {
+pub fn dropdown_item<'a>(content: Element<'a, Message>, on_press: Message) -> Element<'a, Message> {
     let inner = container(
         row![content]
             .spacing(6)
@@ -466,4 +460,3 @@ pub fn icon_label<'a>(
         .align_y(iced::Alignment::Center)
         .into()
 }
-

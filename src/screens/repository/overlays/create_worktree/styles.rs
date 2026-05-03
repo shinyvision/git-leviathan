@@ -22,9 +22,7 @@ pub(super) fn input_style(_: &Theme, _: text_input::Status) -> text_input::Style
     }
 }
 
-pub(super) fn blue_button_style(
-    enabled: bool,
-) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub(super) fn blue_button_style(enabled: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     palette_button_style(BROWSE_BUTTON, enabled)
 }
 

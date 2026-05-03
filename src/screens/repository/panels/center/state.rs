@@ -160,7 +160,9 @@ impl CenterPanel {
     ) -> CenterAction {
         if self.loading_more_commits
             || !self.has_more_commits
-            || !self.center_list.is_near_bottom(data.snapshot.commits().len())
+            || !self
+                .center_list
+                .is_near_bottom(data.snapshot.commits().len())
         {
             return CenterAction::None;
         }

@@ -42,7 +42,9 @@ pub(crate) fn view<'a>(state: &'a State) -> Element<'a, Message> {
 
     let header = row![
         assets::icon(assets::TREE, 16.0, theme::TEXT_SECONDARY),
-        text("Create Worktree").size(theme::FONT_LG).style(style::primary_text),
+        text("Create Worktree")
+            .size(theme::FONT_LG)
+            .style(style::primary_text),
         horizontal_space().width(Length::Fill),
         close_btn,
     ]
@@ -71,13 +73,11 @@ pub(crate) fn view<'a>(state: &'a State) -> Element<'a, Message> {
     );
 
     let browse_btn = button(
-        container(
-            text("Browse").size(theme::FONT_SM),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center),
+        container(text("Browse").size(theme::FONT_SM))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
     )
     .on_press(Message::repo(RepositoryMessage::OverlayPanel(
         OverlayPanelAction::CreateWorktreeBrowseRequested,
@@ -92,13 +92,11 @@ pub(crate) fn view<'a>(state: &'a State) -> Element<'a, Message> {
 
     let can_submit = state.can_submit();
     let submit_btn = button(
-        container(
-            text("Create Worktree").size(theme::FONT_SM),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center),
+        container(text("Create Worktree").size(theme::FONT_SM))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
     )
     .style(green_submit_style(can_submit))
     .padding(Padding::from([0, 16]))
@@ -246,7 +244,10 @@ fn ref_dropdown_stack<'a>(state: &'a State) -> Element<'a, Message> {
         OverlayPanelAction::CreateWorktreeDropdownToggled,
     ));
 
-    let label = state.reference.as_ref().map(|c| ref_label(c, theme::TEXT_PRIMARY));
+    let label = state
+        .reference
+        .as_ref()
+        .map(|c| ref_label(c, theme::TEXT_PRIMARY));
     let trigger = dropdown_trigger(label, "Select a branch…", toggle_msg.clone());
 
     let menu = if state.dropdown_open {
@@ -277,7 +278,9 @@ fn ref_label<'a>(choice: &'a RefChoice, text_color: Color) -> Element<'a, Messag
             theme::TEXT_SECONDARY,
             text(name.clone())
                 .size(theme::FONT_SM)
-                .style(move |_: &Theme| text::Style { color: Some(text_color) })
+                .style(move |_: &Theme| text::Style {
+                    color: Some(text_color),
+                })
                 .into(),
         ),
         RefChoice::RemoteBranch { remote, branch } => {
@@ -289,7 +292,9 @@ fn ref_label<'a>(choice: &'a RefChoice, text_color: Color) -> Element<'a, Messag
                     }),
                 text(branch.clone())
                     .size(theme::FONT_SM)
-                    .style(move |_: &Theme| text::Style { color: Some(text_color) }),
+                    .style(move |_: &Theme| text::Style {
+                        color: Some(text_color)
+                    }),
             ]
             .spacing(0)
             .align_y(iced::Alignment::Center)

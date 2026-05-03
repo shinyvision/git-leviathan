@@ -19,8 +19,8 @@ use crate::{
     services::{SegmentKind, SyntaxHighlightedSpan},
     theme,
     widgets::text::{
-        self, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData, TextSelection,
-        CONTENT_PAD_X, DEFAULT_CONTENT_LINE_HEIGHT,
+        self, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData, TextSelection, CONTENT_PAD_X,
+        DEFAULT_CONTENT_LINE_HEIGHT,
     },
 };
 
@@ -393,4 +393,3 @@ pub fn selection_text_for_rows(rows: &[DiffRow], selection: &TextSelection) -> S
     }
     pieces.join("\n")
 }
-

@@ -117,7 +117,7 @@ impl OverlayManager {
     /// slide offset appropriate for the dialog's animation timeline.
     pub(crate) fn open(&mut self, dialog: ActiveDialog) {
         self.slide_offset = match &dialog {
-            ActiveDialog::AddRemote(_) => 0.0, // uses its own animation
+            ActiveDialog::AddRemote(_) => 0.0,      // uses its own animation
             ActiveDialog::CreateWorktree(_) => 0.0, // uses its own animation
             _ => OVERLAY_ENTER_OFFSET,
         };
@@ -840,10 +840,14 @@ impl OverlayManager {
                 self.close();
                 DialogDispatch::CancelCloseFocus
             }
-            OverlayPanelAction::CreateWorktreeOpen { available_refs, default_dir_prefix } => {
-                self.open(ActiveDialog::CreateWorktree(
-                    create_worktree::State::new(available_refs, default_dir_prefix),
-                ));
+            OverlayPanelAction::CreateWorktreeOpen {
+                available_refs,
+                default_dir_prefix,
+            } => {
+                self.open(ActiveDialog::CreateWorktree(create_worktree::State::new(
+                    available_refs,
+                    default_dir_prefix,
+                )));
                 DialogDispatch::RestoreCenterListScroll
             }
             OverlayPanelAction::CreateWorktreeClose => {
@@ -907,13 +911,22 @@ impl OverlayManager {
                 if !state.can_submit() {
                     return DialogDispatch::Task(Task::none());
                 }
-                let ref_git = state.reference.as_ref().map(|r| r.git_ref()).unwrap_or_default();
+                let ref_git = state
+                    .reference
+                    .as_ref()
+                    .map(|r| r.git_ref())
+                    .unwrap_or_default();
                 let branch_name = state.branch_name.trim().to_string();
                 let working_dir = std::path::PathBuf::from(state.working_dir.trim());
                 state.submitting = true;
                 state.error = None;
 
-                let DialogCtx { primary_repository, presenter, tab_id, .. } = ctx;
+                let DialogCtx {
+                    primary_repository,
+                    presenter,
+                    tab_id,
+                    ..
+                } = ctx;
                 let task = Task::perform(
                     super::gateway_work(move || {
                         primary_repository
@@ -924,7 +937,11 @@ impl OverlayManager {
                 );
                 DialogDispatch::Task(task)
             }
-            OverlayPanelAction::WorktreeRemoveRequested { path, branch_name, is_active } => {
+            OverlayPanelAction::WorktreeRemoveRequested {
+                path,
+                branch_name,
+                is_active,
+            } => {
                 self.open(ActiveDialog::RemoveWorktree(remove_worktree::State {
                     path,
                     branch_name,
@@ -951,7 +968,12 @@ impl OverlayManager {
                 }
                 let path = state.path.clone();
                 self.close();
-                let DialogCtx { primary_repository, presenter, tab_id, .. } = ctx;
+                let DialogCtx {
+                    primary_repository,
+                    presenter,
+                    tab_id,
+                    ..
+                } = ctx;
                 let task = Task::perform(
                     super::gateway_work(move || {
                         primary_repository
@@ -1008,7 +1030,8 @@ fn spawn_cherry_pick_task(commit_hash: String, commit_now: bool, ctx: DialogCtx)
 }
 
 fn existing_branches(data: &RepositoryData) -> Vec<String> {
-    data.snapshot.sidebar_sections()
+    data.snapshot
+        .sidebar_sections()
         .iter()
         .flat_map(|section| section.branches.iter().map(|b| b.name.clone()))
         .collect()

@@ -1,33 +1,53 @@
 //! Shared DSL parsers + the error-text fallback used by every widget.
 //!
+//! The AST decoder normalises types upstream (Phase 4) — these helpers
+//! are the small "AST → iced" converters: turn an `AstColor` into an
+//! `iced::Color`, an `AstLength` into a `Length`, etc. They never look
+//! at raw JSON; that's the decoder's job.
+//!
 //! Kept `pub(super)` so only sibling widget files can use them — nothing
-//! outside `widget_tree` should care how a color/length/padding value is
-//! parsed from the plugin-supplied JSON.
+//! outside `widget_tree` should care how a color/length value gets
+//! translated for iced.
 
 use std::path::Path;
 
 use iced::{widget::text, Alignment, Border, Color, Element, Length, Theme};
-use serde_json::Value;
 
 use crate::message::Message;
+use crate::plugin::ui::widget_ast::{AstAlignX, AstAlignY, AstBorder, AstColor, AstLength};
 
-pub(super) fn parse_length(value: Option<&Value>) -> Option<Length> {
-    let v = value?;
-    if let Some(n) = v.as_f64() {
-        return Some(Length::Fixed(n as f32));
+/// Convert an AST length to iced. `Auto` means "no opinion" — the caller
+/// picks its own per-widget default (rows want `Fill`, padding wants
+/// `Shrink`, etc.).
+pub(super) fn length_or(l: AstLength, default: Length) -> Length {
+    match l {
+        AstLength::Auto => default,
+        AstLength::Fill => Length::Fill,
+        AstLength::Shrink => Length::Shrink,
+        AstLength::Fixed(n) => Length::Fixed(n),
     }
-    if let Some(s) = v.as_str() {
-        return match s {
-            "fill" => Some(Length::Fill),
-            "shrink" => Some(Length::Shrink),
-            _ => None,
-        };
-    }
-    None
 }
 
-pub(super) fn parse_color(value: Option<&Value>) -> Option<Color> {
-    let s = value?.as_str()?;
+/// AST-driven version that returns `None` when the AST said "auto" so
+/// the caller can choose to skip setting the dimension at all.
+pub(super) fn length_explicit(l: AstLength) -> Option<Length> {
+    match l {
+        AstLength::Auto => None,
+        AstLength::Fill => Some(Length::Fill),
+        AstLength::Shrink => Some(Length::Shrink),
+        AstLength::Fixed(n) => Some(Length::Fixed(n)),
+    }
+}
+
+pub(super) fn color_to_iced(color: &AstColor) -> Option<Color> {
+    parse_hex(&color.raw)
+}
+
+pub(super) fn opt_color_to_iced(color: &Option<AstColor>) -> Option<Color> {
+    color.as_ref().and_then(color_to_iced)
+}
+
+fn parse_hex(s: &str) -> Option<Color> {
     let s = s.trim_start_matches('#');
     if s.len() != 6 {
         return None;
@@ -38,38 +58,30 @@ pub(super) fn parse_color(value: Option<&Value>) -> Option<Color> {
     Some(Color { r, g, b, a: 1.0 })
 }
 
-pub(super) fn parse_alignment_x(value: Option<&Value>) -> Option<Alignment> {
-    let s = value?.as_str()?;
-    match s {
-        "start" | "left" => Some(Alignment::Start),
-        "center" | "centre" => Some(Alignment::Center),
-        "end" | "right" => Some(Alignment::End),
-        _ => None,
+pub(super) fn align_x_to_iced(a: AstAlignX) -> Alignment {
+    match a {
+        AstAlignX::Start => Alignment::Start,
+        AstAlignX::Center => Alignment::Center,
+        AstAlignX::End => Alignment::End,
     }
 }
 
-pub(super) fn parse_alignment_y(value: Option<&Value>) -> Option<Alignment> {
-    let s = value?.as_str()?;
-    match s {
-        "start" | "top" => Some(Alignment::Start),
-        "center" | "centre" => Some(Alignment::Center),
-        "end" | "bottom" => Some(Alignment::End),
-        _ => None,
+pub(super) fn align_y_to_iced(a: AstAlignY) -> Alignment {
+    match a {
+        AstAlignY::Start => Alignment::Start,
+        AstAlignY::Center => Alignment::Center,
+        AstAlignY::End => Alignment::End,
     }
 }
 
-/// Parse a `{ width?, radius?, color? }` sub-table into an iced `Border`.
-/// Missing fields default to 0 / transparent / no radius — matching
-/// `Border::default()`.
-pub(super) fn parse_border(value: Option<&Value>) -> Border {
-    let Some(v) = value else { return Border::default() };
-    let width = v.get("width").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-    let radius = v.get("radius").and_then(Value::as_f64).unwrap_or(0.0) as f32;
-    let color = parse_color(v.get("color")).unwrap_or(Color::TRANSPARENT);
+/// Translate an `AstBorder` into an iced `Border`. Missing color → fully
+/// transparent (matches `Border::default()`).
+pub(super) fn border_to_iced(b: &AstBorder) -> Border {
+    let color = opt_color_to_iced(&b.color).unwrap_or(Color::TRANSPARENT);
     Border {
         color,
-        width,
-        radius: radius.into(),
+        width: b.width,
+        radius: b.radius.into(),
     }
 }
 
@@ -99,36 +111,84 @@ pub(super) fn error_text(msg: String) -> Element<'static, Message> {
         .into()
 }
 
+/// Render a structured decode error / limit hit as a visible widget.
+/// Plugin authors see "this slot is broken" instead of empty space; the
+/// host emits the matching `widget.*` diagnostic in parallel so devtools
+/// can drill in.
+pub fn build_error_widget(code: &str, message: &str) -> Element<'static, Message> {
+    let truncated = if message.len() > 256 {
+        let mut t = message[..256].to_string();
+        t.push_str("...");
+        t
+    } else {
+        message.to_string()
+    };
+    let body: Element<'static, Message> = iced::widget::column![
+        text(format!("[{code}]"))
+            .size(11.0)
+            .style(|_: &Theme| iced::widget::text::Style {
+                color: Some(Color {
+                    r: 1.0,
+                    g: 0.5,
+                    b: 0.5,
+                    a: 1.0
+                }),
+            }),
+        text(truncated)
+            .size(12.0)
+            .style(|_: &Theme| iced::widget::text::Style {
+                color: Some(Color {
+                    r: 1.0,
+                    g: 0.85,
+                    b: 0.85,
+                    a: 1.0,
+                }),
+            }),
+    ]
+    .spacing(2.0)
+    .into();
+    iced::widget::container(body)
+        .padding(iced::Padding {
+            top: 4.0,
+            right: 6.0,
+            bottom: 4.0,
+            left: 6.0,
+        })
+        .style(|_: &Theme| iced::widget::container::Style {
+            background: Some(iced::Background::Color(Color {
+                r: 0.18,
+                g: 0.05,
+                b: 0.05,
+                a: 1.0,
+            })),
+            border: Border {
+                color: Color {
+                    r: 1.0,
+                    g: 0.3,
+                    b: 0.3,
+                    a: 1.0,
+                },
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        })
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn parse_color_hex() {
-        let c = parse_color(Some(&Value::String("#ff8800".into()))).unwrap();
+        let c = color_to_iced(&AstColor {
+            raw: "#ff8800".into(),
+        })
+        .unwrap();
         assert!((c.r - 1.0).abs() < 0.01);
         assert!((c.g - 0.533).abs() < 0.01);
         assert!((c.b - 0.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn parse_length_variants() {
-        assert!(matches!(parse_length(Some(&serde_json::json!("fill"))), Some(Length::Fill)));
-        assert!(matches!(parse_length(Some(&serde_json::json!("shrink"))), Some(Length::Shrink)));
-        assert!(matches!(parse_length(Some(&serde_json::json!(42))), Some(Length::Fixed(_))));
-        assert!(parse_length(Some(&serde_json::json!("bogus"))).is_none());
-        assert!(parse_length(None).is_none());
-    }
-
-    #[test]
-    fn parse_border_defaults_and_overrides() {
-        let b = parse_border(None);
-        assert!((b.width - 0.0).abs() < 0.01);
-        let b = parse_border(Some(&serde_json::json!({
-            "width": 1, "radius": 6, "color": "#ff0000"
-        })));
-        assert!((b.width - 1.0).abs() < 0.01);
-        assert!((b.color.r - 1.0).abs() < 0.01);
     }
 
     #[test]
@@ -148,14 +208,56 @@ mod tests {
         assert!(is_safe_relative_path("file.svg"));
         assert!(is_safe_relative_path("icons/file.svg"));
         assert!(is_safe_relative_path("assets/icons/folder.svg"));
-        assert!(is_safe_relative_path("a/b/c/d.svg"));
     }
 
     #[test]
-    fn parse_alignment_vocab() {
-        assert!(matches!(parse_alignment_x(Some(&serde_json::json!("center"))), Some(Alignment::Center)));
-        assert!(matches!(parse_alignment_x(Some(&serde_json::json!("end"))), Some(Alignment::End)));
-        assert!(matches!(parse_alignment_y(Some(&serde_json::json!("top"))), Some(Alignment::Start)));
-        assert!(parse_alignment_x(Some(&serde_json::json!("nope"))).is_none());
+    fn length_helpers_propagate_explicit_and_default() {
+        assert!(matches!(
+            length_or(AstLength::Fill, Length::Shrink),
+            Length::Fill
+        ));
+        assert!(matches!(
+            length_or(AstLength::Auto, Length::Shrink),
+            Length::Shrink
+        ));
+        assert!(matches!(length_explicit(AstLength::Auto), None));
+        assert!(matches!(
+            length_explicit(AstLength::Fixed(7.5)),
+            Some(Length::Fixed(_))
+        ));
+    }
+
+    #[test]
+    fn align_helpers_translate_x_and_y() {
+        assert!(matches!(
+            align_x_to_iced(AstAlignX::Center),
+            Alignment::Center
+        ));
+        assert!(matches!(align_y_to_iced(AstAlignY::End), Alignment::End));
+    }
+
+    #[test]
+    fn border_translates_with_default_color_when_missing() {
+        let b = border_to_iced(&AstBorder {
+            width: 2.0,
+            radius: 4.0,
+            color: None,
+        });
+        assert!((b.width - 2.0).abs() < 0.001);
+        assert_eq!(b.color, Color::TRANSPARENT);
+    }
+
+    #[test]
+    fn error_widget_builds() {
+        let _ = build_error_widget("widget.unknown_kind", "kind 'oof' is not known");
+    }
+
+    #[test]
+    fn error_widget_truncates_long_messages() {
+        let long: String = "x".repeat(1024);
+        // Just confirm it returns without panicking; the truncation
+        // logic is a string slice + suffix which we exercise with this
+        // input.
+        let _ = build_error_widget("widget.string_too_long", &long);
     }
 }

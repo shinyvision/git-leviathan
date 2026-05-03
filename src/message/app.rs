@@ -27,6 +27,7 @@ pub enum AppMessage {
     },
     TabRegistryOp(TabRegistryOp),
     AnimationTick(Instant),
+    PluginRuntimeTick(Instant),
     /// A repository's files changed on disk; carries the owning tab id.
     RepoFilesChanged(TabId),
     WindowFocused,

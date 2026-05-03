@@ -68,10 +68,7 @@ impl TabManager {
     }
 
     pub fn tab_id_for_path(&self, path: &str) -> Option<TabId> {
-        self.tabs
-            .iter()
-            .find(|t| t.repo_path == path)
-            .map(|t| t.id)
+        self.tabs.iter().find(|t| t.repo_path == path).map(|t| t.id)
     }
 
     pub fn active_screen(&self) -> Option<&RepositoryScreen> {
@@ -258,8 +255,7 @@ impl TabManager {
     /// `self.tabs` are ignored; missing ids retain their relative position
     /// at the end.
     pub fn reorder(&mut self, new_order: Vec<TabId>) {
-        let mut by_id: HashMap<TabId, TabEntry> =
-            self.tabs.drain(..).map(|t| (t.id, t)).collect();
+        let mut by_id: HashMap<TabId, TabEntry> = self.tabs.drain(..).map(|t| (t.id, t)).collect();
         let mut reordered: Vec<TabEntry> = Vec::with_capacity(by_id.len());
         for id in new_order {
             if let Some(entry) = by_id.remove(&id) {

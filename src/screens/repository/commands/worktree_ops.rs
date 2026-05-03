@@ -94,10 +94,7 @@ mod tests {
     // RepositoryScreen in a unit test would require a real SharedRepositoryGateway.
     #[test]
     fn state_error_path_sets_message_and_clears_submitting() {
-        let mut state = State::new(
-            vec![RefChoice::LocalBranch("main".into())],
-            String::new(),
-        );
+        let mut state = State::new(vec![RefChoice::LocalBranch("main".into())], String::new());
         // Simulate a submit-in-flight.
         state.submitting = true;
         assert!(state.error.is_none());

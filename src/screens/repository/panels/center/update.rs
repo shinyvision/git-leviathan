@@ -46,13 +46,14 @@ pub(in crate::screens::repository) fn update(
         CenterAction::NavigateUp => {
             let current = ctx.data.selection.selected_commit();
             if current > 0 {
-                let follow_up =
-                    panel.select_commit(current - 1, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+                let follow_up = panel.select_commit(
+                    current - 1,
+                    &mut ctx.data.selection,
+                    &mut ctx.data.branch_popout,
+                );
                 Task::batch(vec![
                     update(panel, follow_up, ctx),
-                    panel
-                        .scroll_to_commit(current - 1)
-                        .unwrap_or(Task::none()),
+                    panel.scroll_to_commit(current - 1).unwrap_or(Task::none()),
                 ])
             } else {
                 Task::none()
@@ -62,13 +63,14 @@ pub(in crate::screens::repository) fn update(
             let current = ctx.data.selection.selected_commit();
             let max = ctx.data.snapshot.commits().len().saturating_sub(1);
             if current < max {
-                let follow_up =
-                    panel.select_commit(current + 1, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+                let follow_up = panel.select_commit(
+                    current + 1,
+                    &mut ctx.data.selection,
+                    &mut ctx.data.branch_popout,
+                );
                 Task::batch(vec![
                     update(panel, follow_up, ctx),
-                    panel
-                        .scroll_to_commit(current + 1)
-                        .unwrap_or(Task::none()),
+                    panel.scroll_to_commit(current + 1).unwrap_or(Task::none()),
                 ])
             } else {
                 Task::none()
@@ -118,7 +120,9 @@ pub(in crate::screens::repository) fn update(
                     repo.checkout_remote_branch(&branch_name)
                         .map(|o| presenter.project_remote_checkout(o))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::RemoteCheckoutCompleted(result)),
+                move |result| {
+                    Message::tab(tab_id, RepositoryMessage::RemoteCheckoutCompleted(result))
+                },
             )
         }
         CenterAction::BranchLabelRightClicked {
@@ -135,7 +139,10 @@ pub(in crate::screens::repository) fn update(
                 Vec::new()
             };
             let default_remote_name = if is_tag {
-                ctx.data.snapshot.default_remote_name().map(|s| s.to_string())
+                ctx.data
+                    .snapshot
+                    .default_remote_name()
+                    .map(|s| s.to_string())
             } else {
                 None
             };
@@ -241,7 +248,9 @@ pub(in crate::screens::repository) fn update(
                 return Task::none();
             }
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
-            ctx.data.branch_popout.open_reset_submenu(commit_hash, position);
+            ctx.data
+                .branch_popout
+                .open_reset_submenu(commit_hash, position);
             Task::none()
         }
         CenterAction::ResetParentHoverChanged {
@@ -519,7 +528,8 @@ pub(in crate::screens::repository) fn update(
             }
         }
         CenterAction::BranchLabelTriggerBounds(bounds) => {
-            ctx.data.branch_popout
+            ctx.data
+                .branch_popout
                 .update_trigger_bounds(bounds, ctx.input.last_pointer_position);
             if ctx.data.branch_popout.needs_panel_bounds_measurement() {
                 CenterPanel::measure_branch_popout_bounds()
@@ -528,7 +538,8 @@ pub(in crate::screens::repository) fn update(
             }
         }
         CenterAction::BranchLabelPopoutBounds(bounds) => {
-            ctx.data.branch_popout
+            ctx.data
+                .branch_popout
                 .update_panel_bounds(bounds, ctx.input.last_pointer_position);
             Task::none()
         }
@@ -661,4 +672,3 @@ pub(in crate::screens::repository) fn update(
         CenterAction::None => Task::none(),
     }
 }
-

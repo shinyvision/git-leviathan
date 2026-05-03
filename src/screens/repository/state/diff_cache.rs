@@ -279,8 +279,14 @@ mod tests {
         cache.replace(&prev_commits, &new_commits, new_states);
 
         assert!(!cache.states[0].diff_loaded, "new commit stays unloaded");
-        assert!(!cache.states[1].diff_loaded, "previously-unloaded stays unloaded");
-        assert!(cache.states[2].diff_loaded, "previously-loaded migrated by hash");
+        assert!(
+            !cache.states[1].diff_loaded,
+            "previously-unloaded stays unloaded"
+        );
+        assert!(
+            cache.states[2].diff_loaded,
+            "previously-loaded migrated by hash"
+        );
         assert_eq!(cache.states[2].modified_count, 7);
         assert_eq!(cache.states[2].files.len(), 1);
     }

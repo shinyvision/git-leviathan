@@ -64,9 +64,8 @@ impl<'a> SlotCtx<'a> {
     }
 }
 
-pub type SlotBuilder = Box<
-    dyn for<'ctx, 'data> Fn(&'ctx SlotCtx<'data>) -> Element<'data, Message> + 'static,
->;
+pub type SlotBuilder =
+    Box<dyn for<'ctx, 'data> Fn(&'ctx SlotCtx<'data>) -> Element<'data, Message> + 'static>;
 
 pub struct MainBarSlot {
     pub id: String,
@@ -76,12 +75,7 @@ pub struct MainBarSlot {
 }
 
 impl MainBarSlot {
-    pub fn new<F>(
-        id: impl Into<String>,
-        section: Section,
-        priority: i32,
-        builder: F,
-    ) -> Self
+    pub fn new<F>(id: impl Into<String>, section: Section, priority: i32, builder: F) -> Self
     where
         F: for<'ctx, 'data> Fn(&'ctx SlotCtx<'data>) -> Element<'data, Message> + 'static,
     {

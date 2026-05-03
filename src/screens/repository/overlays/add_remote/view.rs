@@ -67,13 +67,11 @@ pub(crate) fn view<'a>(state: &'a State) -> Element<'a, Message> {
 
     let can_submit = state.can_submit();
     let add_btn = button(
-        container(
-            text("Add Remote").size(theme::FONT_SM),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(iced::alignment::Horizontal::Center)
-        .align_y(iced::alignment::Vertical::Center),
+        container(text("Add Remote").size(theme::FONT_SM))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center)
+            .align_y(iced::alignment::Vertical::Center),
     )
     .style(green_button_style(can_submit))
     .padding(Padding::from([0, 16]))

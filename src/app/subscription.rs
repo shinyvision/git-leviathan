@@ -17,6 +17,7 @@ use super::App;
 
 const FETCH_TICK_INTERVAL: Duration = Duration::from_secs(30);
 const ANIMATION_TICK_INTERVAL: Duration = Duration::from_millis(16);
+const PLUGIN_RUNTIME_TICK_INTERVAL: Duration = Duration::from_millis(50);
 
 pub fn build(app: &App) -> Subscription<Message> {
     let app_events = event::listen_with(translate_window_event);
@@ -65,6 +66,12 @@ pub fn build(app: &App) -> Subscription<Message> {
         .unwrap_or(Subscription::none());
 
     let plugin_sub = crate::plugin::ui::screen::subscription(&app.plugin_host);
+    let plugin_runtime_sub = if app.plugin_host.has_loaded_plugins() {
+        iced::time::every(PLUGIN_RUNTIME_TICK_INTERVAL)
+            .map(|t| Message::App(AppMessage::PluginRuntimeTick(t)))
+    } else {
+        Subscription::none()
+    };
 
     let sigterm_sub = Subscription::run(sigterm_stream);
 
@@ -74,6 +81,7 @@ pub fn build(app: &App) -> Subscription<Message> {
         animation_tick_sub,
         screen_sub,
         plugin_sub,
+        plugin_runtime_sub,
         sigterm_sub,
     ];
     subs.extend(file_watcher_subs);

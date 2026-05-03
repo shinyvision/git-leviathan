@@ -41,7 +41,11 @@ impl SelectionState {
 
     /// Replace the selection with a set of indices, pinning the anchor.
     /// `indices` must be non-empty and contain `anchor`.
-    pub(in crate::screens::repository) fn replace_with_set(&mut self, anchor: usize, indices: &[usize]) {
+    pub(in crate::screens::repository) fn replace_with_set(
+        &mut self,
+        anchor: usize,
+        indices: &[usize],
+    ) {
         debug_assert!(!indices.is_empty());
         debug_assert!(indices.contains(&anchor));
         self.anchor = anchor;

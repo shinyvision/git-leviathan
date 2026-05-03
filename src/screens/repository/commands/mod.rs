@@ -37,15 +37,17 @@ pub(in crate::screens::repository) fn focus_swap_to_worktree(
 
     if let Err(e) = ctx.fleet.ensure(path.clone()) {
         eprintln!("git_leviathan: ensure gateway failed: {e}");
-        return Task::done(Message::show_toast(
-            crate::toast::ToastData::error("Focus swap failed", format!("ensure gateway failed: {e}")),
-        ));
+        return Task::done(Message::show_toast(crate::toast::ToastData::error(
+            "Focus swap failed",
+            format!("ensure gateway failed: {e}"),
+        )));
     }
     if let Err(e) = ctx.fleet.swap_active(path.clone()) {
         eprintln!("git_leviathan: swap active failed: {e}");
-        return Task::done(Message::show_toast(
-            crate::toast::ToastData::error("Focus swap failed", format!("swap active failed: {e}")),
-        ));
+        return Task::done(Message::show_toast(crate::toast::ToastData::error(
+            "Focus swap failed",
+            format!("swap active failed: {e}"),
+        )));
     }
     let repo = ctx.fleet.active().clone();
     let presenter = ctx.presenter.clone();
@@ -84,7 +86,9 @@ pub(in crate::screens::repository) fn dispatch_result(
             repo_version,
             result,
         } => loaders::on_more_commits_loaded(screen, repo_version, result),
-        RepositoryMessage::CommitDiffLoaded(result) => loaders::on_commit_diff_loaded(screen, result),
+        RepositoryMessage::CommitDiffLoaded(result) => {
+            loaders::on_commit_diff_loaded(screen, result)
+        }
         RepositoryMessage::MergedCommitDiffLoaded { version, result } => {
             loaders::on_merged_commit_diff_loaded(screen, version, result)
         }
@@ -206,16 +210,18 @@ fn on_worktree_focus_swapped(
     match result {
         Ok(loaded) => {
             let apply_task = helpers::handle_repo_loaded(screen, loaded);
-            let toast_task = Task::done(Message::show_toast(
-                crate::toast::ToastData::success("Focused worktree", String::new()),
-            ));
+            let toast_task = Task::done(Message::show_toast(crate::toast::ToastData::success(
+                "Focused worktree",
+                String::new(),
+            )));
             Task::batch(vec![apply_task, toast_task])
         }
         Err(e) => {
             eprintln!("git_leviathan: focus swap failed: {e}");
-            Task::done(Message::show_toast(
-                crate::toast::ToastData::error("Failed to focus worktree", e.to_string()),
-            ))
+            Task::done(Message::show_toast(crate::toast::ToastData::error(
+                "Failed to focus worktree",
+                e.to_string(),
+            )))
         }
     }
 }

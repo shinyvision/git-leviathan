@@ -121,7 +121,8 @@ pub fn name_exceeds_available_width(
     has_checkmark: bool,
     num_trailing_icons: usize,
 ) -> bool {
-    let content_width = (theme::BRANCH_COL_WIDTH as f32) - 2.0 * (super::BRANCH_LABEL_INSET_X as f32);
+    let content_width =
+        (theme::BRANCH_COL_WIDTH as f32) - 2.0 * (super::BRANCH_LABEL_INSET_X as f32);
     let max_tw = calculate_text_width(
         content_width,
         num_pills,

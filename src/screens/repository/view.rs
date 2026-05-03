@@ -134,7 +134,9 @@ fn build_body_with_region<'a>(
                 .width(Length::Fill)
                 .height(Length::Fixed(screen.data.resize.detail_height));
             column![
-                row![sidebar, center].height(Length::Fill).width(Length::Fill),
+                row![sidebar, center]
+                    .height(Length::Fill)
+                    .width(Length::Fill),
                 splitter,
                 detail_pane,
             ]
@@ -195,7 +197,9 @@ pub(in crate::screens::repository) fn toolbar<'a>(
         branch_action,
     );
     let main_bar = chrome::main_bar_view(ctx.main_bar_registry, &slot_ctx);
-    screen.overlay_manager.toolbar_overlay(main_bar, &screen.data)
+    screen
+        .overlay_manager
+        .toolbar_overlay(main_bar, &screen.data)
 }
 
 pub(in crate::screens::repository) fn overlay_layers(
@@ -290,7 +294,9 @@ pub(in crate::screens::repository) fn overlay_layers(
                 .into();
             layers.push(submenu);
         }
-    } else if let Some(worktree_menu_state) = screen.data.branch_popout.active_worktree_context_menu() {
+    } else if let Some(worktree_menu_state) =
+        screen.data.branch_popout.active_worktree_context_menu()
+    {
         let backdrop = MouseArea::new(
             container(horizontal_space())
                 .width(Length::Fill)
@@ -325,7 +331,9 @@ pub(in crate::screens::repository) fn overlay_layers(
 
         layers.push(backdrop);
         layers.push(menu);
-    } else if let Some(dirty_menu_state) = screen.data.branch_popout.active_dirty_file_context_menu() {
+    } else if let Some(dirty_menu_state) =
+        screen.data.branch_popout.active_dirty_file_context_menu()
+    {
         let backdrop = MouseArea::new(
             container(horizontal_space())
                 .width(Length::Fill)

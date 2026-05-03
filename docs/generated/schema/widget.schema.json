@@ -1,0 +1,1456 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WidgetKind",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text"
+          ]
+        },
+        "size": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "value": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "child": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "button"
+          ]
+        },
+        "on_click": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "style": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ButtonStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "default": null
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "align_y": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "children": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WidgetKind"
+          }
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "row"
+          ]
+        },
+        "spacing": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "align_x": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "children": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WidgetKind"
+          }
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "column"
+          ]
+        },
+        "spacing": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "bg": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "center_x": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "center_y": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "child": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "container"
+          ]
+        },
+        "max_height": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "max_width": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "min_height": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "min_width": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "bottom": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "child": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "padding"
+          ]
+        },
+        "left": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "right": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "top": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "space"
+          ]
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "icon"
+          ]
+        },
+        "path": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image"
+          ]
+        },
+        "path": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "size": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "child": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "scrollable"
+          ]
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "child": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WidgetKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "mouse_area"
+          ]
+        },
+        "on_click": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "value": {
+          "default": null
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "active": {
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "tablist"
+          ]
+        },
+        "on_close": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_reorder": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "on_select": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "orderable": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "tabs": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TabSpec"
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "children": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WidgetKind"
+          }
+        },
+        "direction": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "resizable_split"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "Border": {
+      "type": "object",
+      "properties": {
+        "color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "radius": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "width": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
+    "ButtonStyle": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "background_hover": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "border": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Border"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text_color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "Length": {
+      "description": "Length values: numbers are pixel sizes, strings are `\"fill\"` / `\"shrink\"`. Mirrors `widget_tree::common::parse_length`.",
+      "anyOf": [
+        {
+          "type": "number",
+          "format": "float"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "TabSpec": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "default": null
+        },
+        "name": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "WidgetKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "color": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "text"
+              ]
+            },
+            "size": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "value": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "child": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WidgetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "button"
+              ]
+            },
+            "on_click": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ButtonStyle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "default": null
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "align_y": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "children": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/WidgetKind"
+              }
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "row"
+              ]
+            },
+            "spacing": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "align_x": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "children": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/WidgetKind"
+              }
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "column"
+              ]
+            },
+            "spacing": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "bg": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "center_x": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "center_y": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "child": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WidgetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "container"
+              ]
+            },
+            "max_height": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "max_width": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "min_height": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "min_width": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "bottom": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "child": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WidgetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "padding"
+              ]
+            },
+            "left": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "right": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "top": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "space"
+              ]
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "color": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "icon"
+              ]
+            },
+            "path": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "size": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "image"
+              ]
+            },
+            "path": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "size": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "child": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WidgetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "scrollable"
+              ]
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "child": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WidgetKind"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "mouse_area"
+              ]
+            },
+            "on_click": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "value": {
+              "default": null
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "active": {
+              "default": null
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "tablist"
+              ]
+            },
+            "on_close": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "on_reorder": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "on_select": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "orderable": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "tabs": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/TabSpec"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "children": {
+              "default": [],
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/WidgetKind"
+              }
+            },
+            "direction": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "resizable_split"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

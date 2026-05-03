@@ -603,9 +603,9 @@ fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<D
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_dirty_signature, compute_intra_line_diffs, compute_line_diff, load_commit_file_diff,
-        load_working_tree_diff, longest_common_substring, DiffLineType, SegmentKind,
-        WorkingTreeDiffLine,
+        compute_dirty_signature, compute_intra_line_diffs, compute_line_diff,
+        load_commit_file_diff, load_working_tree_diff, longest_common_substring, DiffLineType,
+        SegmentKind, WorkingTreeDiffLine,
     };
     use crate::services::{
         test_support::{commit_all, init_test_repo, write_file},
@@ -768,8 +768,7 @@ mod tests {
         index.write().expect("write index");
 
         let service = GitService::open(temp_repo.path_str()).expect("open service");
-        let result = load_working_tree_diff(&service, "tracked.txt", false)
-            .expect("diff loads");
+        let result = load_working_tree_diff(&service, "tracked.txt", false).expect("diff loads");
 
         assert!(
             result.lines.is_empty(),
@@ -791,8 +790,7 @@ mod tests {
         commit_all(&repo, "tweak line 2");
 
         let service = GitService::open(temp_repo.path_str()).expect("open service");
-        let result = load_working_tree_diff(&service, "tracked.txt", true)
-            .expect("diff loads");
+        let result = load_working_tree_diff(&service, "tracked.txt", true).expect("diff loads");
 
         assert!(
             result.lines.is_empty(),
@@ -866,8 +864,7 @@ mod tests {
         write_file(&temp_repo.path, "new.txt", "hello\nworld\n");
 
         let service = GitService::open(temp_repo.path_str()).expect("open service");
-        let result = load_working_tree_diff(&service, "new.txt", false)
-            .expect("diff loads");
+        let result = load_working_tree_diff(&service, "new.txt", false).expect("diff loads");
 
         assert!(
             result

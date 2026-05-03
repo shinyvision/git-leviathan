@@ -16,8 +16,7 @@ use crate::widgets::shared::horizontal_space;
 
 use super::cell::{branch_checkout_message, branch_context_menu_message};
 use super::layout::{
-    display_name, BRANCH_POPOUT_ICON_SIZE, BRANCH_POPOUT_ROW_PADDING_X,
-    BRANCH_STACK_BADGE_COVER_W,
+    display_name, BRANCH_POPOUT_ICON_SIZE, BRANCH_POPOUT_ROW_PADDING_X, BRANCH_STACK_BADGE_COVER_W,
 };
 use super::BRANCH_POPOUT_RADIUS;
 

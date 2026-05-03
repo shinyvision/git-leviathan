@@ -33,7 +33,6 @@ impl<T: IsSlot> Default for SlotRegistry<T> {
     }
 }
 
-#[allow(dead_code)]
 impl<T: IsSlot> SlotRegistry<T> {
     pub fn new() -> Self {
         Self::default()
@@ -79,10 +78,7 @@ impl<T: IsSlot> SlotRegistry<T> {
     }
 
     /// Slots in `container`, ordered for rendering.
-    pub fn iter_container<'a>(
-        &'a self,
-        container: Container,
-    ) -> impl Iterator<Item = &'a T> + 'a {
+    pub fn iter_container<'a>(&'a self, container: Container) -> impl Iterator<Item = &'a T> + 'a {
         let mut picked: Vec<(usize, &T)> = self
             .slots
             .iter()
@@ -106,23 +102,40 @@ mod tests {
     }
 
     impl IsSlot for TestSlot {
-        fn id(&self) -> &str { &self.id }
-        fn container(&self) -> &Container { &self.container }
-        fn priority(&self) -> i32 { self.priority }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn container(&self) -> &Container {
+            &self.container
+        }
+        fn priority(&self) -> i32 {
+            self.priority
+        }
     }
 
     fn slot(id: &str, container: Container, priority: i32) -> TestSlot {
-        TestSlot { id: id.into(), container, priority }
+        TestSlot {
+            id: id.into(),
+            container,
+            priority,
+        }
     }
 
-    fn left() -> Container { Container::Section("left".into()) }
-    fn center() -> Container { Container::Section("center".into()) }
+    fn left() -> Container {
+        Container::Section("left".into())
+    }
+    fn center() -> Container {
+        Container::Section("center".into())
+    }
 
     #[test]
     fn add_then_iter_yields_slot() {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
         reg.add(slot("a", center(), 10));
-        let ids: Vec<&str> = reg.iter_container(center()).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["a"]);
     }
 
@@ -131,7 +144,10 @@ mod tests {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
         reg.add(slot("a", left(), 10));
         reg.add(slot("b", center(), 10));
-        let ids: Vec<&str> = reg.iter_container(center()).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["b"]);
     }
 
@@ -141,7 +157,10 @@ mod tests {
         reg.add(slot("c", center(), 30));
         reg.add(slot("a", center(), 10));
         reg.add(slot("b", center(), 20));
-        let ids: Vec<&str> = reg.iter_container(center()).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
     }
 
@@ -151,7 +170,10 @@ mod tests {
         reg.add(slot("first", center(), 10));
         reg.add(slot("second", center(), 10));
         reg.add(slot("third", center(), 10));
-        let ids: Vec<&str> = reg.iter_container(center()).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["first", "second", "third"]);
     }
 
@@ -177,7 +199,10 @@ mod tests {
         reg.add(slot("a", center(), 10));
         reg.add(slot("b", center(), 20));
         reg.add(slot("a", center(), 99));
-        let ids: Vec<&str> = reg.iter_container(center()).map(|s| s.id.as_str()).collect();
+        let ids: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.id.as_str())
+            .collect();
         assert_eq!(ids, vec!["b", "a"]);
     }
 

@@ -89,8 +89,7 @@ pub fn watch_repo_files(tab_id: TabId, repo_path: PathBuf) -> Subscription<TabId
                     match watcher_result {
                         Ok(mut watcher) => {
                             for git_path in resolve_git_watch_paths(&repo_for_watcher) {
-                                let _ = watcher
-                                    .watch(&git_path, notify::RecursiveMode::Recursive);
+                                let _ = watcher.watch(&git_path, notify::RecursiveMode::Recursive);
                             }
                             let _ =
                                 watcher.watch(&repo_for_watcher, notify::RecursiveMode::Recursive);

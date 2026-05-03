@@ -33,8 +33,8 @@ use crate::{
     widgets::tab_bar::{TabBar, TabItem},
 };
 
-use crate::widgets::tab_bar::parts::{close_button, folder_icon};
 use super::registry::{Section, TabBarCtx, TabBarRegistry, TabBarSlot};
+use crate::widgets::tab_bar::parts::{close_button, folder_icon};
 
 pub fn register_all(registry: &mut TabBarRegistry) {
     registry.add(plus_button_slot());
@@ -43,50 +43,59 @@ pub fn register_all(registry: &mut TabBarRegistry) {
 }
 
 fn plus_button_slot() -> TabBarSlot {
-    TabBarSlot::new("builtin.plus_button", Section::Left, 10, |_ctx| plus_button())
-}
-
-fn tab_list_slot() -> TabBarSlot {
-    TabBarSlot::new("builtin.tab_list", Section::Center, 10, |ctx: &TabBarCtx<'_>| {
-        let Some(snap) = ctx.tabs else {
-            return iced::widget::Space::new().into();
-        };
-        let active = snap.active_id.unwrap_or(TabId(u64::MAX));
-        let path_for: HashMap<TabId, String> =
-            snap.tabs.iter().map(|t| (t.id, t.path.clone())).collect();
-        let items: Vec<TabItem<'_, TabId, Message>> = snap
-            .tabs
-            .iter()
-            .map(|t| {
-                let is_active = Some(t.id) == snap.active_id;
-                let close_path = t.path.clone();
-                TabItem::new(t.id, t.name.clone())
-                    .leading(folder_icon(is_active))
-                    .trailing(close_button(Message::App(AppMessage::TabRegistryOp(
-                        TabRegistryOp::Remove(close_path),
-                    ))))
-            })
-            .collect();
-        let select_paths = path_for.clone();
-        let reorder_paths = path_for;
-        TabBar::new(items, active)
-            .on_select(move |id| {
-                let path = select_paths.get(&id).cloned().unwrap_or_default();
-                Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Select(path)))
-            })
-            .on_reorder(move |order| {
-                let paths: Vec<String> = order
-                    .into_iter()
-                    .filter_map(|id| reorder_paths.get(&id).cloned())
-                    .collect();
-                Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Reorder(paths)))
-            })
-            .into()
+    TabBarSlot::new("builtin.plus_button", Section::Left, 10, |_ctx| {
+        plus_button()
     })
 }
 
+fn tab_list_slot() -> TabBarSlot {
+    TabBarSlot::new(
+        "builtin.tab_list",
+        Section::Center,
+        10,
+        |ctx: &TabBarCtx<'_>| {
+            let Some(snap) = ctx.tabs else {
+                return iced::widget::Space::new().into();
+            };
+            let active = snap.active_id.unwrap_or(TabId(u64::MAX));
+            let path_for: HashMap<TabId, String> =
+                snap.tabs.iter().map(|t| (t.id, t.path.clone())).collect();
+            let items: Vec<TabItem<'_, TabId, Message>> = snap
+                .tabs
+                .iter()
+                .map(|t| {
+                    let is_active = Some(t.id) == snap.active_id;
+                    let close_path = t.path.clone();
+                    TabItem::new(t.id, t.name.clone())
+                        .leading(folder_icon(is_active))
+                        .trailing(close_button(Message::App(AppMessage::TabRegistryOp(
+                            TabRegistryOp::Remove(close_path),
+                        ))))
+                })
+                .collect();
+            let select_paths = path_for.clone();
+            let reorder_paths = path_for;
+            TabBar::new(items, active)
+                .on_select(move |id| {
+                    let path = select_paths.get(&id).cloned().unwrap_or_default();
+                    Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Select(path)))
+                })
+                .on_reorder(move |order| {
+                    let paths: Vec<String> = order
+                        .into_iter()
+                        .filter_map(|id| reorder_paths.get(&id).cloned())
+                        .collect();
+                    Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Reorder(paths)))
+                })
+                .into()
+        },
+    )
+}
+
 fn version_label_slot() -> TabBarSlot {
-    TabBarSlot::new("builtin.version_label", Section::Right, 10, |_ctx| version_label())
+    TabBarSlot::new("builtin.version_label", Section::Right, 10, |_ctx| {
+        version_label()
+    })
 }
 
 fn plus_button<'a>() -> Element<'a, Message> {

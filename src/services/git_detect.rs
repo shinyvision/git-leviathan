@@ -133,57 +133,70 @@ fn run_git_version(path: &Path) -> Option<String> {
 ///
 /// Both paths are returned canonicalized so hashmap / equality compares line
 /// up regardless of how the user typed the path.
-pub fn resolve_primary_and_active(
-    path: &Path,
-) -> Result<(PathBuf, PathBuf), GitError> {
+pub fn resolve_primary_and_active(path: &Path) -> Result<(PathBuf, PathBuf), GitError> {
     let canonical_active = path
         .canonicalize()
         .map_err(|e| GitError::Other(format!("canonicalize '{}': {e}", path.display())))?;
 
-    let repo = git2::Repository::open(&canonical_active)
-        .map_err(|e| GitError::Other(format!("open repo at '{}': {}", canonical_active.display(), e.message())))?;
+    let repo = git2::Repository::open(&canonical_active).map_err(|e| {
+        GitError::Other(format!(
+            "open repo at '{}': {}",
+            canonical_active.display(),
+            e.message()
+        ))
+    })?;
 
     let canonical_primary = if repo.is_worktree() {
         // repo.path() for a secondary worktree is <primary>/.git/worktrees/<name>/.
         // Walk back: strip the worktree-name component, assert the parent is literally
         // named "worktrees", then strip that and assert its parent is literally ".git".
         let git_wt_dir = repo.path();
-        let worktrees_dir = git_wt_dir.parent().ok_or_else(|| GitError::Other(format!(
-            "worktree git dir '{}' has no parent",
-            git_wt_dir.display(),
-        )))?;
-        if worktrees_dir.file_name().map(|n| n != "worktrees").unwrap_or(true) {
+        let worktrees_dir = git_wt_dir.parent().ok_or_else(|| {
+            GitError::Other(format!(
+                "worktree git dir '{}' has no parent",
+                git_wt_dir.display(),
+            ))
+        })?;
+        if worktrees_dir
+            .file_name()
+            .map(|n| n != "worktrees")
+            .unwrap_or(true)
+        {
             return Err(GitError::Other(format!(
                 "unexpected worktree layout: expected 'worktrees' component at '{}'",
                 worktrees_dir.display(),
             )));
         }
-        let git_dir = worktrees_dir.parent().ok_or_else(|| GitError::Other(format!(
-            "'{}' has no parent",
-            worktrees_dir.display(),
-        )))?;
+        let git_dir = worktrees_dir.parent().ok_or_else(|| {
+            GitError::Other(format!("'{}' has no parent", worktrees_dir.display(),))
+        })?;
         if git_dir.file_name().map(|n| n != ".git").unwrap_or(true) {
             return Err(GitError::Other(format!(
                 "unexpected worktree layout: expected '.git' component at '{}'",
                 git_dir.display(),
             )));
         }
-        let primary_workdir = git_dir.parent().ok_or_else(|| GitError::Other(format!(
-            "primary '.git' dir '{}' has no parent workdir",
-            git_dir.display(),
-        )))?;
-        primary_workdir
-            .canonicalize()
-            .map_err(|e| GitError::Other(format!("canonicalize primary '{}': {e}", primary_workdir.display())))?
+        let primary_workdir = git_dir.parent().ok_or_else(|| {
+            GitError::Other(format!(
+                "primary '.git' dir '{}' has no parent workdir",
+                git_dir.display(),
+            ))
+        })?;
+        primary_workdir.canonicalize().map_err(|e| {
+            GitError::Other(format!(
+                "canonicalize primary '{}': {e}",
+                primary_workdir.display()
+            ))
+        })?
     } else {
         // Primary repo: workdir() is the workdir itself.
         let workdir = repo
             .workdir()
             .ok_or_else(|| GitError::Other("bare repository has no workdir".to_string()))?
             .to_path_buf();
-        workdir
-            .canonicalize()
-            .map_err(|e| GitError::Other(format!("canonicalize primary '{}': {e}", workdir.display())))?
+        workdir.canonicalize().map_err(|e| {
+            GitError::Other(format!("canonicalize primary '{}': {e}", workdir.display()))
+        })?
     };
 
     Ok((canonical_primary, canonical_active))

@@ -54,7 +54,9 @@ pub(super) fn detail_text_editor_style(_: &Theme, _: text_editor::Status) -> tex
     }
 }
 
-pub(super) fn green_button_style(enabled: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+pub(super) fn green_button_style(
+    enabled: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
     palette_button_style(CREATE_BUTTON, enabled)
 }
 

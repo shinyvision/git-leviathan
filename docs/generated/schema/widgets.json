@@ -1,0 +1,447 @@
+[
+  {
+    "kind": "text",
+    "since": "1.0",
+    "doc": "Static text label.",
+    "fields": [
+      {
+        "name": "value",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Text content."
+      },
+      {
+        "name": "size",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Font size in pixels."
+      },
+      {
+        "name": "color",
+        "lua_type": "string",
+        "required": false,
+        "doc": "CSS-style color string."
+      }
+    ]
+  },
+  {
+    "kind": "button",
+    "since": "1.0",
+    "doc": "Clickable button that emits a widget event.",
+    "fields": [
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Nested widget content."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Fallback text content."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Event name emitted on click."
+      },
+      {
+        "name": "value",
+        "lua_type": "LeviathanJson",
+        "required": false,
+        "doc": "Event payload."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "style",
+        "lua_type": "table",
+        "required": false,
+        "doc": "Button style overrides."
+      }
+    ]
+  },
+  {
+    "kind": "row",
+    "since": "1.0",
+    "doc": "Horizontal widget layout.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Gap between children."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "align_y",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Vertical alignment."
+      }
+    ]
+  },
+  {
+    "kind": "column",
+    "since": "1.0",
+    "doc": "Vertical widget layout.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Gap between children."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "align_x",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Horizontal alignment."
+      }
+    ]
+  },
+  {
+    "kind": "container",
+    "since": "1.0",
+    "doc": "Single-child layout and background wrapper.",
+    "fields": [
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Nested widget content."
+      },
+      {
+        "name": "bg",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Background color."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "max_width",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Maximum width."
+      },
+      {
+        "name": "max_height",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Maximum height."
+      },
+      {
+        "name": "min_width",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Minimum width."
+      },
+      {
+        "name": "min_height",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Minimum height."
+      },
+      {
+        "name": "center_x",
+        "lua_type": "boolean",
+        "required": false,
+        "doc": "Center child horizontally."
+      },
+      {
+        "name": "center_y",
+        "lua_type": "boolean",
+        "required": false,
+        "doc": "Center child vertically."
+      }
+    ]
+  },
+  {
+    "kind": "padding",
+    "since": "1.0",
+    "doc": "Single-child padding wrapper.",
+    "fields": [
+      {
+        "name": "top",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Top inset."
+      },
+      {
+        "name": "right",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Right inset."
+      },
+      {
+        "name": "bottom",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Bottom inset."
+      },
+      {
+        "name": "left",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Left inset."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Nested widget content."
+      }
+    ]
+  },
+  {
+    "kind": "space",
+    "since": "1.0",
+    "doc": "Empty spacer.",
+    "fields": [
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      }
+    ]
+  },
+  {
+    "kind": "icon",
+    "since": "1.0",
+    "doc": "SVG icon loaded from plugin assets.",
+    "fields": [
+      {
+        "name": "path",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Asset path."
+      },
+      {
+        "name": "size",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Icon size."
+      },
+      {
+        "name": "color",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Tint color."
+      }
+    ]
+  },
+  {
+    "kind": "image",
+    "since": "1.0",
+    "doc": "Raster image loaded from plugin assets.",
+    "fields": [
+      {
+        "name": "path",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Asset path."
+      },
+      {
+        "name": "size",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Rendered square size."
+      }
+    ]
+  },
+  {
+    "kind": "scrollable",
+    "since": "1.0",
+    "doc": "Scrollable single-child container.",
+    "fields": [
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Nested widget content."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      }
+    ]
+  },
+  {
+    "kind": "mouse_area",
+    "since": "1.0",
+    "doc": "Clickable wrapper around a child widget.",
+    "fields": [
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Nested widget content."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Event name emitted on click."
+      },
+      {
+        "name": "value",
+        "lua_type": "LeviathanJson",
+        "required": false,
+        "doc": "Event payload."
+      }
+    ]
+  },
+  {
+    "kind": "tablist",
+    "since": "1.0",
+    "doc": "Tab strip widget backed by plugin-supplied tab descriptors.",
+    "fields": [
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab id/name descriptors."
+      },
+      {
+        "name": "active",
+        "lua_type": "LeviathanJson",
+        "required": false,
+        "doc": "Active tab id."
+      },
+      {
+        "name": "orderable",
+        "lua_type": "boolean",
+        "required": false,
+        "doc": "Whether drag reorder is enabled."
+      },
+      {
+        "name": "on_select",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Selection event name."
+      },
+      {
+        "name": "on_close",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Close event name."
+      },
+      {
+        "name": "on_reorder",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reorder event name."
+      }
+    ]
+  },
+  {
+    "kind": "resizable_split",
+    "since": "1.0",
+    "doc": "Resizable split layout.",
+    "fields": [
+      {
+        "name": "id",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Stable split id."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Split direction."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child panels."
+      }
+    ]
+  }
+]

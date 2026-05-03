@@ -15,13 +15,24 @@ use git_leviathan_plugin_api::descriptor::region::REGIONS;
 
 use super::factory::make_region_handle;
 use super::{BuildState, ScreenDef};
+use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
-pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, leviathan: &Table) -> mlua::Result<()> {
+pub fn install(
+    lua: &Lua,
+    build: Rc<RefCell<BuildState>>,
+    ledger: ResourceLedger,
+    leviathan: &Table,
+) -> mlua::Result<()> {
     let ui = lua.create_table()?;
 
     for desc in REGIONS.iter() {
-        let handle = make_region_handle(lua, Rc::clone(&build), desc)?;
-        ui.set(desc.name, handle)?;
+        let handle = make_region_handle(lua, Rc::clone(&build), ledger.clone(), desc)?;
+        // Region names may contain dots (e.g. `repository.graph`) — so
+        // the Lua handle table lives under the nested path
+        // `leviathan.ui.repository.graph`. Walk the segments,
+        // creating intermediate tables as needed. The final segment
+        // owns the region handle.
+        place_region_handle(lua, &ui, desc.name, handle)?;
     }
 
     let names_owned: Vec<String> = REGIONS.iter().map(|d| d.name.to_string()).collect();
@@ -34,20 +45,97 @@ pub fn install(lua: &Lua, build: Rc<RefCell<BuildState>>, leviathan: &Table) -> 
     ui.set(
         "region",
         lua.create_function(move |_, name: String| -> mlua::Result<Table> {
-            ui_ref
-                .get::<Table>(name.as_str())
+            // Look up by descriptor name — handles the dotted form
+            // (e.g. `repository.graph`) without forcing callers to
+            // know whether it's nested.
+            lookup_region_handle(&ui_ref, &name)
                 .map_err(|_| mlua::Error::external(format!("unknown region: {name}")))
         })?,
     )?;
 
-    install_screen_register(lua, build, &ui)?;
+    install_screen_register(lua, build, ledger, &ui)?;
     leviathan.set("ui", ui)?;
     Ok(())
+}
+
+/// Place a region handle at the dotted path `name` under `root`.
+///
+/// `name` is taken from the descriptor table verbatim, so segments
+/// match `leviathan.ui[<segment>]` Lua lookups. For a flat name like
+/// `main_bar`, the handle goes straight under `ui.main_bar`. For a
+/// dotted name like `repository.graph`, we place the handle's
+/// `add/remove/replace` fields onto an existing or freshly-created
+/// `repository.graph` sub-table — the parent `repository` is a peer
+/// region, not an intermediate.
+fn place_region_handle(
+    lua: &Lua,
+    root: &Table,
+    name: &str,
+    handle: Table,
+) -> mlua::Result<()> {
+    let segments: Vec<&str> = name.split('.').collect();
+    let mut current = root.clone();
+    for segment in &segments[..segments.len() - 1] {
+        let next: mlua::Value = current.get(*segment)?;
+        match next {
+            mlua::Value::Table(t) => current = t,
+            mlua::Value::Nil => {
+                let fresh = lua.create_table()?;
+                current.set(*segment, fresh.clone())?;
+                current = fresh;
+            }
+            _ => {
+                return Err(mlua::Error::external(format!(
+                    "region path collision at '{segment}': non-table value already present"
+                )));
+            }
+        }
+    }
+    let last = segments[segments.len() - 1];
+    // Merge the handle's fields onto whatever already lives at
+    // `last` so a previously-installed intermediate sub-table (e.g.
+    // a child like `repository.graph` placed before `repository`)
+    // keeps its entries.
+    let existing: mlua::Value = current.get(last)?;
+    match existing {
+        mlua::Value::Table(t) => {
+            for pair in handle.pairs::<mlua::Value, mlua::Value>() {
+                let (k, v) = pair?;
+                t.set(k, v)?;
+            }
+        }
+        mlua::Value::Nil => {
+            current.set(last, handle)?;
+        }
+        _ => {
+            return Err(mlua::Error::external(format!(
+                "region path collision at '{last}': non-table value already present"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn lookup_region_handle(root: &Table, name: &str) -> mlua::Result<Table> {
+    let mut current = root.clone();
+    for (i, segment) in name.split('.').enumerate() {
+        let value: mlua::Value = current.get(segment)?;
+        match value {
+            mlua::Value::Table(t) => current = t,
+            _ => {
+                return Err(mlua::Error::external(format!(
+                    "no region table at segment {i} of '{name}'"
+                )));
+            }
+        }
+    }
+    Ok(current)
 }
 
 fn install_screen_register(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
+    ledger: ResourceLedger,
     ui: &Table,
 ) -> mlua::Result<()> {
     ui.set(
@@ -59,15 +147,58 @@ fn install_screen_register(
             let update: Function = spec.get("update")?;
             let serialize_opt: Option<Function> = spec.get("serialize")?;
             let deserialize_opt: Option<Function> = spec.get("deserialize")?;
+            let source = ResourceLedger::source_location(lua_inner);
+            let prefix = format!("screen:{id}");
+            ledger.remove_by_handle_prefix(&prefix);
+            ledger.record(PluginResourceKind::Screen, prefix.clone(), source.clone());
             let def = ScreenDef {
-                init: lua_inner.create_registry_value(init)?,
-                view: lua_inner.create_registry_value(view)?,
-                update: lua_inner.create_registry_value(update)?,
+                init: register_screen_key(
+                    lua_inner,
+                    &ledger,
+                    &prefix,
+                    "init",
+                    init,
+                    source.clone(),
+                )?,
+                view: register_screen_key(
+                    lua_inner,
+                    &ledger,
+                    &prefix,
+                    "view",
+                    view,
+                    source.clone(),
+                )?,
+                update: register_screen_key(
+                    lua_inner,
+                    &ledger,
+                    &prefix,
+                    "update",
+                    update,
+                    source.clone(),
+                )?,
                 serialize: serialize_opt
-                    .map(|f| lua_inner.create_registry_value(f))
+                    .map(|f| {
+                        register_screen_key(
+                            lua_inner,
+                            &ledger,
+                            &prefix,
+                            "serialize",
+                            f,
+                            source.clone(),
+                        )
+                    })
                     .transpose()?,
                 deserialize: deserialize_opt
-                    .map(|f| lua_inner.create_registry_value(f))
+                    .map(|f| {
+                        register_screen_key(
+                            lua_inner,
+                            &ledger,
+                            &prefix,
+                            "deserialize",
+                            f,
+                            source.clone(),
+                        )
+                    })
                     .transpose()?,
             };
             build.borrow_mut().screens.insert(id, def);
@@ -75,6 +206,23 @@ fn install_screen_register(
         })?,
     )?;
     Ok(())
+}
+
+fn register_screen_key(
+    lua: &Lua,
+    ledger: &ResourceLedger,
+    prefix: &str,
+    name: &str,
+    function: Function,
+    source: Option<String>,
+) -> mlua::Result<mlua::RegistryKey> {
+    let key = lua.create_registry_value(function)?;
+    ledger.record(
+        PluginResourceKind::LuaRegistryKey,
+        format!("{prefix}:{name}"),
+        source,
+    );
+    Ok(key)
 }
 
 #[cfg(test)]
@@ -88,7 +236,11 @@ mod tests {
         let lua = Lua::new();
         let build = Rc::new(RefCell::new(BuildState::default()));
         let leviathan = lua.create_table().unwrap();
-        super::install(&lua, Rc::clone(&build), &leviathan).unwrap();
+        let ledger = ResourceLedger::new(
+            "test".into(),
+            crate::plugin::resources::GenerationId::new(1),
+        );
+        super::install(&lua, Rc::clone(&build), ledger, &leviathan).unwrap();
         lua.globals().set("leviathan", leviathan).unwrap();
         (lua, build)
     }
@@ -108,8 +260,22 @@ mod tests {
     #[test]
     fn list_regions_returns_all() {
         let (lua, _) = install_test_harness();
-        let names: Vec<String> = lua.load("return leviathan.ui.list_regions()").eval().unwrap();
-        assert_eq!(names, vec!["main_bar", "tab_bar", "repository"]);
+        let names: Vec<String> = lua
+            .load("return leviathan.ui.list_regions()")
+            .eval()
+            .unwrap();
+        assert_eq!(
+            names,
+            vec![
+                "main_bar",
+                "tab_bar",
+                "status_bar",
+                "repository",
+                "repository.graph",
+                "repository.details",
+                "repository.diff",
+            ]
+        );
     }
 
     #[test]

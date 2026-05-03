@@ -361,7 +361,10 @@ pub(in crate::screens::repository) fn update(
             Task::perform(
                 gateway_work(move || repo.load_merged_commit_file_diff(&hashes, &path)),
                 move |result| {
-                    Message::tab(tab_id, RepositoryMessage::MergedCommitFileDiffLoaded(result))
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::MergedCommitFileDiffLoaded(result),
+                    )
                 },
             )
         }

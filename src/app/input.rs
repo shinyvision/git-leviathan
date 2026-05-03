@@ -34,7 +34,9 @@ impl App {
                 self.plugin_host.fire_event("FetchEnd");
             }
             let screen_task = self.tabs.activate_tab(target);
-            let debounce_task = self.fetch.schedule_debounced(FETCH_DEBOUNCE_AFTER_TAB_SWITCH);
+            let debounce_task = self
+                .fetch
+                .schedule_debounced(FETCH_DEBOUNCE_AFTER_TAB_SWITCH);
             return Task::batch(vec![screen_task, debounce_task]);
         }
 

@@ -185,8 +185,6 @@ impl DiffPanel {
             state.ours_highlighted.as_deref(),
             state.theirs_highlighted.as_deref(),
         )?;
-        Some(crate::widgets::text::selection_to_text(
-            &rows, &selection,
-        ))
+        Some(crate::widgets::text::selection_to_text(&rows, &selection))
     }
 }

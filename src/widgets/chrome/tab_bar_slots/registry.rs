@@ -48,9 +48,8 @@ impl<'a> TabBarCtx<'a> {
     }
 }
 
-pub type TabBarBuilder = Box<
-    dyn for<'ctx, 'data> Fn(&'ctx TabBarCtx<'data>) -> Element<'data, Message> + 'static,
->;
+pub type TabBarBuilder =
+    Box<dyn for<'ctx, 'data> Fn(&'ctx TabBarCtx<'data>) -> Element<'data, Message> + 'static>;
 
 pub struct TabBarSlot {
     pub id: String,
@@ -60,12 +59,7 @@ pub struct TabBarSlot {
 }
 
 impl TabBarSlot {
-    pub fn new<F>(
-        id: impl Into<String>,
-        section: Section,
-        priority: i32,
-        builder: F,
-    ) -> Self
+    pub fn new<F>(id: impl Into<String>, section: Section, priority: i32, builder: F) -> Self
     where
         F: for<'ctx, 'data> Fn(&'ctx TabBarCtx<'data>) -> Element<'data, Message> + 'static,
     {
@@ -79,9 +73,15 @@ impl TabBarSlot {
 }
 
 impl IsSlot for TabBarSlot {
-    fn id(&self) -> &str { &self.id }
-    fn container(&self) -> &Container { &self.container }
-    fn priority(&self) -> i32 { self.priority }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn container(&self) -> &Container {
+        &self.container
+    }
+    fn priority(&self) -> i32 {
+        self.priority
+    }
 }
 
 pub type TabBarRegistry = SlotRegistry<TabBarSlot>;

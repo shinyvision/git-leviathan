@@ -1,0 +1,6233 @@
+{
+  "capabilities": [
+    {
+      "doc": "Compatibility alias for fs:read:plugin.",
+      "name": "fs:read",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read paths under the plugin directory.",
+      "name": "fs:read:plugin",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read paths under the plugin state directory.",
+      "name": "fs:read:state",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read paths under the plugin config directory.",
+      "name": "fs:read:config",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read paths under the active workdir when configured.",
+      "name": "fs:read:workdir",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read any host path.",
+      "name": "fs:read:any",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read paths under an explicit user-chosen directory (canonicalised; symlinks escaping the scope are denied).",
+      "name": "fs:read:scope:<dir>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write paths under the plugin directory.",
+      "name": "fs:write:plugin",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write paths under the plugin state directory.",
+      "name": "fs:write:state",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write paths under the plugin config directory.",
+      "name": "fs:write:config",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write paths under the active workdir when configured.",
+      "name": "fs:write:workdir",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write any host path.",
+      "name": "fs:write:any",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write paths under an explicit user-chosen directory (canonicalised; symlinks escaping the scope are denied).",
+      "name": "fs:write:scope:<dir>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved process-spawn capability (any binary).",
+      "name": "process:spawn",
+      "since": "1.0"
+    },
+    {
+      "doc": "Spawn a specific binary by basename (e.g. `process:spawn:git`). Phase 12 will enforce.",
+      "name": "process:spawn:<binary>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved network-fetch capability (any host).",
+      "name": "net:fetch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Fetch from a specific domain (e.g. `net:fetch:github.com`). Phase 12 will enforce.",
+      "name": "net:fetch:<domain>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Compatibility alias for clipboard read+write.",
+      "name": "clipboard",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read the system clipboard.",
+      "name": "clipboard:read",
+      "since": "1.0"
+    },
+    {
+      "doc": "Write to the system clipboard.",
+      "name": "clipboard:write",
+      "since": "1.0"
+    },
+    {
+      "doc": "Surface a host notification banner.",
+      "name": "notify",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read every process environment variable.",
+      "name": "env",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read environment variables whose name matches the glob (e.g. `env:GIT_*`).",
+      "name": "env:<glob>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read host-stored credentials (Phase 13 secrets).",
+      "name": "credentials",
+      "since": "1.0"
+    },
+    {
+      "doc": "Observe the active repository projection (refs, head, status). Implicit for repository slot widgets in v1.",
+      "name": "repo:read",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read working tree status. Phase 11 wires the typed API.",
+      "name": "git:read:status",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read commit history. Phase 11 wires the typed API.",
+      "name": "git:read:log",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read diffs between commits or against the index. Phase 11 wires the typed API.",
+      "name": "git:read:diff",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read a commit's tree or a file at a commit. Phase 11 wires the typed API.",
+      "name": "git:read:show",
+      "since": "1.0"
+    },
+    {
+      "doc": "Read line-level blame for a tracked file. Phase 11 wires the typed API.",
+      "name": "git:read:blame",
+      "since": "1.0"
+    },
+    {
+      "doc": "Move HEAD to a ref or commit. Phase 11 wires the typed API.",
+      "name": "git:write:checkout",
+      "since": "1.0"
+    },
+    {
+      "doc": "Create / delete / rename branches. Phase 11 wires the typed API.",
+      "name": "git:write:branch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Create / delete tags. Phase 11 wires the typed API.",
+      "name": "git:write:tag",
+      "since": "1.0"
+    },
+    {
+      "doc": "Create commits. Phase 11 wires the typed API.",
+      "name": "git:write:commit",
+      "since": "1.0"
+    },
+    {
+      "doc": "Push / pop / drop stashes. Phase 11 wires the typed API.",
+      "name": "git:write:stash",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reset the index or working tree. Phase 11 wires the typed API.",
+      "name": "git:write:reset",
+      "since": "1.0"
+    },
+    {
+      "doc": "Fetch from a remote. Phase 11 wires the typed API.",
+      "name": "git:write:fetch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Push to a remote. Phase 11 wires the typed API.",
+      "name": "git:write:push",
+      "since": "1.0"
+    },
+    {
+      "doc": "Merge refs into HEAD. Phase 11 wires the typed API.",
+      "name": "git:write:merge",
+      "since": "1.0"
+    },
+    {
+      "doc": "Rebase HEAD. Phase 11 wires the typed API.",
+      "name": "git:write:rebase",
+      "since": "1.0"
+    },
+    {
+      "doc": "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`). Backwards-compat: omitting it leaves the legacy unrestricted v1 access in place.",
+      "name": "ui:region:<region>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Provide a versioned service to other plugins (Phase 14).",
+      "name": "services:provide:<service@version>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Consume a versioned service from another plugin (Phase 14).",
+      "name": "services:consume:<service@version>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Spawn a host-managed background worker thread (Phase 12).",
+      "name": "async:spawn",
+      "since": "1.12"
+    },
+    {
+      "doc": "Schedule one-shot or repeating timers (Phase 12).",
+      "name": "timer:create",
+      "since": "1.12"
+    },
+    {
+      "doc": "Watch paths for filesystem events (Phase 12, plugin scope).",
+      "name": "fs:watch",
+      "since": "1.12"
+    },
+    {
+      "doc": "Watch paths under an explicit user-chosen directory (Phase 12).",
+      "name": "fs:watch:scope:<dir>",
+      "since": "1.12"
+    }
+  ],
+  "events": [
+    {
+      "aliases": [],
+      "doc": "Fired once after the host app finishes starting up.",
+      "is_alias": false,
+      "name": "AppStarted",
+      "payload_fields": [],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired immediately before the host app shuts down.",
+      "is_alias": false,
+      "name": "AppWillQuit",
+      "payload_fields": [],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a repository is opened.",
+      "is_alias": false,
+      "name": "RepositoryOpened",
+      "payload_fields": [
+        {
+          "doc": "Repository display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Repository workdir path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a repository is closed.",
+      "is_alias": false,
+      "name": "RepositoryClosed",
+      "payload_fields": [
+        {
+          "doc": "Repository display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Repository workdir path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the active repository changes.",
+      "is_alias": false,
+      "name": "RepositoryChanged",
+      "payload_fields": [
+        {
+          "doc": "Repository display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Repository workdir path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the repository ref set changes (push/fetch/branch ops).",
+      "is_alias": false,
+      "name": "RefsChanged",
+      "payload_fields": [
+        {
+          "doc": "Number of refs after the change.",
+          "lua_type": "integer",
+          "name": "count",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the resolved HEAD commit hash changes.",
+      "is_alias": false,
+      "name": "HeadChanged",
+      "payload_fields": [
+        {
+          "doc": "New HEAD commit hash.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the current branch or its head hash changes.",
+      "is_alias": false,
+      "name": "BranchChanged",
+      "payload_fields": [
+        {
+          "doc": "Branch name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Resolved HEAD commit hash.",
+          "lua_type": "string",
+          "name": "head_hash",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the user selects a commit in the history view.",
+      "is_alias": false,
+      "name": "CommitSelected",
+      "payload_fields": [
+        {
+          "doc": "Selected commit hash.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the visible commit list changes.",
+      "is_alias": false,
+      "name": "CommitListChanged",
+      "payload_fields": [
+        {
+          "doc": "Number of commits in the new list.",
+          "lua_type": "integer",
+          "name": "count",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a diff finishes loading.",
+      "is_alias": false,
+      "name": "DiffLoaded",
+      "payload_fields": [
+        {
+          "doc": "Hash of the diff target.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when the worktree contents change.",
+      "is_alias": false,
+      "name": "WorktreeChanged",
+      "payload_fields": [
+        {
+          "doc": "Worktree path that changed.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [
+        "FetchStart"
+      ],
+      "doc": "Fired when a repository fetch starts.",
+      "is_alias": false,
+      "name": "FetchStarted",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the fetch.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [
+        "FetchEnd"
+      ],
+      "doc": "Fired when a repository fetch finishes (success or failure).",
+      "is_alias": false,
+      "name": "FetchFinished",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the fetch.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when a push starts.",
+      "is_alias": false,
+      "name": "PushStarted",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the push.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when a push finishes (success or failure).",
+      "is_alias": false,
+      "name": "PushFinished",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the push.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a tab is added.",
+      "is_alias": false,
+      "name": "TabAdded",
+      "payload_fields": [
+        {
+          "doc": "Tab id.",
+          "lua_type": "integer",
+          "name": "tab_id",
+          "required": true
+        },
+        {
+          "doc": "Repository path the tab is bound to, when known.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a tab is removed.",
+      "is_alias": false,
+      "name": "TabRemoved",
+      "payload_fields": [
+        {
+          "doc": "Tab id.",
+          "lua_type": "integer",
+          "name": "tab_id",
+          "required": true
+        },
+        {
+          "doc": "Repository path the tab is bound to, when known.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [
+        "TabSwitched"
+      ],
+      "doc": "Fired after the active tab changes.",
+      "is_alias": false,
+      "name": "TabSelected",
+      "payload_fields": [
+        {
+          "doc": "Tab id.",
+          "lua_type": "integer",
+          "name": "tab_id",
+          "required": true
+        },
+        {
+          "doc": "Repository path the tab is bound to, when known.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [
+        "TabReordered"
+      ],
+      "doc": "Fired after tabs are reordered.",
+      "is_alias": false,
+      "name": "TabMoved",
+      "payload_fields": [
+        {
+          "doc": "Number of open tabs after the move.",
+          "lua_type": "integer",
+          "name": "count",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after the active theme changes.",
+      "is_alias": false,
+      "name": "ThemeChanged",
+      "payload_fields": [
+        {
+          "doc": "Active theme identifier.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a settings entry is updated.",
+      "is_alias": false,
+      "name": "SettingsChanged",
+      "payload_fields": [
+        {
+          "doc": "Dotted setting key that changed.",
+          "lua_type": "string",
+          "name": "key",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a host or plugin command finishes executing.",
+      "is_alias": false,
+      "name": "CommandExecuted",
+      "payload_fields": [
+        {
+          "doc": "Executed command name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Owning plugin id when known.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": false
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.7"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired after a keymap chord matches and the host dispatches the underlying command.",
+      "is_alias": false,
+      "name": "KeymapTriggered",
+      "payload_fields": [
+        {
+          "doc": "Active context the chord matched in.",
+          "lua_type": "string",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Rendered chord (vim-style notation).",
+          "lua_type": "string",
+          "name": "key",
+          "required": true
+        },
+        {
+          "doc": "Command the chord dispatched to.",
+          "lua_type": "string",
+          "name": "command",
+          "required": true
+        },
+        {
+          "doc": "Owning plugin id of the matched keymap; `<host>` for built-ins, `<user>` for user-config.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "True when the underlying command dispatch returned `Ok`.",
+          "lua_type": "boolean",
+          "name": "ok",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.9"
+    },
+    {
+      "aliases": [],
+      "doc": "Compatibility alias of `FetchStarted`.",
+      "is_alias": true,
+      "name": "FetchStart",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the fetch.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Compatibility alias of `FetchFinished`.",
+      "is_alias": true,
+      "name": "FetchEnd",
+      "payload_fields": [
+        {
+          "doc": "Remote name involved in the fetch.",
+          "lua_type": "string",
+          "name": "remote",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Compatibility alias of `TabMoved`.",
+      "is_alias": true,
+      "name": "TabReordered",
+      "payload_fields": [
+        {
+          "doc": "Number of open tabs after the move.",
+          "lua_type": "integer",
+          "name": "count",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Compatibility alias of `TabSelected`.",
+      "is_alias": true,
+      "name": "TabSwitched",
+      "payload_fields": [
+        {
+          "doc": "Tab id.",
+          "lua_type": "integer",
+          "name": "tab_id",
+          "required": true
+        },
+        {
+          "doc": "Repository path the tab is bound to, when known.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    }
+  ],
+  "host_api_version": {
+    "compatibility": "v1",
+    "label": "1.0",
+    "major": 1,
+    "minor": 0
+  },
+  "modules": [
+    {
+      "capabilities": [],
+      "doc": "Root host API table.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return true when the host exposes a descriptor feature such as `fs.read_file@1`.",
+          "name": "has",
+          "params": [
+            {
+              "doc": "`module.feature@major` descriptor query.",
+              "lua_type": "string",
+              "name": "feature",
+              "required": true
+            }
+          ],
+          "path": "leviathan.has",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "feature must be a string in module.feature@version form"
+            ],
+            "notes": [
+              "Malformed feature strings return false."
+            ],
+            "returns": [
+              "boolean"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Log a message via the host.",
+          "name": "log",
+          "params": [
+            {
+              "doc": "Message to log to host stderr.",
+              "lua_type": "string",
+              "name": "message",
+              "required": true
+            }
+          ],
+          "path": "leviathan.log",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Defer a callback to the next tick (top-level alias of `leviathan.api.schedule`).",
+          "name": "schedule",
+          "params": [
+            {
+              "doc": "Function invoked on the next tick.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.schedule",
+          "returns": [],
+          "since": "1.12",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "root",
+      "table": "leviathan",
+      "types": [
+        "leviathan"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Descriptor, event, scheduling, and command registration APIs.",
+      "events": [
+        "BranchChanged",
+        "FetchStart",
+        "FetchEnd",
+        "TabAdded",
+        "TabRemoved",
+        "TabReordered",
+        "TabSwitched"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the full host API descriptor table used for generated docs and validation metadata.",
+          "name": "describe",
+          "params": [],
+          "path": "leviathan.api.describe",
+          "returns": [
+            {
+              "doc": "Host API descriptor.",
+              "lua_type": "table"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [
+              "Shape is generated from git_leviathan_plugin_api::descriptor."
+            ],
+            "returns": [
+              "HostApiDescription"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Subscribe to host events. Callback fires once per event firing.",
+          "name": "create_autocmd",
+          "params": [
+            {
+              "doc": "List of event names to subscribe to.",
+              "lua_type": "string[]",
+              "name": "events",
+              "required": true
+            },
+            {
+              "doc": "Options table containing `callback`.",
+              "lua_type": "LeviathanAutocmdOpts",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.api.create_autocmd",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "events must be an array-like table of strings",
+              "opts.callback must be a function"
+            ],
+            "notes": [
+              "One registry callback is stored per event."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Run a Lua callback on the next plugin host tick.",
+          "name": "schedule",
+          "params": [
+            {
+              "doc": "Callback to enqueue.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.api.schedule",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "callback must be a function"
+            ],
+            "notes": [
+              "The callback is recorded in the resource ledger as an async job."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Run a Lua callback after a host-side millisecond delay.",
+          "name": "defer_fn",
+          "params": [
+            {
+              "doc": "Delay in milliseconds.",
+              "lua_type": "integer",
+              "name": "ms",
+              "required": true
+            },
+            {
+              "doc": "Callback to enqueue.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.api.defer_fn",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "ms must be an integer",
+              "callback must be a function"
+            ],
+            "notes": [
+              "The callback is recorded in the resource ledger as a timer."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a named coroutine-driven plugin command.",
+          "name": "create_user_command",
+          "params": [
+            {
+              "doc": "Command name.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            },
+            {
+              "doc": "Command callback.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.api.create_user_command",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "name must be a string",
+              "callback must be a function"
+            ],
+            "notes": [
+              "Commands can yield; resumable coroutines are parked in the plugin queue."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "api",
+      "table": "leviathan.api",
+      "types": [
+        "leviathan.api",
+        "LeviathanAutocmdOpts",
+        "LeviathanAutocmdEvent"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Phase 8 typed command registry and palette dispatch.",
+      "events": [
+        "CommandExecuted"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a typed user command in the host registry.",
+          "name": "create",
+          "params": [
+            {
+              "doc": "Command identifier; unique per plugin.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            },
+            {
+              "doc": "Command descriptor including title, args, run.",
+              "lua_type": "LeviathanCommandSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.command.create",
+          "returns": [],
+          "since": "1.8",
+          "validation": {
+            "args": [
+              "name must be a non-empty string",
+              "spec.run must be a function",
+              "spec.context, when present, must be a known context name",
+              "spec.args must declare valid types"
+            ],
+            "notes": [
+              "Commands are owned by the plugin generation and dropped on reload/unload.",
+              "Re-registering the same name within a generation replaces the previous spec."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Invoke a registered command by name through the host dispatcher.",
+          "name": "invoke",
+          "params": [
+            {
+              "doc": "Command name to invoke.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            },
+            {
+              "doc": "Argument table; validated against the command's arg schema.",
+              "lua_type": "table|nil",
+              "name": "args",
+              "required": false
+            }
+          ],
+          "path": "leviathan.command.invoke",
+          "returns": [
+            {
+              "doc": "True when dispatch succeeded; false on validation/capability/run failure.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.8",
+          "validation": {
+            "args": [
+              "name must be a registered command",
+              "args must be a table or nil"
+            ],
+            "notes": [
+              "Argument validation, capability checks, and dispatch happen host-side."
+            ],
+            "returns": [
+              "boolean"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "List every registered command (host + plugin) as descriptor tables.",
+          "name": "list",
+          "params": [],
+          "path": "leviathan.command.list",
+          "returns": [
+            {
+              "doc": "Array of command summaries.",
+              "lua_type": "LeviathanCommandSummary[]"
+            }
+          ],
+          "since": "1.8",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "command",
+      "table": "leviathan.command",
+      "types": [
+        "leviathan.command",
+        "LeviathanCommandSpec",
+        "LeviathanCommandArg",
+        "LeviathanCommandSummary"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Phase 9 context-aware keymap registry.",
+      "events": [
+        "KeymapTriggered"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Bind a key chord to a registered command in a context.",
+          "name": "set",
+          "params": [
+            {
+              "doc": "Activation context (`global`, `repository`, `repository.graph`, `tab_bar`, etc.).",
+              "lua_type": "string",
+              "name": "context",
+              "required": true
+            },
+            {
+              "doc": "Vim-style key sequence (e.g. `gl`, `<C-r>`, `<leader>gh`).",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            },
+            {
+              "doc": "Command name resolved by the host command registry at dispatch time.",
+              "lua_type": "string",
+              "name": "command",
+              "required": true
+            },
+            {
+              "doc": "Keymap options (description, args).",
+              "lua_type": "LeviathanKeymapOpts",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.keymap.set",
+          "returns": [],
+          "since": "1.9",
+          "validation": {
+            "args": [
+              "context must be a non-empty string",
+              "key must parse as a vim-style key sequence",
+              "command must be a string (resolved at dispatch time)"
+            ],
+            "notes": [
+              "Plugin keymaps are owned by the calling generation and dropped on reload/unload.",
+              "Conflicts are resolved deterministically: built-in > user > plugin (lex by plugin id, then registration order)."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Remove a previously-registered keymap owned by the calling plugin generation.",
+          "name": "del",
+          "params": [
+            {
+              "doc": "Activation context the keymap was bound under.",
+              "lua_type": "string",
+              "name": "context",
+              "required": true
+            },
+            {
+              "doc": "Vim-style key sequence.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            }
+          ],
+          "path": "leviathan.keymap.del",
+          "returns": [],
+          "since": "1.9",
+          "validation": {
+            "args": [
+              "context must be a string",
+              "key must be a string"
+            ],
+            "notes": [
+              "Plugins can only delete their own bindings; user / built-in rows are unaffected."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "List every registered keymap (built-in, user, plugin) including conflict losers.",
+          "name": "list",
+          "params": [],
+          "path": "leviathan.keymap.list",
+          "returns": [
+            {
+              "doc": "Array of keymap summaries with conflict status.",
+              "lua_type": "LeviathanKeymapSummary[]"
+            }
+          ],
+          "since": "1.9",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "keymap",
+      "table": "leviathan.keymap",
+      "types": [
+        "leviathan.keymap",
+        "LeviathanKeymapOpts",
+        "LeviathanKeymapSummary",
+        "LeviathanKeymapConflictRef"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Phase 7 autocmd group, typed-event registration namespace.",
+      "events": [
+        "AppStarted",
+        "AppWillQuit",
+        "RepositoryOpened",
+        "RepositoryClosed",
+        "RepositoryChanged",
+        "RefsChanged",
+        "HeadChanged",
+        "BranchChanged",
+        "CommitSelected",
+        "CommitListChanged",
+        "DiffLoaded",
+        "WorktreeChanged",
+        "FetchStarted",
+        "FetchFinished",
+        "PushStarted",
+        "PushFinished",
+        "TabAdded",
+        "TabRemoved",
+        "TabSelected",
+        "TabMoved",
+        "ThemeChanged",
+        "SettingsChanged",
+        "CommandExecuted",
+        "KeymapTriggered"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Create or fetch an autocmd group handle. Pass `{ clear = true }` to remove any prior autocmds in the group before returning the handle.",
+          "name": "group",
+          "params": [
+            {
+              "doc": "Group name; the same string maps to the same handle for the lifetime of the plugin generation.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            },
+            {
+              "doc": "Group creation options.",
+              "lua_type": "LeviathanAutocmdGroupOpts",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.autocmd.group",
+          "returns": [
+            {
+              "doc": "Stable group handle to pass into `leviathan.autocmd.create`.",
+              "lua_type": "integer"
+            }
+          ],
+          "since": "1.7",
+          "validation": {
+            "args": [
+              "name must be a string",
+              "opts.clear, when present, must be a boolean"
+            ],
+            "notes": [
+              "Groups belong to the calling plugin's generation; reload drops them."
+            ],
+            "returns": [
+              "integer"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register an autocmd for a single typed event.",
+          "name": "create",
+          "params": [
+            {
+              "doc": "Canonical event name, alias, or array of names.",
+              "lua_type": "string|string[]",
+              "name": "event",
+              "required": true
+            },
+            {
+              "doc": "Autocmd options including the callback.",
+              "lua_type": "LeviathanAutocmdOpts",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.autocmd.create",
+          "returns": [],
+          "since": "1.7",
+          "validation": {
+            "args": [
+              "event must name a registered host event",
+              "opts.callback must be a function",
+              "opts.pattern, when present, must be a non-empty string",
+              "opts.debounce_ms, when present, must be a non-negative integer",
+              "opts.priority, when present, must be an integer"
+            ],
+            "notes": [
+              "Callbacks are owned by the plugin generation and dropped on reload or unload.",
+              "Failing callbacks are disabled after 5 consecutive failures (devtools-visible)."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Remove every autocmd registered against a group handle.",
+          "name": "clear",
+          "params": [
+            {
+              "doc": "Group handle returned by `leviathan.autocmd.group`.",
+              "lua_type": "integer",
+              "name": "group",
+              "required": true
+            }
+          ],
+          "path": "leviathan.autocmd.clear",
+          "returns": [],
+          "since": "1.7",
+          "validation": {
+            "args": [
+              "group must be an integer returned by leviathan.autocmd.group"
+            ],
+            "notes": [
+              "The group handle itself remains valid after clear."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "autocmd",
+      "table": "leviathan.autocmd",
+      "types": [
+        "leviathan.autocmd",
+        "LeviathanAutocmdOpts",
+        "LeviathanAutocmdGroupOpts",
+        "LeviathanAutocmdEvent"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "UI region and plugin screen APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "List names of registered UI regions.",
+          "name": "list_regions",
+          "params": [],
+          "path": "leviathan.ui.list_regions",
+          "returns": [
+            {
+              "doc": "Region names in descriptor order.",
+              "lua_type": "string[]"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Look up a region handle by descriptor name.",
+          "name": "region",
+          "params": [
+            {
+              "doc": "Region name.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.region",
+          "returns": [
+            {
+              "doc": "Region handle with add/remove/replace.",
+              "lua_type": "table"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "name must match a region descriptor"
+            ],
+            "notes": [
+              "Unknown names raise an error."
+            ],
+            "returns": [
+              "region handle table"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a plugin screen with init/view/update lifecycle callbacks.",
+          "name": "register_screen",
+          "params": [
+            {
+              "doc": "Screen descriptor.",
+              "lua_type": "LeviathanScreenSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.register_screen",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.init/view/update must be functions"
+            ],
+            "notes": [
+              "serialize and deserialize are optional functions."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui",
+      "table": "leviathan.ui",
+      "types": [
+        "leviathan.ui",
+        "LeviathanScreenSpec",
+        "LeviathanSlotSpec",
+        "LeviathanSlotTarget"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Main bar region handle.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Add a slot to the main bar region.",
+          "name": "add",
+          "params": [
+            {
+              "doc": "Slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.main_bar.add",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Remove a slot from the main bar region.",
+          "name": "remove",
+          "params": [
+            {
+              "doc": "Slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.main_bar.remove",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Replace a slot in the main bar region.",
+          "name": "replace",
+          "params": [
+            {
+              "doc": "Existing slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            },
+            {
+              "doc": "Replacement slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.main_bar.replace",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.main_bar",
+      "table": "leviathan.ui.main_bar",
+      "types": [
+        "leviathan.ui.main_bar"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Tab bar region handle.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Add a slot to the tab bar region.",
+          "name": "add",
+          "params": [
+            {
+              "doc": "Slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.tab_bar.add",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Remove a slot from the tab bar region.",
+          "name": "remove",
+          "params": [
+            {
+              "doc": "Slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.tab_bar.remove",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Replace a slot in the tab bar region.",
+          "name": "replace",
+          "params": [
+            {
+              "doc": "Existing slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            },
+            {
+              "doc": "Replacement slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.tab_bar.replace",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.tab_bar",
+      "table": "leviathan.ui.tab_bar",
+      "types": [
+        "leviathan.ui.tab_bar"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Repository content region handle.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Add a slot to the repository content region.",
+          "name": "add",
+          "params": [
+            {
+              "doc": "Slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.repository.add",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Remove a slot from the repository content region.",
+          "name": "remove",
+          "params": [
+            {
+              "doc": "Slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.repository.remove",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Replace a slot in the repository content region.",
+          "name": "replace",
+          "params": [
+            {
+              "doc": "Existing slot address and id.",
+              "lua_type": "LeviathanSlotTarget",
+              "name": "target",
+              "required": true
+            },
+            {
+              "doc": "Replacement slot descriptor.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.repository.replace",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function"
+            ],
+            "notes": [
+              "Slot ownership is recorded in the Phase 1 resource ledger."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.repository",
+      "table": "leviathan.ui.repository",
+      "types": [
+        "leviathan.ui.repository"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "fs:read",
+        "fs:write:*"
+      ],
+      "doc": "Filesystem and path helper APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Read UTF-8 file contents. Returns content or (nil, err).",
+          "name": "read_file",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.read_file",
+          "returns": [
+            {
+              "doc": "Value on success, nil on failure.",
+              "lua_type": "string|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Read a UTF-8 file as an array of lines.",
+          "name": "read_lines",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.read_lines",
+          "returns": [
+            {
+              "doc": "Lines on success.",
+              "lua_type": "string[]|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Write content to a file, replacing existing contents.",
+          "name": "write_file",
+          "params": [
+            {
+              "doc": "Target path.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "UTF-8 content.",
+              "lua_type": "string",
+              "name": "content",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.write_file",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Append content to a file, creating it when absent.",
+          "name": "append_file",
+          "params": [
+            {
+              "doc": "Target path.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "UTF-8 content.",
+              "lua_type": "string",
+              "name": "content",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.append_file",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Delete a file or directory tree.",
+          "name": "delete",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.delete",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Create a directory and missing parents.",
+          "name": "mkdir",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.mkdir",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read",
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Copy a regular file.",
+          "name": "copy",
+          "params": [
+            {
+              "doc": "Source path.",
+              "lua_type": "string",
+              "name": "src",
+              "required": true
+            },
+            {
+              "doc": "Destination path.",
+              "lua_type": "string",
+              "name": "dst",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.copy",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Move or rename a path.",
+          "name": "rename",
+          "params": [
+            {
+              "doc": "Source path.",
+              "lua_type": "string",
+              "name": "src",
+              "required": true
+            },
+            {
+              "doc": "Destination path.",
+              "lua_type": "string",
+              "name": "dst",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.rename",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:write:*"
+          ],
+          "compatibility": "v1",
+          "doc": "Create a file or update its modification time.",
+          "name": "touch",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.touch",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Read a symlink target without following it.",
+          "name": "read_link",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.read_link",
+          "returns": [
+            {
+              "doc": "Value on success, nil on failure.",
+              "lua_type": "string|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "List directory entries sorted with directories first.",
+          "name": "list_dir",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.list_dir",
+          "returns": [
+            {
+              "doc": "Directory entries on success.",
+              "lua_type": "LeviathanFsEntry[]|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return whether a path exists.",
+          "name": "exists",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.exists",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return whether a path is a regular file.",
+          "name": "is_file",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.is_file",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return whether a path is a directory.",
+          "name": "is_dir",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.is_dir",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return whether a path itself is a symlink.",
+          "name": "is_symlink",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.is_symlink",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return symlink metadata size in bytes.",
+          "name": "size",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.size",
+          "returns": [
+            {
+              "doc": "Byte size on success.",
+              "lua_type": "integer|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return modification time as Unix seconds.",
+          "name": "modified",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.modified",
+          "returns": [
+            {
+              "doc": "Unix timestamp on success.",
+              "lua_type": "number|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "fs:read"
+          ],
+          "compatibility": "v1",
+          "doc": "Return metadata shaped like a single list_dir entry.",
+          "name": "metadata",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.metadata",
+          "returns": [
+            {
+              "doc": "Entry metadata on success.",
+              "lua_type": "LeviathanFsEntry|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return whether a path string is absolute.",
+          "name": "is_absolute",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.is_absolute",
+          "returns": [
+            {
+              "doc": "Boolean result.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the parent path string, or nil.",
+          "name": "parent",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.parent",
+          "returns": [
+            {
+              "doc": "Parent path.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the final path component, or nil.",
+          "name": "basename",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.basename",
+          "returns": [
+            {
+              "doc": "File name.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the file stem, or nil.",
+          "name": "stem",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.stem",
+          "returns": [
+            {
+              "doc": "File stem.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the final file extension, or nil.",
+          "name": "extension",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.extension",
+          "returns": [
+            {
+              "doc": "File extension.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Join two path strings.",
+          "name": "join",
+          "params": [
+            {
+              "doc": "Base path.",
+              "lua_type": "string",
+              "name": "a",
+              "required": true
+            },
+            {
+              "doc": "Child path.",
+              "lua_type": "string",
+              "name": "b",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.join",
+          "returns": [
+            {
+              "doc": "Joined path.",
+              "lua_type": "string"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return path relative to base when path is under base.",
+          "name": "relative_to",
+          "params": [
+            {
+              "doc": "Path to rewrite.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "Base directory.",
+              "lua_type": "string",
+              "name": "base",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.relative_to",
+          "returns": [
+            {
+              "doc": "Relative path or nil.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return path with its final extension replaced.",
+          "name": "with_extension",
+          "params": [
+            {
+              "doc": "Path to rewrite.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "New extension.",
+              "lua_type": "string",
+              "name": "ext",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.with_extension",
+          "returns": [
+            {
+              "doc": "Rewritten path or nil.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return path with its final component replaced.",
+          "name": "with_file_name",
+          "params": [
+            {
+              "doc": "Path to rewrite.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "Replacement file name.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.with_file_name",
+          "returns": [
+            {
+              "doc": "Rewritten path or nil.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the process current working directory.",
+          "name": "cwd",
+          "params": [],
+          "path": "leviathan.fs.cwd",
+          "returns": [
+            {
+              "doc": "Value on success, nil on failure.",
+              "lua_type": "string|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the user home directory, or nil.",
+          "name": "home",
+          "params": [],
+          "path": "leviathan.fs.home",
+          "returns": [
+            {
+              "doc": "Home directory.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the process temporary directory.",
+          "name": "temp_dir",
+          "params": [],
+          "path": "leviathan.fs.temp_dir",
+          "returns": [
+            {
+              "doc": "Temporary directory.",
+              "lua_type": "string"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the standard user config directory, or nil.",
+          "name": "config_dir",
+          "params": [],
+          "path": "leviathan.fs.config_dir",
+          "returns": [
+            {
+              "doc": "Config directory.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the standard user cache directory, or nil.",
+          "name": "cache_dir",
+          "params": [],
+          "path": "leviathan.fs.cache_dir",
+          "returns": [
+            {
+              "doc": "Cache directory.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the standard user data directory, or nil.",
+          "name": "data_dir",
+          "params": [],
+          "path": "leviathan.fs.data_dir",
+          "returns": [
+            {
+              "doc": "Data directory.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the standard user state directory, or nil.",
+          "name": "state_dir",
+          "params": [],
+          "path": "leviathan.fs.state_dir",
+          "returns": [
+            {
+              "doc": "State directory.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Resolve a path to an absolute canonical path.",
+          "name": "canonicalize",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.canonicalize",
+          "returns": [
+            {
+              "doc": "Value on success, nil on failure.",
+              "lua_type": "string|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "path must be a string"
+            ],
+            "notes": [
+              "Compatibility note: v1 canonicalize is ungated even though it reads filesystem state."
+            ],
+            "returns": [
+              "string|nil",
+              "string|nil"
+            ]
+          }
+        },
+        {
+          "capabilities": [
+            "fs:watch"
+          ],
+          "compatibility": "v1",
+          "doc": "Watch a path for filesystem changes and dispatch events to a callback.",
+          "name": "watch",
+          "params": [
+            {
+              "doc": "Path to watch (file or directory).",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            },
+            {
+              "doc": "{ recursive = bool }.",
+              "lua_type": "LeviathanFsWatchOpts|nil",
+              "name": "opts",
+              "required": false
+            },
+            {
+              "doc": "Callback invoked on each event.",
+              "lua_type": "fun(event: LeviathanFsWatchEvent)",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.fs.watch",
+          "returns": [
+            {
+              "doc": "Handle with `:cancel()` method.",
+              "lua_type": "LeviathanFsWatchHandle"
+            }
+          ],
+          "since": "1.12",
+          "validation": {
+            "args": [
+              "path must resolve under a granted fs:watch scope"
+            ],
+            "notes": [
+              "Cancel via the returned handle; the host also cancels on plugin reload/unload."
+            ],
+            "returns": [
+              "FsWatchHandle"
+            ]
+          }
+        }
+      ],
+      "name": "fs",
+      "table": "leviathan.fs",
+      "types": [
+        "leviathan.fs",
+        "LeviathanFsEntry"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "env"
+      ],
+      "doc": "Process environment access.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "env"
+          ],
+          "compatibility": "v1",
+          "doc": "Read an environment variable. Returns (value, nil), (nil, nil), or (nil, err).",
+          "name": "get",
+          "params": [
+            {
+              "doc": "Name string.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            }
+          ],
+          "path": "leviathan.env.get",
+          "returns": [
+            {
+              "doc": "Value on success, nil on failure.",
+              "lua_type": "string|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "env"
+          ],
+          "compatibility": "v1",
+          "doc": "List UTF-8 environment variables as a name/value table.",
+          "name": "list",
+          "params": [],
+          "path": "leviathan.env.list",
+          "returns": [
+            {
+              "doc": "Environment map.",
+              "lua_type": "table<string,string>"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "env",
+      "table": "leviathan.env",
+      "types": [
+        "leviathan.env"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "git:read:status",
+        "git:read:log",
+        "git:read:diff",
+        "git:read:show",
+        "git:read:blame"
+      ],
+      "doc": "Active repository snapshot plus typed read APIs (Phase 11).",
+      "events": [
+        "BranchChanged",
+        "RefsChanged",
+        "HeadChanged",
+        "CommitListChanged"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the cached `leviathan.repository` snapshot table for the active repo.",
+          "name": "current",
+          "params": [],
+          "path": "leviathan.repository.current",
+          "returns": [
+            {
+              "doc": "Active repository snapshot.",
+              "lua_type": "table"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the active repository's typed refs (locals, remotes, tags). Returns (refs, nil) or (nil, err).",
+          "name": "refs",
+          "params": [],
+          "path": "leviathan.repository.refs",
+          "returns": [
+            {
+              "doc": "Refs snapshot on success.",
+              "lua_type": "table|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the active repository's HEAD info: { hash, ref, detached }.",
+          "name": "head",
+          "params": [],
+          "path": "leviathan.repository.head",
+          "returns": [
+            {
+              "doc": "HEAD snapshot on success.",
+              "lua_type": "table|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:read:status"
+          ],
+          "compatibility": "v1",
+          "doc": "Return the working-tree status: { staged[], unstaged[], conflicted[] }.",
+          "name": "status",
+          "params": [],
+          "path": "leviathan.repository.status",
+          "returns": [
+            {
+              "doc": "Status snapshot on success.",
+              "lua_type": "table|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:read:log"
+          ],
+          "compatibility": "v1",
+          "doc": "Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.",
+          "name": "commits",
+          "params": [
+            {
+              "doc": "Options table: { limit = 100, rev = \"HEAD\" }.",
+              "lua_type": "table",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.repository.commits",
+          "returns": [
+            {
+              "doc": "Commit list on success.",
+              "lua_type": "table[]|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:read:diff"
+          ],
+          "compatibility": "v1",
+          "doc": "Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.",
+          "name": "diff",
+          "params": [
+            {
+              "doc": "Options table: { commit = hash }.",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.repository.diff",
+          "returns": [
+            {
+              "doc": "Diff snapshot on success.",
+              "lua_type": "table[]|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:read:show"
+          ],
+          "compatibility": "v1",
+          "doc": "Return the file at a given commit/path as { lines = string[] } (per-line diff content).",
+          "name": "file_at",
+          "params": [
+            {
+              "doc": "Options table: { commit = hash, path = \"src/main.rs\" }.",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.repository.file_at",
+          "returns": [
+            {
+              "doc": "File-at-commit snapshot on success.",
+              "lua_type": "table|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:read:blame"
+          ],
+          "compatibility": "v1",
+          "doc": "Phase 11 placeholder: blame is not yet wired through the host gateway. Returns (nil, \"unsupported\").",
+          "name": "blame",
+          "params": [
+            {
+              "doc": "Options table: { path = \"src/main.rs\", line_range = {start,end} }.",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.repository.blame",
+          "returns": [
+            {
+              "doc": "Always nil.",
+              "lua_type": "nil"
+            },
+            {
+              "doc": "Error message.",
+              "lua_type": "string"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "repository",
+      "table": "leviathan.repository",
+      "types": [
+        "leviathan.repository",
+        "LeviathanLocalBranch",
+        "LeviathanRemoteBranch",
+        "LeviathanTag"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "git:write:checkout",
+        "git:write:branch",
+        "git:write:tag",
+        "git:write:commit",
+        "git:write:stash",
+        "git:write:reset",
+        "git:write:fetch",
+        "git:write:push",
+        "git:write:merge",
+        "git:write:rebase"
+      ],
+      "doc": "Phase 11 typed Git write APIs. All routes capability-checked, audited, and (when destructive) gated by the host's confirmation policy.",
+      "events": [
+        "HeadChanged",
+        "BranchChanged",
+        "RefsChanged",
+        "FetchStarted",
+        "FetchFinished",
+        "PushStarted",
+        "PushFinished"
+      ],
+      "functions": [
+        {
+          "capabilities": [
+            "git:write:checkout"
+          ],
+          "compatibility": "v1",
+          "doc": "Check out `ref`. Returns (true, nil) on enqueue + success, (false, err) otherwise.",
+          "name": "checkout",
+          "params": [
+            {
+              "doc": "{ ref = \"main\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.checkout",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:branch"
+          ],
+          "compatibility": "v1",
+          "doc": "Create branch `name` at `start_point` (defaults to HEAD).",
+          "name": "create_branch",
+          "params": [
+            {
+              "doc": "{ name = \"topic\", start_point = \"HEAD\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.create_branch",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:branch"
+          ],
+          "compatibility": "v1",
+          "doc": "Delete branch `name`. `force = true` requires destructive confirmation.",
+          "name": "delete_branch",
+          "params": [
+            {
+              "doc": "{ name = \"topic\", force = false }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.delete_branch",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:tag"
+          ],
+          "compatibility": "v1",
+          "doc": "Create lightweight tag `name` at `target` (defaults to HEAD).",
+          "name": "create_tag",
+          "params": [
+            {
+              "doc": "{ name = \"v1.2.3\", target = \"HEAD\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.create_tag",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:tag"
+          ],
+          "compatibility": "v1",
+          "doc": "Delete tag `name` locally. Destructive — requires confirmation.",
+          "name": "delete_tag",
+          "params": [
+            {
+              "doc": "{ name = \"v1.2.3\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.delete_tag",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:commit"
+          ],
+          "compatibility": "v1",
+          "doc": "Commit currently-staged changes with `message`.",
+          "name": "commit",
+          "params": [
+            {
+              "doc": "{ message = \"...\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.commit",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:stash"
+          ],
+          "compatibility": "v1",
+          "doc": "Stash current dirty changes.",
+          "name": "stash_push",
+          "params": [
+            {
+              "doc": "{ message = \"from plugin\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.git.stash_push",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:stash"
+          ],
+          "compatibility": "v1",
+          "doc": "Pop the most recent stash entry (or the entry at `index`).",
+          "name": "stash_pop",
+          "params": [
+            {
+              "doc": "{ index = 0 }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.git.stash_pop",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:reset"
+          ],
+          "compatibility": "v1",
+          "doc": "Reset current branch to `ref` with `mode` (soft|mixed|hard). `hard` requires destructive confirmation.",
+          "name": "reset",
+          "params": [
+            {
+              "doc": "{ ref = \"HEAD~1\", mode = \"soft|mixed|hard\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.reset",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:fetch"
+          ],
+          "compatibility": "v1",
+          "doc": "Fetch from `remote` (or every remote when omitted).",
+          "name": "fetch",
+          "params": [
+            {
+              "doc": "{ remote = \"origin\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.git.fetch",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:push"
+          ],
+          "compatibility": "v1",
+          "doc": "Push the current branch to `remote`. Force pushes are not yet supported.",
+          "name": "push",
+          "params": [
+            {
+              "doc": "{ remote = \"origin\", ref = \"main\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.git.push",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:merge"
+          ],
+          "compatibility": "v1",
+          "doc": "Merge `ref` into the current branch. Destructive — requires confirmation.",
+          "name": "merge",
+          "params": [
+            {
+              "doc": "{ ref = \"topic\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.merge",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "git:write:rebase"
+          ],
+          "compatibility": "v1",
+          "doc": "Rebase the current branch onto `ref`. Destructive — requires confirmation.",
+          "name": "rebase",
+          "params": [
+            {
+              "doc": "{ ref = \"main\" }",
+              "lua_type": "table",
+              "name": "opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.git.rebase",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "git",
+      "table": "leviathan.git",
+      "types": [
+        "leviathan.git"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Read-only tab snapshot plus queued tab mutation APIs.",
+      "events": [
+        "TabAdded",
+        "TabRemoved",
+        "TabReordered",
+        "TabSwitched"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Open or focus a tab for the given path.",
+          "name": "add",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.tab_registry.add",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Close the tab at path.",
+          "name": "remove",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.tab_registry.remove",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Focus the tab at path.",
+          "name": "select",
+          "params": [
+            {
+              "doc": "Path string.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.tab_registry.select",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Reorder tabs to match the given path list.",
+          "name": "reorder",
+          "params": [
+            {
+              "doc": "Tab paths in target order.",
+              "lua_type": "string[]",
+              "name": "paths",
+              "required": true
+            }
+          ],
+          "path": "leviathan.tab_registry.reorder",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "tab_registry",
+      "table": "leviathan.tab_registry",
+      "types": [
+        "leviathan.tab_registry",
+        "LeviathanTab"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Inter-plugin service registry APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Publish a declared inter-plugin service.",
+          "name": "register",
+          "params": [
+            {
+              "doc": "Service declaration such as `greeter@1`.",
+              "lua_type": "string",
+              "name": "name_at_version",
+              "required": true
+            },
+            {
+              "doc": "Service method table.",
+              "lua_type": "table<string,function>",
+              "name": "methods",
+              "required": true
+            }
+          ],
+          "path": "leviathan.services.register",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "name_at_version must be declared in provides_services",
+              "methods values must be functions"
+            ],
+            "notes": [
+              "Each method is stored in the resource ledger as a Lua registry key."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Look up a declared inter-plugin service proxy.",
+          "name": "get",
+          "params": [
+            {
+              "doc": "Service declaration such as `greeter@1`.",
+              "lua_type": "string",
+              "name": "name_at_version",
+              "required": true
+            }
+          ],
+          "path": "leviathan.services.get",
+          "returns": [
+            {
+              "doc": "Service proxy.",
+              "lua_type": "table"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "name_at_version must be declared in consumes_services"
+            ],
+            "notes": [
+              "Proxy method arguments and results are converted through JSON values."
+            ],
+            "returns": [
+              "table"
+            ]
+          }
+        }
+      ],
+      "name": "services",
+      "table": "leviathan.services",
+      "types": [
+        "leviathan.services"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Versioned per-plugin persistence APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Open or create a versioned per-plugin key-value store.",
+          "name": "open",
+          "params": [
+            {
+              "doc": "Plugin-local store name.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            },
+            {
+              "doc": "Version, surface, repository key, and migrations.",
+              "lua_type": "LeviathanPersistOpenOpts|nil",
+              "name": "opts",
+              "required": false
+            }
+          ],
+          "path": "leviathan.persist.open",
+          "returns": [
+            {
+              "doc": "Store userdata.",
+              "lua_type": "LeviathanPersistStore"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "name must be a string",
+              "opts.version defaults to 1"
+            ],
+            "notes": [
+              "The default state surface preserves the v1 state-dir path."
+            ],
+            "returns": [
+              "PersistStore userdata"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Run a persistence transaction and atomically commit only if the callback succeeds.",
+          "name": "transaction",
+          "params": [
+            {
+              "doc": "Callback, or options followed by callback.",
+              "lua_type": "function|LeviathanPersistOpenOpts",
+              "name": "callback_or_opts",
+              "required": true
+            }
+          ],
+          "path": "leviathan.persist.transaction",
+          "returns": [
+            {
+              "doc": "True after commit.",
+              "lua_type": "boolean"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [
+              "callback receives a transaction userdata"
+            ],
+            "notes": [
+              "Callback errors roll back every staged write."
+            ],
+            "returns": [
+              "boolean"
+            ]
+          }
+        }
+      ],
+      "name": "persist",
+      "table": "leviathan.persist",
+      "types": [
+        "leviathan.persist",
+        "LeviathanPersistStore",
+        "LeviathanPersistOpenOpts"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Schema-backed plugin settings APIs.",
+      "events": [
+        "SettingsChanged"
+      ],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Declare a schema used to validate plugin settings before save.",
+          "name": "define_schema",
+          "params": [
+            {
+              "doc": "Settings schema table.",
+              "lua_type": "table",
+              "name": "schema",
+              "required": true
+            }
+          ],
+          "path": "leviathan.settings.define_schema",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return current settings with schema defaults applied.",
+          "name": "get",
+          "params": [],
+          "path": "leviathan.settings.get",
+          "returns": [
+            {
+              "doc": "Settings table.",
+              "lua_type": "table"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Validate and save settings, then fire on_change callbacks.",
+          "name": "set",
+          "params": [
+            {
+              "doc": "Settings to merge.",
+              "lua_type": "table",
+              "name": "values",
+              "required": true
+            }
+          ],
+          "path": "leviathan.settings.set",
+          "returns": [
+            {
+              "doc": "True on success, false on failure.",
+              "lua_type": "boolean"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a callback fired after validated settings are saved.",
+          "name": "on_change",
+          "params": [
+            {
+              "doc": "Change callback.",
+              "lua_type": "fun(new_settings: table)",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.settings.on_change",
+          "returns": [],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "settings",
+      "table": "leviathan.settings",
+      "types": [
+        "leviathan.settings",
+        "LeviathanSettingsSchema"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Plugin-local secret APIs. Devtools exposes metadata only.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "credentials"
+          ],
+          "compatibility": "v1",
+          "doc": "Store a plugin-local secret in the secrets surface.",
+          "name": "set",
+          "params": [
+            {
+              "doc": "Secret key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            },
+            {
+              "doc": "Secret value.",
+              "lua_type": "string",
+              "name": "value",
+              "required": true
+            }
+          ],
+          "path": "leviathan.secrets.set",
+          "returns": [],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "credentials"
+          ],
+          "compatibility": "v1",
+          "doc": "Read a plugin-local secret value.",
+          "name": "get",
+          "params": [
+            {
+              "doc": "Secret key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            }
+          ],
+          "path": "leviathan.secrets.get",
+          "returns": [
+            {
+              "doc": "Secret value, or nil.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "credentials"
+          ],
+          "compatibility": "v1",
+          "doc": "Delete a plugin-local secret.",
+          "name": "delete",
+          "params": [
+            {
+              "doc": "Secret key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            }
+          ],
+          "path": "leviathan.secrets.delete",
+          "returns": [],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "credentials"
+          ],
+          "compatibility": "v1",
+          "doc": "List plugin-local secret keys without exposing values.",
+          "name": "list",
+          "params": [],
+          "path": "leviathan.secrets.list",
+          "returns": [
+            {
+              "doc": "Secret keys.",
+              "lua_type": "string[]"
+            }
+          ],
+          "since": "1.13",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "secrets",
+      "table": "leviathan.secrets",
+      "types": [
+        "leviathan.secrets"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Plugin health-check APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a plugin health-check callback.",
+          "name": "register",
+          "params": [
+            {
+              "doc": "Health check callback.",
+              "lua_type": "fun(ctx: LeviathanHealthContext)",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.health.register",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "callback must be a function"
+            ],
+            "notes": [
+              "Host passes a fresh HealthContext userdata when health checks run."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "health",
+      "table": "leviathan.health",
+      "types": [
+        "leviathan.health",
+        "LeviathanHealthContext"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Runtimepath, module-loader, and after-directory introspection.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Ordered runtime path entries the host will search for `require(\"plugin_id.module\")`.",
+          "name": "path",
+          "params": [],
+          "path": "leviathan.runtime.path",
+          "returns": [
+            {
+              "doc": "Entries in search order: own first, then declared dependencies.",
+              "lua_type": "LeviathanRuntimePathEntry[]"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [
+              "Order is deterministic: own root, then `requires_plugins` in manifest order."
+            ],
+            "returns": [
+              "array of {plugin, kind, root}"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Resolve a module name against the runtime path without loading it.",
+          "name": "find",
+          "params": [
+            {
+              "doc": "Module name (e.g. \"plugin_id.foo\").",
+              "lua_type": "string",
+              "name": "module",
+              "required": true
+            }
+          ],
+          "path": "leviathan.runtime.find",
+          "returns": [
+            {
+              "doc": "Match info or nil when not found / name is invalid.",
+              "lua_type": "LeviathanRuntimeMatch|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "module must be a syntactically valid dotted name"
+            ],
+            "notes": [
+              "Returns nil for invalid names; never raises."
+            ],
+            "returns": [
+              "{plugin, kind, source} or nil"
+            ]
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Per-plugin list of modules currently cached in this generation.",
+          "name": "module_graph",
+          "params": [],
+          "path": "leviathan.runtime.module_graph",
+          "returns": [
+            {
+              "doc": "One entry per plugin contributing cached modules.",
+              "lua_type": "LeviathanRuntimeModuleGraphEntry[]"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [
+              "Reload drops the whole cache, so the graph reflects the live generation only."
+            ],
+            "returns": [
+              "array of {plugin, modules}"
+            ]
+          }
+        }
+      ],
+      "name": "runtime",
+      "table": "leviathan.runtime",
+      "types": [
+        "leviathan.runtime",
+        "LeviathanRuntimePathEntry",
+        "LeviathanRuntimeMatch",
+        "LeviathanRuntimeModuleGraphEntry"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "async:spawn"
+      ],
+      "doc": "Phase 12 host-managed background workers.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "async:spawn"
+          ],
+          "compatibility": "v1",
+          "doc": "Spawn a host-managed worker thread running a Lua body. Returns a handle with `:cancel()`.",
+          "name": "spawn",
+          "params": [
+            {
+              "doc": "Worker body. Runs on a background thread on a fresh Lua state. Result must be JSON-serialisable.",
+              "lua_type": "fun(ctx: LeviathanJobContext): any",
+              "name": "body",
+              "required": true
+            },
+            {
+              "doc": "Optional main-thread callback invoked when the worker finishes.",
+              "lua_type": "fun(ok: boolean, value: any)|nil",
+              "name": "on_complete",
+              "required": false
+            }
+          ],
+          "path": "leviathan.async.spawn",
+          "returns": [
+            {
+              "doc": "Job handle with `:cancel()` and `:id()`.",
+              "lua_type": "LeviathanJobHandle"
+            }
+          ],
+          "since": "1.12",
+          "validation": {
+            "args": [
+              "body must be a Lua function (no upvalues)"
+            ],
+            "notes": [
+              "Body sees a `ctx:cancelled()` projection of the cancellation token."
+            ],
+            "returns": [
+              "JobHandle"
+            ]
+          }
+        }
+      ],
+      "name": "async",
+      "table": "leviathan.async",
+      "types": [
+        "leviathan.async",
+        "LeviathanJobHandle",
+        "LeviathanJobContext"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "timer:create"
+      ],
+      "doc": "Phase 12 one-shot and repeating timers.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "timer:create"
+          ],
+          "compatibility": "v1",
+          "doc": "Schedule a one-shot callback after `ms` milliseconds.",
+          "name": "after",
+          "params": [
+            {
+              "doc": "Delay in milliseconds.",
+              "lua_type": "integer",
+              "name": "ms",
+              "required": true
+            },
+            {
+              "doc": "Callback to invoke once.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.timer.after",
+          "returns": [
+            {
+              "doc": "Handle with `:cancel()`.",
+              "lua_type": "LeviathanTimerHandle"
+            }
+          ],
+          "since": "1.12",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "timer:create"
+          ],
+          "compatibility": "v1",
+          "doc": "Schedule a repeating callback every `ms` milliseconds.",
+          "name": "every",
+          "params": [
+            {
+              "doc": "Period in milliseconds.",
+              "lua_type": "integer",
+              "name": "ms",
+              "required": true
+            },
+            {
+              "doc": "Callback invoked on each fire.",
+              "lua_type": "fun()",
+              "name": "callback",
+              "required": true
+            }
+          ],
+          "path": "leviathan.timer.every",
+          "returns": [
+            {
+              "doc": "Handle with `:cancel()`.",
+              "lua_type": "LeviathanTimerHandle"
+            }
+          ],
+          "since": "1.12",
+          "validation": {
+            "args": [
+              "ms must be > 0"
+            ],
+            "notes": [
+              "Repeating timers re-arm on each tick after firing."
+            ],
+            "returns": [
+              "TimerHandle"
+            ]
+          }
+        }
+      ],
+      "name": "timer",
+      "table": "leviathan.timer",
+      "types": [
+        "leviathan.timer",
+        "LeviathanTimerHandle"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    }
+  ],
+  "regions": [
+    {
+      "kind": "chrome",
+      "name": "main_bar",
+      "panes": [],
+      "sections": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    {
+      "kind": "chrome",
+      "name": "tab_bar",
+      "panes": [],
+      "sections": [
+        "left",
+        "center",
+        "right"
+      ]
+    },
+    {
+      "kind": "content",
+      "name": "repository",
+      "panes": [
+        {
+          "name": "sidebar",
+          "sections": [
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "name": "main",
+          "sections": [
+            "top",
+            "bottom"
+          ]
+        }
+      ],
+      "sections": []
+    }
+  ],
+  "types": [
+    {
+      "doc": "Root host API table.",
+      "fields": [
+        {
+          "doc": "API utility namespace.",
+          "lua_type": "leviathan.api",
+          "name": "api",
+          "required": true
+        },
+        {
+          "doc": "UI namespace.",
+          "lua_type": "leviathan.ui",
+          "name": "ui",
+          "required": true
+        },
+        {
+          "doc": "Filesystem namespace.",
+          "lua_type": "leviathan.fs",
+          "name": "fs",
+          "required": true
+        },
+        {
+          "doc": "Environment namespace.",
+          "lua_type": "leviathan.env",
+          "name": "env",
+          "required": true
+        },
+        {
+          "doc": "Active repository snapshot.",
+          "lua_type": "leviathan.repository",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Open tab snapshot.",
+          "lua_type": "leviathan.tab_registry",
+          "name": "tab_registry",
+          "required": true
+        },
+        {
+          "doc": "Service registry namespace.",
+          "lua_type": "leviathan.services",
+          "name": "services",
+          "required": true
+        },
+        {
+          "doc": "Persistence namespace.",
+          "lua_type": "leviathan.persist",
+          "name": "persist",
+          "required": true
+        },
+        {
+          "doc": "Settings namespace.",
+          "lua_type": "leviathan.settings",
+          "name": "settings",
+          "required": true
+        },
+        {
+          "doc": "Secrets namespace.",
+          "lua_type": "leviathan.secrets",
+          "name": "secrets",
+          "required": true
+        },
+        {
+          "doc": "Health namespace.",
+          "lua_type": "leviathan.health",
+          "name": "health",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "leviathan",
+      "since": "1.0"
+    },
+    {
+      "doc": "API utility namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.api",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui",
+      "since": "1.0"
+    },
+    {
+      "doc": "Main bar region handle.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.main_bar",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tab bar region handle.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.tab_bar",
+      "since": "1.0"
+    },
+    {
+      "doc": "Repository content region handle.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.repository",
+      "since": "1.0"
+    },
+    {
+      "doc": "Filesystem namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.fs",
+      "since": "1.0"
+    },
+    {
+      "doc": "Environment namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.env",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tab registry namespace.",
+      "fields": [
+        {
+          "doc": "Open tabs.",
+          "lua_type": "LeviathanTab[]",
+          "name": "list",
+          "required": true
+        },
+        {
+          "doc": "Currently focused tab.",
+          "lua_type": "LeviathanTab|nil",
+          "name": "current",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "leviathan.tab_registry",
+      "since": "1.0"
+    },
+    {
+      "doc": "Active repository snapshot.",
+      "fields": [
+        {
+          "doc": "Repository display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Workdir path, empty when unavailable.",
+          "lua_type": "string",
+          "name": "workdir_path",
+          "required": true
+        },
+        {
+          "doc": "Current branch display name.",
+          "lua_type": "string",
+          "name": "current_branch_name",
+          "required": true
+        },
+        {
+          "doc": "Current local branch table.",
+          "lua_type": "LeviathanLocalBranch|nil",
+          "name": "current_branch",
+          "required": true
+        },
+        {
+          "doc": "Whether a repository is loaded.",
+          "lua_type": "boolean",
+          "name": "is_open",
+          "required": true
+        },
+        {
+          "doc": "Whether HEAD is detached.",
+          "lua_type": "boolean",
+          "name": "is_detached",
+          "required": true
+        },
+        {
+          "doc": "Whether HEAD points at an unborn branch.",
+          "lua_type": "boolean",
+          "name": "is_unborn",
+          "required": true
+        },
+        {
+          "doc": "Whether the repository has no worktree.",
+          "lua_type": "boolean",
+          "name": "is_bare",
+          "required": true
+        },
+        {
+          "doc": "Current HEAD hash or empty string.",
+          "lua_type": "string",
+          "name": "head_hash",
+          "required": true
+        },
+        {
+          "doc": "Default remote name or empty string.",
+          "lua_type": "string",
+          "name": "default_remote_name",
+          "required": true
+        },
+        {
+          "doc": "Local branches.",
+          "lua_type": "LeviathanLocalBranch[]",
+          "name": "local_branches",
+          "required": true
+        },
+        {
+          "doc": "Remote branches.",
+          "lua_type": "LeviathanRemoteBranch[]",
+          "name": "remote_branches",
+          "required": true
+        },
+        {
+          "doc": "Tags.",
+          "lua_type": "LeviathanTag[]",
+          "name": "tags",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "leviathan.repository",
+      "since": "1.0"
+    },
+    {
+      "doc": "Service registry namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.services",
+      "since": "1.0"
+    },
+    {
+      "doc": "Persistence namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.persist",
+      "since": "1.0"
+    },
+    {
+      "doc": "Settings namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.settings",
+      "since": "1.13"
+    },
+    {
+      "doc": "Settings schema table.",
+      "fields": [],
+      "methods": [],
+      "name": "LeviathanSettingsSchema",
+      "since": "1.13"
+    },
+    {
+      "doc": "Secrets namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.secrets",
+      "since": "1.13"
+    },
+    {
+      "doc": "Health namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.health",
+      "since": "1.0"
+    },
+    {
+      "doc": "JSON-like Lua value accepted at host/plugin boundaries.",
+      "fields": [],
+      "methods": [],
+      "name": "LeviathanJson",
+      "since": "1.0"
+    },
+    {
+      "doc": "Autocmd options.",
+      "fields": [
+        {
+          "doc": "Event callback. Receives a typed payload table.",
+          "lua_type": "fun(event: LeviathanAutocmdEvent)",
+          "name": "callback",
+          "required": true
+        },
+        {
+          "doc": "Optional autocmd group handle returned by `leviathan.autocmd.group`.",
+          "lua_type": "integer",
+          "name": "group",
+          "required": false
+        },
+        {
+          "doc": "When true, auto-removes the autocmd after its first fire.",
+          "lua_type": "boolean",
+          "name": "once",
+          "required": false
+        },
+        {
+          "doc": "Glob pattern matched against a payload string field.",
+          "lua_type": "string",
+          "name": "pattern",
+          "required": false
+        },
+        {
+          "doc": "Coalesce rapid fires within this many host-clock milliseconds.",
+          "lua_type": "integer",
+          "name": "debounce_ms",
+          "required": false
+        },
+        {
+          "doc": "Higher priority runs first; ties fall back to declaration order.",
+          "lua_type": "integer",
+          "name": "priority",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanAutocmdOpts",
+      "since": "1.0"
+    },
+    {
+      "doc": "Typed event payload table handed to autocmd callbacks.",
+      "fields": [
+        {
+          "doc": "Canonical event name.",
+          "lua_type": "string",
+          "name": "event",
+          "required": true
+        },
+        {
+          "doc": "Alias the listener subscribed under, when different from `event`.",
+          "lua_type": "string",
+          "name": "alias",
+          "required": false
+        },
+        {
+          "doc": "Typed payload table for the event.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanAutocmdEvent",
+      "since": "1.7"
+    },
+    {
+      "doc": "Options accepted by `leviathan.autocmd.group`.",
+      "fields": [
+        {
+          "doc": "When true, removes any prior autocmds in the group before returning the handle.",
+          "lua_type": "boolean",
+          "name": "clear",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanAutocmdGroupOpts",
+      "since": "1.7"
+    },
+    {
+      "doc": "Autocmd group and typed-event namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.autocmd",
+      "since": "1.7"
+    },
+    {
+      "doc": "Phase 8 typed command registry namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.command",
+      "since": "1.8"
+    },
+    {
+      "doc": "Descriptor accepted by `leviathan.command.create`.",
+      "fields": [
+        {
+          "doc": "Human-friendly palette title; defaults to the command name.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Long-form description shown in the palette and devtools.",
+          "lua_type": "string",
+          "name": "description",
+          "required": false
+        },
+        {
+          "doc": "Activation context name; defaults to `global`.",
+          "lua_type": "string",
+          "name": "context",
+          "required": false
+        },
+        {
+          "doc": "Argument schema validated at invocation time.",
+          "lua_type": "LeviathanCommandArg[]",
+          "name": "args",
+          "required": false
+        },
+        {
+          "doc": "When true, the palette filters this command behind a destructive-actions toggle.",
+          "lua_type": "boolean",
+          "name": "destructive",
+          "required": false
+        },
+        {
+          "doc": "Capability names the dispatcher checks at invocation time.",
+          "lua_type": "string[]",
+          "name": "capabilities",
+          "required": false
+        },
+        {
+          "doc": "Body of the command; the host runs it inside a coroutine.",
+          "lua_type": "fun(args: table)",
+          "name": "run",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommandSpec",
+      "since": "1.8"
+    },
+    {
+      "doc": "One entry in a command's `args` schema.",
+      "fields": [
+        {
+          "doc": "Arg key in the args table.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "One of `string`, `boolean`, `integer`, `number`, or `enum:a,b,c`.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Defaults to false. Required args without a default reject the invocation.",
+          "lua_type": "boolean",
+          "name": "required",
+          "required": false
+        },
+        {
+          "doc": "Default value used when the caller omits the arg.",
+          "lua_type": "LeviathanJson",
+          "name": "default",
+          "required": false
+        },
+        {
+          "doc": "Documentation surfaced in the palette and devtools.",
+          "lua_type": "string",
+          "name": "doc",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommandArg",
+      "since": "1.8"
+    },
+    {
+      "doc": "Compact view of a registered command, returned by `leviathan.command.list`.",
+      "fields": [
+        {
+          "doc": "Command identifier.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Palette title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": true
+        },
+        {
+          "doc": "Description text.",
+          "lua_type": "string",
+          "name": "description",
+          "required": true
+        },
+        {
+          "doc": "Owning plugin id; `<host>` for built-in commands.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Activation context.",
+          "lua_type": "string",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Destructive flag.",
+          "lua_type": "boolean",
+          "name": "destructive",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommandSummary",
+      "since": "1.8"
+    },
+    {
+      "doc": "Phase 9 keymap registry namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.keymap",
+      "since": "1.9"
+    },
+    {
+      "doc": "Options table accepted by `leviathan.keymap.set`.",
+      "fields": [
+        {
+          "doc": "Human-friendly description shown in devtools and the keymap inspector.",
+          "lua_type": "string",
+          "name": "description",
+          "required": false
+        },
+        {
+          "doc": "Args table forwarded verbatim to the underlying command at dispatch time.",
+          "lua_type": "LeviathanJson",
+          "name": "args",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanKeymapOpts",
+      "since": "1.9"
+    },
+    {
+      "doc": "Compact view of a registered keymap, returned by `leviathan.keymap.list`.",
+      "fields": [
+        {
+          "doc": "Activation context.",
+          "lua_type": "string",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Rendered chord (vim-style).",
+          "lua_type": "string",
+          "name": "key",
+          "required": true
+        },
+        {
+          "doc": "Command the keymap dispatches to.",
+          "lua_type": "string",
+          "name": "command",
+          "required": true
+        },
+        {
+          "doc": "Owning plugin id; `<host>` for built-ins, `<user>` for user-config rows.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "One of `built-in`, `user`, `plugin`.",
+          "lua_type": "string",
+          "name": "source",
+          "required": true
+        },
+        {
+          "doc": "One of `active`, `conflict_lost`.",
+          "lua_type": "string",
+          "name": "status",
+          "required": true
+        },
+        {
+          "doc": "Description text supplied at registration.",
+          "lua_type": "string",
+          "name": "description",
+          "required": true
+        },
+        {
+          "doc": "When `status == conflict_lost`, points to the winning binding.",
+          "lua_type": "LeviathanKeymapConflictRef|nil",
+          "name": "conflict_with",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanKeymapSummary",
+      "since": "1.9"
+    },
+    {
+      "doc": "Reference to the winning binding for a conflict-lost keymap row.",
+      "fields": [
+        {
+          "doc": "Winning binding's plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Winning binding's source tier.",
+          "lua_type": "string",
+          "name": "source",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanKeymapConflictRef",
+      "since": "1.9"
+    },
+    {
+      "doc": "Plugin screen descriptor.",
+      "fields": [
+        {
+          "doc": "Screen id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Initial state callback.",
+          "lua_type": "fun(): table",
+          "name": "init",
+          "required": true
+        },
+        {
+          "doc": "View callback.",
+          "lua_type": "fun(state: table): LeviathanWidget",
+          "name": "view",
+          "required": true
+        },
+        {
+          "doc": "Update callback.",
+          "lua_type": "fun(state: table, event: string, value: LeviathanJson): table",
+          "name": "update",
+          "required": true
+        },
+        {
+          "doc": "Reload state serializer.",
+          "lua_type": "fun(state: table): LeviathanJson",
+          "name": "serialize",
+          "required": false
+        },
+        {
+          "doc": "Reload state deserializer.",
+          "lua_type": "fun(value: LeviathanJson): table",
+          "name": "deserialize",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanScreenSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI slot descriptor.",
+      "fields": [
+        {
+          "doc": "Region name; inferred by direct handles.",
+          "lua_type": "string",
+          "name": "region",
+          "required": false
+        },
+        {
+          "doc": "Content region pane.",
+          "lua_type": "string",
+          "name": "pane",
+          "required": false
+        },
+        {
+          "doc": "Region section.",
+          "lua_type": "string",
+          "name": "section",
+          "required": true
+        },
+        {
+          "doc": "Slot id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Ordering priority.",
+          "lua_type": "integer",
+          "name": "priority",
+          "required": true
+        },
+        {
+          "doc": "Static or dynamic widget.",
+          "lua_type": "LeviathanWidget|fun(): LeviathanWidget",
+          "name": "widget",
+          "required": true
+        },
+        {
+          "doc": "Slot callback.",
+          "lua_type": "fun(slot_id: string, event: string, value: LeviathanJson): table|nil",
+          "name": "on_click",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanSlotSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI slot target descriptor.",
+      "fields": [
+        {
+          "doc": "Content region pane.",
+          "lua_type": "string",
+          "name": "pane",
+          "required": false
+        },
+        {
+          "doc": "Region section.",
+          "lua_type": "string",
+          "name": "section",
+          "required": true
+        },
+        {
+          "doc": "Slot id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanSlotTarget",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tagged widget tree node; see widget descriptors and widget schema.",
+      "fields": [],
+      "methods": [],
+      "name": "LeviathanWidget",
+      "since": "1.0"
+    },
+    {
+      "doc": "Filesystem entry metadata.",
+      "fields": [
+        {
+          "doc": "Entry name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Full path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Whether the entry is a directory.",
+          "lua_type": "boolean",
+          "name": "is_dir",
+          "required": true
+        },
+        {
+          "doc": "Whether the entry is a symlink.",
+          "lua_type": "boolean",
+          "name": "is_symlink",
+          "required": true
+        },
+        {
+          "doc": "Entry size.",
+          "lua_type": "integer",
+          "name": "size",
+          "required": true
+        },
+        {
+          "doc": "Unix modification time.",
+          "lua_type": "integer",
+          "name": "modified",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanFsEntry",
+      "since": "1.0"
+    },
+    {
+      "doc": "Open tab descriptor.",
+      "fields": [
+        {
+          "doc": "Tab repository path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Tab display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanTab",
+      "since": "1.0"
+    },
+    {
+      "doc": "Local branch descriptor.",
+      "fields": [
+        {
+          "doc": "Branch name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Target hash.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        },
+        {
+          "doc": "Whether this branch is current.",
+          "lua_type": "boolean",
+          "name": "is_current",
+          "required": true
+        },
+        {
+          "doc": "Upstream remote branch.",
+          "lua_type": "LeviathanRemoteBranch|nil",
+          "name": "upstream_branch",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanLocalBranch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Remote branch descriptor.",
+      "fields": [
+        {
+          "doc": "Branch name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Remote name.",
+          "lua_type": "string",
+          "name": "remote_name",
+          "required": true
+        },
+        {
+          "doc": "Target hash.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanRemoteBranch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Git tag descriptor.",
+      "fields": [
+        {
+          "doc": "Tag name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Target hash.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanTag",
+      "since": "1.0"
+    },
+    {
+      "doc": "Persistence open options.",
+      "fields": [
+        {
+          "doc": "Target store version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": false
+        },
+        {
+          "doc": "Migration descriptors.",
+          "lua_type": "table[]",
+          "name": "migrations",
+          "required": false
+        },
+        {
+          "doc": "Storage surface: state, config, cache, or repo.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": false
+        },
+        {
+          "doc": "Per-repo state key when surface is repo.",
+          "lua_type": "string",
+          "name": "repo",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanPersistOpenOpts",
+      "since": "1.0"
+    },
+    {
+      "doc": "Persistence store userdata.",
+      "fields": [],
+      "methods": [
+        {
+          "doc": "Read a stored JSON value.",
+          "name": "get",
+          "params": [
+            {
+              "doc": "Storage key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            }
+          ],
+          "returns": [
+            {
+              "doc": "Stored value or nil.",
+              "lua_type": "LeviathanJson|nil"
+            }
+          ]
+        },
+        {
+          "doc": "Write a stored JSON value.",
+          "name": "set",
+          "params": [
+            {
+              "doc": "Storage key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            },
+            {
+              "doc": "JSON-like value.",
+              "lua_type": "LeviathanJson",
+              "name": "value",
+              "required": true
+            }
+          ],
+          "returns": []
+        },
+        {
+          "doc": "Return the current store version.",
+          "name": "version",
+          "params": [],
+          "returns": [
+            {
+              "doc": "Store version.",
+              "lua_type": "integer"
+            }
+          ]
+        },
+        {
+          "doc": "Delete a stored key.",
+          "name": "delete",
+          "params": [
+            {
+              "doc": "Storage key.",
+              "lua_type": "string",
+              "name": "key",
+              "required": true
+            }
+          ],
+          "returns": []
+        }
+      ],
+      "name": "LeviathanPersistStore",
+      "since": "1.0"
+    },
+    {
+      "doc": "Health check context userdata.",
+      "fields": [],
+      "methods": [
+        {
+          "doc": "Record an OK health item.",
+          "name": "ok",
+          "params": [
+            {
+              "doc": "Message.",
+              "lua_type": "string",
+              "name": "message",
+              "required": true
+            }
+          ],
+          "returns": []
+        },
+        {
+          "doc": "Record an informational health item.",
+          "name": "info",
+          "params": [
+            {
+              "doc": "Message.",
+              "lua_type": "string",
+              "name": "message",
+              "required": true
+            }
+          ],
+          "returns": []
+        },
+        {
+          "doc": "Record a warning health item.",
+          "name": "warn",
+          "params": [
+            {
+              "doc": "Message.",
+              "lua_type": "string",
+              "name": "message",
+              "required": true
+            }
+          ],
+          "returns": []
+        },
+        {
+          "doc": "Record an error health item.",
+          "name": "error",
+          "params": [
+            {
+              "doc": "Message.",
+              "lua_type": "string",
+              "name": "message",
+              "required": true
+            }
+          ],
+          "returns": []
+        }
+      ],
+      "name": "LeviathanHealthContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Runtimepath introspection namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.runtime",
+      "since": "1.0"
+    },
+    {
+      "doc": "One entry in the plugin's runtime path.",
+      "fields": [
+        {
+          "doc": "Plugin id this entry contributes modules for.",
+          "lua_type": "string",
+          "name": "plugin",
+          "required": true
+        },
+        {
+          "doc": "\"own\" for the calling plugin, \"dependency\" otherwise.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Absolute filesystem path to the contributing `lua/<plugin>/` directory.",
+          "lua_type": "string",
+          "name": "root",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanRuntimePathEntry",
+      "since": "1.0"
+    },
+    {
+      "doc": "A successful module name resolution.",
+      "fields": [
+        {
+          "doc": "Owning plugin id.",
+          "lua_type": "string",
+          "name": "plugin",
+          "required": true
+        },
+        {
+          "doc": "\"own\" or \"dependency\".",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Absolute filesystem path to the matched .lua file.",
+          "lua_type": "string",
+          "name": "source",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanRuntimeMatch",
+      "since": "1.0"
+    },
+    {
+      "doc": "Per-plugin grouping of currently-cached modules.",
+      "fields": [
+        {
+          "doc": "Plugin id.",
+          "lua_type": "string",
+          "name": "plugin",
+          "required": true
+        },
+        {
+          "doc": "Module names currently cached for this plugin in this generation.",
+          "lua_type": "string[]",
+          "name": "modules",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanRuntimeModuleGraphEntry",
+      "since": "1.0"
+    }
+  ],
+  "widgets": [
+    {
+      "doc": "Static text label.",
+      "fields": [
+        {
+          "doc": "Text content.",
+          "lua_type": "string",
+          "name": "value",
+          "required": false
+        },
+        {
+          "doc": "Font size in pixels.",
+          "lua_type": "number",
+          "name": "size",
+          "required": false
+        },
+        {
+          "doc": "CSS-style color string.",
+          "lua_type": "string",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "text",
+      "since": "1.0"
+    },
+    {
+      "doc": "Clickable button that emits a widget event.",
+      "fields": [
+        {
+          "doc": "Nested widget content.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Fallback text content.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Event name emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Event payload.",
+          "lua_type": "LeviathanJson",
+          "name": "value",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Button style overrides.",
+          "lua_type": "table",
+          "name": "style",
+          "required": false
+        }
+      ],
+      "kind": "button",
+      "since": "1.0"
+    },
+    {
+      "doc": "Horizontal widget layout.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Gap between children.",
+          "lua_type": "number",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Vertical alignment.",
+          "lua_type": "string",
+          "name": "align_y",
+          "required": false
+        }
+      ],
+      "kind": "row",
+      "since": "1.0"
+    },
+    {
+      "doc": "Vertical widget layout.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Gap between children.",
+          "lua_type": "number",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Horizontal alignment.",
+          "lua_type": "string",
+          "name": "align_x",
+          "required": false
+        }
+      ],
+      "kind": "column",
+      "since": "1.0"
+    },
+    {
+      "doc": "Single-child layout and background wrapper.",
+      "fields": [
+        {
+          "doc": "Nested widget content.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Background color.",
+          "lua_type": "string",
+          "name": "bg",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Maximum width.",
+          "lua_type": "number",
+          "name": "max_width",
+          "required": false
+        },
+        {
+          "doc": "Maximum height.",
+          "lua_type": "number",
+          "name": "max_height",
+          "required": false
+        },
+        {
+          "doc": "Minimum width.",
+          "lua_type": "number",
+          "name": "min_width",
+          "required": false
+        },
+        {
+          "doc": "Minimum height.",
+          "lua_type": "number",
+          "name": "min_height",
+          "required": false
+        },
+        {
+          "doc": "Center child horizontally.",
+          "lua_type": "boolean",
+          "name": "center_x",
+          "required": false
+        },
+        {
+          "doc": "Center child vertically.",
+          "lua_type": "boolean",
+          "name": "center_y",
+          "required": false
+        }
+      ],
+      "kind": "container",
+      "since": "1.0"
+    },
+    {
+      "doc": "Single-child padding wrapper.",
+      "fields": [
+        {
+          "doc": "Top inset.",
+          "lua_type": "number",
+          "name": "top",
+          "required": false
+        },
+        {
+          "doc": "Right inset.",
+          "lua_type": "number",
+          "name": "right",
+          "required": false
+        },
+        {
+          "doc": "Bottom inset.",
+          "lua_type": "number",
+          "name": "bottom",
+          "required": false
+        },
+        {
+          "doc": "Left inset.",
+          "lua_type": "number",
+          "name": "left",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Nested widget content.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        }
+      ],
+      "kind": "padding",
+      "since": "1.0"
+    },
+    {
+      "doc": "Empty spacer.",
+      "fields": [
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        }
+      ],
+      "kind": "space",
+      "since": "1.0"
+    },
+    {
+      "doc": "SVG icon loaded from plugin assets.",
+      "fields": [
+        {
+          "doc": "Asset path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        },
+        {
+          "doc": "Icon size.",
+          "lua_type": "number",
+          "name": "size",
+          "required": false
+        },
+        {
+          "doc": "Tint color.",
+          "lua_type": "string",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "icon",
+      "since": "1.0"
+    },
+    {
+      "doc": "Raster image loaded from plugin assets.",
+      "fields": [
+        {
+          "doc": "Asset path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": false
+        },
+        {
+          "doc": "Rendered square size.",
+          "lua_type": "number",
+          "name": "size",
+          "required": false
+        }
+      ],
+      "kind": "image",
+      "since": "1.0"
+    },
+    {
+      "doc": "Scrollable single-child container.",
+      "fields": [
+        {
+          "doc": "Nested widget content.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        }
+      ],
+      "kind": "scrollable",
+      "since": "1.0"
+    },
+    {
+      "doc": "Clickable wrapper around a child widget.",
+      "fields": [
+        {
+          "doc": "Nested widget content.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Event name emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Event payload.",
+          "lua_type": "LeviathanJson",
+          "name": "value",
+          "required": false
+        }
+      ],
+      "kind": "mouse_area",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tab strip widget backed by plugin-supplied tab descriptors.",
+      "fields": [
+        {
+          "doc": "Tab id/name descriptors.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "Active tab id.",
+          "lua_type": "LeviathanJson",
+          "name": "active",
+          "required": false
+        },
+        {
+          "doc": "Whether drag reorder is enabled.",
+          "lua_type": "boolean",
+          "name": "orderable",
+          "required": false
+        },
+        {
+          "doc": "Selection event name.",
+          "lua_type": "string",
+          "name": "on_select",
+          "required": false
+        },
+        {
+          "doc": "Close event name.",
+          "lua_type": "string",
+          "name": "on_close",
+          "required": false
+        },
+        {
+          "doc": "Reorder event name.",
+          "lua_type": "string",
+          "name": "on_reorder",
+          "required": false
+        }
+      ],
+      "kind": "tablist",
+      "since": "1.0"
+    },
+    {
+      "doc": "Resizable split layout.",
+      "fields": [
+        {
+          "doc": "Stable split id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Split direction.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Child panels.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        }
+      ],
+      "kind": "resizable_split",
+      "since": "1.0"
+    }
+  ]
+}

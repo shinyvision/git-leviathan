@@ -153,8 +153,8 @@ fn effective_layout(
 ) -> EffectiveLayout {
     let sidebar_default = crate::theme::SIDEBAR_WIDTH as f32;
     let detail_default = crate::theme::DETAIL_PANEL_WIDTH as f32;
-    let min_center = crate::theme::MIN_CENTER_WIDTH
-        + crate::widgets::graph::graph_lanes_width(num_lanes);
+    let min_center =
+        crate::theme::MIN_CENTER_WIDTH + crate::widgets::graph::graph_lanes_width(num_lanes);
 
     let sidebar_floor = sidebar_default.min(sidebar_pref);
     let detail_floor = detail_default.min(detail_pref);

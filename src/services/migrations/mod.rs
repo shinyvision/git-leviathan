@@ -5,10 +5,7 @@ mod m002_position_column;
 
 type MigrationFn = fn(&Transaction) -> Result<()>;
 
-const MIGRATIONS: &[(i64, MigrationFn)] = &[
-    (1, m001_initial::up),
-    (2, m002_position_column::up),
-];
+const MIGRATIONS: &[(i64, MigrationFn)] = &[(1, m001_initial::up), (2, m002_position_column::up)];
 
 pub fn run(conn: &mut Connection) -> Result<()> {
     let current: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;

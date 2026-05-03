@@ -25,13 +25,18 @@ pub use working_tree_ops::WorkingTreeOps;
 /// is named explicitly even though each sub-trait already requires it; the
 /// redundancy documents the fact that full repos are always readable.
 pub trait Repository:
-    RepoRead + BranchOps + WorkingTreeOps + GitWorktreeOps
-    + CommitOps + RemoteOps + StashOps + TagOps
+    RepoRead + BranchOps + WorkingTreeOps + GitWorktreeOps + CommitOps + RemoteOps + StashOps + TagOps
 {
 }
 
 impl<T> Repository for T where
-    T: RepoRead + BranchOps + WorkingTreeOps + GitWorktreeOps
-        + CommitOps + RemoteOps + StashOps + TagOps
+    T: RepoRead
+        + BranchOps
+        + WorkingTreeOps
+        + GitWorktreeOps
+        + CommitOps
+        + RemoteOps
+        + StashOps
+        + TagOps
 {
 }

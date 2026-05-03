@@ -51,7 +51,10 @@ pub enum CenterAction {
         commit_idx: usize,
         commit_hash: String,
     },
-    ResetParentHoverChanged { commit_hash: String, hovered: bool },
+    ResetParentHoverChanged {
+        commit_hash: String,
+        hovered: bool,
+    },
     ResetSubmenuHoverChanged(bool),
     /// Hover-open timer fired (opens submenu if parent still hovered).
     ResetOpenTimer(u64),
@@ -72,12 +75,20 @@ pub enum CenterAction {
         is_remote: bool,
         remote_name: Option<String>,
     },
-    CommitRightClicked { commit_idx: usize },
-    CherryPickRequested { commit_hash: String },
+    CommitRightClicked {
+        commit_idx: usize,
+    },
+    CherryPickRequested {
+        commit_hash: String,
+    },
     StashCreateRequested,
-    StashApplyRequested { stash_index: usize },
+    StashApplyRequested {
+        stash_index: usize,
+    },
     /// Toolbar uses stash_index 0; commit context menu uses the actual index.
-    StashPopRequested { stash_index: usize },
+    StashPopRequested {
+        stash_index: usize,
+    },
     StashDeleteRequested {
         stash_index: usize,
         display_name: String,
@@ -107,7 +118,9 @@ pub enum CenterAction {
         indices: Vec<usize>,
         hashes: Vec<String>,
     },
-    CreateTagHereRequested { commit_hash: String },
+    CreateTagHereRequested {
+        commit_hash: String,
+    },
     PushTagRequested {
         tag_name: String,
         remote_name: String,
@@ -121,7 +134,10 @@ pub enum CenterAction {
 #[derive(Debug, Clone)]
 pub enum DetailAction {
     FileViewChanged(super::FileView),
-    DirtyFileClicked { path: String, is_staged: bool },
+    DirtyFileClicked {
+        path: String,
+        is_staged: bool,
+    },
     DirtyFileRightClicked(String),
     StageFile(String),
     StageAll,
@@ -135,9 +151,14 @@ pub enum DetailAction {
     DiscardCanceled,
     CommitConfirmed,
     AbortMergeConfirmed,
-    CommitFileClicked { commit_idx: usize, path: String },
+    CommitFileClicked {
+        commit_idx: usize,
+        path: String,
+    },
     /// File in the merged (multi-commit) diff.
-    MergedFileClicked { path: String },
+    MergedFileClicked {
+        path: String,
+    },
     CloseDirtyFileDiff,
     CommitMessageAction(iced::widget::text_editor::Action),
     RewordStarted {
@@ -201,7 +222,9 @@ pub enum DiffPanelAction {
     },
     /// Shift+wheel over the diff — scroll horizontally by `delta_lines`,
     /// suppressing the default vertical scroll.
-    DiffShiftWheel { delta_lines: f32 },
+    DiffShiftWheel {
+        delta_lines: f32,
+    },
     NavigateFileUp,
     NavigateFileDown,
     ConflictHunkSideToggled {
@@ -243,10 +266,21 @@ pub enum DiffPanelAction {
         ours: Option<std::sync::Arc<crate::services::HighlightedFile>>,
         theirs: Option<std::sync::Arc<crate::services::HighlightedFile>>,
     },
-    LoadCommitFileDiff { commit_hash: String, path: String },
-    LoadDirtyFileDiff { path: String, is_staged: bool },
-    LoadConflictResolution { path: String },
-    LoadMergedFileDiff { hashes: Vec<String>, path: String },
+    LoadCommitFileDiff {
+        commit_hash: String,
+        path: String,
+    },
+    LoadDirtyFileDiff {
+        path: String,
+        is_staged: bool,
+    },
+    LoadConflictResolution {
+        path: String,
+    },
+    LoadMergedFileDiff {
+        hashes: Vec<String>,
+        path: String,
+    },
     RunDirtyHighlight {
         file_path: String,
         is_staged: bool,

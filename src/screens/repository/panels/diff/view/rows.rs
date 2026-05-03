@@ -8,7 +8,9 @@ use crate::{
         SyntaxHighlightedSpan, SyntaxStyle, WorkingTreeDiffLine,
     },
     widgets::{
-        conflict_canvas::{self, ConflictRow, GutterKind, CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS},
+        conflict_canvas::{
+            self, ConflictRow, GutterKind, CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS,
+        },
         diff_canvas::{
             diff_char_width, DiffCanvasId, DiffRow, LineKind as CanvasLineKind, SegmentBg,
         },

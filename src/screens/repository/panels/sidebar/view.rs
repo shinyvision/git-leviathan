@@ -23,7 +23,8 @@ fn matches_filter(needle: &str, hay: &str) -> bool {
     if needle.is_empty() {
         return true;
     }
-    hay.to_ascii_lowercase().contains(&needle.to_ascii_lowercase())
+    hay.to_ascii_lowercase()
+        .contains(&needle.to_ascii_lowercase())
 }
 
 pub(super) fn view<'a>(
@@ -160,7 +161,10 @@ fn trailing_for(kind: SidebarSectionKind, ctx: &SidebarViewCtx<'_>) -> HeaderTra
 
 fn build_create_worktree_inputs(
     ctx: &SidebarViewCtx<'_>,
-) -> (Vec<super::super::super::overlays::create_worktree::RefChoice>, String) {
+) -> (
+    Vec<super::super::super::overlays::create_worktree::RefChoice>,
+    String,
+) {
     use super::super::super::overlays::create_worktree::RefChoice;
 
     let mut refs: Vec<RefChoice> = Vec::new();
@@ -337,7 +341,10 @@ fn count_badge<'a>(count: u32) -> Element<'a, Message> {
     .padding(Padding::from([1, 5]))
     .style(|_: &Theme| container::Style {
         background: Some(theme::BG_BASE.into()),
-        border: Border { radius: 8.0.into(), ..Default::default() },
+        border: Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
         ..Default::default()
     })
     .into()
@@ -368,7 +375,9 @@ fn simple_header<'a>(
         row![
             assets::sidebar_icon(chevron_icon, theme::TEXT_DIM),
             assets::sidebar_icon(icon, theme::TEXT_SECONDARY),
-            text(section.title()).size(theme::FONT_SM).style(style::secondary_text),
+            text(section.title())
+                .size(theme::FONT_SM)
+                .style(style::secondary_text),
             horizontal_space(),
             count_badge(count),
         ]
@@ -397,7 +406,9 @@ fn hover_add_button_header<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
     )
-    .on_press(Message::repo(RepositoryMessage::OverlayPanel(action.clone())))
+    .on_press(Message::repo(RepositoryMessage::OverlayPanel(
+        action.clone(),
+    )))
     .padding(Padding::from(0))
     .style(|_: &Theme, status: button::Status| button::Style {
         background: match status {
@@ -422,7 +433,9 @@ fn hover_add_button_header<'a>(
         row![
             assets::sidebar_icon(chevron_icon, theme::TEXT_DIM),
             assets::sidebar_icon(icon, theme::TEXT_SECONDARY),
-            text(section.title()).size(theme::FONT_SM).style(style::secondary_text),
+            text(section.title())
+                .size(theme::FONT_SM)
+                .style(style::secondary_text),
             horizontal_space(),
             trailing,
         ]
@@ -592,8 +605,8 @@ fn branch_tree_item<'a>(
         None
     };
 
-    let is_worktree_entry = matches!(section_kind, SidebarSectionKind::Worktrees)
-        && branch.worktree_path.is_some();
+    let is_worktree_entry =
+        matches!(section_kind, SidebarSectionKind::Worktrees) && branch.worktree_path.is_some();
 
     let press_msg = if is_worktree_entry {
         sidebar_msg(SidebarAction::WorktreeEntryPressed {

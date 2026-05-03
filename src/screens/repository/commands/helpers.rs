@@ -122,10 +122,12 @@ pub(in crate::screens::repository) fn sync_dirty_diff_after_reload(
             .commits()
             .first()
             .filter(|c| c.kind == crate::core::CommitKind::Dirty);
-        screen.panels.diff.sync_and_reload_dirty_diff_action(
-            dirty_commit,
-            |path, is_staged| repo.compute_dirty_file_signature(path, is_staged),
-        )
+        screen
+            .panels
+            .diff
+            .sync_and_reload_dirty_diff_action(dirty_commit, |path, is_staged| {
+                repo.compute_dirty_file_signature(path, is_staged)
+            })
     };
     let Some(action) = action else {
         return Task::none();
@@ -274,11 +276,7 @@ pub(in crate::screens::repository) fn apply_fetched_refs(
     let has_more = refs.has_more_commits;
 
     data.apply_refs_update(refs);
-    panel.on_refs_updated(
-        data.snapshot.commits(),
-        has_more,
-        &mut data.branch_popout,
-    );
+    panel.on_refs_updated(data.snapshot.commits(), has_more, &mut data.branch_popout);
 
     restore_selection_by_hash(data, prior_anchor_hash, prior_selected_hashes);
 }

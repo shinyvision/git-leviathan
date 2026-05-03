@@ -12,6 +12,7 @@ pub mod syntax_highlight;
 pub(crate) mod test_support;
 pub mod text_measurement;
 
+pub use crate::core::WorktreeInfo;
 pub use gateway::{GitRepositoryGateway, PushGatewayOutcome, SharedRepositoryGateway};
 pub use git::working_tree_diff::{
     DiffLineType, DiffSegment, DirtyDiffSignature, SegmentKind, WorkingTreeDiffLine,
@@ -37,4 +38,3 @@ pub use syntax_highlight::{
 pub use text_measurement::{
     cached_measure_width, cached_truncate_name, release_text_caches, FontFamily,
 };
-pub use crate::core::WorktreeInfo;

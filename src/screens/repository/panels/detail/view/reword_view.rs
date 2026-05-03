@@ -51,11 +51,9 @@ pub(super) fn reword_message_view<'a>(
         .style(style::dim_text);
 
         let update_btn = button(
-            container(
-                text("Update Message").size(theme::FONT_MD),
-            )
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center),
+            container(text("Update Message").size(theme::FONT_MD))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center),
         )
         .padding(Padding::from([10, 16]))
         .width(Length::Fill)
@@ -65,11 +63,9 @@ pub(super) fn reword_message_view<'a>(
         )));
 
         let cancel_btn = button(
-            container(
-                text("Cancel Reword").size(theme::FONT_MD),
-            )
-            .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center),
+            container(text("Cancel Reword").size(theme::FONT_MD))
+                .width(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center),
         )
         .padding(Padding::from([10, 16]))
         .width(Length::Fill)

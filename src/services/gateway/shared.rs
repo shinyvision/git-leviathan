@@ -190,11 +190,7 @@ impl RepoRead for GitRepositoryGateway {
         self.with_service_unlocked(|service| service.load_conflict_resolution(file_path))
     }
 
-    fn compute_dirty_file_signature(
-        &self,
-        file_path: &str,
-        is_staged: bool,
-    ) -> DirtyDiffSignature {
+    fn compute_dirty_file_signature(&self, file_path: &str, is_staged: bool) -> DirtyDiffSignature {
         self.with_service_unlocked(|service| {
             Ok(service.compute_dirty_file_signature(file_path, is_staged))
         })
@@ -403,19 +399,12 @@ impl GitWorktreeOps for GitRepositoryGateway {
         ref_to_checkout: String,
     ) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.add_worktree(
-                &path,
-                new_branch_name.as_deref(),
-                &ref_to_checkout,
-            )?;
+            service.add_worktree(&path, new_branch_name.as_deref(), &ref_to_checkout)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }
 
-    fn remove_worktree(
-        &self,
-        path: std::path::PathBuf,
-    ) -> Result<RepoSnapshot, GitError> {
+    fn remove_worktree(&self, path: std::path::PathBuf) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
             service.remove_worktree(&path, false)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))

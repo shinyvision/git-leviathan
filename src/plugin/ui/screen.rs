@@ -18,10 +18,8 @@ pub fn view(host: &PluginHost) -> Element<'_, Message> {
     let Some((plugin_id, screen_id)) = host.active_screen() else {
         return fallback("no active plugin screen".to_string());
     };
-    let Some(tree) = host.widget_tree() else {
-        return fallback(format!(
-            "plugin {plugin_id}/{screen_id}: empty widget tree"
-        ));
+    let Some(ast) = host.widget_tree() else {
+        return fallback(format!("plugin {plugin_id}/{screen_id}: empty widget tree"));
     };
     let plugin_root = host
         .plugin_root(plugin_id)
@@ -33,7 +31,7 @@ pub fn view(host: &PluginHost) -> Element<'_, Message> {
         split_states: host.split_sizes(),
         active_drag: host.active_drag(),
     };
-    let root = widget_tree::build(tree, &ctx);
+    let root = widget_tree::build(ast, &ctx);
     container(root)
         .style(|_: &Theme| container::Style {
             background: Some(theme::BG_BASE.into()),
@@ -49,12 +47,12 @@ pub fn subscription(host: &PluginHost) -> Subscription<Message> {
         return Subscription::none();
     }
     event::listen_with(|event, _status, _window| match event {
-        Event::Mouse(mouse::Event::CursorMoved { position }) => Some(Message::Plugin(
-            PluginMessage::SplitDragged {
+        Event::Mouse(mouse::Event::CursorMoved { position }) => {
+            Some(Message::Plugin(PluginMessage::SplitDragged {
                 x: position.x,
                 y: position.y,
-            },
-        )),
+            }))
+        }
         Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
             Some(Message::Plugin(PluginMessage::SplitDragReleased))
         }

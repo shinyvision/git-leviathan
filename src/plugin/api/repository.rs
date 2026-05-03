@@ -39,10 +39,18 @@
 //! table is rebuilt on every sync.
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
-use mlua::{Lua, Table};
+use mlua::{Lua, Table, Value as LuaValue};
+use serde_json;
 
-use crate::services::{RepoRef, RepoRefKind};
+use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::diagnostic::{
+    DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
+};
+use crate::plugin::git_ops::GitOpsContext;
+use crate::plugin::resources::{GenerationId, PluginId};
+use crate::services::{RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
 
 /// Build the full `leviathan.repository` table from the latest refs.
 ///
@@ -178,6 +186,418 @@ fn resolve_upstream(
     remote_lookup
         .get(&(remote_name.to_string(), branch_name.to_string()))
         .cloned()
+}
+
+/// Phase 11 typed read APIs.
+///
+/// `current` always works — it just hands back the cached snapshot
+/// table that `sync_repository` keeps fresh on every host tick. The
+/// rest (`refs`, `head`, `status`, `commits`, `diff`, `file_at`,
+/// `blame`) read through the active gateway, which is the same one
+/// the host's UI reads from. No new git2 calls; no new spawn paths.
+///
+/// All read functions follow the Lua-idiomatic `(value, nil)` /
+/// `(nil, err)` shape. Capability gates per the Phase 10 / 11
+/// descriptors:
+/// - `status` -> `git:read:status`
+/// - `commits` -> `git:read:log`
+/// - `diff` -> `git:read:diff`
+/// - `file_at` -> `git:read:show`
+/// - `blame` -> `git:read:blame`
+///
+/// `current`, `refs`, and `head` are ungated (they expose data the
+/// `leviathan.repository` snapshot already exposes).
+pub fn install_read_functions(
+    lua: &Lua,
+    leviathan: &Table,
+    git_ctx: GitOpsContext,
+    guard: Rc<CapabilityGuard>,
+    plugin_id: PluginId,
+    generation_id: GenerationId,
+) -> mlua::Result<()> {
+    let repo_tbl: Table = leviathan.get("repository")?;
+
+    // current() — return the cached snapshot.
+    {
+        let leviathan_clone = leviathan.clone();
+        repo_tbl.set(
+            "current",
+            lua.create_function(move |_, ()| {
+                let t: Table = leviathan_clone.get("repository")?;
+                Ok(t)
+            })?,
+        )?;
+    }
+
+    // refs() — return locals/remotes/tags as a typed table.
+    {
+        let ctx = git_ctx.clone();
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "refs",
+            lua.create_function(move |lua_inner, ()| match ctx.gateway.get() {
+                None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                Some(gw) => match gw.load_refs_snapshot(COMMIT_LOAD_LIMIT) {
+                    Ok(snap) => {
+                        let t = build_refs_table(lua_inner, &snap.refs)?;
+                        Ok((LuaValue::Table(t), None::<String>))
+                    }
+                    Err(e) => {
+                        record_read_failed(&ctx.diagnostics, &pid, gid, "refs", &e.to_string());
+                        Ok((LuaValue::Nil, Some(e.to_string())))
+                    }
+                },
+            })?,
+        )?;
+    }
+
+    // head() — { hash, ref, detached }.
+    {
+        let ctx = git_ctx.clone();
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "head",
+            lua.create_function(move |lua_inner, ()| match ctx.gateway.get() {
+                None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                Some(gw) => match gw.load_repo(COMMIT_LOAD_LIMIT) {
+                    Ok(snap) => {
+                        let t = lua_inner.create_table()?;
+                        let hash = snap.head_hash.clone().unwrap_or_default();
+                        let branch = snap.current_branch.clone().unwrap_or_default();
+                        t.set("hash", hash.clone())?;
+                        t.set("ref", branch.clone())?;
+                        t.set("detached", !hash.is_empty() && branch.is_empty())?;
+                        Ok((LuaValue::Table(t), None::<String>))
+                    }
+                    Err(e) => {
+                        record_read_failed(&ctx.diagnostics, &pid, gid, "head", &e.to_string());
+                        Ok((LuaValue::Nil, Some(e.to_string())))
+                    }
+                },
+            })?,
+        )?;
+    }
+
+    // status() — { staged[], unstaged[], conflicted[] }.
+    {
+        let ctx = git_ctx.clone();
+        let g = Rc::clone(&guard);
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "status",
+            lua.create_function(move |lua_inner, ()| {
+                if let Err(reason) = g.check_named("git:read:status") {
+                    return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
+                }
+                match ctx.gateway.get() {
+                    None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                    Some(gw) => match gw.load_repo(COMMIT_LOAD_LIMIT) {
+                        Ok(snap) => {
+                            let t = lua_inner.create_table()?;
+                            let staged: &[_] = snap
+                                .dirty
+                                .as_ref()
+                                .map(|d| d.staged_files.as_slice())
+                                .unwrap_or(&[]);
+                            let unstaged: &[_] = snap
+                                .dirty
+                                .as_ref()
+                                .map(|d| d.unstaged_files.as_slice())
+                                .unwrap_or(&[]);
+                            let conflicted: &[_] = snap
+                                .dirty
+                                .as_ref()
+                                .map(|d| d.conflicted_files.as_slice())
+                                .unwrap_or(&[]);
+                            t.set("staged", build_changed_files(lua_inner, staged)?)?;
+                            t.set("unstaged", build_changed_files(lua_inner, unstaged)?)?;
+                            t.set("conflicted", build_changed_files(lua_inner, conflicted)?)?;
+                            Ok((LuaValue::Table(t), None::<String>))
+                        }
+                        Err(e) => {
+                            record_read_failed(
+                                &ctx.diagnostics,
+                                &pid,
+                                gid,
+                                "status",
+                                &e.to_string(),
+                            );
+                            Ok((LuaValue::Nil, Some(e.to_string())))
+                        }
+                    },
+                }
+            })?,
+        )?;
+    }
+
+    // commits({limit, rev})
+    {
+        let ctx = git_ctx.clone();
+        let g = Rc::clone(&guard);
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "commits",
+            lua.create_function(move |lua_inner, opts: Option<Table>| {
+                if let Err(reason) = g.check_named("git:read:log") {
+                    return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
+                }
+                let limit = match opts
+                    .as_ref()
+                    .and_then(|t| t.get::<Option<i64>>("limit").ok().flatten())
+                {
+                    Some(n) if n > 0 => n as usize,
+                    _ => 100,
+                };
+                match ctx.gateway.get() {
+                    None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                    Some(gw) => match gw.load_repo(limit.min(COMMIT_LOAD_LIMIT)) {
+                        Ok(snap) => {
+                            let arr = lua_inner.create_table()?;
+                            for (i, c) in snap.commits.iter().take(limit).enumerate() {
+                                let row = lua_inner.create_table()?;
+                                row.set("hash", c.hash.as_str())?;
+                                row.set(
+                                    "summary",
+                                    c.message.lines().next().unwrap_or("").to_string(),
+                                )?;
+                                row.set("author", c.author_name.as_str())?;
+                                row.set("timestamp", c.authored_at)?;
+                                let parents = lua_inner.create_table()?;
+                                for (j, ph) in c.parent_hashes.iter().enumerate() {
+                                    parents.set(j + 1, ph.as_str())?;
+                                }
+                                row.set("parents", parents)?;
+                                arr.set(i + 1, row)?;
+                            }
+                            Ok((LuaValue::Table(arr), None::<String>))
+                        }
+                        Err(e) => {
+                            record_read_failed(
+                                &ctx.diagnostics,
+                                &pid,
+                                gid,
+                                "commits",
+                                &e.to_string(),
+                            );
+                            Ok((LuaValue::Nil, Some(e.to_string())))
+                        }
+                    },
+                }
+            })?,
+        )?;
+    }
+
+    // diff({commit})
+    {
+        let ctx = git_ctx.clone();
+        let g = Rc::clone(&guard);
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "diff",
+            lua.create_function(move |lua_inner, opts: Table| {
+                if let Err(reason) = g.check_named("git:read:diff") {
+                    return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
+                }
+                let commit: String = match opts.get::<Option<String>>("commit") {
+                    Ok(Some(s)) if !s.is_empty() => s,
+                    _ => {
+                        return Ok((
+                            LuaValue::Nil,
+                            Some("missing required arg `commit`".to_string()),
+                        ))
+                    }
+                };
+                match ctx.gateway.get() {
+                    None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                    Some(gw) => match gw.load_commit_diff(0, &commit) {
+                        Ok(diff) => {
+                            let arr = lua_inner.create_table()?;
+                            for (i, file) in diff.files.iter().enumerate() {
+                                let row = lua_inner.create_table()?;
+                                row.set("path", file.path.as_str())?;
+                                row.set("status", change_kind_str(&file.kind))?;
+                                arr.set(i + 1, row)?;
+                            }
+                            let wrap = lua_inner.create_table()?;
+                            wrap.set("commit", diff.hash.as_str())?;
+                            wrap.set("modified_count", diff.modified_count)?;
+                            wrap.set("added_count", diff.added_count)?;
+                            wrap.set("deleted_count", diff.deleted_count)?;
+                            wrap.set("files", arr)?;
+                            Ok((LuaValue::Table(wrap), None::<String>))
+                        }
+                        Err(e) => {
+                            record_read_failed(&ctx.diagnostics, &pid, gid, "diff", &e.to_string());
+                            Ok((LuaValue::Nil, Some(e.to_string())))
+                        }
+                    },
+                }
+            })?,
+        )?;
+    }
+
+    // file_at({commit, path})
+    {
+        let ctx = git_ctx.clone();
+        let g = Rc::clone(&guard);
+        let pid = plugin_id.clone();
+        let gid = generation_id;
+        repo_tbl.set(
+            "file_at",
+            lua.create_function(move |lua_inner, opts: Table| {
+                if let Err(reason) = g.check_named("git:read:show") {
+                    return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
+                }
+                let commit: String = match opts.get::<Option<String>>("commit") {
+                    Ok(Some(s)) if !s.is_empty() => s,
+                    _ => return Ok((LuaValue::Nil, Some("missing arg `commit`".to_string()))),
+                };
+                let path: String = match opts.get::<Option<String>>("path") {
+                    Ok(Some(s)) if !s.is_empty() => s,
+                    _ => return Ok((LuaValue::Nil, Some("missing arg `path`".to_string()))),
+                };
+                match ctx.gateway.get() {
+                    None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
+                    Some(gw) => match gw.load_commit_file_diff(&commit, &path) {
+                        Ok(d) => {
+                            let t = lua_inner.create_table()?;
+                            t.set("commit", commit.as_str())?;
+                            t.set("path", path.as_str())?;
+                            let lines_tbl = lua_inner.create_table()?;
+                            for (i, line) in d.lines.iter().enumerate() {
+                                lines_tbl.set(i + 1, line.content.as_str())?;
+                            }
+                            t.set("lines", lines_tbl)?;
+                            t.set(
+                                "old_content",
+                                d.old_file_content.clone().unwrap_or_default(),
+                            )?;
+                            t.set(
+                                "new_content",
+                                d.new_file_content.clone().unwrap_or_default(),
+                            )?;
+                            Ok((LuaValue::Table(t), None::<String>))
+                        }
+                        Err(e) => {
+                            record_read_failed(
+                                &ctx.diagnostics,
+                                &pid,
+                                gid,
+                                "file_at",
+                                &e.to_string(),
+                            );
+                            Ok((LuaValue::Nil, Some(e.to_string())))
+                        }
+                    },
+                }
+            })?,
+        )?;
+    }
+
+    // blame: not yet wired. The capability check still gates it so a
+    // plugin without `git:read:blame` sees the same failure shape.
+    {
+        let g = Rc::clone(&guard);
+        repo_tbl.set(
+            "blame",
+            lua.create_function(move |_, _opts: Table| {
+                if let Err(reason) = g.check_named("git:read:blame") {
+                    return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
+                }
+                Ok((
+                    LuaValue::Nil,
+                    Some("blame is not yet implemented".to_string()),
+                ))
+            })?,
+        )?;
+    }
+
+    leviathan.set("repository", repo_tbl)?;
+    Ok(())
+}
+
+fn record_read_failed(
+    diagnostics: &DiagnosticStore,
+    plugin_id: &PluginId,
+    generation_id: GenerationId,
+    op: &str,
+    cause: &str,
+) {
+    diagnostics.record(
+        PluginDiagnostic::new(
+            plugin_id.clone(),
+            DiagnosticSeverity::Error,
+            "repository.read_failed",
+            format!("repository.{op} failed: {cause}"),
+        )
+        .with_generation(generation_id)
+        .with_source(PluginSourceSpan::ApiFunction {
+            name: format!("repository.{op}"),
+        })
+        .with_context(serde_json::json!({
+            "op": op,
+            "cause": cause,
+        })),
+    );
+}
+
+fn build_refs_table(lua: &Lua, refs: &[RepoRef]) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    let locals = lua.create_table()?;
+    let remotes = lua.create_table()?;
+    let tags = lua.create_table()?;
+    let mut local_i = 1;
+    let mut remote_i = 1;
+    let mut tag_i = 1;
+    for r in refs {
+        let row = lua.create_table()?;
+        row.set("name", r.name.as_str())?;
+        row.set("hash", r.target_hash.as_str())?;
+        match r.kind {
+            RepoRefKind::LocalBranch => {
+                row.set("is_current", r.is_current)?;
+                locals.set(local_i, row)?;
+                local_i += 1;
+            }
+            RepoRefKind::RemoteBranch => {
+                row.set("remote_name", r.remote_name.as_deref().unwrap_or(""))?;
+                remotes.set(remote_i, row)?;
+                remote_i += 1;
+            }
+            RepoRefKind::Tag => {
+                tags.set(tag_i, row)?;
+                tag_i += 1;
+            }
+        }
+    }
+    t.set("locals", locals)?;
+    t.set("remotes", remotes)?;
+    t.set("tags", tags)?;
+    Ok(t)
+}
+
+fn build_changed_files(lua: &Lua, files: &[crate::core::ChangedFile]) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    for (i, f) in files.iter().enumerate() {
+        let row = lua.create_table()?;
+        row.set("path", f.path.as_str())?;
+        row.set("status", change_kind_str(&f.kind))?;
+        t.set(i + 1, row)?;
+    }
+    Ok(t)
+}
+
+fn change_kind_str(kind: &crate::core::ChangeKind) -> &'static str {
+    match kind {
+        crate::core::ChangeKind::Added => "added",
+        crate::core::ChangeKind::Modified => "modified",
+        crate::core::ChangeKind::Deleted => "deleted",
+    }
 }
 
 #[cfg(test)]

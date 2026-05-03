@@ -81,10 +81,7 @@ impl SettingsService {
     pub fn set_repo_order(&self, paths: &[String]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let offset = (paths.len() as i64) + 1;
-        tx.execute(
-            "UPDATE opened_repos SET position = position + ?1",
-            [offset],
-        )?;
+        tx.execute("UPDATE opened_repos SET position = position + ?1", [offset])?;
         for (i, path) in paths.iter().enumerate() {
             tx.execute(
                 "UPDATE opened_repos SET position = ?1 WHERE path = ?2",
@@ -209,9 +206,15 @@ mod tests {
     fn sidebar_sections_roundtrip() {
         let (service, _temp) = temp_db();
         assert!(service.load_sidebar_sections("/repo/a").unwrap().is_none());
-        service.set_sidebar_section("/repo/a", "local", true).unwrap();
-        service.set_sidebar_section("/repo/a", "tags", false).unwrap();
-        service.set_sidebar_section("/repo/b", "local", false).unwrap();
+        service
+            .set_sidebar_section("/repo/a", "local", true)
+            .unwrap();
+        service
+            .set_sidebar_section("/repo/a", "tags", false)
+            .unwrap();
+        service
+            .set_sidebar_section("/repo/b", "local", false)
+            .unwrap();
         let mut a = service.load_sidebar_sections("/repo/a").unwrap().unwrap();
         a.sort();
         assert_eq!(
@@ -225,8 +228,12 @@ mod tests {
     #[test]
     fn sidebar_section_overwrite() {
         let (service, _temp) = temp_db();
-        service.set_sidebar_section("/repo/a", "local", true).unwrap();
-        service.set_sidebar_section("/repo/a", "local", false).unwrap();
+        service
+            .set_sidebar_section("/repo/a", "local", true)
+            .unwrap();
+        service
+            .set_sidebar_section("/repo/a", "local", false)
+            .unwrap();
         let a = service.load_sidebar_sections("/repo/a").unwrap().unwrap();
         assert_eq!(a, vec![("local".to_string(), false)]);
     }
@@ -258,11 +265,14 @@ mod tests {
         service.add_repo("/repo/b").unwrap();
         service.add_repo("/repo/c").unwrap();
         let pos = positions(&service);
-        assert_eq!(pos, vec![
-            ("/repo/c".into(), 0),
-            ("/repo/b".into(), 1),
-            ("/repo/a".into(), 2),
-        ]);
+        assert_eq!(
+            pos,
+            vec![
+                ("/repo/c".into(), 0),
+                ("/repo/b".into(), 1),
+                ("/repo/a".into(), 2),
+            ]
+        );
     }
 
     #[test]
@@ -285,7 +295,11 @@ mod tests {
         service.add_repo("/repo/a").unwrap();
         service.add_repo("/repo/b").unwrap();
         service.add_repo("/repo/c").unwrap();
-        let new_order = vec!["/repo/a".to_string(), "/repo/c".to_string(), "/repo/b".to_string()];
+        let new_order = vec![
+            "/repo/a".to_string(),
+            "/repo/c".to_string(),
+            "/repo/b".to_string(),
+        ];
         service.set_repo_order(&new_order).unwrap();
         let repos = service.load_repos().unwrap();
         assert_eq!(repos, new_order);
@@ -323,5 +337,4 @@ mod tests {
         let values: Vec<i64> = pos.iter().map(|(_, p)| *p).collect();
         assert_eq!(values, vec![0, 1, 2]);
     }
-
 }

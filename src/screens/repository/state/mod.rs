@@ -40,10 +40,10 @@ use super::commit_search::CommitSearch;
 
 pub(in crate::screens::repository) use animation::AnimationState;
 pub(in crate::screens::repository) use commit_index::CommitIndex;
+pub use context_menu::ContextMenuState;
 pub(in crate::screens::repository) use context_menu::{
     CommitContextMenuState, DirtyFileContextMenuState, ResetSubmenuState,
 };
-pub use context_menu::ContextMenuState;
 pub(in crate::screens::repository) use diff_cache::DiffCache;
 pub(crate) use gateway_fleet::GatewayFleet;
 pub(in crate::screens::repository) use merged_diff::MergedDiffCache;
@@ -110,7 +110,10 @@ impl CenterListState {
         }
     }
 
-    pub(in crate::screens::repository) fn update(&mut self, viewport: scrollable::Viewport) -> bool {
+    pub(in crate::screens::repository) fn update(
+        &mut self,
+        viewport: scrollable::Viewport,
+    ) -> bool {
         let next_offset_y = viewport.absolute_offset().y;
         let next_viewport_h = viewport.bounds().height.max(ROW_H);
         let changed = (self.offset_y - next_offset_y).abs() > VIEWPORT_CHANGE_EPSILON
@@ -222,7 +225,10 @@ impl RepositoryData {
     }
 
     /// Hash → idx lookup. Thin coordinator over `snapshot + index`.
-    pub(in crate::screens::repository) fn commit_index_for_hash(&self, hash: &str) -> Option<usize> {
+    pub(in crate::screens::repository) fn commit_index_for_hash(
+        &self,
+        hash: &str,
+    ) -> Option<usize> {
         self.index.index_for_hash(self.snapshot.commits(), hash)
     }
 

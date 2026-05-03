@@ -101,10 +101,7 @@ impl App {
                         return Task::none();
                     }
                 }
-                let is_select = matches!(
-                    op,
-                    crate::plugin::tab_snapshot::TabRegistryOp::Select(_)
-                );
+                let is_select = matches!(op, crate::plugin::tab_snapshot::TabRegistryOp::Select(_));
                 let screen_task = self.apply_tab_registry_op(op).unwrap_or_else(Task::none);
                 if is_select {
                     Task::batch(vec![screen_task, self.try_start_fetch()])
@@ -114,6 +111,11 @@ impl App {
             }
             AppMessage::TabOpened { tab_id, result } => self.handle_tab_opened(tab_id, result),
             AppMessage::AnimationTick(timestamp) => self.handle_animation_tick(timestamp),
+            AppMessage::PluginRuntimeTick(timestamp) => {
+                let _ = timestamp;
+                self.plugin_host.tick();
+                Task::none()
+            }
             AppMessage::RepoFilesChanged(tab_id) => self.reload_refs_for_tab(tab_id),
             AppMessage::WindowFocused => self.on_window_focused(),
             AppMessage::WindowUnfocused => Task::none(),
@@ -185,5 +187,4 @@ impl App {
             }
         }
     }
-
 }

@@ -60,10 +60,7 @@ pub(crate) struct State {
 }
 
 impl State {
-    pub(crate) fn new(
-        available_refs: Vec<RefChoice>,
-        default_dir_prefix: String,
-    ) -> Self {
+    pub(crate) fn new(available_refs: Vec<RefChoice>, default_dir_prefix: String) -> Self {
         Self {
             reference: None,
             branch_name: String::new(),
@@ -213,17 +210,17 @@ mod tests {
         // parent-exists check is satisfied.
         let tmp = std::env::temp_dir();
         let prefix = tmp.to_string_lossy().to_string();
-        let mut s = State::new(
-            vec![RefChoice::LocalBranch("main".into())],
-            prefix,
-        );
+        let mut s = State::new(vec![RefChoice::LocalBranch("main".into())], prefix);
         assert!(!s.can_submit(), "fresh state: no ref, no name, no dir");
 
         s.reference = Some(RefChoice::LocalBranch("main".into()));
         assert!(!s.can_submit(), "still no branch name");
 
         s.set_branch_name("feat_test_xyz".into());
-        assert!(s.can_submit(), "ref + name + derived dir with real parent => submittable");
+        assert!(
+            s.can_submit(),
+            "ref + name + derived dir with real parent => submittable"
+        );
 
         s.working_dir = String::new();
         assert!(!s.can_submit(), "empty dir blocks submit");
@@ -284,12 +281,12 @@ mod tests {
             tmp.to_string_lossy(),
             std::process::id(),
         );
-        let mut s = State::new(
-            vec![RefChoice::LocalBranch("main".into())],
-            prefix,
-        );
+        let mut s = State::new(vec![RefChoice::LocalBranch("main".into())], prefix);
         s.reference = Some(RefChoice::LocalBranch("main".into()));
         s.set_branch_name("feat".into());
-        assert!(s.can_submit(), "missing immediate parent is OK if an ancestor exists");
+        assert!(
+            s.can_submit(),
+            "missing immediate parent is OK if an ancestor exists"
+        );
     }
 }

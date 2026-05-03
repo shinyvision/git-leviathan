@@ -99,9 +99,7 @@ mod tests {
             plugin_id: "buggy".into(),
             source: "leviathan.ui.main_bar.add".into(),
             message: "unknown section 'nope'".into(),
-            lua_traceback: Some(
-                "[string \"plugins/buggy/init.lua\"]:5: in main chunk".into(),
-            ),
+            lua_traceback: Some("[string \"plugins/buggy/init.lua\"]:5: in main chunk".into()),
         };
         let s = err.to_string();
         assert!(s.contains("plugin 'buggy'"), "got: {s}");

@@ -188,7 +188,10 @@ pub(super) fn update(
                 Vec::new()
             };
             let default_remote_name = if is_tag {
-                ctx.data.snapshot.default_remote_name().map(|s| s.to_string())
+                ctx.data
+                    .snapshot
+                    .default_remote_name()
+                    .map(|s| s.to_string())
             } else {
                 None
             };
@@ -250,7 +253,10 @@ pub(super) fn update(
             }
         }
         SidebarAction::WorktreeEntryRightClicked { path, branch_name } => {
-            let position = ctx.input.last_pointer_position.unwrap_or(iced::Point::ORIGIN);
+            let position = ctx
+                .input
+                .last_pointer_position
+                .unwrap_or(iced::Point::ORIGIN);
             let is_active = ctx.fleet.is_active(&path);
             ctx.data.branch_popout.open_worktree_context_menu(
                 path,

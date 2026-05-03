@@ -73,10 +73,10 @@ impl Migration {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct StoreFile {
-    version: u32,
-    data: Value,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoreFile {
+    pub version: u32,
+    pub data: Value,
 }
 
 pub struct PersistStore {
@@ -96,24 +96,15 @@ impl PersistStore {
             fs::create_dir_all(parent)?;
         }
 
-        let mut file: StoreFile = if path.exists() {
-            let raw = fs::read_to_string(&path)?;
-            serde_json::from_str(&raw)?
-        } else {
-            StoreFile {
-                version: target_version,
-                data: json!({}),
-            }
-        };
+        let mut file = load_store_file_or_default(&path, target_version)?;
 
         while file.version < target_version {
-            let m = migrations
-                .iter()
-                .find(|m| m.from == file.version)
-                .ok_or(PersistError::NoMigration {
+            let m = migrations.iter().find(|m| m.from == file.version).ok_or(
+                PersistError::NoMigration {
                     from: file.version,
                     to: target_version,
-                })?;
+                },
+            )?;
             let migrated = (m.transform)(std::mem::take(&mut file.data));
             file.data = migrated;
             file.version = m.to;
@@ -125,8 +116,7 @@ impl PersistStore {
             });
         }
 
-        let raw = serde_json::to_string_pretty(&file)?;
-        fs::write(&path, raw)?;
+        write_store_file_atomic(&path, &file)?;
 
         Ok(Self {
             path,
@@ -164,12 +154,75 @@ impl PersistStore {
             version: self.version,
             data: self.data.clone(),
         };
-        let raw = serde_json::to_string_pretty(&file)?;
-        let tmp = self.path.with_extension("json.tmp");
-        fs::write(&tmp, raw)?;
-        fs::rename(tmp, &self.path)?;
+        write_store_file_atomic(&self.path, &file)?;
         Ok(())
     }
+
+    pub fn delete_value(&mut self, key: &str) -> Result<(), PersistError> {
+        if let Value::Object(map) = &mut self.data {
+            map.remove(key);
+        }
+        let file = StoreFile {
+            version: self.version,
+            data: self.data.clone(),
+        };
+        write_store_file_atomic(&self.path, &file)?;
+        Ok(())
+    }
+}
+
+pub fn load_store_file_or_default(
+    path: &Path,
+    target_version: u32,
+) -> Result<StoreFile, PersistError> {
+    if !path.exists() {
+        return Ok(StoreFile {
+            version: target_version,
+            data: json!({}),
+        });
+    }
+    let raw = fs::read_to_string(path)?;
+    match serde_json::from_str::<StoreFile>(&raw) {
+        Ok(file) => Ok(file),
+        Err(_) => {
+            backup_corrupt_file(path)?;
+            Ok(StoreFile {
+                version: target_version,
+                data: json!({}),
+            })
+        }
+    }
+}
+
+pub fn write_store_file_atomic(path: &Path, file: &StoreFile) -> Result<(), PersistError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let raw = serde_json::to_string_pretty(file)?;
+    let tmp = path.with_extension("json.tmp");
+    fs::write(&tmp, raw)?;
+    fs::rename(tmp, path)?;
+    Ok(())
+}
+
+pub fn backup_corrupt_file(path: &Path) -> Result<(), PersistError> {
+    let backup = next_corrupt_backup_path(path);
+    fs::rename(path, backup)?;
+    Ok(())
+}
+
+fn next_corrupt_backup_path(path: &Path) -> PathBuf {
+    for idx in 0..1000 {
+        let candidate = if idx == 0 {
+            path.with_extension("json.corrupt")
+        } else {
+            path.with_extension(format!("json.corrupt.{idx}"))
+        };
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    path.with_extension("json.corrupt.last")
 }
 
 #[cfg(test)]

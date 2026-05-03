@@ -1,33 +1,36 @@
-//! Lua widget tree → `iced::Element` converter.
+//! Typed widget AST → `iced::Element` converter.
 //!
-//! Plugins return a nested table from `view(state)` (or declare one on a
-//! `main_bar.add{…}` call). The host serialises it to `serde_json::Value`
-//! (via `mlua::LuaSerdeExt::from_value`) and hands it here. `build` walks
-//! the value and dispatches each node to the submodule responsible for
-//! that widget kind.
+//! Phase 4: the renderer consumes a [`WidgetAst`] only. The boundary
+//! decoder validates plugin Lua tables once at the boundary; the build
+//! step here is pure AST → iced. The renderer cannot panic on a
+//! malformed tree because there is no malformed tree to see — anything
+//! invalid was rejected upstream and rendered as an
+//! [`build_error_widget`].
 //!
 //! The converter is **scope-agnostic**: the same tree can describe a
 //! plugin screen or a main-bar slot. Interactive widgets (button,
-//! mouse_area) dispatch differently per scope — see [`DispatchScope`].
+//! mouse_area, tablist) dispatch differently per scope — see
+//! [`DispatchScope`].
 //!
 //! Adding a new widget kind:
-//! 1. Create `<kind>.rs` with `pub(super) fn build(node, ctx) -> Element<'static, …>`.
-//! 2. Add `mod <kind>;` below and a match arm in the dispatch.
-//! 3. If the widget exposes layout hints consumed outside (see
-//!    `container::container_size_limits`), re-export them at module level.
+//! 1. Add a `WidgetNode::*` variant + AST struct in
+//!    `crate::plugin::ui::widget_ast`.
+//! 2. Add a decoder branch in `widget_ast::decode_node`.
+//! 3. Create `<kind>.rs` here with
+//!    `pub(super) fn build(node, ctx) -> Element<'static, …>`.
+//! 4. Add `mod <kind>;` below and a match arm in the dispatch.
 //!
-//! Every widget build returns `Element<'static, Message>` — all content is
+//! Every widget build returns `Element<'static, Message>` — content is
 //! owned (strings, svg handles) so the Element never borrows from the
-//! input `Value`. This lets callers store widget trees on the heap and
-//! render them on demand without lifetime gymnastics.
+//! AST.
 
 use std::path::Path;
 
 use iced::Element;
-use serde_json::Value;
 
 use crate::message::Message;
 use crate::plugin::ui::split;
+use crate::plugin::ui::widget_ast::{WidgetAst, WidgetNode};
 
 mod button;
 mod column;
@@ -43,22 +46,17 @@ mod space;
 mod tablist;
 mod text;
 
-// Consumed outside this module by `plugin::ui::split`.
+pub use common::build_error_widget;
+// Container size limits read by `plugin::ui::split` for per-pane clamps.
 pub use container::container_size_limits;
-
-use common::error_text;
 
 /// What the tree is rendering inside — drives how interactive widgets
 /// route their clicks.
-///
-/// - `Screen` clicks emit `PluginMessage::Event { plugin_id, screen_id,
-///   event, value }`. The plugin's `update(state, event, value)` sees them.
-/// - `Slot` clicks emit `PluginMessage::SlotClicked { plugin_id, region,
-///   container, slot_id }`. The slot's `on_click` Lua fn is invoked
-///   directly.
 #[derive(Clone, Copy)]
 pub enum DispatchScope<'a> {
-    Screen { screen_id: &'a str },
+    Screen {
+        screen_id: &'a str,
+    },
     Slot {
         region: &'a str,
         container: &'a str,
@@ -82,10 +80,7 @@ impl<'a> DispatchScope<'a> {
     }
 }
 
-/// Per-render state the converter needs. `split_states` is a reference
-/// into the host so resizable splits render with current ratios;
-/// `active_drag` identifies the divider being dragged. `plugin_root` is
-/// the sandbox root used to resolve plugin-bundled assets (icons).
+/// Per-render state the converter needs.
 pub struct BuildCtx<'a> {
     pub plugin_id: &'a str,
     pub scope: DispatchScope<'a>,
@@ -94,43 +89,29 @@ pub struct BuildCtx<'a> {
     pub active_drag: Option<(&'a str, usize)>,
 }
 
-pub fn build(node: &Value, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
-    let Some(kind) = node.get("kind").and_then(Value::as_str) else {
-        return error_text("missing kind".to_string());
-    };
-    match kind {
-        "text" => text::build(node),
-        "button" => button::build(node, ctx),
-        "row" => row::build(node, ctx),
-        "column" => column::build(node, ctx),
-        "container" => container::build(node, ctx),
-        "padding" => padding::build(node, ctx),
-        "space" => space::build(node),
-        "icon" => icon::build(node, ctx),
-        "image" => image::build(node, ctx),
-        "scrollable" => scrollable::build(node, ctx),
-        "mouse_area" => mouse_area::build(node, ctx),
-        "tablist" => tablist::build(node, ctx),
-        "resizable_split" => split::build(node, ctx),
-        other => error_text(format!("unknown kind: {other}")),
+pub fn build(ast: &WidgetAst, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
+    match &ast.node {
+        WidgetNode::Text(n) => text::build(n),
+        WidgetNode::Button(n) => button::build(n, ctx),
+        WidgetNode::Row(n) => row::build(n, ctx),
+        WidgetNode::Column(n) => column::build(n, ctx),
+        WidgetNode::Container(n) => container::build(n, ctx),
+        WidgetNode::Padding(n) => padding::build(n, ctx),
+        WidgetNode::Space(n) => space::build(n),
+        WidgetNode::Icon(n) => icon::build(n, ctx),
+        WidgetNode::Image(n) => image::build(n, ctx),
+        WidgetNode::Scrollable(n) => scrollable::build(n, ctx),
+        WidgetNode::MouseArea(n) => mouse_area::build(n, ctx),
+        WidgetNode::Tablist(n) => tablist::build(n, ctx),
+        WidgetNode::ResizableSplit(n) => split::build(n, ctx),
     }
-}
-
-/// Recursively build each child of a row/column node. Lifts the common
-/// "children is an array of nodes" pattern out of every container-ish kind.
-pub(super) fn build_children(
-    node: &Value,
-    ctx: &BuildCtx<'_>,
-) -> Vec<Element<'static, Message>> {
-    node.get("children")
-        .and_then(Value::as_array)
-        .map(|arr| arr.iter().map(|child| build(child, ctx)).collect())
-        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::ui::widget_ast::decode;
+    use serde_json::json;
     use std::collections::HashMap;
 
     struct TestCtx {
@@ -156,42 +137,43 @@ mod tests {
         }
     }
 
-    #[test]
-    fn unknown_kind_does_not_panic() {
-        let t = TestCtx::new();
-        let node = serde_json::json!({ "kind": "not_a_widget" });
-        let _ = build(&node, &t.ctx());
-    }
-
-    #[test]
-    fn missing_kind_renders_error() {
-        let t = TestCtx::new();
-        let node = serde_json::json!({ "value": "no kind" });
-        let _ = build(&node, &t.ctx());
+    fn ast(value: serde_json::Value) -> WidgetAst {
+        decode(&value).expect("decode")
     }
 
     #[test]
     fn every_kind_builds_without_panic() {
         let t = TestCtx::new();
         let ctx = t.ctx();
-        let _ = build(&serde_json::json!({ "kind": "text", "value": "hello" }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "button", "text": "b" }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "row", "children": [] }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "column", "children": [] }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "container" }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "space" }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "icon", "path": "icons/x.svg" }), &ctx);
-        let _ = build(&serde_json::json!({ "kind": "image", "path": "assets/x.png" }), &ctx);
+        let _ = build(&ast(json!({ "kind": "text", "value": "hello" })), &ctx);
+        let _ = build(&ast(json!({ "kind": "button", "text": "b" })), &ctx);
+        let _ = build(&ast(json!({ "kind": "row", "children": [] })), &ctx);
+        let _ = build(&ast(json!({ "kind": "column", "children": [] })), &ctx);
+        let _ = build(&ast(json!({ "kind": "container" })), &ctx);
+        let _ = build(&ast(json!({ "kind": "space" })), &ctx);
+        let _ = build(&ast(json!({ "kind": "icon", "path": "icons/x.svg" })), &ctx);
         let _ = build(
-            &serde_json::json!({ "kind": "scrollable", "child": { "kind": "space" } }),
+            &ast(json!({ "kind": "image", "path": "assets/x.png" })),
             &ctx,
         );
         let _ = build(
-            &serde_json::json!({
+            &ast(json!({ "kind": "scrollable", "child": { "kind": "space" } })),
+            &ctx,
+        );
+        let _ = build(
+            &ast(json!({
                 "kind": "mouse_area",
                 "on_click": "e",
                 "child": { "kind": "space" }
-            }),
+            })),
+            &ctx,
+        );
+        let _ = build(
+            &ast(json!({
+                "kind": "tablist",
+                "tabs": [],
+                "active": serde_json::Value::Null,
+            })),
             &ctx,
         );
     }
@@ -211,8 +193,13 @@ mod tests {
             active_drag: None,
         };
         let _ = build(
-            &serde_json::json!({ "kind": "button", "text": "Slot", "on_click": "click" }),
+            &ast(json!({ "kind": "button", "text": "Slot", "on_click": "click" })),
             &ctx,
         );
+    }
+
+    #[test]
+    fn error_widget_renders() {
+        let _ = build_error_widget("widget.unknown_kind", "rwo is not known");
     }
 }
