@@ -22,7 +22,6 @@ pub struct ToolbarCtx<'a> {
     pub main_bar_registry: &'a MainBarRegistry,
 }
 
-#[allow(dead_code)]
 pub trait Screen {
     /// Per-screen action enum. Every screen owns its own message space; the
     /// outer routing wrappers (Phase 2) name them.

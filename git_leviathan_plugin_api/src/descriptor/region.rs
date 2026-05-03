@@ -313,9 +313,7 @@ mod tests {
             .validate_address(Some("diff"), Some("context_menu"))
             .is_ok());
         // Unknown prefix.
-        assert!(d
-            .validate_address(Some("diff"), Some("zzz:1"))
-            .is_err());
+        assert!(d.validate_address(Some("diff"), Some("zzz:1")).is_err());
     }
 
     #[test]
@@ -341,8 +339,6 @@ mod tests {
             .validate_address(Some("details"), Some("commit_header"))
             .is_ok());
         assert!(d.validate_address(Some("details"), Some("files")).is_ok());
-        assert!(d
-            .validate_address(Some("details"), Some("nope"))
-            .is_err());
+        assert!(d.validate_address(Some("details"), Some("nope")).is_err());
     }
 }

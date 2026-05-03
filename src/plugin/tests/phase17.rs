@@ -245,7 +245,9 @@ fn graph_decoration_returned_for_commit_row() {
         .collect();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().any(|d| d.kind == "badge"));
-    assert!(rows.iter().any(|d| d.kind == "lane" && d.id == "lane-decor"));
+    assert!(rows
+        .iter()
+        .any(|d| d.kind == "lane" && d.id == "lane-decor"));
 
     // The decoration AST projects through verbatim and is visible to
     // devtools as JSON; e.g. the lane row carries its index/color so
@@ -340,14 +342,8 @@ fn unload_clears_overlays_context_menus_and_decorations() {
         .context_menu_items
         .iter()
         .any(|i| i.plugin_id == "owner"));
-    assert!(pre
-        .graph_decorations
-        .iter()
-        .any(|d| d.plugin_id == "owner"));
-    assert!(pre
-        .diff_decorations
-        .iter()
-        .any(|d| d.plugin_id == "owner"));
+    assert!(pre.graph_decorations.iter().any(|d| d.plugin_id == "owner"));
+    assert!(pre.diff_decorations.iter().any(|d| d.plugin_id == "owner"));
 
     host.unload_plugin("owner").expect("unload owner");
 
@@ -361,8 +357,5 @@ fn unload_clears_overlays_context_menus_and_decorations() {
         .graph_decorations
         .iter()
         .all(|d| d.plugin_id != "owner"));
-    assert!(post
-        .diff_decorations
-        .iter()
-        .all(|d| d.plugin_id != "owner"));
+    assert!(post.diff_decorations.iter().all(|d| d.plugin_id != "owner"));
 }

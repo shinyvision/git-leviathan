@@ -4,7 +4,6 @@ use std::process::Command;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // fields/variants used cross-platform or only in Debug output
 pub enum GitStatus {
     Available {
         path: PathBuf,
@@ -19,7 +18,13 @@ pub enum GitStatus {
 
 impl GitStatus {
     pub fn is_available(&self) -> bool {
-        matches!(self, GitStatus::Available { .. })
+        match self {
+            GitStatus::Available { path, version } => {
+                let _ = (path, version);
+                true
+            }
+            GitStatus::NotFound | GitStatus::MacOsCommandLineToolsMissing => false,
+        }
     }
 }
 

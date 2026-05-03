@@ -2,7 +2,9 @@
 
 use std::fs;
 
-use crate::plugin::lockfile::{compute_plugin_checksum, Lockfile, LOCAL_OVERRIDE_NAME, LOCKFILE_NAME};
+use crate::plugin::lockfile::{
+    compute_plugin_checksum, Lockfile, LOCAL_OVERRIDE_NAME, LOCKFILE_NAME,
+};
 use crate::plugin::tests::harness::MockHost;
 
 fn manifest(id: &str, version: &str, extra: &str) -> String {
@@ -22,11 +24,7 @@ fn resolves_load_order_for_linear_chain() {
     // c -> b -> a; resolver must load a, then b, then c.
     let mut host = MockHost::new();
     host.load_inline_set(&[
-        (
-            "a",
-            &manifest("a", "1.0.0", ""),
-            r#"_G.loaded = "a""#,
-        ),
+        ("a", &manifest("a", "1.0.0", ""), r#"_G.loaded = "a""#),
         (
             "b",
             &manifest("b", "1.0.0", "[dependencies]\na = \">=1.0\""),
@@ -132,13 +130,9 @@ fn incompatible_version_emits_conflict_diagnostic() {
     assert!(
         diags
             .iter()
-            .any(|d| d.plugin_id.as_str() == "consumer"
-                && d.context["actual_version"] == "1.0.0"),
+            .any(|d| d.plugin_id.as_str() == "consumer" && d.context["actual_version"] == "1.0.0"),
         "expected conflict diagnostic, got: {:?}",
-        diags
-            .iter()
-            .map(|d| d.message.clone())
-            .collect::<Vec<_>>()
+        diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
     );
     let snap = host.introspect();
     assert!(!snap.plugins.iter().any(|p| p.id == "consumer"));
@@ -169,12 +163,8 @@ fn cycle_detection_blocks_all_in_cycle() {
     );
     let cycle_diags = host.diagnostics().by_code("dependency.cycle");
     assert!(
-        cycle_diags
-            .iter()
-            .any(|d| d.plugin_id.as_str() == "a")
-            && cycle_diags
-                .iter()
-                .any(|d| d.plugin_id.as_str() == "b"),
+        cycle_diags.iter().any(|d| d.plugin_id.as_str() == "a")
+            && cycle_diags.iter().any(|d| d.plugin_id.as_str() == "b"),
         "cycle diagnostic must name both members"
     );
 }
@@ -183,11 +173,7 @@ fn cycle_detection_blocks_all_in_cycle() {
 fn lockfile_round_trips_loaded_plugins() {
     let mut host = MockHost::new();
     host.load_inline_set(&[
-        (
-            "a",
-            &manifest("a", "1.0.0", ""),
-            r#"-- a"#,
-        ),
+        ("a", &manifest("a", "1.0.0", ""), r#"-- a"#),
         (
             "b",
             &manifest("b", "0.4.2", "[dependencies]\na = \">=1.0\""),
@@ -224,21 +210,14 @@ fn lockfile_checksum_mismatch_emits_diagnostic() {
     fs::create_dir_all(host.lockfile_dir()).expect("mkdir");
     fs::write(&lock_path, bogus.to_string().expect("encode")).expect("write");
 
-    host.load_inline_set(&[(
-        "p",
-        &manifest("p", "1.0.0", ""),
-        r#"-- p"#,
-    )])
-    .expect("load with mismatch");
+    host.load_inline_set(&[("p", &manifest("p", "1.0.0", ""), r#"-- p"#)])
+        .expect("load with mismatch");
 
     let diags = host.diagnostics().by_code("lockfile.checksum_mismatch");
     assert!(
         diags.iter().any(|d| d.plugin_id.as_str() == "p"),
         "expected checksum_mismatch diagnostic; got {:?}",
-        diags
-            .iter()
-            .map(|d| d.message.clone())
-            .collect::<Vec<_>>()
+        diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
     );
 }
 
@@ -276,12 +255,8 @@ fn local_override_replaces_lockfile_entry() {
     )
     .expect("overlay");
 
-    host.load_inline_set(&[(
-        "p",
-        &manifest("p", "1.0.0", ""),
-        r#"-- p"#,
-    )])
-    .expect("load with override");
+    host.load_inline_set(&[("p", &manifest("p", "1.0.0", ""), r#"-- p"#)])
+        .expect("load with override");
 
     let diag = host
         .diagnostics()
@@ -335,12 +310,8 @@ fn checksum_helper_is_self_consistent() {
     // Sanity check that compute_plugin_checksum is stable. Tests that
     // depend on it for assertions need this to be true.
     let mut host = MockHost::new();
-    host.load_inline_set(&[(
-        "x",
-        &manifest("x", "1.0.0", ""),
-        r#"-- x"#,
-    )])
-    .expect("load");
+    host.load_inline_set(&[("x", &manifest("x", "1.0.0", ""), r#"-- x"#)])
+        .expect("load");
     let dir = host.plugin_dir("x").expect("dir").to_path_buf();
     let h1 = compute_plugin_checksum(&dir).unwrap();
     let h2 = compute_plugin_checksum(&dir).unwrap();

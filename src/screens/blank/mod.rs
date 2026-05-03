@@ -13,10 +13,7 @@ pub struct BlankScreen;
 
 #[derive(Debug, Clone)]
 pub enum BlankMessage {
-    KeyPressed(
-        #[allow(dead_code)] keyboard::Key,
-        #[allow(dead_code)] keyboard::Modifiers,
-    ),
+    KeyPressed(keyboard::Key, keyboard::Modifiers),
 }
 
 impl BlankScreen {
@@ -30,7 +27,10 @@ impl Screen for BlankScreen {
 
     fn update(&mut self, msg: BlankMessage) -> Task<Message> {
         match msg {
-            BlankMessage::KeyPressed(_, _) => Task::none(),
+            BlankMessage::KeyPressed(key, modifiers) => {
+                let _ = (key, modifiers);
+                Task::none()
+            }
         }
     }
 

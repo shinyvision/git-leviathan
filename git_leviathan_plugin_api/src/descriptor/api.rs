@@ -1,6 +1,6 @@
 //! Self-describing host Lua API descriptors.
 //!
-//! The tables in this module are the source of truth for v1 host APIs
+//! The tables in this module are the source of truth for host APIs
 //! exposed under the `leviathan.*` Lua global. Runtime introspection,
 //! `leviathan.has`, Lua annotations, Markdown docs, and generated
 //! validation metadata all read from these descriptors.
@@ -158,6 +158,13 @@ const V1: ApiVersionInfo = ApiVersionInfo {
     minor: 0,
     label: "1.0",
     compatibility: "v1",
+};
+
+const V2: ApiVersionInfo = ApiVersionInfo {
+    major: 2,
+    minor: 0,
+    label: "2.0",
+    compatibility: "v2",
 };
 
 const NO_VALIDATION: ApiValidation = ApiValidation {
@@ -550,6 +557,35 @@ const REGION_REPLACE_PARAMS: &[ApiParam] = &[
     },
 ];
 
+const REGION_ADD_SLOT_PARAM: &[ApiParam] = &[ApiParam {
+    name: "spec",
+    lua_type: "LeviathanSlotSpec",
+    required: true,
+    doc: "Slot descriptor including region, section/pane, id, priority, and widget.",
+}];
+
+const REGION_REMOVE_SLOT_PARAM: &[ApiParam] = &[ApiParam {
+    name: "target",
+    lua_type: "LeviathanSlotTarget",
+    required: true,
+    doc: "Slot address including region, section/pane, and id.",
+}];
+
+const REGION_REPLACE_SLOT_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "target",
+        lua_type: "LeviathanSlotTarget",
+        required: true,
+        doc: "Existing slot address including region and id.",
+    },
+    ApiParam {
+        name: "spec",
+        lua_type: "LeviathanSlotSpec",
+        required: true,
+        doc: "Replacement slot descriptor.",
+    },
+];
+
 const REGION_VALIDATION: ApiValidation = ApiValidation {
     args: &[
         "section must match the region descriptor",
@@ -590,6 +626,42 @@ const MAIN_BAR_FUNCTIONS: &[ApiFunction] = &[
         compatibility: "v1",
         doc: "Replace a slot in the main bar region.",
         params: REGION_REPLACE_PARAMS,
+        returns: &[],
+        capabilities: &[],
+        validation: REGION_VALIDATION,
+    },
+];
+
+const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
+    ApiFunction {
+        path: "leviathan.ui.regions.add_slot",
+        name: "add_slot",
+        since: "2.0",
+        compatibility: "v2",
+        doc: "Add a slot to any descriptor-backed UI region.",
+        params: REGION_ADD_SLOT_PARAM,
+        returns: &[],
+        capabilities: &[],
+        validation: REGION_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.ui.regions.remove_slot",
+        name: "remove_slot",
+        since: "2.0",
+        compatibility: "v2",
+        doc: "Remove a slot from any descriptor-backed UI region.",
+        params: REGION_REMOVE_SLOT_PARAM,
+        returns: &[],
+        capabilities: &[],
+        validation: REGION_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.ui.regions.replace_slot",
+        name: "replace_slot",
+        since: "2.0",
+        compatibility: "v2",
+        doc: "Replace a slot in any descriptor-backed UI region.",
+        params: REGION_REPLACE_SLOT_PARAMS,
         returns: &[],
         capabilities: &[],
         validation: REGION_VALIDATION,
@@ -2203,7 +2275,7 @@ pub const API_MODULES: &[ApiModule] = &[
     ApiModule {
         name: "ui",
         table: "leviathan.ui",
-        version: V1,
+        version: V2,
         doc: "UI region and plugin screen APIs.",
         functions: UI_FUNCTIONS,
         events: &[],
@@ -2213,6 +2285,16 @@ pub const API_MODULES: &[ApiModule] = &[
             "LeviathanSlotSpec",
             "LeviathanSlotTarget",
         ],
+        capabilities: &[],
+    },
+    ApiModule {
+        name: "ui.regions",
+        table: "leviathan.ui.regions",
+        version: V2,
+        doc: "Descriptor-backed v2 region slot API.",
+        functions: UI_REGIONS_FUNCTIONS,
+        events: &[],
+        types: &["leviathan.ui.regions", "LeviathanSlotSpec", "LeviathanSlotTarget"],
         capabilities: &[],
     },
     ApiModule {
@@ -4357,21 +4439,22 @@ pub fn has_feature(feature: &str) -> bool {
     let Ok(major) = version.parse::<u32>() else {
         return false;
     };
-    if major != HOST_API_VERSION.major {
+    if major != HOST_API_VERSION.major && major != 1 {
         return false;
     }
     let name = name.strip_prefix("leviathan.").unwrap_or(name);
 
-    API_MODULES
+    API_MODULES.iter().any(|module| {
+        major >= module.version.major
+            && (module.name == name || module.table.strip_prefix("leviathan.") == Some(name))
+    }) || all_functions().any(|function| {
+        major >= since_major(function.since) && function_feature_name(function) == name
+    }) || API_EVENTS.iter().any(|event| {
+        major >= since_major(event.since)
+            && (event.name == name || format!("event.{}", event.name) == name)
+    }) || API_TYPES
         .iter()
-        .any(|module| module.name == name || module.table.strip_prefix("leviathan.") == Some(name))
-        || all_functions().any(|function| function_feature_name(function) == name)
-        || API_EVENTS
-            .iter()
-            .any(|event| event.name == name || format!("event.{}", event.name) == name)
-        || API_TYPES
-            .iter()
-            .any(|ty| ty.name == name || ty.name.strip_prefix("leviathan.") == Some(name))
+        .any(|ty| ty.name == name || ty.name.strip_prefix("leviathan.") == Some(name))
         || API_CAPABILITIES.iter().any(|capability| {
             capability.name == name || format!("capability.{}", capability.name) == name
         })
@@ -4381,6 +4464,13 @@ pub fn has_feature(feature: &str) -> bool {
         || WIDGETS
             .iter()
             .any(|widget| format!("widget.{}", widget.kind) == name)
+}
+
+fn since_major(since: &str) -> u32 {
+    since
+        .split_once('.')
+        .and_then(|(major, _)| major.parse::<u32>().ok())
+        .unwrap_or(1)
 }
 
 pub fn module_names() -> Vec<&'static str> {
@@ -4431,18 +4521,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn has_feature_accepts_current_v1_functions() {
+    fn has_feature_accepts_v1_compat_and_current_v2_functions() {
         assert!(has_feature("fs.read_file@1"));
+        assert!(has_feature("fs.read_file@2"));
         assert!(has_feature("leviathan.fs.read_file@1"));
         assert!(has_feature("api.describe@1"));
         assert!(has_feature("ui.main_bar.add@1"));
+        assert!(has_feature("ui.regions.add_slot@2"));
+        assert!(!has_feature("ui.regions.add_slot@1"));
         assert!(has_feature("log@1"));
     }
 
     #[test]
     fn has_feature_rejects_unknown_or_wrong_major() {
         assert!(!has_feature("fs.nope@1"));
-        assert!(!has_feature("fs.read_file@2"));
+        assert!(!has_feature("fs.read_file@3"));
         assert!(!has_feature("fs.read_file"));
         assert!(!has_feature("fs.read_file@nope"));
     }

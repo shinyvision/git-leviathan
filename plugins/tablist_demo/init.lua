@@ -1,12 +1,13 @@
-leviathan.api.create_autocmd({ "TabAdded", "TabRemoved", "TabSwitched", "TabReordered" }, {
+leviathan.autocmd.create({ "TabAdded", "TabRemoved", "TabSwitched", "TabReordered" }, {
 	callback = function(event)
 		leviathan.log("tablist_demo: " .. event)
 	end,
 })
 
-leviathan.ui.tab_bar.replace(
-	{ section = "center", id = "builtin.tab_list" },
+leviathan.ui.regions.replace_slot(
+	{ region = "tab_bar", section = "center", id = "builtin.tab_list" },
 	{
+	region = "tab_bar",
 	id = "plugin.tablist_demo.tab_list",
 	section = "center",
 	priority = 10,

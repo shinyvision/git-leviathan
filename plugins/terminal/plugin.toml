@@ -1,4 +1,4 @@
 id = "terminal"
 name = "Terminal"
 version = "0.1.0"
-api_version = "1.0"
+api_version = "2.0"

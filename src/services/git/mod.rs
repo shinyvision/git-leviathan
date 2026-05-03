@@ -147,7 +147,6 @@ impl GitService {
         loader::load_repo(self, commit_limit)
     }
 
-    #[allow(dead_code)]
     pub fn list_worktrees(&self) -> Result<Vec<crate::core::WorktreeInfo>, GitError> {
         worktrees::list_worktrees(self)
     }

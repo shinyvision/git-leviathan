@@ -11,16 +11,17 @@ use super::widgets::{
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
-    #[allow(dead_code)]
     pub branch_name: String,
-    #[allow(dead_code)]
     pub remote_name: String,
 }
 
-pub(crate) fn view(slide_offset: f32) -> Element<'static, Message> {
-    let label = text("Force push is a destructive action and cannot be undone.")
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
+pub(crate) fn view(state: &State, slide_offset: f32) -> Element<'static, Message> {
+    let label = text(format!(
+        "Force push {} to {}. This cannot be undone.",
+        state.branch_name, state.remote_name
+    ))
+    .size(theme::FONT_SM)
+    .style(style::primary_text);
 
     let force_btn = overlay_button(
         "Force Push",

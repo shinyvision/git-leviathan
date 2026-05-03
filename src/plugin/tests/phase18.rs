@@ -18,9 +18,7 @@
 use std::sync::Arc;
 
 use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
-use crate::plugin::performance::{
-    BudgetTracker, CallbackKind, MockClock, Outcome as PerfOutcome,
-};
+use crate::plugin::performance::{BudgetTracker, CallbackKind, MockClock, Outcome as PerfOutcome};
 use crate::plugin::resources::{GenerationId, PluginId};
 use crate::plugin::tests::harness::MockHost;
 
@@ -37,16 +35,10 @@ fn slow_callback_emits_soft_breach() {
     let gen = GenerationId::new(1);
     // Event budget = soft 20ms / hard 250ms. Advance 30ms so it
     // breaches soft but not hard.
-    let outcome = t.track_call::<(), String>(
-        CallbackKind::EventCallback,
-        &pid,
-        gen,
-        "cb",
-        || {
-            clock.advance_ms(30);
-            Ok(())
-        },
-    );
+    let outcome = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || {
+        clock.advance_ms(30);
+        Ok(())
+    });
     assert!(matches!(outcome, PerfOutcome::Ok(())));
     let codes: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
     assert!(
@@ -66,16 +58,10 @@ fn very_slow_callback_emits_hard_breach() {
     let t = BudgetTracker::with_clock(s.clone(), clock.clone());
     let pid = PluginId::from("p_hard");
     let gen = GenerationId::new(1);
-    let outcome = t.track_call::<(), String>(
-        CallbackKind::EventCallback,
-        &pid,
-        gen,
-        "cb",
-        || {
-            clock.advance_ms(500);
-            Ok(())
-        },
-    );
+    let outcome = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || {
+        clock.advance_ms(500);
+        Ok(())
+    });
     assert!(matches!(outcome, PerfOutcome::Ok(())));
     let codes: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
     assert!(
@@ -92,13 +78,10 @@ fn repeated_failures_trip_breaker() {
     let pid = PluginId::from("p_trip");
     let gen = GenerationId::new(1);
     for _ in 0..5 {
-        let _ = t.track_call::<(), String>(
-            CallbackKind::EventCallback,
-            &pid,
-            gen,
-            "broken",
-            || Err("boom".to_string()),
-        );
+        let _ =
+            t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "broken", || {
+                Err("boom".to_string())
+            });
     }
     assert!(t.is_tripped(&pid, gen, "broken"));
     let codes: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
@@ -126,13 +109,9 @@ fn tripped_breaker_skips_subsequent_calls() {
     let gen = GenerationId::new(1);
     // Trip the breaker.
     for _ in 0..5 {
-        let _ = t.track_call::<(), String>(
-            CallbackKind::EventCallback,
-            &pid,
-            gen,
-            "cb",
-            || Err("nope".to_string()),
-        );
+        let _ = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || {
+            Err("nope".to_string())
+        });
     }
     assert!(t.is_tripped(&pid, gen, "cb"));
     // Counter should NOT advance for the skipped call.
@@ -143,16 +122,10 @@ fn tripped_breaker_skips_subsequent_calls() {
         .map(|b| b.count)
         .unwrap_or(0);
     let mut ran = false;
-    let outcome = t.track_call::<(), String>(
-        CallbackKind::EventCallback,
-        &pid,
-        gen,
-        "cb",
-        || {
-            ran = true;
-            Ok(())
-        },
-    );
+    let outcome = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || {
+        ran = true;
+        Ok(())
+    });
     assert!(matches!(outcome, PerfOutcome::Skipped));
     assert!(!ran, "tripped breaker must skip body");
     let count_after = t
@@ -161,7 +134,10 @@ fn tripped_breaker_skips_subsequent_calls() {
         .find(|b| b.callback_id == "cb")
         .map(|b| b.count)
         .unwrap_or(0);
-    assert_eq!(count_before, count_after, "skipped call must not record a sample");
+    assert_eq!(
+        count_before, count_after,
+        "skipped call must not record a sample"
+    );
 }
 
 #[test]
@@ -172,13 +148,9 @@ fn reset_breaker_restores_callback() {
     let pid = PluginId::from("p_reset");
     let gen = GenerationId::new(1);
     for _ in 0..5 {
-        let _ = t.track_call::<(), String>(
-            CallbackKind::EventCallback,
-            &pid,
-            gen,
-            "cb",
-            || Err("x".to_string()),
-        );
+        let _ = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || {
+            Err("x".to_string())
+        });
     }
     assert!(t.is_tripped(&pid, gen, "cb"));
     t.reset_breaker(&pid, "cb");
@@ -189,13 +161,8 @@ fn reset_breaker_restores_callback() {
         "expected reset diagnostic, got: {codes:?}"
     );
     // After reset, body runs again.
-    let outcome = t.track_call::<(), String>(
-        CallbackKind::EventCallback,
-        &pid,
-        gen,
-        "cb",
-        || Ok(()),
-    );
+    let outcome =
+        t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb", || Ok(()));
     assert!(matches!(outcome, PerfOutcome::Ok(())));
 }
 
@@ -209,13 +176,9 @@ fn multiple_disabled_callbacks_degrade_plugin() {
     // Trip three different callbacks.
     for cb in &["cb_a", "cb_b", "cb_c"] {
         for _ in 0..5 {
-            let _ = t.track_call::<(), String>(
-                CallbackKind::EventCallback,
-                &pid,
-                gen,
-                cb,
-                || Err("boom".to_string()),
-            );
+            let _ = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, cb, || {
+                Err("boom".to_string())
+            });
         }
     }
     let codes: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
@@ -225,13 +188,9 @@ fn multiple_disabled_callbacks_degrade_plugin() {
     );
     // Trip a fourth — degraded fires once per generation only.
     for _ in 0..5 {
-        let _ = t.track_call::<(), String>(
-            CallbackKind::EventCallback,
-            &pid,
-            gen,
-            "cb_d",
-            || Err("boom".to_string()),
-        );
+        let _ = t.track_call::<(), String>(CallbackKind::EventCallback, &pid, gen, "cb_d", || {
+            Err("boom".to_string())
+        });
     }
     let codes2: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
     let deg_count = codes2.iter().filter(|c| *c == "plugin.degraded").count();
@@ -266,7 +225,9 @@ api_version = "1.0"
     // At least the init.lua trace + the event callback trace should
     // be visible.
     assert!(
-        snap.performance_traces.iter().any(|t| t.callback_id == "init.lua"),
+        snap.performance_traces
+            .iter()
+            .any(|t| t.callback_id == "init.lua"),
         "expected init.lua trace, got: {:?}",
         snap.performance_traces
             .iter()

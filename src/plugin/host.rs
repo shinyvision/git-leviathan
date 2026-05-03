@@ -1104,11 +1104,7 @@ impl PluginHost {
                     .get("include_secrets")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                self.build_diagnostic_bundle(
-                    plugin_id.as_deref(),
-                    include_state,
-                    include_secrets,
-                )
+                self.build_diagnostic_bundle(plugin_id.as_deref(), include_state, include_secrets)
             }
             "plugin.show_capability_audit" => {
                 let plugin_id = action.arg_str("plugin_id").map(str::to_string);
@@ -1180,14 +1176,12 @@ impl PluginHost {
                 // body's allow-list. Surface as a diagnostic so the
                 // mismatch is visible.
                 let msg = format!("unknown devtools action `{other}`");
-                self.diagnostics.record(
-                    PluginDiagnostic::new(
-                        PluginId::from(HOST_COMMAND_PLUGIN_ID),
-                        DiagnosticSeverity::Error,
-                        "devtools.command.unknown",
-                        msg.clone(),
-                    ),
-                );
+                self.diagnostics.record(PluginDiagnostic::new(
+                    PluginId::from(HOST_COMMAND_PLUGIN_ID),
+                    DiagnosticSeverity::Error,
+                    "devtools.command.unknown",
+                    msg.clone(),
+                ));
                 serde_json::json!({
                     "ok": false,
                     "error": msg,
@@ -1205,9 +1199,7 @@ impl PluginHost {
                 PluginId::from(HOST_COMMAND_PLUGIN_ID),
                 DiagnosticSeverity::Warning,
                 "devtools.command.unknown_plugin",
-                format!(
-                    "devtools command `{command}` references unknown plugin `{plugin_id}`"
-                ),
+                format!("devtools command `{command}` references unknown plugin `{plugin_id}`"),
             )
             .with_context(serde_json::json!({
                 "command": command,
@@ -1224,14 +1216,12 @@ impl PluginHost {
     /// be unloaded; false when it was already absent.
     pub fn disable_plugin(&mut self, plugin_id: &str) -> bool {
         self.disabled_plugins.insert(plugin_id.to_string());
-        self.diagnostics.record(
-            PluginDiagnostic::new(
-                PluginId::from(plugin_id),
-                DiagnosticSeverity::Info,
-                "plugin.disable",
-                format!("plugin `{plugin_id}` marked disabled"),
-            ),
-        );
+        self.diagnostics.record(PluginDiagnostic::new(
+            PluginId::from(plugin_id),
+            DiagnosticSeverity::Info,
+            "plugin.disable",
+            format!("plugin `{plugin_id}` marked disabled"),
+        ));
         if self.plugins.contains_key(plugin_id) {
             // Best effort — unload errors land in diagnostics.
             let _ = self.unload_plugin(plugin_id);
@@ -1248,16 +1238,12 @@ impl PluginHost {
     /// plugin will be loaded on the next discovery pass).
     pub fn enable_plugin(&mut self, plugin_id: &str) -> Result<bool, String> {
         let was_disabled = self.disabled_plugins.remove(plugin_id);
-        self.diagnostics.record(
-            PluginDiagnostic::new(
-                PluginId::from(plugin_id),
-                DiagnosticSeverity::Info,
-                "plugin.enable",
-                format!(
-                    "plugin `{plugin_id}` enabled (was_disabled={was_disabled})"
-                ),
-            ),
-        );
+        self.diagnostics.record(PluginDiagnostic::new(
+            PluginId::from(plugin_id),
+            DiagnosticSeverity::Info,
+            "plugin.enable",
+            format!("plugin `{plugin_id}` enabled (was_disabled={was_disabled})"),
+        ));
         let Some(root) = self.last_plugin_roots.get(plugin_id).cloned() else {
             return Ok(false);
         };
@@ -1320,10 +1306,8 @@ impl PluginHost {
         // Slots owned by this plugin. We walk `slot_ops` the same way
         // `introspect()` does to materialise the live set, then filter
         // to `plugin_id`.
-        let mut slot_map: std::collections::BTreeMap<
-            (String, String, String),
-            serde_json::Value,
-        > = std::collections::BTreeMap::new();
+        let mut slot_map: std::collections::BTreeMap<(String, String, String), serde_json::Value> =
+            std::collections::BTreeMap::new();
         for op in &self.slot_ops {
             match op {
                 PreparedSlotOp::Add(p) if p.plugin_id == plugin_id => {
@@ -1419,11 +1403,7 @@ impl PluginHost {
     /// surfaces, clearing each. Even when `secrets` appears in the
     /// list, the clear path goes through `reset_plugin_storage` so
     /// the same audit / fs path used by every other surface applies.
-    fn devtools_clear_state(
-        &mut self,
-        plugin_id: &str,
-        surfaces: &[String],
-    ) -> serde_json::Value {
+    fn devtools_clear_state(&mut self, plugin_id: &str, surfaces: &[String]) -> serde_json::Value {
         if !self.plugins.contains_key(plugin_id) {
             self.record_unknown_plugin("plugin.clear_state", plugin_id);
             return serde_json::json!({
@@ -1996,11 +1976,7 @@ impl PluginHost {
     /// Phase 18: drop breaker / trace rows tied to one specific
     /// generation. Called from the reload-cleanup walk so the new
     /// generation starts with a clean slate.
-    pub fn drop_breaker_state_for_generation(
-        &self,
-        plugin_id: &str,
-        generation_id: u64,
-    ) {
+    pub fn drop_breaker_state_for_generation(&self, plugin_id: &str, generation_id: u64) {
         self.budget_tracker
             .drop_for_generation(plugin_id, GenerationId::new(generation_id));
     }
@@ -2340,9 +2316,7 @@ impl PluginHost {
             let path = dir_by_id
                 .get(&miss.consumer_plugin_id)
                 .map(|p| p.join("plugin.toml").display().to_string())
-                .unwrap_or_else(|| {
-                    format!("plugins/{}/plugin.toml", miss.consumer_plugin_id)
-                });
+                .unwrap_or_else(|| format!("plugins/{}/plugin.toml", miss.consumer_plugin_id));
             let (msg, extra) = match &miss.reason {
                 OptionalMissReason::NotPresent => (
                     format!(
@@ -2366,9 +2340,7 @@ impl PluginHost {
                 "dependency": miss.dependency_id,
                 "requirement": miss.requirement,
             });
-            if let (Some(obj), Some(extra_obj)) =
-                (ctx.as_object_mut(), extra.as_object())
-            {
+            if let (Some(obj), Some(extra_obj)) = (ctx.as_object_mut(), extra.as_object()) {
                 for (k, v) in extra_obj {
                     obj.insert(k.clone(), v.clone());
                 }
@@ -2437,8 +2409,7 @@ impl PluginHost {
             }
         }
 
-        let live_ids: HashSet<String> =
-            report.load_order.iter().cloned().collect();
+        let live_ids: HashSet<String> = report.load_order.iter().cloned().collect();
         for entry in &effective_lock.plugins {
             if !live_ids.contains(&entry.id) {
                 self.diagnostics.record(
@@ -2733,11 +2704,7 @@ impl PluginHost {
             .find(|e| e.commands.iter().any(|c| c == command_name))?
             .plugin_id
             .clone();
-        match self.activate_now(
-            &plugin_id,
-            "command",
-            format!("command:{command_name}"),
-        ) {
+        match self.activate_now(&plugin_id, "command", format!("command:{command_name}")) {
             Ok(()) => {
                 // Re-dispatch directly through the funnel; the lazy
                 // registry no longer contains this command, so the
@@ -2778,11 +2745,7 @@ impl PluginHost {
                     .any(|k| k.context == context && k.key == key)
             })
             .map(|e| e.plugin_id.clone())?;
-        match self.activate_now(
-            &plugin_id,
-            "keymap",
-            format!("keymap:{context}:{key}"),
-        ) {
+        match self.activate_now(&plugin_id, "keymap", format!("keymap:{context}:{key}")) {
             Ok(()) => {
                 // Re-dispatch through the unified dispatcher; the lazy
                 // entry is gone now so probing the registry directly
@@ -2790,16 +2753,14 @@ impl PluginHost {
                 let leader = self.keymap_registry.borrow().leader().to_string();
                 let parsed = keymap_mod::parse_key_sequence(key, &leader).unwrap_or_default();
                 if parsed.is_empty() {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id.as_str()),
-                            DiagnosticSeverity::Warning,
-                            "activation.unknown_keymap",
-                            format!(
-                                "lazy keymap `{context}:{key}` could not be parsed after activation"
-                            ),
+                    self.diagnostics.record(PluginDiagnostic::new(
+                        PluginId::from(plugin_id.as_str()),
+                        DiagnosticSeverity::Warning,
+                        "activation.unknown_keymap",
+                        format!(
+                            "lazy keymap `{context}:{key}` could not be parsed after activation"
                         ),
-                    );
+                    ));
                     return Some(KeymapDispatchOutcome::Unhandled);
                 }
                 let env = self.command_dispatch_env();
@@ -2871,9 +2832,7 @@ impl PluginHost {
                         PluginId::from(plugin_id),
                         DiagnosticSeverity::Info,
                         "activation.completed",
-                        format!(
-                            "plugin `{plugin_id}` activated by trigger `{trigger_descriptor}`"
-                        ),
+                        format!("plugin `{plugin_id}` activated by trigger `{trigger_descriptor}`"),
                     )
                     .with_context(serde_json::json!({
                         "trigger_kind": trigger_kind,
@@ -2922,17 +2881,13 @@ impl PluginHost {
                 {
                     e.consecutive_failures = prior;
                 }
-                let poisoned = self
-                    .lazy_registry
-                    .mark_failure(plugin_id, msg.clone());
+                let poisoned = self.lazy_registry.mark_failure(plugin_id, msg.clone());
                 self.diagnostics.record(
                     PluginDiagnostic::new(
                         PluginId::from(plugin_id),
                         DiagnosticSeverity::Error,
                         "activation.failed",
-                        format!(
-                            "plugin `{plugin_id}` activation failed: {msg}"
-                        ),
+                        format!("plugin `{plugin_id}` activation failed: {msg}"),
                     )
                     .with_context(serde_json::json!({
                         "trigger_kind": trigger_kind,
@@ -3282,6 +3237,7 @@ impl PluginHost {
             async_ctx,
             plugin_id.clone(),
             generation_id,
+            self.diagnostics.clone(),
             self.extension_registry.clone(),
         ) {
             self.diagnostics.record(
@@ -5183,11 +5139,7 @@ impl PluginHost {
                 .map(|e| e.plugin_id.clone());
             if let Some(plugin_id) = activate {
                 if self
-                    .activate_now(
-                        &plugin_id,
-                        "event",
-                        format!("event:{canonical_name}"),
-                    )
+                    .activate_now(&plugin_id, "event", format!("event:{canonical_name}"))
                     .is_ok()
                 {
                     // Continue the dispatch — we want the freshly
@@ -5659,11 +5611,8 @@ impl PluginHost {
             for rel in files {
                 let abs = facts.workdir.join(&rel);
                 if abs.exists() {
-                    let _ = self.activate_now(
-                        &plugin_id,
-                        "file",
-                        format!("file:{}", rel.display()),
-                    );
+                    let _ =
+                        self.activate_now(&plugin_id, "file", format!("file:{}", rel.display()));
                     break;
                 }
             }
@@ -6024,11 +5973,7 @@ impl PluginHost {
             // Phase 18: time the timer callback against the `Timer`
             // budget. The callback id is the timer kind + id so each
             // timer's stats roll up independently.
-            let callback_id = format!(
-                "timer:{}:{}",
-                due.kind.as_str(),
-                due.timer_id.get()
-            );
+            let callback_id = format!("timer:{}:{}", due.kind.as_str(), due.timer_id.get());
             let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
                 CallbackKind::Timer,
                 &due.plugin_id,
@@ -6694,8 +6639,8 @@ impl PluginHost {
             .into_iter()
             .map(|d| {
                 let kind = d.decoration.kind().to_string();
-                let decoration = serde_json::to_value(&d.decoration)
-                    .unwrap_or(serde_json::Value::Null);
+                let decoration =
+                    serde_json::to_value(&d.decoration).unwrap_or(serde_json::Value::Null);
                 crate::plugin::devtools::GraphDecorationSummary {
                     plugin_id: d.plugin_id,
                     id: d.id,
@@ -6712,8 +6657,8 @@ impl PluginHost {
             .into_iter()
             .map(|d| {
                 let kind = d.decoration.kind().to_string();
-                let decoration = serde_json::to_value(&d.decoration)
-                    .unwrap_or(serde_json::Value::Null);
+                let decoration =
+                    serde_json::to_value(&d.decoration).unwrap_or(serde_json::Value::Null);
                 crate::plugin::devtools::DiffDecorationSummary {
                     plugin_id: d.plugin_id,
                     id: d.id,

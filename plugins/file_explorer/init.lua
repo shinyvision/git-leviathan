@@ -222,7 +222,8 @@ local function confirm_modal(path)
   }
 end
 
-ui.main_bar.add {
+ui.regions.add_slot {
+  region   = "main_bar",
   id       = "plugin.file_explorer.files",
   section  = "right",
   priority = 100,

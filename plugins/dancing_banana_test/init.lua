@@ -11,21 +11,22 @@ local TEXT_DIM = "#585d6e"
 
 local fetching = false
 
-leviathan.api.create_autocmd({ "FetchStart" }, {
+leviathan.autocmd.create("FetchStart", {
   callback = function()
     fetching = true
   end,
 })
 
-leviathan.api.create_autocmd({ "FetchEnd" }, {
+leviathan.autocmd.create("FetchEnd", {
   callback = function()
     fetching = false
   end,
 })
 
-leviathan.ui.main_bar.replace(
-  { section = "left", id = "builtin.fetch_indicator" },
+leviathan.ui.regions.replace_slot(
+  { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
   {
+  region = "main_bar",
   id = "plugin.dancing_banana_test.fetch_indicator",
   section = "left",
   priority = 40,

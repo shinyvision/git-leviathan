@@ -595,6 +595,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         async_ctx,
         inputs.plugin_id.clone(),
         inputs.generation_id,
+        inputs.diagnostics.clone(),
         inputs.extension_registry.clone(),
     )
     .map_err(|e| {

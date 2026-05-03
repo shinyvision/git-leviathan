@@ -689,11 +689,17 @@ mod tests {
     /// Compile-time check: a function that takes `&impl BranchOps` must not be
     /// able to call non-BranchOps methods. This is the ISP payoff — the
     /// branch-ops dialogs depend on this trait only.
-    #[allow(dead_code)]
-    fn _branch_ops_compile_check<G: BranchOps>(g: &G) {
+    fn branch_ops_compile_check<G: BranchOps>(g: &G) {
         let _ = g.abort_merge();
         // The following would fail to compile:
         //   let _ = g.create_stash(); // <- StashOps, not in scope
+    }
+
+    #[test]
+    fn branch_ops_trait_surface_stays_narrow() {
+        let (temp_repo, _repo) = init_test_repo("branch_ops_trait_surface");
+        let gateway = GitRepositoryGateway::from_repo_path(temp_repo.path_str());
+        branch_ops_compile_check(&gateway);
     }
 
     #[test]

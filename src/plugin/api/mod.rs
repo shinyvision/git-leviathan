@@ -19,6 +19,9 @@ use git_leviathan_plugin_api::descriptor::api as api_descriptor;
 use mlua::{Lua, LuaSerdeExt, RegistryKey};
 
 use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::diagnostic::{
+    DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
+};
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId, ResourceLedger};
 
@@ -227,6 +230,31 @@ pub struct BuildState {
     pub next_keymap_sequence: u64,
 }
 
+pub fn record_deprecation(
+    diagnostics: &DiagnosticStore,
+    plugin_id: &PluginId,
+    generation_id: GenerationId,
+    api_name: &'static str,
+    replacement: &'static str,
+) {
+    diagnostics.record(
+        PluginDiagnostic::new(
+            plugin_id.clone(),
+            DiagnosticSeverity::Warning,
+            "api.deprecated",
+            format!("`{api_name}` is deprecated; use `{replacement}`"),
+        )
+        .with_generation(generation_id)
+        .with_source(PluginSourceSpan::ApiFunction {
+            name: api_name.to_string(),
+        })
+        .with_context(serde_json::json!({
+            "api": api_name,
+            "replacement": replacement,
+        })),
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn install_all(
     lua: &Lua,
@@ -246,6 +274,7 @@ pub fn install_all(
     async_ctx: AsyncRuntimeContext,
     plugin_id: PluginId,
     generation_id: GenerationId,
+    diagnostics: DiagnosticStore,
     extension_registry: crate::plugin::extensions::ExtensionRegistry,
 ) -> mlua::Result<()> {
     let leviathan = lua.create_table()?;
@@ -259,7 +288,16 @@ pub fn install_all(
             lua_inner.to_value(&value)
         })?,
     )?;
-    event::install(lua, Rc::clone(&build), ledger.clone(), &api_tbl, &leviathan)?;
+    event::install(
+        lua,
+        Rc::clone(&build),
+        ledger.clone(),
+        &api_tbl,
+        &leviathan,
+        diagnostics.clone(),
+        plugin_id.clone(),
+        generation_id,
+    )?;
     async_runtime::install(lua, Rc::clone(&deferred), ledger.clone(), &api_tbl)?;
     command::install(
         lua,
@@ -269,6 +307,9 @@ pub fn install_all(
         &api_tbl,
         &leviathan,
         command_dispatch,
+        diagnostics.clone(),
+        plugin_id.clone(),
+        generation_id,
     )?;
     leviathan.set("api", api_tbl)?;
 
@@ -277,7 +318,15 @@ pub fn install_all(
         lua.create_function(|_, feature: String| Ok(api_descriptor::has_feature(&feature)))?,
     )?;
 
-    ui::install(lua, Rc::clone(&build), ledger.clone(), &leviathan)?;
+    ui::install(
+        lua,
+        Rc::clone(&build),
+        ledger.clone(),
+        &leviathan,
+        diagnostics,
+        plugin_id.clone(),
+        generation_id,
+    )?;
     {
         let ui_table: mlua::Table = leviathan.get("ui")?;
         ui_ext::install(
@@ -484,6 +533,7 @@ mod tests {
             async_ctx,
             PluginId::from("coverage"),
             GenerationId::new(1),
+            DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
             crate::plugin::extensions::ExtensionRegistry::new(),
         )
         .unwrap();
@@ -541,8 +591,12 @@ mod tests {
             .load(r#"return leviathan.has("fs.read_file@1")"#)
             .eval()
             .unwrap();
+        let has_regions_v2: bool = lua
+            .load(r#"return leviathan.has("ui.regions.add_slot@2")"#)
+            .eval()
+            .unwrap();
         let has_unknown: bool = lua
-            .load(r#"return leviathan.has("fs.read_file@2")"#)
+            .load(r#"return leviathan.has("fs.read_file@3")"#)
             .eval()
             .unwrap();
         let module_count: usize = lua
@@ -551,6 +605,7 @@ mod tests {
             .unwrap();
 
         assert!(has_read_file);
+        assert!(has_regions_v2);
         assert!(!has_unknown);
         assert_eq!(module_count, api_descriptor::API_MODULES.len());
     }

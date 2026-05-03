@@ -26,7 +26,6 @@ pub struct RepoSnapshot {
     /// Which worktree directory this snapshot reflects. Empty when the repo
     /// is bare (no workdir) or until populated; see Task 8 of the worktrees
     /// rollout. For non-bare repos, the empty path is only seen pre-load.
-    #[allow(dead_code)]
     pub active_worktree_path: PathBuf,
 }
 

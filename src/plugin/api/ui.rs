@@ -13,20 +13,45 @@ use mlua::{Function, Lua, Table};
 
 use git_leviathan_plugin_api::descriptor::region::REGIONS;
 
-use super::factory::make_region_handle;
-use super::{BuildState, ScreenDef};
-use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
+use super::factory::{
+    compose_container, make_region_handle, read_address_with_id, read_spec, slot_handle,
+    DeprecationContext,
+};
+use super::{BuildState, RawSlotOp, ScreenDef};
+use crate::plugin::diagnostic::DiagnosticStore;
+use crate::plugin::resources::{GenerationId, PluginId, PluginResourceKind, ResourceLedger};
 
 pub fn install(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     leviathan: &Table,
+    diagnostics: DiagnosticStore,
+    plugin_id: PluginId,
+    generation_id: GenerationId,
 ) -> mlua::Result<()> {
     let ui = lua.create_table()?;
 
     for desc in REGIONS.iter() {
-        let handle = make_region_handle(lua, Rc::clone(&build), ledger.clone(), desc)?;
+        let api_prefix = match desc.name {
+            "main_bar" => "leviathan.ui.main_bar",
+            "tab_bar" => "leviathan.ui.tab_bar",
+            "repository" => "leviathan.ui.repository",
+            _ => "leviathan.ui.<region>",
+        };
+        let handle = make_region_handle(
+            lua,
+            Rc::clone(&build),
+            ledger.clone(),
+            desc,
+            Some(DeprecationContext {
+                diagnostics: diagnostics.clone(),
+                plugin_id: plugin_id.clone(),
+                generation_id,
+                api_prefix,
+                replacement: "leviathan.ui.regions.add_slot/remove_slot/replace_slot",
+            }),
+        )?;
         // Region names may contain dots (e.g. `repository.graph`) — so
         // the Lua handle table lives under the nested path
         // `leviathan.ui.repository.graph`. Walk the segments,
@@ -53,8 +78,95 @@ pub fn install(
         })?,
     )?;
 
+    install_regions_api(lua, Rc::clone(&build), ledger.clone(), &ui)?;
     install_screen_register(lua, build, ledger, &ui)?;
     leviathan.set("ui", ui)?;
+    Ok(())
+}
+
+fn install_regions_api(
+    lua: &Lua,
+    build: Rc<RefCell<BuildState>>,
+    ledger: ResourceLedger,
+    ui: &Table,
+) -> mlua::Result<()> {
+    let regions = lua.create_table()?;
+
+    let b = Rc::clone(&build);
+    let ledger_for_add = ledger.clone();
+    regions.set(
+        "add_slot",
+        lua.create_function(move |lua_inner, spec: Table| {
+            let region: String = spec.get("region")?;
+            let desc = REGIONS
+                .get(&region)
+                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
+            let raw = read_spec(lua_inner, &spec, desc, &ledger_for_add)?;
+            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
+            Ok(())
+        })?,
+    )?;
+
+    let b = Rc::clone(&build);
+    let ledger_for_remove = ledger.clone();
+    regions.set(
+        "remove_slot",
+        lua.create_function(move |_, target: Table| {
+            let region: String = target.get("region")?;
+            let desc = REGIONS
+                .get(&region)
+                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
+            let (pane, section, id) = read_address_with_id(&target, desc)?;
+            let container = compose_container(pane.as_deref(), &section);
+            let handle = slot_handle(desc.name, &container, &id);
+            ledger_for_remove.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
+            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
+                region: desc.name.to_string(),
+                container,
+                id,
+            });
+            Ok(())
+        })?,
+    )?;
+
+    let b = Rc::clone(&build);
+    regions.set(
+        "replace_slot",
+        lua.create_function(move |lua_inner, (target, spec): (Table, Table)| {
+            let region: String = target.get("region")?;
+            let desc = REGIONS
+                .get(&region)
+                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
+            let (pane, section, id) = read_address_with_id(&target, desc)?;
+            let container = compose_container(pane.as_deref(), &section);
+            let mut raw = read_spec(lua_inner, &spec, desc, &ledger)?;
+            if raw.container != container {
+                return Err(mlua::Error::external(format!(
+                    "{}.replace_slot: spec container '{}' != target '{}'",
+                    desc.name, raw.container, container
+                )));
+            }
+            let spec_handle = slot_handle(&raw.region, &raw.container, &raw.id);
+            ledger.remove_by_kind_handle(PluginResourceKind::Slot, &spec_handle);
+            raw.id = id.clone();
+            let handle = slot_handle(desc.name, &container, &id);
+            ledger.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
+            ledger.record(
+                PluginResourceKind::Slot,
+                handle,
+                raw.source_location.clone(),
+            );
+            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
+                region: desc.name.to_string(),
+                container,
+                id,
+                spec: raw,
+            });
+            Ok(())
+        })?,
+    )?;
+
+    ui.set("regions", regions)?;
     Ok(())
 }
 
@@ -67,12 +179,7 @@ pub fn install(
 /// `add/remove/replace` fields onto an existing or freshly-created
 /// `repository.graph` sub-table — the parent `repository` is a peer
 /// region, not an intermediate.
-fn place_region_handle(
-    lua: &Lua,
-    root: &Table,
-    name: &str,
-    handle: Table,
-) -> mlua::Result<()> {
+fn place_region_handle(lua: &Lua, root: &Table, name: &str, handle: Table) -> mlua::Result<()> {
     let segments: Vec<&str> = name.split('.').collect();
     let mut current = root.clone();
     for segment in &segments[..segments.len() - 1] {
@@ -231,6 +338,7 @@ mod tests {
     use mlua::Lua;
     use std::cell::RefCell;
     use std::rc::Rc;
+    use std::sync::Arc;
 
     fn install_test_harness() -> (Lua, Rc<RefCell<BuildState>>) {
         let lua = Lua::new();
@@ -240,7 +348,16 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        super::install(&lua, Rc::clone(&build), ledger, &leviathan).unwrap();
+        super::install(
+            &lua,
+            Rc::clone(&build),
+            ledger,
+            &leviathan,
+            DiagnosticStore::with_sink(Arc::new(crate::plugin::diagnostic::NullSink)),
+            PluginId::from("test"),
+            GenerationId::new(1),
+        )
+        .unwrap();
         lua.globals().set("leviathan", leviathan).unwrap();
         (lua, build)
     }
@@ -285,6 +402,25 @@ mod tests {
             local h = leviathan.ui.region("main_bar")
             h.add{ id = "x", section = "left", priority = 0, widget = { kind = "text", value = "hi" } }
         "#).exec().unwrap();
+        assert_eq!(build.borrow().slot_ops.len(), 1);
+    }
+
+    #[test]
+    fn regions_api_adds_slot() {
+        let (lua, build) = install_test_harness();
+        lua.load(
+            r#"
+            leviathan.ui.regions.add_slot{
+                region = "main_bar",
+                section = "left",
+                id = "x",
+                priority = 0,
+                widget = { kind = "text", value = "hi" },
+            }
+        "#,
+        )
+        .exec()
+        .unwrap();
         assert_eq!(build.borrow().slot_ops.len(), 1);
     }
 }

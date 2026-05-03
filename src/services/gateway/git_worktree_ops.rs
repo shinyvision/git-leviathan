@@ -6,7 +6,6 @@ use super::read::RepoRead;
 
 /// Real git-worktree operations. Distinct from `WorkingTreeOps` (staging/dirty).
 pub trait GitWorktreeOps: RepoRead {
-    #[allow(dead_code)]
     fn list_worktrees(&self) -> Result<Vec<WorktreeInfo>, GitError>;
     fn add_worktree(
         &self,

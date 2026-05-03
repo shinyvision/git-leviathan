@@ -482,13 +482,12 @@ pub(in crate::screens::repository) fn update(
             panel.restore_center_list_scroll()
         }
         CenterAction::CreateBranchHereRequested {
-            commit_idx,
+            commit_idx: _,
             commit_hash,
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
                 .open(ActiveDialog::CreateBranchHere(create_branch::State {
-                    commit_idx,
                     commit_hash,
                     branch_name_input: String::new(),
                     needs_focus: true,

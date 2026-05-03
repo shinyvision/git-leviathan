@@ -155,7 +155,8 @@ fn devtools_specs() -> Vec<DevtoolsCommandSpec> {
         DevtoolsCommandSpec {
             name: "plugin.clear_state",
             title: "Plugin: Clear State",
-            description: "Wipe selected storage surfaces. Defaults to state + cache; never touches \
+            description:
+                "Wipe selected storage surfaces. Defaults to state + cache; never touches \
                           secrets unless explicitly listed.",
             destructive: true,
             args: vec![
@@ -265,7 +266,11 @@ fn run_command(name: &str, args: &Value, actions: &DevtoolsActionQueue) -> Resul
     let action = DevtoolsAction::new(name, args.clone());
     if action.name == "plugin.clear_state" {
         let surfaces_raw = action.arg_str("surfaces").unwrap_or("state,cache");
-        for s in surfaces_raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        for s in surfaces_raw
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
             if !KNOWN_SURFACES.contains(&s) {
                 return Err(format!("unknown storage surface `{s}`"));
             }
@@ -279,9 +284,7 @@ fn run_command(name: &str, args: &Value, actions: &DevtoolsActionQueue) -> Resul
 /// surface enum's external string form. `secrets` is intentionally
 /// included so a caller who *explicitly* asks for it can wipe them;
 /// the default surface list never includes `secrets`.
-const KNOWN_SURFACES: &[&str] = &[
-    "state", "cache", "config", "repo", "settings", "secrets",
-];
+const KNOWN_SURFACES: &[&str] = &["state", "cache", "config", "repo", "settings", "secrets"];
 
 #[cfg(test)]
 mod tests {

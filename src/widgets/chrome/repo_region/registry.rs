@@ -7,7 +7,6 @@ use iced::Element;
 use crate::message::Message;
 use crate::plugin::slots::{Container, IsSlot, SlotRegistry};
 
-#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Pane {
     Sidebar,
@@ -15,7 +14,6 @@ pub enum Pane {
     Details,
 }
 
-#[allow(dead_code)]
 impl Pane {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -26,14 +24,12 @@ impl Pane {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Section {
     Top,
     Bottom,
 }
 
-#[allow(dead_code)]
 impl Section {
     pub fn as_str(self) -> &'static str {
         match self {
@@ -43,7 +39,6 @@ impl Section {
     }
 }
 
-#[allow(dead_code)]
 pub fn container(pane: Pane, section: Section) -> Container {
     Container::Pane {
         pane: pane.as_str().to_string(),
@@ -58,7 +53,6 @@ pub struct RepoPaneCtx<'a> {
     _marker: std::marker::PhantomData<&'a ()>,
 }
 
-#[allow(dead_code)]
 impl<'a> RepoPaneCtx<'a> {
     pub fn new() -> Self {
         Self {
@@ -76,7 +70,6 @@ impl<'a> Default for RepoPaneCtx<'a> {
 pub type RepoPaneBuilder =
     Box<dyn for<'ctx, 'data> Fn(&'ctx RepoPaneCtx<'data>) -> Element<'data, Message> + 'static>;
 
-#[allow(dead_code)]
 pub struct RepoPaneSlot {
     pub id: String,
     pub container: Container,
@@ -84,28 +77,6 @@ pub struct RepoPaneSlot {
     pub builder: RepoPaneBuilder,
 }
 
-#[allow(dead_code)]
-impl RepoPaneSlot {
-    pub fn new<F>(
-        id: impl Into<String>,
-        pane: Pane,
-        section: Section,
-        priority: i32,
-        builder: F,
-    ) -> Self
-    where
-        F: for<'ctx, 'data> Fn(&'ctx RepoPaneCtx<'data>) -> Element<'data, Message> + 'static,
-    {
-        Self {
-            id: id.into(),
-            container: container(pane, section),
-            priority,
-            builder: Box::new(builder),
-        }
-    }
-}
-
-#[allow(dead_code)]
 impl IsSlot for RepoPaneSlot {
     fn id(&self) -> &str {
         &self.id
@@ -118,10 +89,8 @@ impl IsSlot for RepoPaneSlot {
     }
 }
 
-#[allow(dead_code)]
 pub type RepoRegionRegistry = SlotRegistry<RepoPaneSlot>;
 
-#[allow(dead_code)]
 pub fn iter<'a>(
     registry: &'a RepoRegionRegistry,
     pane: Pane,
@@ -133,7 +102,6 @@ pub fn iter<'a>(
 /// Returns true when no slots are registered for the pane+section. Used
 /// by view code to skip wrapping the built-in pane in an extra column
 /// when no extensions are present.
-#[allow(dead_code)]
 pub fn is_empty(registry: &RepoRegionRegistry, pane: Pane, section: Section) -> bool {
     iter(registry, pane, section).next().is_none()
 }

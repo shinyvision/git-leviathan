@@ -41,7 +41,10 @@ pub struct DependencySummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockReason {
     /// Required dep id is not present in the manifest set.
-    MissingRequired { dependency_id: String, requirement: String },
+    MissingRequired {
+        dependency_id: String,
+        requirement: String,
+    },
     /// Required dep is present but its version doesn't satisfy the requirement.
     Conflict {
         dependency_id: String,
@@ -201,11 +204,7 @@ fn detect_cycles(by_id: &BTreeMap<String, &PluginManifest>) -> Vec<Vec<String>> 
     // Tarjan's SCC over the required-dep graph. Iterate in id order so
     // the resulting cycles are deterministic.
     let nodes: Vec<&str> = by_id.keys().map(String::as_str).collect();
-    let index_of: HashMap<&str, usize> = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, id)| (*id, i))
-        .collect();
+    let index_of: HashMap<&str, usize> = nodes.iter().enumerate().map(|(i, id)| (*id, i)).collect();
     let n = nodes.len();
     let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
     for (i, id) in nodes.iter().enumerate() {
@@ -284,10 +283,7 @@ fn detect_cycles(by_id: &BTreeMap<String, &PluginManifest>) -> Vec<Vec<String>> 
     let mut cycles = Vec::new();
     for scc in sccs {
         if scc.len() > 1 {
-            let mut ids: Vec<String> = scc
-                .iter()
-                .map(|&i| nodes[i].to_string())
-                .collect();
+            let mut ids: Vec<String> = scc.iter().map(|&i| nodes[i].to_string()).collect();
             ids.sort();
             cycles.push(ids);
         } else {
@@ -350,10 +346,7 @@ fn topo_sort(
     // consumer can load before its optional dep, the dep just won't be
     // wired. (If we ever switch to "optional present implies ordered",
     // this is the place.)
-    let mut indeg: HashMap<String, usize> = candidates
-        .iter()
-        .map(|id| (id.clone(), 0))
-        .collect();
+    let mut indeg: HashMap<String, usize> = candidates.iter().map(|id| (id.clone(), 0)).collect();
     let mut rev: HashMap<String, Vec<String>> = HashMap::new();
     for id in &candidates {
         let m = by_id[id];
@@ -405,8 +398,7 @@ fn build_graph(
     let mut rows = Vec::new();
     for (id, manifest) in by_id {
         // Required edges
-        let mut req_entries: Vec<(&String, &VersionReq)> =
-            manifest.dependencies.iter().collect();
+        let mut req_entries: Vec<(&String, &VersionReq)> = manifest.dependencies.iter().collect();
         req_entries.sort_by(|a, b| a.0.cmp(b.0));
         for (dep_id, req) in req_entries {
             let (resolved_version, status) = match by_id.get(dep_id) {
@@ -466,7 +458,12 @@ mod tests {
     use git_leviathan_plugin_api::api_version::ApiVersion;
     use std::collections::HashMap;
 
-    fn manifest(id: &str, version: &str, deps: &[(&str, &str)], opts: &[(&str, &str)]) -> PluginManifest {
+    fn manifest(
+        id: &str,
+        version: &str,
+        deps: &[(&str, &str)],
+        opts: &[(&str, &str)],
+    ) -> PluginManifest {
         let mut dependencies = HashMap::new();
         for (k, v) in deps {
             dependencies.insert((*k).to_string(), VersionReq::parse(v).unwrap());

@@ -1,0 +1,8 @@
+id = "bad_async_cleanup_race"
+name = "Bad Async Cleanup Race"
+version = "0.1.0"
+api_version = "2.0"
+capabilities = ["async:spawn"]
+
+[runtime]
+strict_globals = false

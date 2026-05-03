@@ -542,18 +542,13 @@ impl CommandRegistry {
         let pid_typed = crate::plugin::resources::PluginId::from(plugin_id.as_str());
         let cb_kind = crate::plugin::performance::CallbackKind::CommandCallback;
         let cb_id = format!("command:{name}");
-        let cb_gen = generation_id
-            .unwrap_or_else(|| crate::plugin::resources::GenerationId::new(0));
-        let perf_outcome = budget_tracker.track_call::<(), String>(
-            cb_kind,
-            &pid_typed,
-            cb_gen,
-            &cb_id,
-            || {
+        let cb_gen =
+            generation_id.unwrap_or_else(|| crate::plugin::resources::GenerationId::new(0));
+        let perf_outcome =
+            budget_tracker.track_call::<(), String>(cb_kind, &pid_typed, cb_gen, &cb_id, || {
                 let entry = &self.entries[entry_ptr_index];
                 runner.run(entry, &merged)
-            },
-        );
+            });
         let result: Result<(), String> = match perf_outcome {
             crate::plugin::performance::Outcome::Ok(()) => Ok(()),
             crate::plugin::performance::Outcome::Err(e) => Err(e),
@@ -1297,7 +1292,13 @@ mod tests {
         let store = diag_store();
         reg.register(host_descriptor("Hello"), &store);
         let (mut runner, ran, events) = stub_runner();
-        let (out, _) = reg.invoke("Hello", serde_json::Value::Null, &mut runner, &store, &budget_tracker());
+        let (out, _) = reg.invoke(
+            "Hello",
+            serde_json::Value::Null,
+            &mut runner,
+            &store,
+            &budget_tracker(),
+        );
         assert!(out.is_ok());
         assert_eq!(ran.borrow().as_slice(), ["Hello"]);
         assert_eq!(events.borrow().as_slice(), [("Hello".into(), true)]);
@@ -1312,7 +1313,13 @@ mod tests {
         desc.run = CommandBody::Host(Box::new(|_| Err("kaboom".into())));
         reg.register(desc, &store);
         let (mut runner, _, events) = stub_runner();
-        let (out, _) = reg.invoke("Boom", serde_json::Value::Null, &mut runner, &store, &budget_tracker());
+        let (out, _) = reg.invoke(
+            "Boom",
+            serde_json::Value::Null,
+            &mut runner,
+            &store,
+            &budget_tracker(),
+        );
         assert!(matches!(out, InvokeOutcome::Failed(ref c) if c == "kaboom"));
         assert_eq!(events.borrow().as_slice(), [("Boom".into(), false)]);
         let entry = reg.find("Boom").unwrap();
@@ -1328,7 +1335,13 @@ mod tests {
         reg.register(desc, &store);
         let (mut runner, ran, events) = stub_runner();
         runner.denied.push("git:write".into());
-        let (out, _) = reg.invoke("DangerZone", serde_json::Value::Null, &mut runner, &store, &budget_tracker());
+        let (out, _) = reg.invoke(
+            "DangerZone",
+            serde_json::Value::Null,
+            &mut runner,
+            &store,
+            &budget_tracker(),
+        );
         assert!(matches!(out, InvokeOutcome::CapabilityDenied(ref c) if c == "git:write"));
         assert!(ran.borrow().is_empty(), "body must not run");
         assert!(events.borrow().is_empty(), "no CommandExecuted on denial");
@@ -1425,7 +1438,13 @@ mod tests {
         });
         reg.register(desc, &store);
         let (mut runner, ran, events) = stub_runner();
-        let (out, _) = reg.invoke("StrictArgs", serde_json::Value::Null, &mut runner, &store, &budget_tracker());
+        let (out, _) = reg.invoke(
+            "StrictArgs",
+            serde_json::Value::Null,
+            &mut runner,
+            &store,
+            &budget_tracker(),
+        );
         assert!(matches!(out, InvokeOutcome::InvalidArgs(_)));
         assert!(ran.borrow().is_empty(), "body must not run on invalid args");
         assert!(
@@ -1441,7 +1460,13 @@ mod tests {
         let mut reg = CommandRegistry::new();
         let store = diag_store();
         let (mut runner, _, _) = stub_runner();
-        let (out, _) = reg.invoke("Nope", serde_json::Value::Null, &mut runner, &store, &budget_tracker());
+        let (out, _) = reg.invoke(
+            "Nope",
+            serde_json::Value::Null,
+            &mut runner,
+            &store,
+            &budget_tracker(),
+        );
         assert!(matches!(out, InvokeOutcome::NotFound));
         let codes: Vec<String> = store.tail(20).into_iter().map(|d| d.code).collect();
         assert!(codes.iter().any(|c| c == "command.not_found"));

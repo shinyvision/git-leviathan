@@ -9,7 +9,8 @@ local widgets = require("foo_demo.widgets")
 local std_button, panel = widgets.std_button, widgets.panel
 local COLOR_TEXT = widgets.COLOR_TEXT
 
-leviathan.ui.main_bar.add {
+leviathan.ui.regions.add_slot {
+  region   = "main_bar",
   id       = "plugin.foo_demo.foo",
   section  = "right",
   priority = 101,

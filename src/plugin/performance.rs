@@ -205,10 +205,7 @@ impl Clock for MockClock {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BreakerState {
     Healthy,
-    Tripped {
-        since_unix_ms: u128,
-        reason: String,
-    },
+    Tripped { since_unix_ms: u128, reason: String },
 }
 
 impl BreakerState {
@@ -388,10 +385,7 @@ impl BudgetTracker {
         let outcome_meta = self.update_stats(
             &key,
             kind,
-            Sample {
-                duration_ms,
-                ok,
-            },
+            Sample { duration_ms, ok },
             &budget,
             last_failure.clone(),
         );
@@ -489,7 +483,9 @@ impl BudgetTracker {
         // Allow `plugin.degraded` to fire again if the plugin trips
         // anew after this reset.
         for gen in &affected {
-            inner.degraded_emitted.remove(&(plugin_id.to_string(), *gen));
+            inner
+                .degraded_emitted
+                .remove(&(plugin_id.to_string(), *gen));
         }
         drop(inner);
         for gen in affected {
@@ -516,9 +512,7 @@ impl BudgetTracker {
     /// generation starts with an empty breaker.
     pub fn drop_for_plugin(&self, plugin_id: &str) {
         let mut inner = self.inner.lock().expect("budget tracker poisoned");
-        inner
-            .stats
-            .retain(|key, _| key.plugin_id != plugin_id);
+        inner.stats.retain(|key, _| key.plugin_id != plugin_id);
         inner
             .degraded_emitted
             .retain(|(pid, _), _| pid != plugin_id);
@@ -534,9 +528,7 @@ impl BudgetTracker {
         inner
             .stats
             .retain(|key, _| !(key.plugin_id == plugin_id && key.generation_id == gen));
-        inner
-            .degraded_emitted
-            .remove(&(plugin_id.to_string(), gen));
+        inner.degraded_emitted.remove(&(plugin_id.to_string(), gen));
         inner
             .traces
             .retain(|t| !(t.plugin_id == plugin_id && t.generation_id == gen));
@@ -609,10 +601,7 @@ impl BudgetTracker {
         let mut tripped_reason: Option<String> = None;
         if matches!(stats.state, None | Some(BreakerState::Healthy)) {
             if stats.consecutive_failures >= DEFAULT_FAILURE_THRESHOLD {
-                let reason = format!(
-                    "{} consecutive failures",
-                    stats.consecutive_failures
-                );
+                let reason = format!("{} consecutive failures", stats.consecutive_failures);
                 stats.state = Some(BreakerState::Tripped {
                     since_unix_ms: self.clock.now_unix_ms(),
                     reason: reason.clone(),
@@ -662,9 +651,7 @@ impl BudgetTracker {
                 plugin_id.clone(),
                 DiagnosticSeverity::Warning,
                 "performance.tripped",
-                format!(
-                    "callback `{callback_id}` skipped (circuit breaker tripped: {reason})"
-                ),
+                format!("callback `{callback_id}` skipped (circuit breaker tripped: {reason})"),
             )
             .with_generation(generation_id)
             .with_source(PluginSourceSpan::ApiFunction {
@@ -728,9 +715,7 @@ impl BudgetTracker {
                 plugin_id.clone(),
                 DiagnosticSeverity::Error,
                 "performance.tripped",
-                format!(
-                    "callback `{callback_id}` circuit breaker tripped: {reason}"
-                ),
+                format!("callback `{callback_id}` circuit breaker tripped: {reason}"),
             )
             .with_generation(generation_id)
             .with_source(PluginSourceSpan::ApiFunction {
@@ -775,9 +760,7 @@ impl BudgetTracker {
                 plugin_id.clone(),
                 DiagnosticSeverity::Error,
                 "plugin.degraded",
-                format!(
-                    "plugin `{plugin_id}` degraded: {count} callbacks disabled"
-                ),
+                format!("plugin `{plugin_id}` degraded: {count} callbacks disabled"),
             )
             .with_generation(generation_id)
             .with_source(PluginSourceSpan::ApiFunction {
@@ -865,10 +848,11 @@ mod tests {
         let t = BudgetTracker::with_clock(s.clone(), clock.clone());
         let p = pid("p");
         let gid = GenerationId::new(1);
-        let outcome = t.track_call::<(), String>(CallbackKind::EventCallback, &p, gid, "slow", || {
-            clock.advance_ms(500);
-            Ok(())
-        });
+        let outcome =
+            t.track_call::<(), String>(CallbackKind::EventCallback, &p, gid, "slow", || {
+                clock.advance_ms(500);
+                Ok(())
+            });
         assert!(matches!(outcome, Outcome::Ok(())));
         let codes: Vec<String> = s.entries().iter().map(|d| d.code.clone()).collect();
         assert!(codes.iter().any(|c| c == "performance.hard_breach"));
@@ -882,13 +866,10 @@ mod tests {
         let p = pid("p");
         let gid = GenerationId::new(1);
         for _ in 0..5 {
-            let _ = t.track_call::<(), String>(
-                CallbackKind::EventCallback,
-                &p,
-                gid,
-                "broken",
-                || Err("boom".to_string()),
-            );
+            let _ =
+                t.track_call::<(), String>(CallbackKind::EventCallback, &p, gid, "broken", || {
+                    Err("boom".to_string())
+                });
         }
         assert!(t.is_tripped(&p, gid, "broken"));
     }

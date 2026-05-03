@@ -1,4 +1,5 @@
-leviathan.ui.main_bar.add{
+leviathan.ui.regions.add_slot{
+    region = "main_bar",
     id = "hello_world.greeting",
     section = "left",
     priority = 100,

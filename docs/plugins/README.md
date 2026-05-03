@@ -14,13 +14,14 @@ Create `plugins/hello_world/plugin.toml`:
 id = "hello_world"
 name = "Hello World"
 version = "0.1.0"
-api_version = "1.0"
+api_version = "2.0"
 ```
 
 And `plugins/hello_world/init.lua`:
 
 ```lua
-leviathan.ui.main_bar.add{
+leviathan.ui.regions.add_slot{
+    region = "main_bar",
     id = "hello_world.greeting",
     section = "left",
     priority = 100,
@@ -32,12 +33,12 @@ That's it. Restart the app and you'll see "Hello!" in the main bar.
 
 ## Concept Map
 
-- **Regions** — `main_bar`, `tab_bar`, `repository` are UI regions. Each
-  exposes `:add(spec)`, `:remove(target)`, `:replace(target, spec)`.
+- **Regions** — `main_bar`, `tab_bar`, `repository` are UI regions.
+  Add, remove, and replace slots with `leviathan.ui.regions.*`.
   See [api/ui.md](api/ui.md).
 - **Slots** — region elements identified by `(region, section/pane, id)`.
 - **Screens** — full-page UI panels registered via `leviathan.ui.register_screen`.
-- **Autocmds** — event subscriptions via `leviathan.api.create_autocmd`.
+- **Autocmds** — event subscriptions via `leviathan.autocmd.create`.
   Fire on tab changes, fetches, branch switches.
 - **Capabilities** — host calls (filesystem, env, etc.) require capability
   declarations in `plugin.toml`. See [manifest.md](manifest.md).

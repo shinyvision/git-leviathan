@@ -168,12 +168,19 @@ fn lazy_keymap_invocation_activates_plugin() {
     let chord = parse_key_sequence("<leader>l", ",").expect("parse");
     let outcome = host.dispatch_key("global", &chord);
     assert!(
-        matches!(outcome, crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }),
+        matches!(
+            outcome,
+            crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }
+        ),
         "expected Dispatched, got {outcome:?}"
     );
     assert_eq!(host.read_global_i64("lk", "ran"), Some(1));
     let snap = host.introspect();
-    let lazy = snap.lazy_plugins.iter().find(|l| l.plugin_id == "lk").unwrap();
+    let lazy = snap
+        .lazy_plugins
+        .iter()
+        .find(|l| l.plugin_id == "lk")
+        .unwrap();
     assert_eq!(lazy.status, "active");
     assert_eq!(lazy.activations, 1);
 }
@@ -195,7 +202,10 @@ fn lazy_event_dispatch_activates_plugin() {
 
     assert!(host.read_global_string("le", "activated").is_none());
 
-    host.dispatch_test_event("FetchStarted", serde_json::json!({ "remote_name": "origin" }));
+    host.dispatch_test_event(
+        "FetchStarted",
+        serde_json::json!({ "remote_name": "origin" }),
+    );
     assert_eq!(
         host.read_global_string("le", "activated").as_deref(),
         Some("yes")
@@ -204,7 +214,11 @@ fn lazy_event_dispatch_activates_plugin() {
     // activation — exactly one fire.
     assert_eq!(host.read_global_i64("le", "fetch_seen"), Some(1));
     let snap = host.introspect();
-    let lazy = snap.lazy_plugins.iter().find(|l| l.plugin_id == "le").unwrap();
+    let lazy = snap
+        .lazy_plugins
+        .iter()
+        .find(|l| l.plugin_id == "le")
+        .unwrap();
     assert_eq!(lazy.status, "active");
 }
 
@@ -258,7 +272,11 @@ fn failed_lazy_activation_is_contained_and_visible() {
         "expected activation.failed in: {codes:?}"
     );
     let snap = host.introspect();
-    let lazy = snap.lazy_plugins.iter().find(|l| l.plugin_id == "boom").unwrap();
+    let lazy = snap
+        .lazy_plugins
+        .iter()
+        .find(|l| l.plugin_id == "boom")
+        .unwrap();
     assert_eq!(
         lazy.status, "lazy",
         "transient failure must NOT poison after a single failure"
@@ -294,8 +312,14 @@ fn repeated_failure_poisons_lazy_plugin() {
     let pre_codes = diag_codes(&host);
     let _ = host.invoke_command("poison.run", serde_json::Value::Null);
     let post_codes = diag_codes(&host);
-    let extra_failed = post_codes.iter().filter(|c| *c == "activation.failed").count()
-        - pre_codes.iter().filter(|c| *c == "activation.failed").count();
+    let extra_failed = post_codes
+        .iter()
+        .filter(|c| *c == "activation.failed")
+        .count()
+        - pre_codes
+            .iter()
+            .filter(|c| *c == "activation.failed")
+            .count();
     assert_eq!(extra_failed, 0, "poisoned plugin must not retry");
 }
 

@@ -135,13 +135,7 @@ impl TabManager {
         } else {
             GitRepositoryGateway::from_path(active_path.to_string_lossy().to_string())
         };
-        let fleet = GatewayFleet::new(
-            primary_path,
-            primary_gateway,
-            active_path,
-            active_gateway,
-            self.presenter.clone(),
-        );
+        let fleet = GatewayFleet::new(primary_path, primary_gateway, active_path, active_gateway);
         let screen = RepositoryScreen::new(fleet, self.presenter.clone(), tab_id);
         let task = screen.initial_load_task(tab_id);
 

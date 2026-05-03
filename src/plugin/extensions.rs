@@ -137,9 +137,7 @@ impl ExtensionRegistry {
         inner
             .context_menu_items
             .retain(|item| item.plugin_id != plugin_id);
-        inner
-            .graph_decorations
-            .retain(|d| d.plugin_id != plugin_id);
+        inner.graph_decorations.retain(|d| d.plugin_id != plugin_id);
         inner.diff_decorations.retain(|d| d.plugin_id != plugin_id);
     }
 
@@ -257,7 +255,10 @@ mod tests {
             });
         }
         let v = reg.overlays();
-        assert_eq!(v.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(), ["b", "c", "a"]);
+        assert_eq!(
+            v.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
+            ["b", "c", "a"]
+        );
     }
 
     #[test]

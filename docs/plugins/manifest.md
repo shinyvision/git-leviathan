@@ -41,7 +41,7 @@ yet enforce required deps. Useful as documentation today.)
 id = "git-tools"
 name = "Git Tools"
 version = "1.2.0"
-api_version = "1.0"
+api_version = "2.0"
 description = "Useful git extensions."
 capabilities = ["fs:read:workdir", "process:spawn"]
 provides_services = ["diff_viewer@1"]

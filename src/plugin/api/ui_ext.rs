@@ -134,39 +134,40 @@ fn install_graph_decoration(
     let plugin_id = ledger.plugin_id().as_str().to_string();
     ui.set(
         "graph_decoration",
-        lua.create_function(move |lua_inner, (commit_hash, decoration): (String, Table)| {
-            guard
-                .check_named("ui:graph_decoration")
-                .map_err(mlua::Error::external)?;
-            if commit_hash.is_empty() {
-                return Err(mlua::Error::external(
-                    "graph_decoration: commit_hash must be a non-empty string",
-                ));
-            }
-            // Pull a stable id off the table or synthesise one from
-            // (kind, commit_hash) so callers don't have to invent one
-            // for the simple case.
-            let explicit_id: Option<String> = decoration.get("id")?;
-            let value: serde_json::Value = lua_inner
-                .from_value(LuaValue::Table(decoration))
-                .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
-            let parsed: GraphDecoration = serde_json::from_value(value).map_err(|e| {
-                mlua::Error::external(format!("invalid graph decoration: {e}"))
-            })?;
-            let id = explicit_id.unwrap_or_else(|| format!("{}:{commit_hash}", parsed.kind()));
-            let source = ResourceLedger::source_location(lua_inner);
-            let handle = format!("graph_decoration:{commit_hash}:{id}");
-            ledger.remove_by_kind_handle(PluginResourceKind::GraphDecoration, &handle);
-            ledger.record(PluginResourceKind::GraphDecoration, handle, source.clone());
-            registry.add_graph_decoration(GraphDecorationRecord {
-                plugin_id: plugin_id.clone(),
-                id,
-                commit_hash,
-                decoration: parsed,
-                source_location: source,
-            });
-            Ok(())
-        })?,
+        lua.create_function(
+            move |lua_inner, (commit_hash, decoration): (String, Table)| {
+                guard
+                    .check_named("ui:graph_decoration")
+                    .map_err(mlua::Error::external)?;
+                if commit_hash.is_empty() {
+                    return Err(mlua::Error::external(
+                        "graph_decoration: commit_hash must be a non-empty string",
+                    ));
+                }
+                // Pull a stable id off the table or synthesise one from
+                // (kind, commit_hash) so callers don't have to invent one
+                // for the simple case.
+                let explicit_id: Option<String> = decoration.get("id")?;
+                let value: serde_json::Value = lua_inner
+                    .from_value(LuaValue::Table(decoration))
+                    .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
+                let parsed: GraphDecoration = serde_json::from_value(value)
+                    .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
+                let id = explicit_id.unwrap_or_else(|| format!("{}:{commit_hash}", parsed.kind()));
+                let source = ResourceLedger::source_location(lua_inner);
+                let handle = format!("graph_decoration:{commit_hash}:{id}");
+                ledger.remove_by_kind_handle(PluginResourceKind::GraphDecoration, &handle);
+                ledger.record(PluginResourceKind::GraphDecoration, handle, source.clone());
+                registry.add_graph_decoration(GraphDecorationRecord {
+                    plugin_id: plugin_id.clone(),
+                    id,
+                    commit_hash,
+                    decoration: parsed,
+                    source_location: source,
+                });
+                Ok(())
+            },
+        )?,
     )?;
     Ok(())
 }
@@ -189,9 +190,8 @@ fn install_diff_decoration(
             let value: serde_json::Value = lua_inner
                 .from_value(LuaValue::Table(decoration))
                 .map_err(|e| mlua::Error::external(format!("invalid diff decoration: {e}")))?;
-            let parsed: DiffDecoration = serde_json::from_value(value).map_err(|e| {
-                mlua::Error::external(format!("invalid diff decoration: {e}"))
-            })?;
+            let parsed: DiffDecoration = serde_json::from_value(value)
+                .map_err(|e| mlua::Error::external(format!("invalid diff decoration: {e}")))?;
             let id = explicit_id.unwrap_or_else(|| diff_decoration_default_id(&parsed));
             let source = ResourceLedger::source_location(lua_inner);
             let handle = format!("diff_decoration:{id}");
@@ -228,9 +228,8 @@ fn validate_context_menu_region(region: &str) -> Result<(), String> {
         let Some(descriptor) = REGIONS.get(head) else {
             continue;
         };
-        let tail = tail.ok_or_else(|| {
-            format!("expected '<region>.<pane?>.context_menu' (got '{region}')")
-        })?;
+        let tail = tail
+            .ok_or_else(|| format!("expected '<region>.<pane?>.context_menu' (got '{region}')"))?;
         return match &descriptor.kind {
             RegionKind::Chrome { sections, .. } => {
                 if tail != "context_menu" {
@@ -239,9 +238,7 @@ fn validate_context_menu_region(region: &str) -> Result<(), String> {
                     ));
                 }
                 if !sections.contains(&"context_menu") {
-                    return Err(format!(
-                        "region '{head}' has no 'context_menu' section"
-                    ));
+                    return Err(format!("region '{head}' has no 'context_menu' section"));
                 }
                 Ok(())
             }
@@ -294,8 +291,7 @@ mod tests {
 
     #[test]
     fn validate_context_menu_rejects_unknown() {
-        let err =
-            validate_context_menu_region("repository.diff.toolbar").unwrap_err();
+        let err = validate_context_menu_region("repository.diff.toolbar").unwrap_err();
         assert!(err.contains("context_menu"), "got: {err}");
 
         let err = validate_context_menu_region("nope.context_menu").unwrap_err();

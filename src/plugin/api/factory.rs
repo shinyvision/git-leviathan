@@ -4,24 +4,63 @@ use std::rc::Rc;
 use git_leviathan_plugin_api::descriptor::region::RegionDescriptor;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
+use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::widget_ast;
 
-use super::{BuildState, RawSlotOp, RawSlotSpec, WidgetSource};
+use super::{record_deprecation, BuildState, RawSlotOp, RawSlotSpec, WidgetSource};
+
+#[derive(Clone)]
+pub struct DeprecationContext {
+    pub diagnostics: DiagnosticStore,
+    pub plugin_id: crate::plugin::resources::PluginId,
+    pub generation_id: crate::plugin::resources::GenerationId,
+    pub api_prefix: &'static str,
+    pub replacement: &'static str,
+}
+
+impl DeprecationContext {
+    fn record(&self, verb: &'static str) {
+        let api_name = match (self.api_prefix, verb) {
+            ("leviathan.ui.main_bar", "add") => "leviathan.ui.main_bar.add",
+            ("leviathan.ui.main_bar", "remove") => "leviathan.ui.main_bar.remove",
+            ("leviathan.ui.main_bar", "replace") => "leviathan.ui.main_bar.replace",
+            ("leviathan.ui.tab_bar", "add") => "leviathan.ui.tab_bar.add",
+            ("leviathan.ui.tab_bar", "remove") => "leviathan.ui.tab_bar.remove",
+            ("leviathan.ui.tab_bar", "replace") => "leviathan.ui.tab_bar.replace",
+            ("leviathan.ui.repository", "add") => "leviathan.ui.repository.add",
+            ("leviathan.ui.repository", "remove") => "leviathan.ui.repository.remove",
+            ("leviathan.ui.repository", "replace") => "leviathan.ui.repository.replace",
+            _ => self.api_prefix,
+        };
+        record_deprecation(
+            &self.diagnostics,
+            &self.plugin_id,
+            self.generation_id,
+            api_name,
+            self.replacement,
+        );
+    }
+}
 
 pub fn make_region_handle(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     desc: &'static RegionDescriptor,
+    deprecation: Option<DeprecationContext>,
 ) -> mlua::Result<Table> {
     let tbl = lua.create_table()?;
 
     let b = Rc::clone(&build);
     let ledger_for_add = ledger.clone();
+    let add_deprecation = deprecation.clone();
     tbl.set(
         "add",
         lua.create_function(move |lua, spec: Table| {
+            if let Some(ctx) = &add_deprecation {
+                ctx.record("add");
+            }
             let raw = read_spec(lua, &spec, desc, &ledger_for_add)?;
             b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
             Ok(())
@@ -30,9 +69,13 @@ pub fn make_region_handle(
 
     let b = Rc::clone(&build);
     let ledger_for_remove = ledger.clone();
+    let remove_deprecation = deprecation.clone();
     tbl.set(
         "remove",
         lua.create_function(move |_, args: Table| {
+            if let Some(ctx) = &remove_deprecation {
+                ctx.record("remove");
+            }
             let (pane, section, id) = read_address_with_id(&args, desc)?;
             let container = compose_container(pane.as_deref(), &section);
             let handle = slot_handle(desc.name, &container, &id);
@@ -48,9 +91,13 @@ pub fn make_region_handle(
 
     let b = Rc::clone(&build);
     let ledger_for_replace = ledger;
+    let replace_deprecation = deprecation;
     tbl.set(
         "replace",
         lua.create_function(move |lua, (target, spec): (Table, Table)| {
+            if let Some(ctx) = &replace_deprecation {
+                ctx.record("replace");
+            }
             let (pane, section, id) = read_address_with_id(&target, desc)?;
             let container = compose_container(pane.as_deref(), &section);
             let mut raw = read_spec(lua, &spec, desc, &ledger_for_replace)?;
@@ -83,7 +130,7 @@ pub fn make_region_handle(
     Ok(tbl)
 }
 
-fn read_address_with_id(
+pub(super) fn read_address_with_id(
     t: &Table,
     desc: &RegionDescriptor,
 ) -> mlua::Result<(Option<String>, String, String)> {
@@ -95,18 +142,18 @@ fn read_address_with_id(
     Ok((pane, section, id))
 }
 
-fn compose_container(pane: Option<&str>, section: &str) -> String {
+pub(super) fn compose_container(pane: Option<&str>, section: &str) -> String {
     match pane {
         Some(p) => format!("{p}.{section}"),
         None => section.to_string(),
     }
 }
 
-fn slot_handle(region: &str, container: &str, id: &str) -> String {
+pub(super) fn slot_handle(region: &str, container: &str, id: &str) -> String {
     format!("{region}:{container}:{id}")
 }
 
-fn read_spec(
+pub(super) fn read_spec(
     lua: &Lua,
     spec: &Table,
     desc: &RegionDescriptor,
@@ -206,7 +253,7 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc).unwrap();
+        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
         lua.globals().set("h", handle).unwrap();
         lua.load(r#"h.add{ id = "x", section = "left", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .exec().unwrap();
@@ -222,7 +269,7 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc).unwrap();
+        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
         lua.globals().set("h", handle).unwrap();
         let err = lua.load(r#"h.add{ id = "x", section = "nope", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .exec().unwrap_err().to_string();
@@ -237,7 +284,7 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc).unwrap();
+        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
         lua.globals().set("h", handle).unwrap();
         let err = lua
             .load(r#"h.add{ id = "x", section = "left", priority = 0, widget = { kind = "rwo", value = "hi" } }"#)
@@ -258,7 +305,7 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc).unwrap();
+        let handle = make_region_handle(&lua, Rc::clone(&build), ledger, desc, None).unwrap();
         lua.globals().set("h", handle).unwrap();
         let err = lua.load(r#"h.add{ id = "x", section = "top", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .exec().unwrap_err().to_string();

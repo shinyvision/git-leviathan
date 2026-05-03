@@ -300,4 +300,5 @@ autocmds are refreshed.
 | `tablist_demo` | `leviathan.api.create_autocmd`, `leviathan.ui.tab_bar.replace`, `leviathan.tab_registry.list/current/select/remove/reorder`, `leviathan.log` |
 | `terminal` | `leviathan.ui.main_bar.add`, `leviathan.log` |
 
-All bundled plugin manifests currently declare `api_version = "1.0"`.
+Bundled plugins now declare `api_version = "2.0"`; keep this page as the
+frozen v1 compatibility reference for older public plugins.

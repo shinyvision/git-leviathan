@@ -17,8 +17,6 @@ pub(crate) fn input_id() -> iced::widget::Id {
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
-    #[allow(dead_code)]
-    pub commit_idx: usize,
     pub commit_hash: String,
     pub branch_name_input: String,
     /// Whether the input field needs focus after animation completes.

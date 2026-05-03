@@ -7,19 +7,13 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use crate::services::{GitError, GitRepositoryGateway, Presenter, SharedRepositoryGateway};
+use crate::services::{GitError, GitRepositoryGateway, SharedRepositoryGateway};
 
 pub(crate) struct GatewayFleet {
     primary_path: PathBuf,
     active_path: PathBuf,
     gateways: HashMap<PathBuf, SharedRepositoryGateway>,
-    /// Retained for snapshot projection after focus swaps and worktree CRUD
-    /// results — passed to the active gateway when projecting per-workdir
-    /// state (see Task 7+ of the worktrees rollout).
-    #[allow(dead_code)]
-    presenter: Arc<dyn Presenter>,
 }
 
 impl GatewayFleet {
@@ -28,7 +22,6 @@ impl GatewayFleet {
         primary_gateway: SharedRepositoryGateway,
         active_path: PathBuf,
         active_gateway: SharedRepositoryGateway,
-        presenter: Arc<dyn Presenter>,
     ) -> Self {
         let mut gateways = HashMap::new();
         gateways.insert(primary_path.clone(), primary_gateway);
@@ -39,7 +32,6 @@ impl GatewayFleet {
             primary_path,
             active_path,
             gateways,
-            presenter,
         }
     }
 
@@ -109,7 +101,6 @@ impl GatewayFleet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::services::DefaultPresenter;
 
     fn sample_fleet() -> GatewayFleet {
         let primary = PathBuf::from("/tmp/primary");
@@ -120,7 +111,6 @@ mod tests {
             primary_gateway.clone(),
             primary,
             primary_gateway,
-            Arc::new(DefaultPresenter::new()),
         )
     }
 

@@ -150,11 +150,7 @@ pub fn compute_plugin_checksum(plugin_dir: &Path) -> std::io::Result<String> {
     Ok(format!("sha256:{}", hex_lower(&digest)))
 }
 
-fn walk_collect(
-    base: &Path,
-    cur: &Path,
-    out: &mut Vec<(String, PathBuf)>,
-) -> std::io::Result<()> {
+fn walk_collect(base: &Path, cur: &Path, out: &mut Vec<(String, PathBuf)>) -> std::io::Result<()> {
     let mut children: Vec<PathBuf> = fs::read_dir(cur)?
         .filter_map(Result::ok)
         .map(|e| e.path())

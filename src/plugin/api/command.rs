@@ -22,9 +22,10 @@ use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 use crate::plugin::commands::{
     dispatch_command, CommandDispatchEnv, InvokeOutcome, RawCommand, RawCommandArg,
 };
+use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
-use super::BuildState;
+use super::{record_deprecation, BuildState};
 
 /// Compatibility shim. v1 plugins call
 /// `leviathan.api.create_user_command(name, fn)`; we route those
@@ -49,6 +50,9 @@ pub fn install(
     api: &Table,
     leviathan: &Table,
     dispatch: CommandDispatchEnv,
+    diagnostics: DiagnosticStore,
+    plugin_id: crate::plugin::resources::PluginId,
+    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
     install_legacy_create_user_command(
         lua,
@@ -56,6 +60,9 @@ pub fn install(
         Rc::clone(&build),
         ledger.clone(),
         api,
+        diagnostics,
+        plugin_id,
+        generation_id,
     )?;
 
     let command_tbl = lua.create_table()?;
@@ -73,10 +80,20 @@ fn install_legacy_create_user_command(
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     api: &Table,
+    diagnostics: DiagnosticStore,
+    plugin_id: crate::plugin::resources::PluginId,
+    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
     api.set(
         "create_user_command",
         lua.create_function(move |lua_inner, (name, f): (String, Function)| {
+            record_deprecation(
+                &diagnostics,
+                &plugin_id,
+                generation_id,
+                "leviathan.api.create_user_command",
+                "leviathan.command.create",
+            );
             let key = lua_inner.create_registry_value(f.clone())?;
             let source = ResourceLedger::source_location(lua_inner);
             ledger.remove_by_kind_handle(PluginResourceKind::Command, &name);

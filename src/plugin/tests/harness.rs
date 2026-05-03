@@ -254,10 +254,7 @@ impl MockHost {
         &mut self,
         name: &str,
         args: serde_json::Value,
-    ) -> (
-        crate::plugin::commands::InvokeOutcome,
-        serde_json::Value,
-    ) {
+    ) -> (crate::plugin::commands::InvokeOutcome, serde_json::Value) {
         self.host.invoke_devtools_command(name, args)
     }
 
@@ -536,7 +533,7 @@ api_version = "1.0"
     }
 
     #[test]
-    fn compatibility_loads_every_bundled_plugin_under_api_version_1_0() {
+    fn compatibility_loads_every_bundled_plugin_under_api_version_2_0() {
         let dirs = bundled_plugin_dirs();
         assert!(!dirs.is_empty(), "expected bundled plugins");
 
@@ -562,8 +559,8 @@ api_version = "1.0"
         assert!(
             snap.plugins
                 .iter()
-                .all(|plugin| plugin.api_version == "1.0"),
-            "all bundled plugins must stay on the frozen v1 surface"
+                .all(|plugin| plugin.api_version == "2.0"),
+            "all bundled plugins should use the v2 authoring surface"
         );
     }
 
@@ -571,10 +568,10 @@ api_version = "1.0"
     fn bundled_plugin_manifest_api_version_snapshot() {
         use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 
-        assert_eq!(HOST_API_VERSION.major, 1);
+        assert_eq!(HOST_API_VERSION.major, 2);
         assert_eq!(HOST_API_VERSION.minor, 0);
 
-        let mut snapshot = String::from("api_version = \"1.0\"\n");
+        let mut snapshot = String::from("api_version = \"2.0\"\n");
         for dir in bundled_plugin_dirs() {
             let manifest_path = dir.join("plugin.toml");
             let raw = std::fs::read_to_string(&manifest_path).expect("manifest");
@@ -593,14 +590,14 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-                "api_version = \"1.0\"\n",
-                "dancing_banana_test: api_version=1.0\n",
-                "file_explorer: api_version=1.0\n",
-                "foo_demo: api_version=1.0\n",
-                "regions_demo: api_version=1.0\n",
-                "repository_info: api_version=1.0\n",
-                "tablist_demo: api_version=1.0\n",
-                "terminal: api_version=1.0\n",
+                "api_version = \"2.0\"\n",
+                "dancing_banana_test: api_version=2.0\n",
+                "file_explorer: api_version=2.0\n",
+                "foo_demo: api_version=2.0\n",
+                "regions_demo: api_version=2.0\n",
+                "repository_info: api_version=2.0\n",
+                "tablist_demo: api_version=2.0\n",
+                "terminal: api_version=2.0\n",
             )
         );
     }
@@ -609,7 +606,7 @@ api_version = "1.0"
     fn bundled_plugin_slot_registration_snapshot() {
         let host = load_all_bundled_plugins();
         let snap = host.introspect();
-        let mut snapshot = String::from("api_version = \"1.0\"\n");
+        let mut snapshot = String::from("api_version = \"2.0\"\n");
         for slot in snap.slots {
             snapshot.push_str(&format!(
                 "{} {} {} priority={} owner={}\n",
@@ -620,7 +617,7 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-				"api_version = \"1.0\"\n",
+				"api_version = \"2.0\"\n",
 				"main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
 				"main_bar left builtin.fetch_indicator priority=40 owner=dancing_banana_test\n",
 				"main_bar left builtin.repo_info priority=10 owner=repository_info\n",
@@ -637,7 +634,7 @@ api_version = "1.0"
     fn region_descriptor_snapshot() {
         use git_leviathan_plugin_api::descriptor::region::{RegionKind, REGIONS};
 
-        let mut snapshot = String::from("api_version = \"1.0\"\n");
+        let mut snapshot = String::from("api_version = \"2.0\"\n");
         for region in REGIONS.iter() {
             match &region.kind {
                 RegionKind::Chrome {
@@ -663,17 +660,9 @@ api_version = "1.0"
                             let dyn_part = if pane.dynamic_section_prefixes.is_empty() {
                                 String::new()
                             } else {
-                                format!(
-                                    "+dyn[{}]",
-                                    pane.dynamic_section_prefixes.join(",")
-                                )
+                                format!("+dyn[{}]", pane.dynamic_section_prefixes.join(","))
                             };
-                            format!(
-                                "{}({}{})",
-                                pane.name,
-                                pane.sections.join(","),
-                                dyn_part
-                            )
+                            format!("{}({}{})", pane.name, pane.sections.join(","), dyn_part)
                         })
                         .collect::<Vec<_>>()
                         .join(", ");
@@ -688,7 +677,7 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-                "api_version = \"1.0\"\n",
+                "api_version = \"2.0\"\n",
                 "main_bar: chrome sections=[left, center, right]\n",
                 "tab_bar: chrome sections=[left, center, right]\n",
                 "status_bar: chrome sections=[left, center, right]\n",

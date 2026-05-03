@@ -11,7 +11,8 @@ impl ApiVersion {
         Self { major, minor }
     }
     pub fn is_compatible_with(self, host: ApiVersion) -> bool {
-        self.major == host.major && self.minor <= host.minor
+        (self.major == host.major && self.minor <= host.minor)
+            || (host.major == 2 && self.major == 1)
     }
 }
 
@@ -28,7 +29,7 @@ impl<'de> Deserialize<'de> for ApiVersion {
     }
 }
 
-pub const HOST_API_VERSION: ApiVersion = ApiVersion::new(1, 0);
+pub const HOST_API_VERSION: ApiVersion = ApiVersion::new(2, 0);
 
 #[cfg(test)]
 mod tests {
@@ -36,11 +37,16 @@ mod tests {
 
     #[test]
     fn api_version_compat_check() {
-        let host = ApiVersion::new(1, 3);
-        assert!(ApiVersion::new(1, 0).is_compatible_with(host));
-        assert!(ApiVersion::new(1, 3).is_compatible_with(host));
-        assert!(!ApiVersion::new(1, 4).is_compatible_with(host));
-        assert!(!ApiVersion::new(2, 0).is_compatible_with(host));
-        assert!(!ApiVersion::new(0, 9).is_compatible_with(host));
+        let v1_host = ApiVersion::new(1, 3);
+        assert!(ApiVersion::new(1, 0).is_compatible_with(v1_host));
+        assert!(ApiVersion::new(1, 3).is_compatible_with(v1_host));
+        assert!(!ApiVersion::new(1, 4).is_compatible_with(v1_host));
+        assert!(!ApiVersion::new(2, 0).is_compatible_with(v1_host));
+
+        let v2_host = ApiVersion::new(2, 0);
+        assert!(ApiVersion::new(1, 0).is_compatible_with(v2_host));
+        assert!(ApiVersion::new(2, 0).is_compatible_with(v2_host));
+        assert!(!ApiVersion::new(2, 1).is_compatible_with(v2_host));
+        assert!(!ApiVersion::new(0, 9).is_compatible_with(v2_host));
     }
 }

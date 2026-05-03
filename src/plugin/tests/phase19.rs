@@ -114,9 +114,7 @@ fn clear_state_wipes_state_and_cache_but_not_secrets_by_default() {
     // wipe it.
     let plugin_id = "p";
     let plugin_root = host.plugin_dir(plugin_id).unwrap().to_path_buf();
-    let storage = host
-        .host()
-        .storage_paths_for_test(plugin_id, &plugin_root);
+    let storage = host.host().storage_paths_for_test(plugin_id, &plugin_root);
     std::fs::create_dir_all(&storage.secrets_dir).unwrap();
     let secret_path = storage.secrets_dir.join("secrets.json");
     std::fs::write(
@@ -125,7 +123,10 @@ fn clear_state_wipes_state_and_cache_but_not_secrets_by_default() {
     )
     .unwrap();
     let pre_state_files = storage.state_dir.join("data.json");
-    assert!(pre_state_files.exists(), "data.json should exist after persist write");
+    assert!(
+        pre_state_files.exists(),
+        "data.json should exist after persist write"
+    );
 
     let (outcome, _value) =
         host.invoke_devtools_command("plugin.clear_state", json!({ "plugin_id": "p" }));
@@ -136,7 +137,10 @@ fn clear_state_wipes_state_and_cache_but_not_secrets_by_default() {
         !pre_state_files.exists(),
         "default clear_state must wipe state dir"
     );
-    assert!(secret_path.exists(), "secrets dir must NOT be wiped by default");
+    assert!(
+        secret_path.exists(),
+        "secrets dir must NOT be wiped by default"
+    );
     let secret_raw = std::fs::read_to_string(&secret_path).unwrap();
     assert!(secret_raw.contains("REDACTED-CANARY-VALUE"));
 }
@@ -147,16 +151,10 @@ fn clear_state_with_secrets_wipes_secrets_only_when_requested() {
     host.load_inline("p", SMOKE_MANIFEST, "").expect("load");
     let plugin_id = "p";
     let plugin_root = host.plugin_dir(plugin_id).unwrap().to_path_buf();
-    let storage = host
-        .host()
-        .storage_paths_for_test(plugin_id, &plugin_root);
+    let storage = host.host().storage_paths_for_test(plugin_id, &plugin_root);
     std::fs::create_dir_all(&storage.secrets_dir).unwrap();
     let secret_path = storage.secrets_dir.join("secrets.json");
-    std::fs::write(
-        &secret_path,
-        r#"{"values":{"k":"v"}}"#,
-    )
-    .unwrap();
+    std::fs::write(&secret_path, r#"{"values":{"k":"v"}}"#).unwrap();
 
     let (outcome, _value) = host.invoke_devtools_command(
         "plugin.clear_state",
@@ -192,7 +190,9 @@ fn inspect_ui_tree_returns_widget_ast_inventory() {
     let inv = value.get("inventory").expect("inventory");
     let slots = inv.get("slots").and_then(|v| v.as_array()).expect("slots");
     assert!(
-        slots.iter().any(|s| s.get("id").and_then(|v| v.as_str()) == Some("p.slot")),
+        slots
+            .iter()
+            .any(|s| s.get("id").and_then(|v| v.as_str()) == Some("p.slot")),
         "expected p.slot in inventory: {inv:?}"
     );
 }
@@ -214,7 +214,10 @@ fn run_health_check_returns_structured_result() {
     let (outcome, value) =
         host.invoke_devtools_command("plugin.run_health_check", json!({ "plugin_id": "p" }));
     assert!(matches!(outcome, InvokeOutcome::Ok));
-    let items = value.get("items").and_then(|v| v.as_array()).expect("items");
+    let items = value
+        .get("items")
+        .and_then(|v| v.as_array())
+        .expect("items");
     assert_eq!(items.len(), 2);
     let messages: Vec<&str> = items
         .iter()
@@ -230,9 +233,7 @@ fn export_diagnostic_bundle_excludes_secret_values() {
     host.load_inline("p", SMOKE_MANIFEST, "").expect("load");
     let plugin_id = "p";
     let plugin_root = host.plugin_dir(plugin_id).unwrap().to_path_buf();
-    let storage = host
-        .host()
-        .storage_paths_for_test(plugin_id, &plugin_root);
+    let storage = host.host().storage_paths_for_test(plugin_id, &plugin_root);
     std::fs::create_dir_all(&storage.secrets_dir).unwrap();
     let secret_path = storage.secrets_dir.join("secrets.json");
     std::fs::write(
@@ -300,8 +301,10 @@ fn export_diagnostic_bundle_includes_state_when_requested() {
         json!({ "plugin_id": "p" }),
     );
     assert!(matches!(outcome, InvokeOutcome::Ok));
-    assert!(value_off.get("state").and_then(|v| v.as_object()).is_none()
-        || value_off.get("state").map(|v| v.is_null()).unwrap_or(true));
+    assert!(
+        value_off.get("state").and_then(|v| v.as_object()).is_none()
+            || value_off.get("state").map(|v| v.is_null()).unwrap_or(true)
+    );
 
     let (outcome, value_on) = host.invoke_devtools_command(
         "plugin.export_diagnostic_bundle",
@@ -353,10 +356,8 @@ api_version = "1.0"
         );
     }
     // limit clamps the row count.
-    let (_, value_limited) = host.invoke_devtools_command(
-        "plugin.show_capability_audit",
-        json!({ "limit": 1 }),
-    );
+    let (_, value_limited) =
+        host.invoke_devtools_command("plugin.show_capability_audit", json!({ "limit": 1 }));
     let count = value_limited
         .get("entries")
         .and_then(|v| v.as_array())
@@ -376,7 +377,10 @@ fn runtime_path_command_returns_phase5_entries() {
         .get("entries")
         .and_then(|v| v.as_array())
         .expect("entries");
-    assert!(!entries.is_empty(), "runtime path must include the plugin's own root");
+    assert!(
+        !entries.is_empty(),
+        "runtime path must include the plugin's own root"
+    );
     assert!(entries
         .iter()
         .any(|e| e.get("entry_plugin_id").and_then(|v| v.as_str()) == Some("p")));

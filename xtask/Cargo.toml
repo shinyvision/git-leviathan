@@ -7,6 +7,11 @@ authors.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+base64 = "0.22"
 git_leviathan_plugin_api = { path = "../git_leviathan_plugin_api" }
-serde_json = { workspace = true }
+mlua = { workspace = true }
 schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+toml = { workspace = true }

@@ -2,40 +2,40 @@
 id = "dancing_banana_test"
 version = "0.1.0"
 source = "local"
-checksum = "sha256:830c502714604d5ec473b00524632e9677f7ddef4836f0159c8babe9606cf54c"
+checksum = "sha256:30f05dcf0170b49ad8f34c4eb1c0a142f7ea4cdb2731245a3bc2d1e2b2047750"
 
 [[plugin]]
 id = "file_explorer"
 version = "0.1.0"
 source = "local"
-checksum = "sha256:3b1ff31b07d4a7a2b00a87eacc8a5876835cc7ff01bc95fcfff2476adc5b3af5"
+checksum = "sha256:f47525e9bb4dab81512d124e7dcfd0c5d0d19fe0dca6153e7ee2d2c476bf4e62"
 
 [[plugin]]
 id = "foo_demo"
 version = "0.1.0"
 source = "local"
-checksum = "sha256:a21f860099265b1fc28b0ddb929a0672939c2101080d9d9e9490e53205d5aaf0"
+checksum = "sha256:c7f510722146ed53b4c166b1f694841ccd5205bf09bb5e8d8f03a2e98d46d854"
 
 [[plugin]]
 id = "regions_demo"
 version = "0.0.1"
 source = "local"
-checksum = "sha256:3107b4653d5ec10c4d6db18740437d5e593b269eec643a899753ee9ebc856ad6"
+checksum = "sha256:61b72e5b613194c5e8bbd197765bcb9add5512d181a88a4d3a18bde6d3161db2"
 
 [[plugin]]
 id = "repository_info"
 version = "0.1.0"
 source = "local"
-checksum = "sha256:c1368117ba135310e86b0061513c86302ded039072fed37b2f763f39ba30533b"
+checksum = "sha256:6b808ead7bc17bc4b8cab46e537ac15a5d4b1393bb223ed97f599dbc19446ad4"
 
 [[plugin]]
 id = "tablist_demo"
 version = "0.0.1"
 source = "local"
-checksum = "sha256:267d0092b176755667a6741fd4136547b5bddd59f77a6ea6bf794094ff696ec5"
+checksum = "sha256:978bbc931d1930f093d25d344e39f0d133cb0c01e77043e54fba436b0beb45d4"
 
 [[plugin]]
 id = "terminal"
 version = "0.1.0"
 source = "local"
-checksum = "sha256:b4fbf6bb2afb9e860689c8e41cf7157d4aff91770c4d00cfba7b5bafdaafe2a7"
+checksum = "sha256:543d1e4fcbffb31f05eb911ad8c867d370354261ded35bf5038ae4fe1e6efbc5"

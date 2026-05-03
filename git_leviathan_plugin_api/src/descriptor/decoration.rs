@@ -30,15 +30,9 @@ pub enum GraphDecoration {
         color: Option<String>,
     },
     /// Small marker shape (dot / square / triangle) on the lane.
-    Marker {
-        shape: MarkerShape,
-        color: String,
-    },
+    Marker { shape: MarkerShape, color: String },
     /// Highlight a graph lane in a custom color.
-    Lane {
-        index: u32,
-        color: String,
-    },
+    Lane { index: u32, color: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

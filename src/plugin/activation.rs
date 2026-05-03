@@ -100,11 +100,7 @@ pub struct LazyEntry {
 }
 
 impl LazyEntry {
-    pub fn matches_repo(
-        &self,
-        current_branch: &str,
-        has_remote: bool,
-    ) -> bool {
+    pub fn matches_repo(&self, current_branch: &str, has_remote: bool) -> bool {
         let Some(shape) = self.repository_shape.as_ref() else {
             return false;
         };
@@ -172,11 +168,7 @@ impl LazyRegistry {
             .find(|e| e.events.iter().any(|n| n == name))
     }
 
-    pub fn match_repo_shape(
-        &self,
-        current_branch: &str,
-        has_remote: bool,
-    ) -> Option<&LazyEntry> {
+    pub fn match_repo_shape(&self, current_branch: &str, has_remote: bool) -> Option<&LazyEntry> {
         self.entries
             .iter()
             .filter(|e| e.status == LazyStatus::Lazy)
@@ -186,17 +178,8 @@ impl LazyRegistry {
     /// Mark a plugin successfully activated. `trigger_descriptor` is
     /// stored on the row so devtools can show the originating
     /// trigger after the fact.
-    pub fn mark_active(
-        &mut self,
-        plugin_id: &str,
-        now_unix_ms: u128,
-        trigger_descriptor: String,
-    ) {
-        if let Some(e) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.plugin_id == plugin_id)
-        {
+    pub fn mark_active(&mut self, plugin_id: &str, now_unix_ms: u128, trigger_descriptor: String) {
+        if let Some(e) = self.entries.iter_mut().find(|e| e.plugin_id == plugin_id) {
             e.status = LazyStatus::Active;
             e.activations += 1;
             e.last_activation_unix_ms = Some(now_unix_ms);
@@ -209,11 +192,7 @@ impl LazyRegistry {
     /// Record an activation failure; returns true when the entry
     /// crossed the poison threshold.
     pub fn mark_failure(&mut self, plugin_id: &str, error: String) -> bool {
-        if let Some(e) = self
-            .entries
-            .iter_mut()
-            .find(|e| e.plugin_id == plugin_id)
-        {
+        if let Some(e) = self.entries.iter_mut().find(|e| e.plugin_id == plugin_id) {
             e.consecutive_failures = e.consecutive_failures.saturating_add(1);
             e.last_error = Some(error);
             if e.consecutive_failures >= MAX_ACTIVATION_FAILURES {
@@ -235,8 +214,7 @@ pub struct ValidatedActivation {
     pub events: Vec<String>,
     pub regions: Vec<String>,
     pub files: Vec<PathBuf>,
-    pub repository_shape:
-        Option<git_leviathan_plugin_api::manifest::RepositoryShapePredicate>,
+    pub repository_shape: Option<git_leviathan_plugin_api::manifest::RepositoryShapePredicate>,
     pub manual: bool,
 }
 
@@ -305,9 +283,7 @@ pub fn validate(
                         PluginId::from(plugin_id),
                         DiagnosticSeverity::Warning,
                         "activation.unknown_event",
-                        format!(
-                            "activation.events lists `{ev}` which is not a canonical event"
-                        ),
+                        format!("activation.events lists `{ev}` which is not a canonical event"),
                     )
                     .with_source(PluginSourceSpan::Manifest {
                         path: manifest_path.display().to_string(),

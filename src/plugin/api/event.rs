@@ -35,10 +35,11 @@ use std::rc::Rc;
 
 use mlua::{Function, Lua, Table, Value as LuaValue};
 
+use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::events::AutocmdOptions;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
-use super::{BuildState, RawAutocmd, RawAutocmdClear, RawAutocmdGroup};
+use super::{record_deprecation, BuildState, RawAutocmd, RawAutocmdClear, RawAutocmdGroup};
 
 pub fn install(
     lua: &Lua,
@@ -46,8 +47,19 @@ pub fn install(
     ledger: ResourceLedger,
     api: &Table,
     leviathan: &Table,
+    diagnostics: DiagnosticStore,
+    plugin_id: crate::plugin::resources::PluginId,
+    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
-    install_legacy_create_autocmd(lua, Rc::clone(&build), ledger.clone(), api)?;
+    install_legacy_create_autocmd(
+        lua,
+        Rc::clone(&build),
+        ledger.clone(),
+        api,
+        diagnostics,
+        plugin_id,
+        generation_id,
+    )?;
 
     let autocmd_tbl = lua.create_table()?;
     install_autocmd_group(lua, Rc::clone(&build), &autocmd_tbl)?;
@@ -63,10 +75,20 @@ fn install_legacy_create_autocmd(
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     api: &Table,
+    diagnostics: DiagnosticStore,
+    plugin_id: crate::plugin::resources::PluginId,
+    generation_id: crate::plugin::resources::GenerationId,
 ) -> mlua::Result<()> {
     api.set(
         "create_autocmd",
         lua.create_function(move |lua_inner, (events, opts): (Table, Table)| {
+            record_deprecation(
+                &diagnostics,
+                &plugin_id,
+                generation_id,
+                "leviathan.api.create_autocmd",
+                "leviathan.autocmd.create",
+            );
             let callback: Function = opts.get("callback")?;
             let source = ResourceLedger::source_location(lua_inner);
             // Decode options once; every event in the events array

@@ -2,6 +2,8 @@ use std::path::Path;
 
 use git_leviathan_plugin_api::schema::stubs;
 
+mod plugin;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     match args.get(1).map(String::as_str) {
@@ -13,8 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             gen_docs()?;
             gen_schema()
         }
+        Some("plugin") => plugin::run(&args[2..]),
         _ => {
-            eprintln!("usage: cargo xtask <gen-stubs|gen-docs|gen-schema|gen-all>");
+            eprintln!("usage: cargo xtask <gen-stubs|gen-docs|gen-schema|gen-all|plugin>");
             std::process::exit(2);
         }
     }

@@ -53,7 +53,7 @@ pub(crate) enum ActiveDialog {
     CreateWorktree(create_worktree::State),
     SetUpstream(set_upstream::State),
     PushBehind(push_behind::State),
-    ForcePush(#[allow(dead_code)] force_push::State),
+    ForcePush(force_push::State),
     CreateTagHere(create_tag::State),
     DeleteTag(delete_tag::State),
     CherryPick(cherry_pick_confirm::State),
@@ -282,7 +282,7 @@ impl OverlayManager {
             ActiveDialog::Discard(state) => discard::view(state, slide),
             ActiveDialog::SetUpstream(state) => set_upstream::view(state, slide),
             ActiveDialog::PushBehind(state) => push_behind::view(state, slide),
-            ActiveDialog::ForcePush(_) => force_push::view(slide),
+            ActiveDialog::ForcePush(state) => force_push::view(state, slide),
             ActiveDialog::CreateTagHere(state) => create_tag::view(state, slide),
             ActiveDialog::DeleteTag(state) => delete_tag::view(state, slide),
             ActiveDialog::CherryPick(_) => cherry_pick_confirm::view(slide),
@@ -1090,7 +1090,6 @@ mod tests {
     fn is_text_input_active_true_when_create_branch_open() {
         let mut m = OverlayManager::new();
         m.open(ActiveDialog::CreateBranchHere(create_branch::State {
-            commit_idx: 0,
             commit_hash: "deadbeef".into(),
             branch_name_input: String::new(),
             needs_focus: false,
@@ -1159,7 +1158,6 @@ mod tests {
     fn tick_animation_emits_focus_once_when_create_branch_needs_focus() {
         let mut m = OverlayManager::new();
         m.open(ActiveDialog::CreateBranchHere(create_branch::State {
-            commit_idx: 0,
             commit_hash: "cafebabe".into(),
             branch_name_input: String::new(),
             needs_focus: true,
