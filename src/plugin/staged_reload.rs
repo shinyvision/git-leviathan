@@ -21,6 +21,7 @@ use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::capability_grants::{canonicalize_requested, GrantStore};
 use crate::plugin::commands::{CommandDispatchEnv, RawCommand};
 use crate::plugin::diagnostic::{DiagnosticSeverity, DiagnosticStore, PluginDiagnostic};
+use crate::plugin::extensions::OverlayCallbacks;
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::keymap::{KeymapRegistry, RawKeymap, RawKeymapDel};
 use crate::plugin::lua_loader::{install_runtime_module, LuaLoader};
@@ -104,9 +105,8 @@ pub struct StageInputs<'a> {
     /// staged reload widening the requested set without a matching
     /// grant halts here (`capability.upgrade_required`).
     pub grant_store: GrantStore,
-    /// Whether bundled-plugin auto-grant applies to this staging
-    /// (i.e. the plugin's root is under a trusted bundled root).
-    pub bundled: bool,
+    /// Whether local development auto-grant applies to this staging.
+    pub auto_grant_capabilities: bool,
     /// keymaps: live keymap registry handle. The staged generation's
     /// `leviathan.keymap.list` shim borrows from this so plugins see
     /// the same resolved table the host sees. Staged `set` / `del`
@@ -149,6 +149,7 @@ pub struct StagingArtifacts {
     pub manifest: PluginManifest,
     pub generation: PluginGeneration,
     pub slot_handlers: HashMap<String, RegistryKey>,
+    pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
     pub screens: HashMap<String, api::ScreenDef>,
     pub screen_state: HashMap<String, RegistryKey>,
     pub dynamic_widgets: HashMap<
@@ -356,11 +357,9 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
     }
 
     // Detect whether any newly-declared capability was previously absent.
-    // capability grants: widening detection halts here when the new set
-    // contains capabilities the grant store hasn't decided about yet
-    // (`capability.upgrade_required`). Bundled plugins auto-grant new
-    // capabilities; non-bundled plugins force the user through a
-    // prompt before the staged generation can commit.
+    // Local development plugins auto-grant requested capabilities;
+    // other plugin roots still require a user decision before a staged
+    // generation can commit.
     let previous_caps: std::collections::HashSet<&str> = inputs
         .previous_capabilities
         .iter()
@@ -389,10 +388,10 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         );
     }
     let plugin_version_str = manifest.version.to_string();
-    if inputs.bundled {
-        // Bundled plugins auto-grant whatever they request. Existing
-        // `Allow` rows are reused; only the truly new ones are added.
-        let granted = inputs.grant_store.auto_grant_bundled(
+    if inputs.auto_grant_capabilities {
+        // Existing `Allow` rows are reused; only the truly new ones
+        // are added.
+        let granted = inputs.grant_store.auto_grant_declared(
             inputs.plugin_id.as_str(),
             &plugin_version_str,
             &requested_strings,
@@ -522,6 +521,8 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         Rc::new(RefCell::new(PluginTimerCallbacks::new()));
     let watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>> =
         Rc::new(RefCell::new(PluginWatcherCallbacks::new()));
+    let overlay_callbacks: Rc<RefCell<OverlayCallbacks>> =
+        Rc::new(RefCell::new(OverlayCallbacks::new()));
     let async_ctx = AsyncRuntimeContext {
         jobs: inputs.async_jobs.clone(),
         timers: inputs.timers.clone(),
@@ -552,6 +553,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             generation_id: inputs.generation_id,
             diagnostics: inputs.diagnostics.clone(),
             extension_registry: inputs.extension_registry.clone(),
+            overlay_callbacks: Rc::clone(&overlay_callbacks),
         },
     )
     .map_err(|e| {
@@ -918,6 +920,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         manifest,
         generation,
         slot_handlers,
+        overlay_callbacks,
         screens,
         screen_state,
         dynamic_widgets,

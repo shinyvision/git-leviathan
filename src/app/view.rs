@@ -4,7 +4,7 @@ use iced::widget::{column, Stack};
 use iced::{Element, Length};
 
 use crate::message::Message;
-use crate::plugin::ui::screen as plugin_screen;
+use crate::plugin::ui::{overlay as plugin_overlay, screen as plugin_screen};
 use crate::screens::{BlankScreen, NoGitScreen, RepositoryScreen, Screen, ToolbarCtx};
 use crate::widgets::chrome;
 
@@ -21,16 +21,29 @@ enum ActiveScreenRef<'a> {
 
 pub fn render(app: &App) -> Element<'_, Message> {
     match active_screen_ref(app) {
-        ActiveScreenRef::NoGit(screen) => screen.view(),
-        ActiveScreenRef::Blank(screen) => screen.view(),
+        ActiveScreenRef::NoGit(screen) => app_screen_view(screen.view(), app),
+        ActiveScreenRef::Blank(screen) => app_screen_view(screen.view(), app),
         ActiveScreenRef::Repository(screen) => repository_view(app, screen),
         ActiveScreenRef::Plugin => plugin_view(app),
     }
 }
 
+fn app_screen_view<'a>(body: Element<'a, Message>, app: &'a App) -> Element<'a, Message> {
+    let mut layers: Vec<Element<Message>> = vec![body];
+    layers.extend(plugin_overlay::layers(&app.plugin_host));
+    if let Some(toast_overlay) = app.toasts.overlay() {
+        layers.push(toast_overlay);
+    }
+    Stack::with_children(layers)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 fn plugin_view(app: &App) -> Element<'_, Message> {
     let body = plugin_screen::view(&app.plugin_host);
     let mut layers: Vec<Element<Message>> = vec![body];
+    layers.extend(plugin_overlay::layers(&app.plugin_host));
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);
     }
@@ -59,6 +72,7 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
 
     let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(<RepositoryScreen as Screen>::overlay_layers(screen));
+    layers.extend(plugin_overlay::layers(&app.plugin_host));
 
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);

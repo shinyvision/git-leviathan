@@ -132,6 +132,14 @@ pub struct AstButtonStyle {
     pub border: Option<AstBorder>,
 }
 
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct AstTextInputStyle {
+    pub background: Option<AstColor>,
+    pub text_color: Option<AstColor>,
+    pub placeholder_color: Option<AstColor>,
+    pub border: Option<AstBorder>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum AstSplitDirection {
     Horizontal,
@@ -185,6 +193,7 @@ pub struct WidgetAst {
 pub enum WidgetNode {
     Text(TextNode),
     Button(ButtonNode),
+    TextInput(TextInputNode),
     Row(RowNode),
     Column(ColumnNode),
     Container(ContainerNode),
@@ -206,6 +215,7 @@ impl WidgetNode {
         match self {
             Self::Text(_) => "text",
             Self::Button(_) => "button",
+            Self::TextInput(_) => "text_input",
             Self::Row(_) => "row",
             Self::Column(_) => "column",
             Self::Container(_) => "container",
@@ -237,6 +247,18 @@ pub struct ButtonNode {
     pub width: AstLength,
     pub height: AstLength,
     pub style: AstButtonStyle,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextInputNode {
+    pub placeholder: String,
+    pub value: String,
+    pub on_input: String,
+    pub on_submit: Option<String>,
+    pub width: AstLength,
+    pub height: AstLength,
+    pub autofocus: bool,
+    pub style: AstTextInputStyle,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -436,6 +458,7 @@ fn decode_node(
     let node = match kind {
         "text" => WidgetNode::Text(decode_text(obj, path, ctx)?),
         "button" => WidgetNode::Button(decode_button(obj, path, depth, ctx)?),
+        "text_input" => WidgetNode::TextInput(decode_text_input(obj, path, ctx)?),
         "row" => WidgetNode::Row(decode_row(obj, path, depth, ctx)?),
         "column" => WidgetNode::Column(decode_column(obj, path, depth, ctx)?),
         "container" => WidgetNode::Container(decode_container(obj, path, depth, ctx)?),
@@ -518,6 +541,50 @@ fn decode_button_style(
         background: opt_color(obj, "background", &style_path, ctx)?,
         background_hover: opt_color(obj, "background_hover", &style_path, ctx)?,
         text_color: opt_color(obj, "text_color", &style_path, ctx)?,
+        border: opt_border(obj, "border", &style_path, ctx)?,
+    })
+}
+
+fn decode_text_input(
+    obj: &Obj,
+    path: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<TextInputNode, WidgetDecodeError> {
+    Ok(TextInputNode {
+        placeholder: req_string(obj, "placeholder", path, ctx)?,
+        value: req_string(obj, "value", path, ctx)?,
+        on_input: req_string(obj, "on_input", path, ctx)?,
+        on_submit: opt_string(obj, "on_submit", path, ctx)?,
+        width: opt_length(obj, "width", path)?,
+        height: opt_length(obj, "height", path)?,
+        autofocus: opt_bool(obj, "autofocus", path)?.unwrap_or(false),
+        style: decode_text_input_style(obj.get("style"), path, ctx)?,
+    })
+}
+
+fn decode_text_input_style(
+    value: Option<&Value>,
+    path: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<AstTextInputStyle, WidgetDecodeError> {
+    let Some(v) = value else {
+        return Ok(AstTextInputStyle::default());
+    };
+    if matches!(v, Value::Null) {
+        return Ok(AstTextInputStyle::default());
+    }
+    let obj = v.as_object().ok_or_else(|| {
+        WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{path}.style"),
+            format!("field 'style' must be a table, got {}", json_kind(v)),
+        )
+    })?;
+    let style_path = format!("{path}.style");
+    Ok(AstTextInputStyle {
+        background: opt_color(obj, "background", &style_path, ctx)?,
+        text_color: opt_color(obj, "text_color", &style_path, ctx)?,
+        placeholder_color: opt_color(obj, "placeholder_color", &style_path, ctx)?,
         border: opt_border(obj, "border", &style_path, ctx)?,
     })
 }
@@ -849,6 +916,21 @@ fn opt_string(
     }
 }
 
+fn req_string(
+    obj: &Obj,
+    key: &str,
+    parent: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<String, WidgetDecodeError> {
+    opt_string(obj, key, parent, ctx)?.ok_or_else(|| {
+        WidgetDecodeError::new(
+            codes::FIELD_MISSING,
+            parent,
+            format!("missing field '{key}'"),
+        )
+    })
+}
+
 fn opt_f32(obj: &Obj, key: &str, parent: &str) -> Result<Option<f32>, WidgetDecodeError> {
     match obj.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -1033,6 +1115,18 @@ fn snapshot_node(ast: &WidgetAst, indent: usize, out: &mut String) {
                 snapshot_node(c, indent + 1, out);
             }
         }
+        WidgetNode::TextInput(t) => {
+            out.push_str(&format!(
+                " placeholder={:?} value={:?} on_input={:?} on_submit={:?} width={} height={} autofocus={}\n",
+                t.placeholder,
+                t.value,
+                t.on_input,
+                t.on_submit,
+                fmt_length(t.width),
+                fmt_length(t.height),
+                t.autofocus
+            ));
+        }
         WidgetNode::Row(r) => {
             out.push_str(&format!(
                 " spacing={} width={} height={} align_y={:?}\n",
@@ -1190,6 +1284,57 @@ mod tests {
         let ast = ok(json!({ "kind": "text", "id": "hello-id", "value": "x" }));
         assert_eq!(ast.node_id.value, "hello-id");
         assert!(ast.node_id.explicit);
+    }
+
+    #[test]
+    fn decode_text_input_required_fields_and_style() {
+        let ast = ok(json!({
+            "kind": "text_input",
+            "id": "palette-query",
+            "placeholder": "Run command",
+            "value": "che",
+            "on_input": "palette.changed",
+            "on_submit": "palette.submit",
+            "width": "fill",
+            "height": 32,
+            "autofocus": true,
+            "style": {
+                "background": "#101119",
+                "text_color": "#e1e5f4",
+                "placeholder_color": "#585d6e",
+                "border": { "width": 1, "radius": 4, "color": "#242535" }
+            }
+        }));
+        assert_eq!(ast.node_id.value, "palette-query");
+        assert!(ast.node_id.explicit);
+        if let WidgetNode::TextInput(t) = &ast.node {
+            assert_eq!(t.placeholder, "Run command");
+            assert_eq!(t.value, "che");
+            assert_eq!(t.on_input, "palette.changed");
+            assert_eq!(t.on_submit.as_deref(), Some("palette.submit"));
+            assert_eq!(t.width, AstLength::Fill);
+            assert_eq!(t.height, AstLength::Fixed(32.0));
+            assert!(t.autofocus);
+            assert_eq!(
+                t.style.placeholder_color.as_ref().map(|c| c.raw.as_str()),
+                Some("#585d6e")
+            );
+            assert_eq!(t.style.border.as_ref().map(|b| b.radius), Some(4.0));
+        } else {
+            panic!("expected text_input");
+        }
+    }
+
+    #[test]
+    fn text_input_requires_on_input() {
+        let err = decode(&json!({
+            "kind": "text_input",
+            "placeholder": "Run command",
+            "value": ""
+        }))
+        .unwrap_err();
+        assert_eq!(err.code, codes::FIELD_MISSING);
+        assert_eq!(err.path, "root");
     }
 
     #[test]

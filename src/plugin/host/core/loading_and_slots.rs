@@ -138,10 +138,9 @@ impl PluginHost {
 
         // Walk the requested capability list. Anything the
         // descriptor table doesn't know becomes a `capability.unknown`
-        // warning; anything not yet decided gets either auto-granted
-        // (bundled plugin) or queued for the security prompt
-        // (non-bundled). Bundled detection uses the canonical plugin
-        // root we already computed.
+        // warning. Local development plugins under auto-grant roots
+        // get declared capabilities granted at load time; other roots
+        // queue undecided capabilities for the security prompt.
         let requested_strings = canonicalize_requested(&manifest.capabilities);
         for unknown in unknown_requested(&requested_strings) {
             self.diagnostics.record(
@@ -156,8 +155,8 @@ impl PluginHost {
                 .with_generation(generation_id),
             );
         }
-        if self.auto_grant_policy.is_bundled(&plugin_root) {
-            let granted = self.grant_store.auto_grant_bundled(
+        if self.auto_grant_policy.is_auto_granted(&plugin_root) {
+            let granted = self.grant_store.auto_grant_declared(
                 &manifest.id,
                 &plugin_version,
                 &requested_strings,
@@ -251,6 +250,8 @@ impl PluginHost {
             Rc::new(RefCell::new(PluginTimerCallbacks::new()));
         let watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>> =
             Rc::new(RefCell::new(PluginWatcherCallbacks::new()));
+        let overlay_callbacks: Rc<RefCell<OverlayCallbacks>> =
+            Rc::new(RefCell::new(OverlayCallbacks::new()));
         let async_ctx = self.build_async_runtime_context(
             Rc::clone(&job_callbacks),
             Rc::clone(&timer_callbacks),
@@ -278,6 +279,7 @@ impl PluginHost {
                 generation_id,
                 diagnostics: self.diagnostics.clone(),
                 extension_registry: self.extension_registry.clone(),
+                overlay_callbacks: Rc::clone(&overlay_callbacks),
             },
         ) {
             self.diagnostics.record(
@@ -518,6 +520,7 @@ impl PluginHost {
             root: plugin_root,
             manifest: manifest.clone(),
             slot_handlers,
+            overlay_callbacks,
             screens,
             screen_state: HashMap::new(),
             dynamic_widgets,
@@ -605,6 +608,10 @@ impl PluginHost {
         region: &str,
     ) -> Vec<crate::plugin::extensions::ContextMenuItemRecord> {
         self.extension_registry.context_menu_items(region)
+    }
+
+    pub fn extension_overlays(&self) -> Vec<crate::plugin::extensions::OverlayRecord> {
+        self.extension_registry.overlays()
     }
 
     pub fn extension_graph_decorations_for_commit(
@@ -757,5 +764,6 @@ impl PluginHost {
         if let Some(target) = nav {
             self.open_screen(plugin_id.to_string(), target);
         }
+        self.drain_lua_command_effects();
     }
 }

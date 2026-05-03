@@ -1,5 +1,296 @@
 use super::*;
 
+struct BuiltinGitCommandSpec {
+    name: &'static str,
+    title: &'static str,
+    description: &'static str,
+    args: Vec<commands::CommandArg>,
+    destructive: bool,
+    background: bool,
+}
+
+fn command_arg(
+    name: &'static str,
+    ty: commands::CommandArgType,
+    required: bool,
+    default: Option<serde_json::Value>,
+    doc: &'static str,
+) -> commands::CommandArg {
+    commands::CommandArg {
+        name: name.into(),
+        ty,
+        required,
+        default,
+        doc: doc.into(),
+    }
+}
+
+fn builtin_git_command_specs() -> Vec<BuiltinGitCommandSpec> {
+    use commands::CommandArgType::{Boolean, Integer, String as StringArg};
+    vec![
+        BuiltinGitCommandSpec {
+            name: "git.checkout",
+            title: "Git: Checkout",
+            description: "Check out a ref.",
+            args: vec![command_arg(
+                "ref",
+                StringArg,
+                true,
+                None,
+                "Ref to check out.",
+            )],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.create_branch",
+            title: "Git: Create Branch",
+            description: "Create a branch at start_point.",
+            args: vec![
+                command_arg("name", StringArg, true, None, "Branch name."),
+                command_arg(
+                    "start_point",
+                    StringArg,
+                    false,
+                    None,
+                    "Commit/ref to create the branch at.",
+                ),
+            ],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.delete_branch",
+            title: "Git: Delete Branch",
+            description: "Delete a branch.",
+            args: vec![
+                command_arg("name", StringArg, true, None, "Branch name."),
+                command_arg(
+                    "force",
+                    Boolean,
+                    false,
+                    Some(serde_json::json!(false)),
+                    "Force deletion.",
+                ),
+            ],
+            destructive: true,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.create_tag",
+            title: "Git: Create Tag",
+            description: "Create a tag at target.",
+            args: vec![
+                command_arg("name", StringArg, true, None, "Tag name."),
+                command_arg("target", StringArg, false, None, "Commit/ref to tag."),
+            ],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.delete_tag",
+            title: "Git: Delete Tag",
+            description: "Delete a tag locally.",
+            args: vec![command_arg("name", StringArg, true, None, "Tag name.")],
+            destructive: true,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.commit",
+            title: "Git: Commit",
+            description: "Commit staged changes.",
+            args: vec![command_arg(
+                "message",
+                StringArg,
+                true,
+                None,
+                "Commit message.",
+            )],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.stash_push",
+            title: "Git: Stash Push",
+            description: "Stash dirty changes.",
+            args: vec![command_arg(
+                "message",
+                StringArg,
+                false,
+                None,
+                "Stash message.",
+            )],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.stash_pop",
+            title: "Git: Stash Pop",
+            description: "Pop a stash.",
+            args: vec![command_arg(
+                "index",
+                Integer,
+                false,
+                Some(serde_json::json!(0)),
+                "Stash index.",
+            )],
+            destructive: false,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.reset",
+            title: "Git: Reset",
+            description: "Reset current branch.",
+            args: vec![
+                command_arg("ref", StringArg, true, None, "Target ref."),
+                command_arg(
+                    "mode",
+                    commands::CommandArgType::Enum(vec![
+                        "soft".into(),
+                        "mixed".into(),
+                        "hard".into(),
+                    ]),
+                    false,
+                    Some(serde_json::json!("mixed")),
+                    "Reset mode.",
+                ),
+            ],
+            destructive: true,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.fetch",
+            title: "Git: Fetch",
+            description: "Fetch from remote.",
+            args: vec![command_arg(
+                "remote",
+                StringArg,
+                false,
+                None,
+                "Remote name.",
+            )],
+            destructive: false,
+            background: true,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.push",
+            title: "Git: Push",
+            description: "Push current branch.",
+            args: vec![
+                command_arg("remote", StringArg, false, None, "Remote name."),
+                command_arg("ref", StringArg, false, None, "Ref to push."),
+            ],
+            destructive: false,
+            background: true,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.merge",
+            title: "Git: Merge",
+            description: "Merge a ref into current.",
+            args: vec![command_arg("ref", StringArg, true, None, "Ref to merge.")],
+            destructive: true,
+            background: false,
+        },
+        BuiltinGitCommandSpec {
+            name: "git.rebase",
+            title: "Git: Rebase",
+            description: "Rebase onto a ref.",
+            args: vec![command_arg(
+                "ref",
+                StringArg,
+                true,
+                None,
+                "Ref to rebase onto.",
+            )],
+            destructive: true,
+            background: false,
+        },
+    ]
+}
+
+fn git_request_from_command(
+    name: &str,
+    args: &serde_json::Value,
+) -> Result<crate::plugin::git_ops::GitOpRequest, String> {
+    use crate::plugin::git_ops::{GitOpRequest, ResetMode};
+
+    match name {
+        "git.checkout" => Ok(GitOpRequest::Checkout {
+            ref_name: required_string_arg(args, "ref")?,
+        }),
+        "git.create_branch" => Ok(GitOpRequest::CreateBranch {
+            name: required_string_arg(args, "name")?,
+            start_point: string_arg(args, "start_point"),
+        }),
+        "git.delete_branch" => Ok(GitOpRequest::DeleteBranch {
+            name: required_string_arg(args, "name")?,
+            force: bool_arg(args, "force", false),
+        }),
+        "git.create_tag" => Ok(GitOpRequest::CreateTag {
+            name: required_string_arg(args, "name")?,
+            target: string_arg(args, "target"),
+        }),
+        "git.delete_tag" => Ok(GitOpRequest::DeleteTag {
+            name: required_string_arg(args, "name")?,
+        }),
+        "git.commit" => Ok(GitOpRequest::Commit {
+            message: required_string_arg(args, "message")?,
+        }),
+        "git.stash_push" => Ok(GitOpRequest::StashPush {
+            message: string_arg(args, "message"),
+        }),
+        "git.stash_pop" => Ok(GitOpRequest::StashPop {
+            index: integer_arg(args, "index", 0).max(0) as usize,
+        }),
+        "git.reset" => {
+            let mode_raw = string_arg(args, "mode").unwrap_or_else(|| "mixed".to_string());
+            let mode = ResetMode::parse(&mode_raw)
+                .ok_or_else(|| format!("unknown reset mode `{mode_raw}`"))?;
+            Ok(GitOpRequest::Reset {
+                ref_name: required_string_arg(args, "ref")?,
+                mode,
+            })
+        }
+        "git.fetch" => Ok(GitOpRequest::Fetch {
+            remote: string_arg(args, "remote"),
+        }),
+        "git.push" => Ok(GitOpRequest::Push {
+            remote: string_arg(args, "remote"),
+            ref_name: string_arg(args, "ref"),
+        }),
+        "git.merge" => Ok(GitOpRequest::Merge {
+            ref_name: required_string_arg(args, "ref")?,
+        }),
+        "git.rebase" => Ok(GitOpRequest::Rebase {
+            ref_name: required_string_arg(args, "ref")?,
+        }),
+        other => Err(format!("unknown git command `{other}`")),
+    }
+}
+
+fn string_arg(args: &serde_json::Value, key: &str) -> Option<String> {
+    args.get(key)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn required_string_arg(args: &serde_json::Value, key: &str) -> Result<String, String> {
+    string_arg(args, key).ok_or_else(|| format!("missing required arg `{key}`"))
+}
+
+fn bool_arg(args: &serde_json::Value, key: &str, default: bool) -> bool {
+    args.get(key)
+        .and_then(|value| value.as_bool())
+        .unwrap_or(default)
+}
+
+fn integer_arg(args: &serde_json::Value, key: &str, default: i64) -> i64 {
+    args.get(key)
+        .and_then(|value| value.as_i64())
+        .unwrap_or(default)
+}
+
 impl PluginHost {
     /// Build the [`CommandDispatchEnv`] handle plugins are handed at
     /// API install time. Cheap-clone (every member is `Rc`-backed); the
@@ -50,125 +341,53 @@ impl PluginHost {
                 .register(descriptor, &self.diagnostics);
         }
 
-        // Register `git.<op>` host commands so the palette
-        // can list them and so the keymap-bound dispatcher can route
-        // through `leviathan.command.invoke("git.checkout", ...)`. The
-        // bodies route through the same [`GitOpsContext::execute`]
-        // funnel the Lua `leviathan.git.*` API uses; capability checks
-        // happen inside `execute` against an "unrestricted" host
-        // closure (host commands have no plugin guard — the palette
-        // user IS the guard).
-        let git_specs: &[(&str, &str, &str, &str, bool)] = &[
-            (
-                "git.checkout",
-                "Git: Checkout",
-                "Check out a ref.",
-                "ref",
-                false,
-            ),
-            (
-                "git.create_branch",
-                "Git: Create Branch",
-                "Create a branch at start_point.",
-                "name",
-                false,
-            ),
-            (
-                "git.delete_branch",
-                "Git: Delete Branch",
-                "Delete a branch.",
-                "name",
-                true,
-            ),
-            (
-                "git.create_tag",
-                "Git: Create Tag",
-                "Create a tag at target.",
-                "name",
-                false,
-            ),
-            (
-                "git.delete_tag",
-                "Git: Delete Tag",
-                "Delete a tag locally.",
-                "name",
-                true,
-            ),
-            (
-                "git.commit",
-                "Git: Commit",
-                "Commit staged changes.",
-                "message",
-                false,
-            ),
-            (
-                "git.stash_push",
-                "Git: Stash Push",
-                "Stash dirty changes.",
-                "message",
-                false,
-            ),
-            (
-                "git.stash_pop",
-                "Git: Stash Pop",
-                "Pop most recent stash.",
-                "index",
-                false,
-            ),
-            (
-                "git.reset",
-                "Git: Reset",
-                "Reset current branch.",
-                "ref",
-                true,
-            ),
-            (
-                "git.fetch",
-                "Git: Fetch",
-                "Fetch from remote.",
-                "remote",
-                false,
-            ),
-            (
-                "git.push",
-                "Git: Push",
-                "Push current branch.",
-                "remote",
-                false,
-            ),
-            (
-                "git.merge",
-                "Git: Merge",
-                "Merge a ref into current.",
-                "ref",
-                true,
-            ),
-            (
-                "git.rebase",
-                "Git: Rebase",
-                "Rebase onto a ref.",
-                "ref",
-                true,
-            ),
-        ];
-        for (name, title, doc, primary_arg, destructive) in git_specs.iter().copied() {
+        // Register `git.<op>` host commands so command palettes and
+        // keymaps can route through `leviathan.command.invoke(...)`.
+        // Bodies use the same GitOpsContext funnel as `leviathan.git.*`.
+        for spec in builtin_git_command_specs() {
+            let git_ctx = self.git_ops_context();
+            let pending_events = self.pending_git_events.clone();
+            let command_name = spec.name.to_string();
+            let background = spec.background;
             let descriptor = CommandDescriptor {
-                name: name.into(),
-                title: title.into(),
-                description: doc.into(),
+                name: spec.name.into(),
+                title: spec.title.into(),
+                description: spec.description.into(),
                 plugin_id: HOST_COMMAND_PLUGIN_ID.into(),
                 generation_id: None,
                 context: CommandContext::GLOBAL.into(),
-                args: vec![commands::CommandArg {
-                    name: primary_arg.into(),
-                    ty: commands::CommandArgType::String,
-                    required: false,
-                    default: None,
-                    doc: format!("Primary argument: {primary_arg}."),
-                }],
-                destructive,
+                args: spec.args,
+                destructive: spec.destructive,
                 capabilities: Vec::new(),
-                run: CommandBody::Host(Box::new(|_args| Ok(()))),
+                run: CommandBody::Host(Box::new(move |args| {
+                    let request = git_request_from_command(&command_name, args)?;
+                    if background {
+                        let git_ctx = git_ctx.clone();
+                        let pending_events = pending_events.clone();
+                        std::thread::spawn(move || {
+                            let exec = git_ctx.execute(
+                                HOST_COMMAND_PLUGIN_ID,
+                                GenerationId::new(0),
+                                request,
+                                |_| Ok(()),
+                            );
+                            pending_events.push_many(exec.events.fires);
+                        });
+                        Ok(())
+                    } else {
+                        let exec = git_ctx.execute(
+                            HOST_COMMAND_PLUGIN_ID,
+                            GenerationId::new(0),
+                            request,
+                            |_| Ok(()),
+                        );
+                        pending_events.push_many(exec.events.fires);
+                        match exec.error {
+                            None => Ok(()),
+                            Some(err) => Err(err),
+                        }
+                    }
+                })),
             };
             self.command_registry
                 .borrow_mut()
@@ -988,6 +1207,12 @@ impl PluginHost {
             self.drain_devtools_actions();
         }
         outcome
+    }
+
+    pub(super) fn drain_lua_command_effects(&mut self) {
+        self.flush_pending_command_events();
+        self.flush_pending_git_events();
+        self.drain_devtools_actions();
     }
 
     pub(super) fn flush_pending_command_events(&mut self) {

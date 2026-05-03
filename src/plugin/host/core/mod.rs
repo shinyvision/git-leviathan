@@ -21,6 +21,7 @@ use crate::plugin::api::{
 };
 use crate::plugin::async_jobs::{AsyncJobRegistry, JobOutcome};
 use crate::plugin::audit::AuditLog;
+use crate::plugin::bridge::widget_tree::plugin_text_input_id;
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::capability_grants::{
     audit_grant_event, canonicalize_requested, prompt_for_undecided, unknown_requested,
@@ -39,6 +40,7 @@ use crate::plugin::events::{
     self, AutocmdOptions, DispatchOutcome, EventBus, EventPayload, GroupId,
     MAX_CONSECUTIVE_FAILURES,
 };
+use crate::plugin::extensions::OverlayCallbacks;
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::git_ops::{
     ActiveRepositoryGateway, DestructiveConfirmPolicy, GitOpsContext, PendingGitWrite,
@@ -208,6 +210,10 @@ impl PluginHost {
             devtools_action_queue: Rc::new(RefCell::new(Vec::new())),
             last_devtools_result: None,
         };
+        let local_plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
+        if local_plugins.is_dir() {
+            host.trust_local_plugin_root(local_plugins);
+        }
         host.register_builtin_host_commands();
         host.register_builtin_devtools_commands();
         host
@@ -324,11 +330,11 @@ impl PluginHost {
         self.grant_store.clone()
     }
 
-    /// Mark `root` as a trusted bundled-plugin directory. Plugins
-    /// whose `dir` canonicalises under this root get their requested
-    /// capabilities auto-allowed at load (`decided_by = "default"`).
-    pub fn trust_bundled_plugin_root(&mut self, root: impl Into<PathBuf>) {
-        self.auto_grant_policy.trust_bundled_root(root);
+    /// Mark `root` as a local plugin directory. Plugins whose `dir`
+    /// canonicalises under this root get their requested capabilities
+    /// auto-allowed at load (`decided_by = "default"`).
+    pub fn trust_local_plugin_root(&mut self, root: impl Into<PathBuf>) {
+        self.auto_grant_policy.trust_root(root);
     }
 
     /// Hands pending capability decisions to the caller. The caller calls

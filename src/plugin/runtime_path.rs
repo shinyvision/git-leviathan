@@ -8,7 +8,7 @@
 //! init.lua
 //! lua/<plugin_id>/...lua          # plugin's own modules
 //! after/plugin/...lua             # post-init bootstrap files
-//! assets/                         # bundled assets (icons etc)
+//! assets/                         # plugin assets (icons etc)
 //! doc/                            # plugin docs
 //! tests/                          # plugin test sources
 //! migrations/                     # persist migrations

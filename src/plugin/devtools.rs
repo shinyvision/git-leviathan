@@ -298,7 +298,7 @@ pub struct InspectorSnapshot {
     /// persistence and settings: secret metadata only. Secret values never appear in
     /// devtools snapshots.
     pub secrets: Vec<SecretSummary>,
-    /// dependency lockfile: per-edge dependency rows. Sorted by
+    /// dependency graph: per-edge dependency rows. Sorted by
     /// `(consumer_plugin_id, dependency_id)`. Required and optional
     /// edges share the same row shape; `kind` and `status`
     /// distinguish them.

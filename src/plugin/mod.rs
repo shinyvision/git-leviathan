@@ -28,7 +28,6 @@ pub mod generation;
 pub mod git_ops;
 pub mod host;
 pub mod keymap;
-pub mod lockfile;
 pub mod lua_loader;
 pub mod message;
 pub mod performance;

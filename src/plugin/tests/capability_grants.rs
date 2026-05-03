@@ -12,7 +12,7 @@
 //! 6. `grant_store_persists_across_plugin_host_instances`
 //! 7. `audit_log_contains_grant_lifecycle_codes`
 //!
-//! The MockHost trusts its tmp dir as a "bundled" root by default, so
+//! The MockHost trusts its tmp dir as a local plugin root by default, so
 //! tests that need to exercise the prompt path explicitly revoke or
 //! configure the host's grant store before exercising the API.
 
@@ -44,8 +44,8 @@ fn manifest_declares_fs_read_but_not_granted_returns_denial_audit_diagnostic() {
     // capability. Build a host whose grant store is brand-new and
     // explicitly *don't* trust the tmp dir so auto-grant doesn't fire.
     let mut host = MockHost::new();
-    // Disable auto-grant by stripping the bundled trust:
-    // since trust_bundled_root is additive, we instead revoke the
+    // Disable auto-grant by stripping the local root trust:
+    // since trusted roots are additive, we instead revoke the
     // auto-grant after load by recording a Deny.
     host.load_inline(
         "denier",
@@ -346,7 +346,7 @@ fn audit_log_contains_grant_lifecycle_codes() {
         r#""#,
     )
     .expect("load");
-    // load triggers `grant.allowed` (auto-grant for the bundled tmp).
+    // load triggers `grant.allowed` (auto-grant for the local tmp root).
     host.host_mut()
         .revoke_capability("lifer", "1.0.0", "env")
         .expect("revoke");

@@ -48,6 +48,12 @@ pub(super) fn build(node: &ButtonNode, ctx: &BuildCtx<'_>) -> Element<'static, M
                 event,
                 value,
             }),
+            DispatchScope::Overlay { overlay_id } => Message::Plugin(PluginMessage::OverlayEvent {
+                plugin_id,
+                overlay_id: overlay_id.to_string(),
+                event,
+                value,
+            }),
         })
     };
 

@@ -42,6 +42,12 @@ pub(super) fn build(node: &MouseAreaNode, ctx: &BuildCtx<'_>) -> Element<'static
                 event,
                 value,
             }),
+            DispatchScope::Overlay { overlay_id } => Message::Plugin(PluginMessage::OverlayEvent {
+                plugin_id,
+                overlay_id: overlay_id.to_string(),
+                event,
+                value,
+            }),
         }
     };
     MouseArea::new(child)

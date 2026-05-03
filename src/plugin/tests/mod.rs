@@ -4,7 +4,7 @@ mod async_runtime;
 mod autocmd_events;
 mod capability_grants;
 mod commands_palette;
-mod dependency_lockfile;
+mod dependency_resolution;
 mod devtools;
 pub mod diagnostics;
 mod extension_points;

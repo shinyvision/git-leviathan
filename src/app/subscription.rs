@@ -104,10 +104,17 @@ fn translate_window_event(
         iced::Event::Window(window::Event::CloseRequested) => {
             Some(Message::App(AppMessage::ShutdownRequested))
         }
-        iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. })
-            if matches!(status, event::Status::Ignored) =>
-        {
-            Some(Message::App(AppMessage::KeyPressed(key, modifiers)))
+        iced::Event::Keyboard(keyboard::Event::KeyPressed {
+            key,
+            modified_key,
+            modifiers,
+            ..
+        }) if matches!(status, event::Status::Ignored) => {
+            Some(Message::App(AppMessage::KeyPressed {
+                key,
+                modified_key,
+                modifiers,
+            }))
         }
         iced::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
             Some(Message::App(AppMessage::ModifiersChanged(modifiers)))
@@ -148,10 +155,42 @@ fn sigterm_stream() -> impl iced::futures::Stream<Item = Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use iced::keyboard::{key, Location};
 
     #[test]
     fn intervals_positive() {
         assert!(FETCH_TICK_INTERVAL > Duration::ZERO);
         assert!(ANIMATION_TICK_INTERVAL > Duration::ZERO);
+    }
+
+    #[test]
+    fn key_pressed_preserves_modified_key() {
+        let message = translate_window_event(
+            iced::Event::Keyboard(keyboard::Event::KeyPressed {
+                key: keyboard::Key::Character(";".into()),
+                modified_key: keyboard::Key::Character(":".into()),
+                physical_key: key::Physical::Code(key::Code::Semicolon),
+                location: Location::Standard,
+                modifiers: keyboard::Modifiers::SHIFT,
+                text: Some(":".into()),
+                repeat: false,
+            }),
+            event::Status::Ignored,
+            window::Id::unique(),
+        )
+        .expect("ignored key press should be forwarded");
+
+        let Message::App(AppMessage::KeyPressed {
+            key,
+            modified_key,
+            modifiers,
+        }) = message
+        else {
+            panic!("expected app key press message");
+        };
+
+        assert_eq!(key, keyboard::Key::Character(";".into()));
+        assert_eq!(modified_key, keyboard::Key::Character(":".into()));
+        assert!(modifiers.shift());
     }
 }

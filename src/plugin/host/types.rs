@@ -17,7 +17,7 @@ use crate::plugin::commands::{CommandPluginRegistry, CommandRegistry, PendingCom
 use crate::plugin::devtools::ReloadEventSummary;
 use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::events::EventBus;
-use crate::plugin::extensions::ExtensionRegistry;
+use crate::plugin::extensions::{ExtensionRegistry, OverlayCallbacks};
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::git_ops::{ActiveRepositoryGateway, DestructiveConfirmPolicy, PendingGitWrites};
 use crate::plugin::keymap::KeymapRegistry;
@@ -82,6 +82,7 @@ pub(super) struct LoadedPlugin {
     pub(super) root: PathBuf,
     pub(super) manifest: PluginManifest,
     pub(super) slot_handlers: HashMap<String, RegistryKey>,
+    pub(super) overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
     pub(super) screens: HashMap<String, ScreenDef>,
     pub(super) screen_state: HashMap<String, RegistryKey>,
     pub(super) dynamic_widgets: HashMap<String, (RegistryKey, DynamicAstCache)>,

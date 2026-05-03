@@ -9,6 +9,7 @@ use mlua::{Lua, LuaSerdeExt, RegistryKey};
 
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::diagnostic::DiagnosticStore;
+use crate::plugin::extensions::OverlayCallbacks;
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId, ResourceLedger};
 
@@ -151,6 +152,7 @@ pub struct InstallAllContext {
     pub generation_id: GenerationId,
     pub diagnostics: DiagnosticStore,
     pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
+    pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
 }
 
 pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
@@ -173,6 +175,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         generation_id,
         diagnostics: _diagnostics,
         extension_registry,
+        overlay_callbacks,
     } = ctx;
 
     let leviathan = lua.create_table()?;
@@ -212,6 +215,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
             ledger.clone(),
             Rc::clone(&guard),
             extension_registry,
+            Rc::clone(&overlay_callbacks),
         )?;
     }
     keymap::install(lua, Rc::clone(&build), ledger.clone(), &leviathan, keymaps)?;
@@ -421,6 +425,7 @@ mod tests {
                 generation_id: GenerationId::new(1),
                 diagnostics: DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
                 extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
+                overlay_callbacks: Rc::new(RefCell::new(OverlayCallbacks::new())),
             },
         )
         .unwrap();

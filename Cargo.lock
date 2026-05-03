@@ -1559,7 +1559,6 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
- "sha2",
  "swash 0.1.19",
  "syntect",
  "tempfile",

@@ -12,11 +12,9 @@ impl PluginHost {
 
     /// Discover every plugin under `dir`, resolve their dependency
     /// graph, then load successful plugins in deterministic order.
-    /// Reads `plugins.lock` (and `plugins.lock.local`) from `dir` to
-    /// validate checksums; rewrites `plugins.lock` afterwards so the
-    /// next run sees the resolved set. Failures emit structured
-    /// diagnostics; this entry never returns a `Result` because the
-    /// startup path needs to keep going past per-plugin failures.
+    /// Failures emit structured diagnostics; this entry never returns
+    /// a `Result` because the startup path needs to keep going past
+    /// per-plugin failures.
     pub fn load_from_dir(&mut self, dir: &Path) {
         let Ok(entries) = fs::read_dir(dir) else {
             return;
@@ -30,15 +28,11 @@ impl PluginHost {
         self.resolve_and_load(dir, &candidate_dirs);
     }
 
-    /// dependency resolver entry point. `lockfile_dir` is the root used
-    /// for `plugins.lock` / `plugins.lock.local`; `candidate_dirs`
-    /// is the set of plugin directories to consider for loading.
-    pub fn resolve_and_load(&mut self, lockfile_dir: &Path, candidate_dirs: &[PathBuf]) {
+    /// dependency resolver entry point. `candidate_dirs` is the set of
+    /// plugin directories to consider for loading.
+    pub fn resolve_and_load(&mut self, _root: &Path, candidate_dirs: &[PathBuf]) {
         use crate::plugin::dependency::{
             resolve, BlockReason, OptionalMissReason, ResolutionReport,
-        };
-        use crate::plugin::lockfile::{
-            compute_plugin_checksum, LockedPlugin, Lockfile, LOCAL_OVERRIDE_NAME, LOCKFILE_NAME,
         };
 
         // 1) Read manifests, drop dirs whose manifest fails to parse
@@ -219,137 +213,7 @@ impl PluginHost {
             );
         }
 
-        // 4) Read lockfile + local override (if either exists). Apply
-        //    overrides on top, then validate checksums against the
-        //    plugins about to load. Mismatches and unknown ids emit
-        //    diagnostics; they don't block the load — the next write
-        //    will refresh the lockfile to match disk.
-        let lock_path = lockfile_dir.join(LOCKFILE_NAME);
-        let local_path = lockfile_dir.join(LOCAL_OVERRIDE_NAME);
-        let mut effective_lock = if lock_path.is_file() {
-            match Lockfile::read(&lock_path) {
-                Ok(l) => l,
-                Err(e) => {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from("<lockfile>"),
-                            DiagnosticSeverity::Warning,
-                            "lockfile.read_failed",
-                            format!("could not read plugins.lock: {e}"),
-                        )
-                        .with_source(PluginSourceSpan::Manifest {
-                            path: lock_path.display().to_string(),
-                            key: None,
-                        }),
-                    );
-                    Lockfile::new()
-                }
-            }
-        } else {
-            Lockfile::new()
-        };
-        if local_path.is_file() {
-            match Lockfile::read(&local_path) {
-                Ok(overlay) => effective_lock.apply_overlay(&overlay),
-                Err(e) => {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from("<lockfile>"),
-                            DiagnosticSeverity::Warning,
-                            "lockfile.read_failed",
-                            format!("could not read plugins.lock.local: {e}"),
-                        )
-                        .with_source(PluginSourceSpan::Manifest {
-                            path: local_path.display().to_string(),
-                            key: None,
-                        }),
-                    );
-                }
-            }
-        }
-
-        let live_ids: HashSet<String> = report.load_order.iter().cloned().collect();
-        for entry in &effective_lock.plugins {
-            if !live_ids.contains(&entry.id) {
-                self.diagnostics.record(
-                    PluginDiagnostic::new(
-                        PluginId::from(entry.id.clone()),
-                        DiagnosticSeverity::Warning,
-                        "lockfile.unknown_plugin",
-                        format!(
-                            "plugins.lock pins `{}` but no plugin with that id is present; entry will be dropped on next write",
-                            entry.id
-                        ),
-                    )
-                    .with_source(PluginSourceSpan::Manifest {
-                        path: lock_path.display().to_string(),
-                        key: Some("plugin".to_string()),
-                    })
-                    .with_context(serde_json::json!({ "version": entry.version })),
-                );
-            }
-        }
-
-        // 5) Validate checksums for plugins we're about to load.
-        let mut new_lock_entries: Vec<LockedPlugin> = Vec::new();
-        for plugin_id in &report.load_order {
-            let Some(plugin_dir) = dir_by_id.get(plugin_id) else {
-                continue;
-            };
-            let manifest = manifests
-                .iter()
-                .find(|m| &m.id == plugin_id)
-                .expect("manifest present for load-order id");
-            let checksum = match compute_plugin_checksum(plugin_dir) {
-                Ok(c) => c,
-                Err(e) => {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id.clone()),
-                            DiagnosticSeverity::Warning,
-                            "lockfile.checksum_failed",
-                            format!("could not compute plugin checksum: {e}"),
-                        )
-                        .with_source(PluginSourceSpan::Manifest {
-                            path: plugin_dir.display().to_string(),
-                            key: None,
-                        }),
-                    );
-                    String::new()
-                }
-            };
-            if let Some(locked) = effective_lock.lookup(plugin_id) {
-                if !checksum.is_empty() && locked.checksum != checksum {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id.clone()),
-                            DiagnosticSeverity::Warning,
-                            "lockfile.checksum_mismatch",
-                            format!(
-                                "plugin `{plugin_id}` content changed since plugins.lock was written"
-                            ),
-                        )
-                        .with_source(PluginSourceSpan::Manifest {
-                            path: plugin_dir.display().to_string(),
-                            key: None,
-                        })
-                        .with_context(serde_json::json!({
-                            "expected": locked.checksum,
-                            "actual": checksum,
-                            "locked_version": locked.version,
-                        })),
-                    );
-                }
-            }
-            new_lock_entries.push(LockedPlugin {
-                id: plugin_id.clone(),
-                version: manifest.version.to_string(),
-                source: "local".to_string(),
-                checksum,
-            });
-        }
-
-        // 6) Split into eager / lazy cohorts. Plugins with a non-empty
+        // 4) Split into eager / lazy cohorts. Plugins with a non-empty
         //    `[activation]` section are parked in the lazy registry
         //    via `install_lazy_stubs`; everyone else loads eagerly.
         //    `load_plugin` already records its own diagnostics; we
@@ -371,27 +235,6 @@ impl PluginHost {
             }
             if let Err(e) = self.load_plugin(plugin_dir) {
                 let _ = e;
-            }
-        }
-
-        // 7) Re-write the lockfile in sorted order.
-        let new_lock = Lockfile {
-            plugins: new_lock_entries,
-        };
-        if !new_lock.plugins.is_empty() {
-            if let Err(e) = new_lock.write(&lock_path) {
-                self.diagnostics.record(
-                    PluginDiagnostic::new(
-                        PluginId::from("<lockfile>"),
-                        DiagnosticSeverity::Warning,
-                        "lockfile.write_failed",
-                        format!("could not write plugins.lock: {e}"),
-                    )
-                    .with_source(PluginSourceSpan::Manifest {
-                        path: lock_path.display().to_string(),
-                        key: None,
-                    }),
-                );
             }
         }
     }

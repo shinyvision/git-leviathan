@@ -14,7 +14,11 @@ use crate::view_model::LoadedRepo;
 #[derive(Debug, Clone)]
 pub enum AppMessage {
     NoOp,
-    KeyPressed(keyboard::Key, keyboard::Modifiers),
+    KeyPressed {
+        key: keyboard::Key,
+        modified_key: keyboard::Key,
+        modifiers: keyboard::Modifiers,
+    },
     ModifiersChanged(keyboard::Modifiers),
     OpenRepoDialog,
     RepoPathChosen(Option<PathBuf>),

@@ -35,6 +35,15 @@ impl App {
                 self.plugin_host
                     .dispatch_event(&plugin_id, &screen_id, &event, value);
             }
+            PluginMessage::OverlayEvent {
+                plugin_id,
+                overlay_id,
+                event,
+                value,
+            } => {
+                self.plugin_host
+                    .dispatch_overlay_event(&plugin_id, &overlay_id, &event, value);
+            }
             PluginMessage::SplitDragBegin {
                 split_key,
                 divider_index,
@@ -57,7 +66,7 @@ impl App {
                 self.plugin_host.split_drag_released();
             }
         }
-        Task::none()
+        self.focus_plugin_overlay_input()
     }
 
     pub(super) fn update_app(&mut self, msg: AppMessage) -> Task<Message> {
@@ -82,7 +91,11 @@ impl App {
                 crate::services::kill_running_git_processes();
                 std::process::exit(0);
             }
-            AppMessage::KeyPressed(key, modifiers) => self.handle_key_pressed(key, modifiers),
+            AppMessage::KeyPressed {
+                key,
+                modified_key,
+                modifiers,
+            } => self.handle_key_pressed(key, modified_key, modifiers),
             AppMessage::ModifiersChanged(modifiers) => {
                 if self.no_git_screen.is_some() || self.tabs.is_empty() {
                     return Task::none();

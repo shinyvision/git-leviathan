@@ -447,7 +447,7 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
 
 /// Resolve a plugin-supplied path against the plugin's root when the path
 /// is relative. Absolute paths pass through unchanged. Used by `read_file`
-/// / `read_lines` so plugins can name their bundled assets without
+/// / `read_lines` so plugins can name their assets without
 /// recomputing the plugin root every call.
 fn resolve_for_read(plugin_root: &Path, path: &str) -> String {
     let p = Path::new(path);

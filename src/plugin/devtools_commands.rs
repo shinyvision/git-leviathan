@@ -1,4 +1,4 @@
-//! host-bundled devtools commands.
+//! host-provided devtools commands.
 //!
 //! Registers ten plugin-management commands under the host plugin id
 //! (`<host>`). Every command goes through the same command registry dispatcher
@@ -239,7 +239,7 @@ pub fn register(
             context: CommandContext::GLOBAL.into(),
             args: spec.args,
             destructive: spec.destructive,
-            // Devtools commands are host-bundled — the palette / user
+            // Devtools commands are host-provided; the palette / user
             // is the access guard. See `commands::DispatchEnvRunner`
             // for the host-vs-plugin distinction.
             capabilities: Vec::new(),

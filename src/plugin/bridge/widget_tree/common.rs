@@ -49,13 +49,18 @@ pub(super) fn opt_color_to_iced(color: &Option<AstColor>) -> Option<Color> {
 
 fn parse_hex(s: &str) -> Option<Color> {
     let s = s.trim_start_matches('#');
-    if s.len() != 6 {
+    if s.len() != 6 && s.len() != 8 {
         return None;
     }
     let r = u8::from_str_radix(&s[0..2], 16).ok()? as f32 / 255.0;
     let g = u8::from_str_radix(&s[2..4], 16).ok()? as f32 / 255.0;
     let b = u8::from_str_radix(&s[4..6], 16).ok()? as f32 / 255.0;
-    Some(Color { r, g, b, a: 1.0 })
+    let a = if s.len() == 8 {
+        u8::from_str_radix(&s[6..8], 16).ok()? as f32 / 255.0
+    } else {
+        1.0
+    };
+    Some(Color { r, g, b, a })
 }
 
 pub(super) fn align_x_to_iced(a: AstAlignX) -> Alignment {
@@ -87,7 +92,7 @@ pub(super) fn border_to_iced(b: &AstBorder) -> Border {
 
 /// Reject any plugin-supplied path that could escape the sandbox root via
 /// `..`, `.`, absolute prefixes, drive letters, null bytes, or overlong
-/// strings. Shared by every widget that resolves a plugin-bundled asset.
+/// strings. Shared by every widget that resolves a plugin asset.
 pub(super) fn is_safe_relative_path(s: &str) -> bool {
     if s.is_empty() || s.len() > 256 || s.contains('\0') {
         return false;
@@ -189,6 +194,19 @@ mod tests {
         assert!((c.r - 1.0).abs() < 0.01);
         assert!((c.g - 0.533).abs() < 0.01);
         assert!((c.b - 0.0).abs() < 0.01);
+        assert!((c.a - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn parse_color_hex_with_alpha() {
+        let c = color_to_iced(&AstColor {
+            raw: "#00000080".into(),
+        })
+        .unwrap();
+        assert!((c.r - 0.0).abs() < 0.01);
+        assert!((c.g - 0.0).abs() < 0.01);
+        assert!((c.b - 0.0).abs() < 0.01);
+        assert!((c.a - 0.502).abs() < 0.01);
     }
 
     #[test]

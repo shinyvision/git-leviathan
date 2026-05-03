@@ -45,8 +45,10 @@ mod scrollable;
 mod space;
 mod tablist;
 mod text;
+mod text_input;
 
 pub use common::build_error_widget;
+pub(crate) use text_input::plugin_text_input_id;
 // Container size limits read by `plugin::ui::split` for per-pane clamps.
 pub use container::container_size_limits;
 
@@ -62,6 +64,9 @@ pub enum DispatchScope<'a> {
         container: &'a str,
         slot_id: &'a str,
     },
+    Overlay {
+        overlay_id: &'a str,
+    },
 }
 
 impl<'a> DispatchScope<'a> {
@@ -76,6 +81,7 @@ impl<'a> DispatchScope<'a> {
                 container,
                 slot_id,
             } => format!("slot:{region}:{container}:{slot_id}"),
+            DispatchScope::Overlay { overlay_id } => format!("overlay:{overlay_id}"),
         }
     }
 }
@@ -93,6 +99,7 @@ pub fn build(ast: &WidgetAst, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
     match &ast.node {
         WidgetNode::Text(n) => text::build(n),
         WidgetNode::Button(n) => button::build(n, ctx),
+        WidgetNode::TextInput(n) => text_input::build(ast, n, ctx),
         WidgetNode::Row(n) => row::build(n, ctx),
         WidgetNode::Column(n) => column::build(n, ctx),
         WidgetNode::Container(n) => container::build(n, ctx),
@@ -147,6 +154,15 @@ mod tests {
         let ctx = t.ctx();
         let _ = build(&ast(json!({ "kind": "text", "value": "hello" })), &ctx);
         let _ = build(&ast(json!({ "kind": "button", "text": "b" })), &ctx);
+        let _ = build(
+            &ast(json!({
+                "kind": "text_input",
+                "placeholder": "Filter",
+                "value": "",
+                "on_input": "filter.changed"
+            })),
+            &ctx,
+        );
         let _ = build(&ast(json!({ "kind": "row", "children": [] })), &ctx);
         let _ = build(&ast(json!({ "kind": "column", "children": [] })), &ctx);
         let _ = build(&ast(json!({ "kind": "container" })), &ctx);

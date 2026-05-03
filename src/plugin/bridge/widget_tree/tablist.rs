@@ -94,6 +94,10 @@ enum Dispatch {
         container: String,
         slot_id: String,
     },
+    Overlay {
+        plugin_id: String,
+        overlay_id: String,
+    },
 }
 
 impl Dispatch {
@@ -113,6 +117,10 @@ impl Dispatch {
                 region: region.to_string(),
                 container: container.to_string(),
                 slot_id: slot_id.to_string(),
+            },
+            DispatchScope::Overlay { overlay_id } => Self::Overlay {
+                plugin_id,
+                overlay_id: overlay_id.to_string(),
             },
         }
     }
@@ -138,6 +146,15 @@ impl Dispatch {
                 region,
                 container,
                 slot_id,
+                event,
+                value,
+            }),
+            Self::Overlay {
+                plugin_id,
+                overlay_id,
+            } => Message::Plugin(PluginMessage::OverlayEvent {
+                plugin_id,
+                overlay_id,
                 event,
                 value,
             }),

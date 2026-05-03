@@ -172,6 +172,56 @@ api_version = "1.0"
 }
 
 #[test]
+fn overlay_event_callback_can_remove_overlay() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "palette",
+        &manifest_with_caps("palette", ALL_EXT_CAPS),
+        r#"
+        hits = 0
+        last_event = ""
+        last_value = ""
+        leviathan.ui.overlay{
+            id = "cmd",
+            priority = 10,
+            dismissible = true,
+            widget = { kind = "button", text = "Run", on_click = "choose", value = { name = "status" } },
+            on_event = function(id, event, value)
+                hits = hits + 1
+                last_event = event
+                last_value = value.name or ""
+                if event == "close" then
+                    leviathan.ui.remove_overlay(id)
+                end
+            end,
+        }
+        "#,
+    )
+    .expect("overlay registers");
+
+    host.host_mut().dispatch_overlay_event(
+        "palette",
+        "cmd",
+        "choose",
+        serde_json::json!({ "name": "status" }),
+    );
+    assert_eq!(host.read_global_i64("palette", "hits"), Some(1));
+    assert_eq!(
+        host.read_global_string("palette", "last_event").as_deref(),
+        Some("choose")
+    );
+    assert_eq!(
+        host.read_global_string("palette", "last_value").as_deref(),
+        Some("status")
+    );
+
+    host.host_mut()
+        .dispatch_overlay_event("palette", "cmd", "close", serde_json::json!({}));
+    assert_eq!(host.read_global_i64("palette", "hits"), Some(2));
+    assert!(host.introspect().overlays.iter().all(|o| o.id != "cmd"));
+}
+
+#[test]
 fn context_menu_items_sorted_by_priority() {
     let mut host = MockHost::new();
     host.load_inline(

@@ -1,10 +1,5 @@
-//! dependency lockfile acceptance tests: dependency resolver + lockfile.
+//! dependency resolution acceptance tests.
 
-use std::fs;
-
-use crate::plugin::lockfile::{
-    compute_plugin_checksum, Lockfile, LOCAL_OVERRIDE_NAME, LOCKFILE_NAME,
-};
 use crate::plugin::tests::harness::MockHost;
 
 fn manifest(id: &str, version: &str, extra: &str) -> String {
@@ -44,7 +39,6 @@ fn resolves_load_order_for_linear_chain() {
     assert!(ids.contains(&"b"));
     assert!(ids.contains(&"c"));
 
-    // Dependency graph projects two required edges, both resolved.
     let edges = &snap.dependency_graph;
     assert_eq!(edges.len(), 2, "expected 2 dependency edges, got {edges:?}");
     let b_edge = edges
@@ -170,107 +164,6 @@ fn cycle_detection_blocks_all_in_cycle() {
 }
 
 #[test]
-fn lockfile_round_trips_loaded_plugins() {
-    let mut host = MockHost::new();
-    host.load_inline_set(&[
-        ("a", &manifest("a", "1.0.0", ""), r#"-- a"#),
-        (
-            "b",
-            &manifest("b", "0.4.2", "[dependencies]\na = \">=1.0\""),
-            r#"-- b"#,
-        ),
-    ])
-    .expect("resolve_and_load");
-
-    let lock_path = host.lockfile_dir().join(LOCKFILE_NAME);
-    assert!(lock_path.is_file(), "lockfile must be written");
-    let raw = fs::read_to_string(&lock_path).expect("read");
-    let lock = Lockfile::parse_toml(&raw).expect("parse lockfile");
-    let entries: Vec<&str> = lock.plugins.iter().map(|p| p.id.as_str()).collect();
-    assert_eq!(entries, vec!["a", "b"]);
-    let b_entry = lock.lookup("b").expect("b in lock");
-    assert_eq!(b_entry.version, "0.4.2");
-    assert_eq!(b_entry.source, "local");
-    assert!(b_entry.checksum.starts_with("sha256:"));
-}
-
-#[test]
-fn lockfile_checksum_mismatch_emits_diagnostic() {
-    // Write the lockfile manually with a bogus checksum, then load.
-    let mut host = MockHost::new();
-    let lock_path = host.lockfile_dir().join(LOCKFILE_NAME);
-    let bogus = Lockfile {
-        plugins: vec![crate::plugin::lockfile::LockedPlugin {
-            id: "p".into(),
-            version: "1.0.0".into(),
-            source: "local".into(),
-            checksum: "sha256:deadbeef".into(),
-        }],
-    };
-    fs::create_dir_all(host.lockfile_dir()).expect("mkdir");
-    fs::write(&lock_path, bogus.to_string().expect("encode")).expect("write");
-
-    host.load_inline_set(&[("p", &manifest("p", "1.0.0", ""), r#"-- p"#)])
-        .expect("load with mismatch");
-
-    let diags = host.diagnostics().by_code("lockfile.checksum_mismatch");
-    assert!(
-        diags.iter().any(|d| d.plugin_id.as_str() == "p"),
-        "expected checksum_mismatch diagnostic; got {:?}",
-        diags.iter().map(|d| d.message.clone()).collect::<Vec<_>>()
-    );
-}
-
-#[test]
-fn local_override_replaces_lockfile_entry() {
-    // plugins.lock pins p@1.0.0 with one (deliberately wrong) checksum;
-    // plugins.lock.local pins p@1.0.0 with a different, also-wrong
-    // checksum. The override must win — the resulting diagnostic
-    // mentions the override's checksum, not the base's.
-    let mut host = MockHost::new();
-    let dir = host.lockfile_dir().to_path_buf();
-    fs::create_dir_all(&dir).expect("mkdir");
-
-    let base = Lockfile {
-        plugins: vec![crate::plugin::lockfile::LockedPlugin {
-            id: "p".into(),
-            version: "1.0.0".into(),
-            source: "local".into(),
-            checksum: "sha256:base".into(),
-        }],
-    };
-    fs::write(dir.join(LOCKFILE_NAME), base.to_string().expect("enc")).expect("base");
-
-    let overlay = Lockfile {
-        plugins: vec![crate::plugin::lockfile::LockedPlugin {
-            id: "p".into(),
-            version: "1.0.0".into(),
-            source: "path".into(),
-            checksum: "sha256:override".into(),
-        }],
-    };
-    fs::write(
-        dir.join(LOCAL_OVERRIDE_NAME),
-        overlay.to_string().expect("enc"),
-    )
-    .expect("overlay");
-
-    host.load_inline_set(&[("p", &manifest("p", "1.0.0", ""), r#"-- p"#)])
-        .expect("load with override");
-
-    let diag = host
-        .diagnostics()
-        .by_code("lockfile.checksum_mismatch")
-        .into_iter()
-        .find(|d| d.plugin_id.as_str() == "p")
-        .expect("mismatch diagnostic");
-    assert_eq!(
-        diag.context["expected"], "sha256:override",
-        "override should win over base lockfile"
-    );
-}
-
-#[test]
 fn dependency_devtools_graph_shape() {
     let mut host = MockHost::new();
     host.load_inline_set(&[
@@ -303,17 +196,4 @@ fn dependency_devtools_graph_shape() {
     assert_eq!(opt.kind, "optional");
     assert_eq!(opt.status, "missing");
     assert!(opt.resolved_version.is_none());
-}
-
-#[test]
-fn checksum_helper_is_self_consistent() {
-    // Sanity check that compute_plugin_checksum is stable. Tests that
-    // depend on it for assertions need this to be true.
-    let mut host = MockHost::new();
-    host.load_inline_set(&[("x", &manifest("x", "1.0.0", ""), r#"-- x"#)])
-        .expect("load");
-    let dir = host.plugin_dir("x").expect("dir").to_path_buf();
-    let h1 = compute_plugin_checksum(&dir).unwrap();
-    let h2 = compute_plugin_checksum(&dir).unwrap();
-    assert_eq!(h1, h2);
 }

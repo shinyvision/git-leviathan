@@ -11,8 +11,8 @@
 //! bus before this function returns, so a Lua autocmd registered for
 //! `HeadChanged` (etc.) sees the post-op state immediately.
 
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex};
 
 use mlua::{Lua, Table};
 
@@ -27,7 +27,7 @@ use crate::plugin::resources::{GenerationId, PluginId};
 /// and the host.
 #[derive(Clone, Default)]
 pub struct PendingGitEvents {
-    inner: Rc<RefCell<Vec<(&'static str, EventPayload)>>>,
+    inner: Arc<Mutex<Vec<(&'static str, EventPayload)>>>,
 }
 
 impl PendingGitEvents {
@@ -39,11 +39,16 @@ impl PendingGitEvents {
         if events.is_empty() {
             return;
         }
-        self.inner.borrow_mut().extend(events);
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.extend(events);
+        }
     }
 
     pub fn drain(&self) -> Vec<(&'static str, EventPayload)> {
-        std::mem::take(&mut *self.inner.borrow_mut())
+        self.inner
+            .lock()
+            .map(|mut inner| std::mem::take(&mut *inner))
+            .unwrap_or_default()
     }
 }
 

@@ -29,6 +29,13 @@ pub enum PluginMessage {
         event: String,
         value: serde_json::Value,
     },
+    /// A widget inside a plugin overlay emitted an event.
+    OverlayEvent {
+        plugin_id: String,
+        overlay_id: String,
+        event: String,
+        value: serde_json::Value,
+    },
     /// User pressed down on a split divider. Screen captures initial state.
     /// `limits` is `(min, max)` per child, extracted at render time from each
     /// child's `container` min/max fields. Length matches `child_count`.

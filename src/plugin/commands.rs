@@ -436,201 +436,19 @@ impl CommandRegistry {
         diagnostics: &DiagnosticStore,
         budget_tracker: &crate::plugin::performance::BudgetTracker,
     ) -> (InvokeOutcome, u128) {
-        let started = Instant::now();
         let Some(index) = self.entries.iter().position(|e| e.descriptor.name == name) else {
-            diagnostics.record(
-                PluginDiagnostic::new(
-                    PluginId::from("<host>"),
-                    DiagnosticSeverity::Warning,
-                    "command.not_found",
-                    format!("command `{name}` not registered"),
-                )
-                .with_source(PluginSourceSpan::ApiFunction {
-                    name: format!("command:{name}"),
-                }),
-            );
+            record_command_not_found(diagnostics, name);
             return (InvokeOutcome::NotFound, 0);
         };
 
-        // Snapshot the descriptor data we need before we mutate the
-        // entry's runtime counters, so the borrow window stays narrow.
-        let plugin_id = self.entries[index].descriptor.plugin_id.clone();
-        let context = self.entries[index].descriptor.context.clone();
-        let capabilities = self.entries[index].descriptor.capabilities.clone();
-        let generation_id = self.entries[index].descriptor.generation_id;
-
-        // Validate.
-        let merged = match Self::validate_args(&self.entries[index].descriptor, &args) {
-            Ok(v) => v,
-            Err(errors) => {
-                let joined = errors.join("; ");
-                diagnostics.record(
-                    PluginDiagnostic::new(
-                        PluginId::from(plugin_id.as_str()),
-                        DiagnosticSeverity::Warning,
-                        "command.invalid_args",
-                        format!("command `{name}` rejected: {joined}"),
-                    )
-                    .with_source(PluginSourceSpan::ApiFunction {
-                        name: format!("command:{name}"),
-                    })
-                    .with_context(serde_json::json!({
-                        "name": name,
-                        "errors": errors,
-                        "plugin_id": plugin_id,
-                    })),
-                );
-                return (InvokeOutcome::InvalidArgs(errors), 0);
-            }
-        };
-
-        // Capability check. Failing capabilities short-circuit before
-        // the body runs and emit both a diagnostic and audit entry.
-        for cap in &capabilities {
-            if let Err(reason) = runner.check_capability(&plugin_id, cap) {
-                let mut diag = PluginDiagnostic::new(
-                    PluginId::from(plugin_id.as_str()),
-                    DiagnosticSeverity::Error,
-                    "command.capability_denied",
-                    format!("command `{name}` denied: capability `{cap}` not granted ({reason})"),
-                )
-                .with_source(PluginSourceSpan::ApiFunction {
-                    name: format!("command:{name}"),
-                })
-                .with_context(serde_json::json!({
-                    "name": name,
-                    "capability": cap,
-                    "plugin_id": plugin_id,
-                    "context": context,
-                }));
-                if let Some(gid) = generation_id {
-                    diag = diag.with_generation(gid);
-                }
-                diagnostics.record(diag);
-                return (InvokeOutcome::CapabilityDenied(cap.clone()), 0);
-            }
-        }
-
-        // Pre-dispatch info diagnostic.
-        let pre_diag = PluginDiagnostic::new(
-            PluginId::from(plugin_id.as_str()),
-            DiagnosticSeverity::Info,
-            "command.invoked",
-            format!("command `{name}` invoked"),
+        invoke_entry(
+            &mut self.entries[index],
+            name,
+            args,
+            runner,
+            diagnostics,
+            budget_tracker,
         )
-        .with_source(PluginSourceSpan::ApiFunction {
-            name: format!("command:{name}"),
-        })
-        .with_context(serde_json::json!({
-            "name": name,
-            "plugin_id": plugin_id,
-            "context": context,
-            "args": merged.clone(),
-        }));
-        diagnostics.record(if let Some(gid) = generation_id {
-            pre_diag.with_generation(gid)
-        } else {
-            pre_diag
-        });
-
-        // Run the body. Every body runs through the
-        // budget tracker so its duration / breaker state is recorded
-        // and a tripped breaker short-circuits before the runner is
-        // invoked. The tracker emits its own diagnostic on skip;
-        // we surface the skip as `Failed("circuit breaker tripped")`
-        // so existing command-failure paths (event fan-out, audit)
-        // still see a uniform shape.
-        let entry_ptr_index = index;
-        let pid_typed = crate::plugin::resources::PluginId::from(plugin_id.as_str());
-        let cb_kind = crate::plugin::performance::CallbackKind::CommandCallback;
-        let cb_id = format!("command:{name}");
-        let cb_gen =
-            generation_id.unwrap_or_else(|| crate::plugin::resources::GenerationId::new(0));
-        let perf_outcome =
-            budget_tracker.track_call::<(), String>(cb_kind, &pid_typed, cb_gen, &cb_id, || {
-                let entry = &self.entries[entry_ptr_index];
-                runner.run(entry, &merged)
-            });
-        let result: Result<(), String> = match perf_outcome {
-            crate::plugin::performance::Outcome::Ok(()) => Ok(()),
-            crate::plugin::performance::Outcome::Err(e) => Err(e),
-            crate::plugin::performance::Outcome::Skipped => {
-                Err("circuit breaker tripped".to_string())
-            }
-        };
-        let duration_ms = started.elapsed().as_millis();
-
-        // Bookkeeping + post-diagnostics.
-        let now_unix_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-
-        let outcome = match &result {
-            Ok(()) => {
-                let entry = &mut self.entries[entry_ptr_index];
-                entry.runtime.fires += 1;
-                entry.runtime.last_outcome = Some("ok".to_string());
-                entry.runtime.last_invoked_at_unix_ms = now_unix_ms;
-                entry.runtime.last_duration_ms = duration_ms;
-                let post_diag = PluginDiagnostic::new(
-                    PluginId::from(plugin_id.as_str()),
-                    DiagnosticSeverity::Info,
-                    "command.completed",
-                    format!("command `{name}` completed"),
-                )
-                .with_source(PluginSourceSpan::ApiFunction {
-                    name: format!("command:{name}"),
-                })
-                .with_context(serde_json::json!({
-                    "name": name,
-                    "plugin_id": plugin_id,
-                    "context": context,
-                    "args": merged,
-                    "duration_ms": duration_ms,
-                }));
-                diagnostics.record(if let Some(gid) = generation_id {
-                    post_diag.with_generation(gid)
-                } else {
-                    post_diag
-                });
-                InvokeOutcome::Ok
-            }
-            Err(cause) => {
-                let entry = &mut self.entries[entry_ptr_index];
-                entry.runtime.fires += 1;
-                entry.runtime.failures += 1;
-                entry.runtime.last_outcome = Some(format!("failed: {cause}"));
-                entry.runtime.last_invoked_at_unix_ms = now_unix_ms;
-                entry.runtime.last_duration_ms = duration_ms;
-                let fail_diag = PluginDiagnostic::new(
-                    PluginId::from(plugin_id.as_str()),
-                    DiagnosticSeverity::Error,
-                    "command.failed",
-                    format!("command `{name}` failed: {cause}"),
-                )
-                .with_source(PluginSourceSpan::ApiFunction {
-                    name: format!("command:{name}"),
-                })
-                .with_context(serde_json::json!({
-                    "name": name,
-                    "plugin_id": plugin_id,
-                    "context": context,
-                    "args": merged,
-                    "duration_ms": duration_ms,
-                    "cause": cause,
-                }));
-                diagnostics.record(if let Some(gid) = generation_id {
-                    fail_diag.with_generation(gid)
-                } else {
-                    fail_diag
-                });
-                InvokeOutcome::Failed(cause.clone())
-            }
-        };
-
-        runner.emit_command_executed(name, &plugin_id, outcome.is_ok(), duration_ms);
-        (outcome, duration_ms)
     }
 
     /// Project every entry into a stable summary the palette /
@@ -666,6 +484,204 @@ impl CommandRegistry {
             })
             .collect()
     }
+}
+
+fn record_command_not_found(diagnostics: &DiagnosticStore, name: &str) {
+    diagnostics.record(
+        PluginDiagnostic::new(
+            PluginId::from("<host>"),
+            DiagnosticSeverity::Warning,
+            "command.not_found",
+            format!("command `{name}` not registered"),
+        )
+        .with_source(PluginSourceSpan::ApiFunction {
+            name: format!("command:{name}"),
+        }),
+    );
+}
+
+fn invoke_entry(
+    entry: &mut CommandEntry,
+    name: &str,
+    args: serde_json::Value,
+    runner: &mut dyn CommandRunner,
+    diagnostics: &DiagnosticStore,
+    budget_tracker: &crate::plugin::performance::BudgetTracker,
+) -> (InvokeOutcome, u128) {
+    let started = Instant::now();
+
+    // Snapshot the descriptor data we need before we mutate the
+    // entry's runtime counters, so the borrow window stays narrow.
+    let plugin_id = entry.descriptor.plugin_id.clone();
+    let context = entry.descriptor.context.clone();
+    let capabilities = entry.descriptor.capabilities.clone();
+    let generation_id = entry.descriptor.generation_id;
+
+    // Validate.
+    let merged = match CommandRegistry::validate_args(&entry.descriptor, &args) {
+        Ok(v) => v,
+        Err(errors) => {
+            let joined = errors.join("; ");
+            diagnostics.record(
+                PluginDiagnostic::new(
+                    PluginId::from(plugin_id.as_str()),
+                    DiagnosticSeverity::Warning,
+                    "command.invalid_args",
+                    format!("command `{name}` rejected: {joined}"),
+                )
+                .with_source(PluginSourceSpan::ApiFunction {
+                    name: format!("command:{name}"),
+                })
+                .with_context(serde_json::json!({
+                    "name": name,
+                    "errors": errors,
+                    "plugin_id": plugin_id,
+                })),
+            );
+            return (InvokeOutcome::InvalidArgs(errors), 0);
+        }
+    };
+
+    // Capability check. Failing capabilities short-circuit before
+    // the body runs and emit both a diagnostic and audit entry.
+    for cap in &capabilities {
+        if let Err(reason) = runner.check_capability(&plugin_id, cap) {
+            let mut diag = PluginDiagnostic::new(
+                PluginId::from(plugin_id.as_str()),
+                DiagnosticSeverity::Error,
+                "command.capability_denied",
+                format!("command `{name}` denied: capability `{cap}` not granted ({reason})"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("command:{name}"),
+            })
+            .with_context(serde_json::json!({
+                "name": name,
+                "capability": cap,
+                "plugin_id": plugin_id,
+                "context": context,
+            }));
+            if let Some(gid) = generation_id {
+                diag = diag.with_generation(gid);
+            }
+            diagnostics.record(diag);
+            return (InvokeOutcome::CapabilityDenied(cap.clone()), 0);
+        }
+    }
+
+    // Pre-dispatch info diagnostic.
+    let pre_diag = PluginDiagnostic::new(
+        PluginId::from(plugin_id.as_str()),
+        DiagnosticSeverity::Info,
+        "command.invoked",
+        format!("command `{name}` invoked"),
+    )
+    .with_source(PluginSourceSpan::ApiFunction {
+        name: format!("command:{name}"),
+    })
+    .with_context(serde_json::json!({
+        "name": name,
+        "plugin_id": plugin_id,
+        "context": context,
+        "args": merged.clone(),
+    }));
+    diagnostics.record(if let Some(gid) = generation_id {
+        pre_diag.with_generation(gid)
+    } else {
+        pre_diag
+    });
+
+    // Run the body. Every body runs through the
+    // budget tracker so its duration / breaker state is recorded
+    // and a tripped breaker short-circuits before the runner is
+    // invoked. The tracker emits its own diagnostic on skip;
+    // we surface the skip as `Failed("circuit breaker tripped")`
+    // so existing command-failure paths (event fan-out, audit)
+    // still see a uniform shape.
+    let pid_typed = crate::plugin::resources::PluginId::from(plugin_id.as_str());
+    let cb_kind = crate::plugin::performance::CallbackKind::CommandCallback;
+    let cb_id = format!("command:{name}");
+    let cb_gen = generation_id.unwrap_or_else(|| crate::plugin::resources::GenerationId::new(0));
+    let perf_outcome =
+        budget_tracker.track_call::<(), String>(cb_kind, &pid_typed, cb_gen, &cb_id, || {
+            runner.run(entry, &merged)
+        });
+    let result: Result<(), String> = match perf_outcome {
+        crate::plugin::performance::Outcome::Ok(()) => Ok(()),
+        crate::plugin::performance::Outcome::Err(e) => Err(e),
+        crate::plugin::performance::Outcome::Skipped => Err("circuit breaker tripped".to_string()),
+    };
+    let duration_ms = started.elapsed().as_millis();
+
+    // Bookkeeping + post-diagnostics.
+    let now_unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+
+    let outcome = match &result {
+        Ok(()) => {
+            entry.runtime.fires += 1;
+            entry.runtime.last_outcome = Some("ok".to_string());
+            entry.runtime.last_invoked_at_unix_ms = now_unix_ms;
+            entry.runtime.last_duration_ms = duration_ms;
+            let post_diag = PluginDiagnostic::new(
+                PluginId::from(plugin_id.as_str()),
+                DiagnosticSeverity::Info,
+                "command.completed",
+                format!("command `{name}` completed"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("command:{name}"),
+            })
+            .with_context(serde_json::json!({
+                "name": name,
+                "plugin_id": plugin_id,
+                "context": context,
+                "args": merged,
+                "duration_ms": duration_ms,
+            }));
+            diagnostics.record(if let Some(gid) = generation_id {
+                post_diag.with_generation(gid)
+            } else {
+                post_diag
+            });
+            InvokeOutcome::Ok
+        }
+        Err(cause) => {
+            entry.runtime.fires += 1;
+            entry.runtime.failures += 1;
+            entry.runtime.last_outcome = Some(format!("failed: {cause}"));
+            entry.runtime.last_invoked_at_unix_ms = now_unix_ms;
+            entry.runtime.last_duration_ms = duration_ms;
+            let fail_diag = PluginDiagnostic::new(
+                PluginId::from(plugin_id.as_str()),
+                DiagnosticSeverity::Error,
+                "command.failed",
+                format!("command `{name}` failed: {cause}"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("command:{name}"),
+            })
+            .with_context(serde_json::json!({
+                "name": name,
+                "plugin_id": plugin_id,
+                "context": context,
+                "args": merged,
+                "duration_ms": duration_ms,
+                "cause": cause,
+            }));
+            diagnostics.record(if let Some(gid) = generation_id {
+                fail_diag.with_generation(gid)
+            } else {
+                fail_diag
+            });
+            InvokeOutcome::Failed(cause.clone())
+        }
+    };
+
+    runner.emit_command_executed(name, &plugin_id, outcome.is_ok(), duration_ms);
+    (outcome, duration_ms)
 }
 
 /// Per-command projection used by the palette, `InspectorSnapshot`,
@@ -958,15 +974,42 @@ pub fn dispatch_command(
         plugin_registry: env.plugin_registry.clone(),
         pending_events: env.pending_events.clone(),
     };
-    let mut registry = env.commands.borrow_mut();
-    let (outcome, _duration) = registry.invoke(
+    let Some((mut entry, index)) = detach_command_for_dispatch(&env.commands, name) else {
+        record_command_not_found(&env.diagnostics, name);
+        return InvokeOutcome::NotFound;
+    };
+    let (outcome, _duration) = invoke_entry(
+        &mut entry,
         name,
         args,
         &mut runner,
         &env.diagnostics,
         &env.budget_tracker,
     );
+    reattach_command_after_dispatch(&env.commands, entry, index);
     outcome
+}
+
+fn detach_command_for_dispatch(
+    commands: &SharedCommandRegistry,
+    name: &str,
+) -> Option<(CommandEntry, usize)> {
+    let mut registry = commands.borrow_mut();
+    let index = registry
+        .entries
+        .iter()
+        .position(|entry| entry.descriptor.name == name)?;
+    Some((registry.entries.remove(index), index))
+}
+
+fn reattach_command_after_dispatch(
+    commands: &SharedCommandRegistry,
+    entry: CommandEntry,
+    original_index: usize,
+) {
+    let mut registry = commands.borrow_mut();
+    let insert_index = original_index.min(registry.entries.len());
+    registry.entries.insert(insert_index, entry);
 }
 
 /// `CommandRunner` impl over the shared dispatch env. Looks Lua up
@@ -1231,6 +1274,64 @@ mod tests {
             ran,
             events,
         )
+    }
+
+    #[test]
+    fn dispatch_command_releases_registry_borrow_while_body_runs() {
+        let diagnostics = diag_store();
+        let commands: SharedCommandRegistry = Rc::new(RefCell::new(CommandRegistry::new()));
+        let saw_list = Rc::new(RefCell::new(false));
+
+        commands
+            .borrow_mut()
+            .register(host_descriptor("other"), &diagnostics);
+
+        let commands_for_body = Rc::clone(&commands);
+        let saw_list_for_body = Rc::clone(&saw_list);
+        commands.borrow_mut().register(
+            CommandDescriptor {
+                name: "open".into(),
+                title: "open".into(),
+                description: String::new(),
+                plugin_id: HOST_COMMAND_PLUGIN_ID.into(),
+                generation_id: None,
+                context: CommandContext::GLOBAL.into(),
+                args: Vec::new(),
+                destructive: false,
+                capabilities: Vec::new(),
+                run: CommandBody::Host(Box::new(move |_| {
+                    let names: Vec<String> = commands_for_body
+                        .borrow()
+                        .summaries()
+                        .into_iter()
+                        .map(|summary| summary.name)
+                        .collect();
+                    assert!(names.iter().any(|name| name == "other"));
+                    *saw_list_for_body.borrow_mut() = true;
+                    Ok(())
+                })),
+            },
+            &diagnostics,
+        );
+
+        let env = CommandDispatchEnv {
+            commands: Rc::clone(&commands),
+            plugin_registry: CommandPluginRegistry::new(),
+            diagnostics,
+            pending_events: PendingCommandEvents::new(),
+            budget_tracker: budget_tracker(),
+        };
+
+        assert_eq!(
+            dispatch_command(&env, "open", serde_json::Value::Null),
+            InvokeOutcome::Ok
+        );
+        assert!(*saw_list.borrow());
+        assert!(commands
+            .borrow()
+            .entries()
+            .iter()
+            .any(|entry| entry.descriptor.name == "open"));
     }
 
     #[test]

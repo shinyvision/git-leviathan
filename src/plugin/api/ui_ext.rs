@@ -10,16 +10,17 @@
 //! [`ResourceLedger`] so the standard unload path drops the
 //! resource rows without us doing it ourselves.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use git_leviathan_plugin_api::descriptor::decoration::{DiffDecoration, GraphDecoration};
 use git_leviathan_plugin_api::descriptor::region::REGIONS;
-use mlua::{Lua, LuaSerdeExt, Table, Value as LuaValue};
+use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::extensions::{
     ContextMenuItemRecord, DiffDecorationRecord, ExtensionRegistry, GraphDecorationRecord,
-    OverlayRecord,
+    OverlayCallbacks, OverlayRecord,
 };
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::widget_ast;
@@ -35,8 +36,24 @@ pub fn install(
     ledger: ResourceLedger,
     guard: Rc<CapabilityGuard>,
     registry: ExtensionRegistry,
+    overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
 ) -> mlua::Result<()> {
-    install_overlay(lua, ui, ledger.clone(), Rc::clone(&guard), registry.clone())?;
+    install_overlay(
+        lua,
+        ui,
+        ledger.clone(),
+        Rc::clone(&guard),
+        registry.clone(),
+        Rc::clone(&overlay_callbacks),
+    )?;
+    install_remove_overlay(
+        lua,
+        ui,
+        ledger.clone(),
+        Rc::clone(&guard),
+        registry.clone(),
+        overlay_callbacks,
+    )?;
     install_context_menu(lua, ui, ledger.clone(), Rc::clone(&guard), registry.clone())?;
     install_graph_decoration(lua, ui, ledger.clone(), Rc::clone(&guard), registry.clone())?;
     install_diff_decoration(lua, ui, ledger, guard, registry)?;
@@ -49,6 +66,7 @@ fn install_overlay(
     ledger: ResourceLedger,
     guard: Rc<CapabilityGuard>,
     registry: ExtensionRegistry,
+    overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
 ) -> mlua::Result<()> {
     let plugin_id = ledger.plugin_id().as_str().to_string();
     ui.set(
@@ -70,6 +88,20 @@ fn install_overlay(
             let handle = format!("overlay:{id}");
             ledger.remove_by_kind_handle(PluginResourceKind::Overlay, &handle);
             ledger.record(PluginResourceKind::Overlay, handle, source.clone());
+            overlay_callbacks.borrow_mut().remove(&id);
+            let callback: Option<Function> = match spec.get::<Option<Function>>("on_event")? {
+                Some(callback) => Some(callback),
+                None => spec.get::<Option<Function>>("update")?,
+            };
+            if let Some(callback) = callback {
+                let key = lua_inner.create_registry_value(callback)?;
+                ledger.record(
+                    PluginResourceKind::LuaRegistryKey,
+                    format!("overlay:{id}:on_event"),
+                    source.clone(),
+                );
+                overlay_callbacks.borrow_mut().insert(id.clone(), key);
+            }
             registry.add_overlay(OverlayRecord {
                 plugin_id: plugin_id.clone(),
                 id,
@@ -81,6 +113,32 @@ fn install_overlay(
             Ok(())
         })?,
     )?;
+    Ok(())
+}
+
+fn install_remove_overlay(
+    lua: &Lua,
+    ui: &Table,
+    ledger: ResourceLedger,
+    guard: Rc<CapabilityGuard>,
+    registry: ExtensionRegistry,
+    overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+) -> mlua::Result<()> {
+    let plugin_id = ledger.plugin_id().as_str().to_string();
+    let remove = lua.create_function(move |_, id: String| {
+        guard
+            .check_named("ui:overlay")
+            .map_err(mlua::Error::external)?;
+        registry.remove_overlay(&plugin_id, &id);
+        overlay_callbacks.borrow_mut().remove(&id);
+        ledger.remove_by_kind_handle(PluginResourceKind::Overlay, &format!("overlay:{id}"));
+        ledger.remove_by_kind_handle(
+            PluginResourceKind::LuaRegistryKey,
+            &format!("overlay:{id}:on_event"),
+        );
+        Ok(())
+    })?;
+    ui.set("remove_overlay", remove)?;
     Ok(())
 }
 

@@ -392,7 +392,7 @@ fn devtools_autocmds_reflects_state() {
 }
 
 #[test]
-fn bundled_dancing_banana_listens_to_canonical_fetch_events() {
+fn local_dancing_banana_listens_to_canonical_fetch_events() {
     let mut host = MockHost::new();
     host.host_mut()
         .load_plugin(&std::path::PathBuf::from("plugins/dancing_banana_test"))

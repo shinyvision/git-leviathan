@@ -507,6 +507,176 @@ fn lua_invoke_through_plugin_proves_palette_reaches_dispatcher() {
 }
 
 #[test]
+fn lua_command_list_exposes_command_arg_metadata() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "producer",
+        &manifest("producer"),
+        r#"
+        leviathan.command.create("producer.echo", {
+            title = "Echo",
+            args = {
+                { name = "path", type = "string", required = true, doc = "Path to echo" },
+                { name = "limit", type = "integer", default = 20, doc = "Max rows" },
+                { name = "mode", type = "enum:fast,slow", default = "fast", doc = "Mode" },
+            },
+            run = function(args) end,
+        })
+        "#,
+    )
+    .expect("producer loads");
+
+    host.load_inline(
+        "inspector",
+        &manifest("inspector"),
+        r#"
+        local found = nil
+        local host_command = nil
+        for _, command in ipairs(leviathan.command.list()) do
+            if command.name == "producer.echo" then
+                found = command
+            elseif command.name == "plugin.disable" then
+                host_command = command
+            end
+        end
+
+        _G.arg_count = found and #found.args or -1
+        if found then
+            _G.first_name = found.args[1].name
+            _G.first_type = found.args[1].type
+            _G.first_required = found.args[1].required and 1 or 0
+            _G.first_default_nil = found.args[1].default == nil and 1 or 0
+            _G.first_doc = found.args[1].doc
+
+            _G.second_name = found.args[2].name
+            _G.second_type = found.args[2].type
+            _G.second_required = found.args[2].required and 1 or 0
+            _G.second_default = found.args[2].default
+            _G.second_doc = found.args[2].doc
+
+            _G.third_type = found.args[3].type
+            _G.third_default = found.args[3].default
+        end
+
+        _G.host_arg_count = host_command and #host_command.args or -1
+        if host_command then
+            _G.host_arg_name = host_command.args[1].name
+            _G.host_arg_type = host_command.args[1].type
+            _G.host_arg_required = host_command.args[1].required and 1 or 0
+            _G.host_arg_doc = host_command.args[1].doc
+        end
+        "#,
+    )
+    .expect("inspector loads");
+
+    assert_eq!(host.read_global_i64("inspector", "arg_count"), Some(3));
+    assert_eq!(
+        host.read_global_string("inspector", "first_name")
+            .as_deref(),
+        Some("path")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "first_type")
+            .as_deref(),
+        Some("string")
+    );
+    assert_eq!(host.read_global_i64("inspector", "first_required"), Some(1));
+    assert_eq!(
+        host.read_global_i64("inspector", "first_default_nil"),
+        Some(1)
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "first_doc").as_deref(),
+        Some("Path to echo")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "second_name")
+            .as_deref(),
+        Some("limit")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "second_type")
+            .as_deref(),
+        Some("integer")
+    );
+    assert_eq!(
+        host.read_global_i64("inspector", "second_required"),
+        Some(0)
+    );
+    assert_eq!(
+        host.read_global_i64("inspector", "second_default"),
+        Some(20)
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "second_doc")
+            .as_deref(),
+        Some("Max rows")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "third_type")
+            .as_deref(),
+        Some("enum:fast,slow")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "third_default")
+            .as_deref(),
+        Some("fast")
+    );
+    assert_eq!(host.read_global_i64("inspector", "host_arg_count"), Some(1));
+    assert_eq!(
+        host.read_global_string("inspector", "host_arg_name")
+            .as_deref(),
+        Some("plugin_id")
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "host_arg_type")
+            .as_deref(),
+        Some("string")
+    );
+    assert_eq!(
+        host.read_global_i64("inspector", "host_arg_required"),
+        Some(1)
+    );
+    assert_eq!(
+        host.read_global_string("inspector", "host_arg_doc")
+            .as_deref(),
+        Some("Plugin id to operate on.")
+    );
+}
+
+#[test]
+fn git_push_command_starts_background_git_write() {
+    let mut host = MockHost::new();
+    let outcome = host.invoke_command("git.push", json!({}));
+    assert!(
+        matches!(outcome, InvokeOutcome::Ok),
+        "git.push should enqueue background work: {outcome:?}"
+    );
+
+    let mut writes = Vec::new();
+    for _ in 0..20 {
+        writes = host.host().pending_git_writes();
+        if writes.iter().any(|entry| {
+            entry.plugin_id == HOST_COMMAND_PLUGIN_ID
+                && entry.op == "push"
+                && entry.finished_at_unix_ms.is_some()
+        }) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    assert!(
+        writes.iter().any(|entry| {
+            entry.plugin_id == HOST_COMMAND_PLUGIN_ID
+                && entry.op == "push"
+                && entry.finished_at_unix_ms.is_some()
+        }),
+        "expected finished background push write, got {writes:?}"
+    );
+}
+
+#[test]
 fn devtools_snapshot_exposes_command_rows_with_counters() {
     let mut host = MockHost::new();
     host.load_inline(

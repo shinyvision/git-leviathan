@@ -123,6 +123,67 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
         ],
     },
     WidgetDescriptor {
+        kind: "text_input",
+        since: "1.0",
+        doc: "Single-line text input that emits plugin events.",
+        fields: &[
+            WidgetFieldDescriptor {
+                name: "id",
+                lua_type: "string",
+                required: false,
+                doc: "Stable node id used to preserve input focus across re-renders.",
+            },
+            WidgetFieldDescriptor {
+                name: "placeholder",
+                lua_type: "string",
+                required: true,
+                doc: "Placeholder text shown when the value is empty.",
+            },
+            WidgetFieldDescriptor {
+                name: "value",
+                lua_type: "string",
+                required: true,
+                doc: "Current input value.",
+            },
+            WidgetFieldDescriptor {
+                name: "on_input",
+                lua_type: "string",
+                required: true,
+                doc: "Event emitted with the new string value after edits.",
+            },
+            WidgetFieldDescriptor {
+                name: "on_submit",
+                lua_type: "string",
+                required: false,
+                doc: "Event emitted with null when Enter is pressed.",
+            },
+            WidgetFieldDescriptor {
+                name: "width",
+                lua_type: "number|string",
+                required: false,
+                doc: "Fixed pixels, fill, or shrink.",
+            },
+            WidgetFieldDescriptor {
+                name: "height",
+                lua_type: "number|string",
+                required: false,
+                doc: "Fixed pixels, fill, or shrink.",
+            },
+            WidgetFieldDescriptor {
+                name: "autofocus",
+                lua_type: "boolean",
+                required: false,
+                doc: "Focus this input when its overlay is opened.",
+            },
+            WidgetFieldDescriptor {
+                name: "style",
+                lua_type: "table",
+                required: false,
+                doc: "Text input style overrides.",
+            },
+        ],
+    },
+    WidgetDescriptor {
         kind: "row",
         since: "1.0",
         doc: "Horizontal widget layout.",
@@ -500,6 +561,7 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
 pub enum WidgetKind {
     Text(TextWidget),
     Button(ButtonWidget),
+    TextInput(TextInputWidget),
     Row(RowWidget),
     Column(ColumnWidget),
     Container(ContainerWidget),
@@ -545,6 +607,18 @@ pub struct ButtonStyle {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct TextInputStyle {
+    #[serde(default)]
+    pub background: Option<String>,
+    #[serde(default)]
+    pub text_color: Option<String>,
+    #[serde(default)]
+    pub placeholder_color: Option<String>,
+    #[serde(default)]
+    pub border: Option<Border>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TextWidget {
     // Bridge defaults missing `value` to "" so we keep it optional for parity.
     #[serde(default)]
@@ -571,6 +645,25 @@ pub struct ButtonWidget {
     pub height: Option<Length>,
     #[serde(default)]
     pub style: Option<ButtonStyle>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct TextInputWidget {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub placeholder: String,
+    pub value: String,
+    pub on_input: String,
+    #[serde(default)]
+    pub on_submit: Option<String>,
+    #[serde(default)]
+    pub width: Option<Length>,
+    #[serde(default)]
+    pub height: Option<Length>,
+    #[serde(default)]
+    pub autofocus: Option<bool>,
+    #[serde(default)]
+    pub style: Option<TextInputStyle>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -742,6 +835,51 @@ mod tests {
         let json = serde_json::json!({ "kind": "text", "value": "hello" });
         let w: WidgetKind = serde_json::from_value(json).unwrap();
         assert!(matches!(w, WidgetKind::Text(_)));
+    }
+
+    #[test]
+    fn text_input_widget_validates_required_fields() {
+        let json = serde_json::json!({
+            "kind": "text_input",
+            "id": "palette-query",
+            "placeholder": "Run command",
+            "value": "checkout",
+            "on_input": "palette.input",
+            "on_submit": "palette.submit",
+            "width": "fill",
+            "height": 32,
+            "autofocus": true,
+            "style": {
+                "background": "#101119",
+                "text_color": "#e1e5f4",
+                "placeholder_color": "#585d6e",
+                "border": { "width": 1, "radius": 4, "color": "#242535" }
+            }
+        });
+        let w: WidgetKind = serde_json::from_value(json).unwrap();
+        if let WidgetKind::TextInput(input) = w {
+            assert_eq!(input.id.as_deref(), Some("palette-query"));
+            assert_eq!(input.placeholder, "Run command");
+            assert_eq!(input.value, "checkout");
+            assert_eq!(input.on_input, "palette.input");
+            assert_eq!(input.on_submit.as_deref(), Some("palette.submit"));
+            assert_eq!(input.autofocus, Some(true));
+        } else {
+            panic!("expected text_input");
+        }
+    }
+
+    #[test]
+    fn text_input_widget_requires_on_input() {
+        let json = serde_json::json!({
+            "kind": "text_input",
+            "placeholder": "Run command",
+            "value": ""
+        });
+        let err = serde_json::from_value::<WidgetKind>(json)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("on_input"), "got: {err}");
     }
 
     #[test]

@@ -33,19 +33,19 @@ impl MockHost {
         let mut host = PluginHost::new();
         host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
         host.set_plugin_storage_base(tmp.path().join("plugin-storage"));
-        // Capability grant tests treat their own tmp directory as a trusted
-        // "bundled plugin" root so `MockHost::load_inline` plugins
-        // get their declared capabilities auto-granted. Tests that
+        // Capability grant tests treat their own tmp directory as a
+        // local plugin root so `MockHost::load_inline` plugins get
+        // their declared capabilities auto-granted. Tests that
         // need to exercise the prompt path (e.g.
         // `denied_capability_emits_diagnostic_and_audit_entry`) can
         // either skip the manifest's capability declaration or
         // call `host_mut().revoke_capability(…)` after load.
-        host.trust_bundled_plugin_root(tmp.path());
+        host.trust_local_plugin_root(tmp.path());
         // Also trust the workspace's `plugins/` directory so the
-        // bundled-plugin tests (which load straight from there) get
+        // local plugin tests (which load straight from there) get
         // the same auto-grant treatment as production.
         if let Ok(cwd) = std::env::current_dir() {
-            host.trust_bundled_plugin_root(cwd.join("plugins"));
+            host.trust_local_plugin_root(cwd.join("plugins"));
         }
         Self {
             host,
@@ -82,9 +82,9 @@ impl MockHost {
     /// Stage a set of plugin sources on disk and invoke the
     /// host's resolve-and-load entry point so the dependency resolver
     /// runs over them as a unit. Each tuple is `(id, manifest, init)`.
-    /// Plugins are written into the harness tmp dir; the lockfile root
-    /// is the same dir, matching `load_from_dir`'s contract. Tests
-    /// assert against `host.diagnostics()` and `host.introspect()`.
+    /// Plugins are written into the harness tmp dir, matching
+    /// `load_from_dir`'s contract. Tests assert against
+    /// `host.diagnostics()` and `host.introspect()`.
     pub fn load_inline_set(
         &mut self,
         plugins: &[(&str, &str, &str)],
@@ -101,13 +101,6 @@ impl MockHost {
         }
         self.host.resolve_and_load(self._tmp.path(), &dirs);
         Ok(())
-    }
-
-    /// Path to the workspace tmp dir backing this harness — used by
-    /// dependency lockfile tests that need to read or write `plugins.lock` /
-    /// `plugins.lock.local` directly.
-    pub fn lockfile_dir(&self) -> &std::path::Path {
-        self._tmp.path()
     }
 
     /// Strict-globals counterpart for tests that want to assert the
@@ -484,7 +477,7 @@ api_version = "1.0"
     #[test]
     fn sample_plugins_load_unchanged() {
         // Regression guard for widget schema validation: every static widget
-        // shape used by the bundled sample plugins must round-trip through
+        // shape used by the local sample plugins must round-trip through
         // `WidgetKind`. If a plugin breaks here, the schema is too strict.
         let mut host = MockHost::new();
         for plugin in [
@@ -500,7 +493,7 @@ api_version = "1.0"
         }
     }
 
-    fn bundled_plugin_dirs() -> Vec<std::path::PathBuf> {
+    fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
         let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir("plugins")
             .expect("plugins dir")
             .filter_map(Result::ok)
@@ -511,9 +504,9 @@ api_version = "1.0"
         dirs
     }
 
-    fn load_all_bundled_plugins() -> MockHost {
+    fn load_all_local_plugins() -> MockHost {
         let mut host = MockHost::new();
-        for dir in bundled_plugin_dirs() {
+        for dir in local_plugin_dirs() {
             let plugin_name = dir
                 .file_name()
                 .and_then(|name| name.to_str())
@@ -521,17 +514,113 @@ api_version = "1.0"
                 .to_string();
             host.host_mut()
                 .load_plugin(&dir)
-                .unwrap_or_else(|e| panic!("bundled plugin {plugin_name} failed to load: {e}"));
+                .unwrap_or_else(|e| panic!("local plugin {plugin_name} failed to load: {e}"));
         }
         host
     }
 
     #[test]
-    fn loads_every_bundled_plugin_under_current_api_version() {
-        let dirs = bundled_plugin_dirs();
-        assert!(!dirs.is_empty(), "expected bundled plugins");
+    fn local_command_palette_opens_from_colon_keymap() {
+        let mut host = load_all_local_plugins();
+        let outcome = host.dispatch_key("global", &[crate::plugin::keymap::Keystroke::plain(":")]);
+        assert!(
+            matches!(
+                outcome,
+                crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }
+            ),
+            "colon keymap should dispatch: {outcome:?}"
+        );
+        let overlay = host
+            .introspect()
+            .overlays
+            .iter()
+            .find(|overlay| {
+                overlay.plugin_id == "command_palette" && overlay.id == "command_palette"
+            })
+            .expect("command palette overlay should exist")
+            .clone();
+        let snap = crate::plugin::ui::widget_ast::snapshot(&overlay.widget);
+        assert!(snap.starts_with("container "), "{snap}");
+        assert!(
+            snap.contains("bg=\"#151927\" width=fixed(620) height=fixed(500)"),
+            "{snap}"
+        );
+        assert!(
+            snap.contains("top=14 right=14 bottom=14 left=14 width=fill height=fill"),
+            "{snap}"
+        );
+        assert!(snap.contains("placeholder=\"command args\""), "{snap}");
+        assert!(snap.contains("mouse_area"), "{snap}");
+        assert!(snap.contains("scrollable"), "{snap}");
+        assert!(snap.contains("height=fixed(394)"), "{snap}");
+    }
 
-        let host = load_all_bundled_plugins();
+    #[test]
+    fn local_command_palette_submits_command_line_args() {
+        let mut host = load_all_local_plugins();
+        let outcome = host.dispatch_key("global", &[crate::plugin::keymap::Keystroke::plain(":")]);
+        assert!(
+            matches!(
+                outcome,
+                crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }
+            ),
+            "colon keymap should dispatch: {outcome:?}"
+        );
+
+        host.host_mut().dispatch_overlay_event(
+            "command_palette",
+            "command_palette",
+            "query",
+            serde_json::json!("plugin.disable dancing_banana_test"),
+        );
+        host.host_mut().dispatch_overlay_event(
+            "command_palette",
+            "command_palette",
+            "submit",
+            serde_json::Value::Null,
+        );
+
+        assert!(host.host().is_plugin_disabled("dancing_banana_test"));
+        assert!(host
+            .introspect()
+            .plugins
+            .iter()
+            .all(|plugin| plugin.id != "dancing_banana_test"));
+    }
+
+    #[test]
+    fn production_host_auto_grants_workspace_local_command_palette() {
+        let mut host = PluginHost::new();
+        host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
+        host.load_plugin(
+            &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("plugins")
+                .join("command_palette"),
+        )
+        .expect("load local command palette");
+
+        for capability in ["ui:overlay"] {
+            let row = host
+                .grant_store()
+                .lookup("command_palette", "0.1.0", capability)
+                .unwrap_or_else(|| panic!("missing grant row for {capability}"));
+            assert_eq!(
+                row.decision,
+                crate::plugin::capability_grants::Decision::Allow
+            );
+            assert_eq!(
+                row.decided_by,
+                crate::plugin::capability_grants::DecidedBy::Default
+            );
+        }
+    }
+
+    #[test]
+    fn loads_every_local_plugin_under_current_api_version() {
+        let dirs = local_plugin_dirs();
+        assert!(!dirs.is_empty(), "expected local plugins");
+
+        let host = load_all_local_plugins();
         let snap = host.introspect();
         let ids: Vec<&str> = snap
             .plugins
@@ -541,6 +630,7 @@ api_version = "1.0"
         assert_eq!(
             ids,
             vec![
+                "command_palette",
                 "dancing_banana_test",
                 "file_explorer",
                 "foo_demo",
@@ -554,19 +644,19 @@ api_version = "1.0"
             snap.plugins
                 .iter()
                 .all(|plugin| plugin.api_version == "1.0"),
-            "all bundled plugins should use the v1 authoring surface"
+            "all local plugins should use the v1 authoring surface"
         );
     }
 
     #[test]
-    fn bundled_plugin_manifest_api_version_snapshot() {
+    fn local_plugin_manifest_api_version_snapshot() {
         use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 
         assert_eq!(HOST_API_VERSION.major, 1);
         assert_eq!(HOST_API_VERSION.minor, 0);
 
         let mut snapshot = String::from("api_version = \"1.0\"\n");
-        for dir in bundled_plugin_dirs() {
+        for dir in local_plugin_dirs() {
             let manifest_path = dir.join("plugin.toml");
             let raw = std::fs::read_to_string(&manifest_path).expect("manifest");
             let manifest: toml::Value = toml::from_str(&raw).expect("manifest toml");
@@ -585,6 +675,7 @@ api_version = "1.0"
             snapshot,
             concat!(
                 "api_version = \"1.0\"\n",
+                "command_palette: api_version=1.0\n",
                 "dancing_banana_test: api_version=1.0\n",
                 "file_explorer: api_version=1.0\n",
                 "foo_demo: api_version=1.0\n",
@@ -597,8 +688,8 @@ api_version = "1.0"
     }
 
     #[test]
-    fn bundled_plugin_slot_registration_snapshot() {
-        let host = load_all_bundled_plugins();
+    fn local_plugin_slot_registration_snapshot() {
+        let host = load_all_local_plugins();
         let snap = host.introspect();
         let mut snapshot = String::from("api_version = \"1.0\"\n");
         for slot in snap.slots {

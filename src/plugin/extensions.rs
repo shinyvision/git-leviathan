@@ -12,9 +12,11 @@
 //! deterministic ordering.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use git_leviathan_plugin_api::descriptor::decoration::{DiffDecoration, GraphDecoration};
+use mlua::RegistryKey;
 
 use crate::plugin::ui::widget_ast::WidgetAst;
 
@@ -29,6 +31,32 @@ pub struct OverlayRecord {
     pub dismissible: bool,
     pub widget: WidgetAst,
     pub source_location: Option<String>,
+}
+
+/// Lua callbacks owned by plugin overlays. Shared between the Lua API
+/// closure and the loaded host record so overlays registered after init
+/// still dispatch.
+#[derive(Default)]
+pub struct OverlayCallbacks {
+    handlers: HashMap<String, RegistryKey>,
+}
+
+impl OverlayCallbacks {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, overlay_id: String, key: RegistryKey) {
+        self.handlers.insert(overlay_id, key);
+    }
+
+    pub fn remove(&mut self, overlay_id: &str) {
+        self.handlers.remove(overlay_id);
+    }
+
+    pub fn get(&self, overlay_id: &str) -> Option<&RegistryKey> {
+        self.handlers.get(overlay_id)
+    }
 }
 
 /// One context-menu item registered at an extension point address
@@ -99,6 +127,13 @@ impl ExtensionRegistry {
             .overlays
             .retain(|o| !(o.plugin_id == record.plugin_id && o.id == record.id));
         inner.overlays.push(record);
+    }
+
+    pub fn remove_overlay(&self, plugin_id: &str, id: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .overlays
+            .retain(|o| !(o.plugin_id == plugin_id && o.id == id));
     }
 
     pub fn add_context_menu_item(&self, record: ContextMenuItemRecord) {
@@ -258,6 +293,36 @@ mod tests {
         assert_eq!(
             v.iter().map(|o| o.id.as_str()).collect::<Vec<_>>(),
             ["b", "c", "a"]
+        );
+    }
+
+    #[test]
+    fn remove_overlay_drops_only_matching_owner_and_id() {
+        let reg = ExtensionRegistry::new();
+        for (plugin_id, id) in [("p1", "same"), ("p2", "same"), ("p1", "other")] {
+            reg.add_overlay(OverlayRecord {
+                plugin_id: plugin_id.into(),
+                id: id.into(),
+                priority: 0,
+                dismissible: true,
+                widget: fake_widget(),
+                source_location: None,
+            });
+        }
+
+        reg.remove_overlay("p1", "same");
+
+        let remaining = reg
+            .overlays()
+            .into_iter()
+            .map(|o| (o.plugin_id, o.id))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            remaining,
+            vec![
+                ("p1".to_string(), "other".to_string()),
+                ("p2".to_string(), "same".to_string())
+            ]
         );
     }
 

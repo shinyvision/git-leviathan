@@ -76,14 +76,14 @@ pub enum CheckOutcome {
     RequiresPrompt,
 }
 
-/// Auto-grant policy applied at plugin-load time. Bundled plugins (those
-/// living under the project's `plugins/` directory) get every requested
-/// capability auto-allowed with `decided_by = "default"` so the
-/// shipped UI keeps working. Non-bundled plugins go through the prompt
-/// path and start out with `pending` decisions.
+/// Auto-grant policy applied at plugin-load time. Local development
+/// plugins under configured roots get every requested capability
+/// auto-allowed with `decided_by = "default"` so test plugins can be
+/// edited and loaded directly. Other plugin roots still go through the
+/// prompt path and start out with `pending` decisions.
 #[derive(Debug, Clone, Default)]
 pub struct AutoGrantPolicy {
-    bundled_roots: Vec<PathBuf>,
+    auto_grant_roots: Vec<PathBuf>,
 }
 
 impl AutoGrantPolicy {
@@ -91,21 +91,21 @@ impl AutoGrantPolicy {
         Self::default()
     }
 
-    /// Mark a directory as containing trusted bundled plugins. Any
+    /// Mark a directory as containing local development plugins. Any
     /// plugin loaded from a path that canonicalises under this root
     /// gets its requested capabilities auto-granted as `default`.
-    pub fn trust_bundled_root(&mut self, root: impl Into<PathBuf>) {
+    pub fn trust_root(&mut self, root: impl Into<PathBuf>) {
         let path = root.into();
         let canon = fs::canonicalize(&path).unwrap_or(path);
-        if !self.bundled_roots.contains(&canon) {
-            self.bundled_roots.push(canon);
+        if !self.auto_grant_roots.contains(&canon) {
+            self.auto_grant_roots.push(canon);
         }
     }
 
-    /// True when `plugin_root` lives under a trusted bundled root.
-    pub fn is_bundled(&self, plugin_root: &Path) -> bool {
+    /// True when `plugin_root` lives under an auto-grant root.
+    pub fn is_auto_granted(&self, plugin_root: &Path) -> bool {
         let canon = fs::canonicalize(plugin_root).unwrap_or_else(|_| plugin_root.to_path_buf());
-        self.bundled_roots
+        self.auto_grant_roots
             .iter()
             .any(|root| canon.starts_with(root))
     }
@@ -525,11 +525,11 @@ impl GrantStore {
             .collect()
     }
 
-    /// Apply the bundled-plugin auto-grant policy. Every requested
-    /// capability the plugin doesn't already have a row for is
-    /// committed as `Allow / Default`. Returns the rows actually
-    /// inserted so the caller can audit them.
-    pub fn auto_grant_bundled(
+    /// Auto-grant declared capabilities. Every requested capability
+    /// the plugin doesn't already have a row for is committed as
+    /// `Allow / Default`. Returns the rows actually inserted so the
+    /// caller can audit them.
+    pub fn auto_grant_declared(
         &self,
         plugin_id: &str,
         plugin_version: &str,
@@ -544,7 +544,7 @@ impl GrantStore {
                 &cap,
                 Decision::Allow,
                 DecidedBy::Default,
-                Some("bundled plugin auto-grant".to_string()),
+                Some("declared capability auto-grant".to_string()),
             ) {
                 out.push(row);
             }
@@ -976,12 +976,12 @@ mod tests {
     }
 
     #[test]
-    fn auto_grant_bundled_grants_only_undecided() {
+    fn auto_grant_declared_grants_only_undecided() {
         let store = GrantStore::new_in_memory();
         // Pre-record a Deny so auto-grant must not overwrite it.
         store
             .record_decision(
-                "bundled",
+                "local",
                 "1.0.0",
                 "fs:read:any",
                 Decision::Deny,
@@ -989,15 +989,15 @@ mod tests {
                 None,
             )
             .unwrap();
-        let granted = store.auto_grant_bundled(
-            "bundled",
+        let granted = store.auto_grant_declared(
+            "local",
             "1.0.0",
             &["fs:read:any".to_string(), "env".to_string()],
         );
         assert_eq!(granted.len(), 1);
         assert_eq!(granted[0].capability, "env");
         // The pre-existing Deny is untouched.
-        let row = store.lookup("bundled", "1.0.0", "fs:read:any").unwrap();
+        let row = store.lookup("local", "1.0.0", "fs:read:any").unwrap();
         assert_eq!(row.decision, Decision::Deny);
     }
 
@@ -1024,13 +1024,13 @@ mod tests {
     }
 
     #[test]
-    fn auto_grant_policy_recognises_bundled_root() {
+    fn auto_grant_policy_recognises_configured_root() {
         let dir = tempdir().unwrap();
         let plugin_root = dir.path().join("file_explorer");
         std::fs::create_dir(&plugin_root).unwrap();
         let mut policy = AutoGrantPolicy::new();
-        policy.trust_bundled_root(dir.path());
-        assert!(policy.is_bundled(&plugin_root));
+        policy.trust_root(dir.path());
+        assert!(policy.is_auto_granted(&plugin_root));
     }
 
     #[test]

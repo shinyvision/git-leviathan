@@ -3,7 +3,7 @@ use super::*;
 // Extra accessor/dispatch methods. Kept in a second `impl` block to
 // isolate the new hook-system additions above from the original API.
 impl PluginHost {
-    /// Sandbox root for a plugin's bundled assets. Returns `None` if the
+    /// Sandbox root for a plugin's assets. Returns `None` if the
     /// plugin id is unknown.
     pub fn plugin_root(&self, plugin_id: &str) -> Option<&Path> {
         self.plugins.get(plugin_id).map(|p| p.root.as_path())
@@ -119,10 +119,114 @@ impl PluginHost {
                 self.widget_tree = None;
             } else {
                 self.open_screen(plugin_id.to_string(), target);
+                self.drain_lua_command_effects();
                 return;
             }
         }
         self.refresh_active_widget_tree();
+        self.drain_lua_command_effects();
+    }
+
+    pub fn dispatch_overlay_event(
+        &mut self,
+        plugin_id: &str,
+        overlay_id: &str,
+        event: &str,
+        value: serde_json::Value,
+    ) {
+        let chunk_name = format!("plugins/{plugin_id}/init.lua");
+        let nav: Option<String> = {
+            let Some(plugin) = self.plugins.get(plugin_id) else {
+                return;
+            };
+            let generation_id = plugin.generation.generation_id;
+            let func: Function = {
+                let callbacks = plugin.overlay_callbacks.borrow();
+                let Some(key) = callbacks.get(overlay_id) else {
+                    return;
+                };
+                match plugin.lua().registry_value(key) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        self.diagnostics.record(
+                            PluginDiagnostic::new(
+                                PluginId::from(plugin_id),
+                                DiagnosticSeverity::Error,
+                                "lua.handler_lookup_failed",
+                                format!("overlay handler lookup failed: {e}"),
+                            )
+                            .with_generation(generation_id)
+                            .with_source(
+                                PluginSourceSpan::ApiFunction {
+                                    name: format!("overlay:{overlay_id}.on_event"),
+                                },
+                            ),
+                        );
+                        return;
+                    }
+                }
+            };
+            let value_lua = match plugin.lua().to_value(&value) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.value_conversion_failed",
+                            format!("overlay value conv failed: {e}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_source(PluginSourceSpan::ApiFunction {
+                            name: format!("overlay:{overlay_id}.on_event"),
+                        }),
+                    );
+                    return;
+                }
+            };
+            match func.call::<Option<Table>>((overlay_id.to_string(), event.to_string(), value_lua))
+            {
+                Ok(Some(t)) => t.get::<String>("navigate").ok(),
+                Ok(None) => None,
+                Err(e) => {
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            format!("overlay handler error in {overlay_id}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                    None
+                }
+            }
+        };
+        if let Some(target) = nav {
+            if target == "repository" || target == "back" {
+                self.active_screen = None;
+                self.widget_tree = None;
+            } else {
+                self.open_screen(plugin_id.to_string(), target);
+            }
+        }
+        self.drain_lua_command_effects();
+    }
+
+    pub fn autofocus_overlay_text_input_id(&self) -> Option<iced::widget::Id> {
+        for overlay in self.extension_registry.overlays() {
+            let Some(node_id) = autofocus_text_input_node_id(&overlay.widget) else {
+                continue;
+            };
+            let scope_key = format!("overlay:{}", overlay.id);
+            return Some(plugin_text_input_id(
+                &overlay.plugin_id,
+                &scope_key,
+                node_id,
+            ));
+        }
+        None
     }
 
     /// Snapshot of a screen's current Lua state as JSON. Returns `None`
@@ -328,7 +432,7 @@ impl PluginHost {
             .map(|c| String::from(c.clone()))
             .collect();
         let previous_screen_ids: Vec<String> = plugin.screen_state.keys().cloned().collect();
-        let bundled = self.auto_grant_policy.is_bundled(&dir);
+        let auto_grant_capabilities = self.auto_grant_policy.is_auto_granted(&dir);
 
         let previous_screens = snapshot_previous_screens(
             plugin_id,
@@ -355,7 +459,7 @@ impl PluginHost {
             command_dispatch: self.command_dispatch_env(),
             keymap_registry: Rc::clone(&self.keymap_registry),
             grant_store: self.grant_store.clone(),
-            bundled,
+            auto_grant_capabilities,
             git_ctx: self.git_ops_context(),
             pending_git_events: self.pending_git_events.clone(),
             async_jobs: self.async_jobs.clone(),
@@ -466,6 +570,7 @@ impl PluginHost {
             manifest,
             generation,
             slot_handlers,
+            overlay_callbacks,
             screens,
             screen_state,
             dynamic_widgets,
@@ -666,6 +771,7 @@ impl PluginHost {
             root: plugin_root,
             manifest,
             slot_handlers,
+            overlay_callbacks,
             screens,
             screen_state,
             dynamic_widgets,
@@ -893,5 +999,36 @@ impl PluginHost {
         self.split_drag
             .as_ref()
             .map(|d| (d.split_key.as_str(), d.divider_index))
+    }
+}
+
+fn autofocus_text_input_node_id(ast: &WidgetAst) -> Option<&str> {
+    match &ast.node {
+        widget_ast::WidgetNode::TextInput(node) if node.autofocus => Some(&ast.node_id.value),
+        widget_ast::WidgetNode::Button(node) => {
+            node.child.as_deref().and_then(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::Row(node) => {
+            node.children.iter().find_map(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::Column(node) => {
+            node.children.iter().find_map(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::Container(node) => {
+            node.child.as_deref().and_then(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::Padding(node) => {
+            node.child.as_deref().and_then(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::Scrollable(node) => {
+            node.child.as_deref().and_then(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::MouseArea(node) => {
+            node.child.as_deref().and_then(autofocus_text_input_node_id)
+        }
+        widget_ast::WidgetNode::ResizableSplit(node) => {
+            node.children.iter().find_map(autofocus_text_input_node_id)
+        }
+        _ => None,
     }
 }

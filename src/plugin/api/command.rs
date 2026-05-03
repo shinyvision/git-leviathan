@@ -163,6 +163,21 @@ fn install_command_list(
             let json: Vec<serde_json::Value> = summaries
                 .into_iter()
                 .map(|s| {
+                    let args: Vec<serde_json::Value> = s
+                        .args
+                        .into_iter()
+                        .map(|a| {
+                            let mut arg = serde_json::Map::new();
+                            arg.insert("name".to_string(), serde_json::Value::String(a.name));
+                            arg.insert("type".to_string(), serde_json::Value::String(a.ty));
+                            arg.insert("required".to_string(), serde_json::Value::Bool(a.required));
+                            if let Some(default) = a.default {
+                                arg.insert("default".to_string(), default);
+                            }
+                            arg.insert("doc".to_string(), serde_json::Value::String(a.doc));
+                            serde_json::Value::Object(arg)
+                        })
+                        .collect();
                     serde_json::json!({
                         "name": s.name,
                         "title": s.title,
@@ -171,6 +186,7 @@ fn install_command_list(
                         "context": s.context,
                         "destructive": s.destructive,
                         "capabilities": s.capabilities,
+                        "args": args,
                     })
                 })
                 .collect();

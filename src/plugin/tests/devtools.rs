@@ -1,4 +1,4 @@
-//! devtools tests verify the ten host-bundled
+//! devtools tests verify the ten host-provided
 //! devtools commands are reachable through the unified dispatcher,
 //! the diagnostic-bundle exporter excludes secret values, and the
 //! introspector snapshot exposes every plugin-owned resource kind.

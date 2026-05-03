@@ -666,7 +666,7 @@ fn staged_reload_failure_does_not_register_new_runtime_path() {
     assert!(own_entry.is_some(), "own runtime-path entry must persist");
 }
 
-fn bundled_plugin_dirs() -> Vec<std::path::PathBuf> {
+fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir("plugins")
         .expect("plugins dir")
         .filter_map(Result::ok)
@@ -678,10 +678,10 @@ fn bundled_plugin_dirs() -> Vec<std::path::PathBuf> {
 }
 
 #[test]
-fn every_bundled_plugin_reloads_cleanly() {
+fn every_local_plugin_reloads_cleanly() {
     let mut host = MockHost::new();
     let mut ids: Vec<String> = Vec::new();
-    for dir in bundled_plugin_dirs() {
+    for dir in local_plugin_dirs() {
         let id = dir
             .file_name()
             .and_then(|n| n.to_str())
@@ -689,20 +689,20 @@ fn every_bundled_plugin_reloads_cleanly() {
             .to_string();
         host.host_mut()
             .load_plugin(&dir)
-            .unwrap_or_else(|e| panic!("bundled plugin {id} failed initial load: {e}"));
+            .unwrap_or_else(|e| panic!("local plugin {id} failed initial load: {e}"));
         ids.push(id);
     }
 
     for id in &ids {
         host.host_mut()
             .reload_plugin(id)
-            .unwrap_or_else(|e| panic!("bundled plugin {id} failed staged reload: {e}"));
+            .unwrap_or_else(|e| panic!("local plugin {id} failed staged reload: {e}"));
         let history = host.host().reload_history(id);
         assert!(
             history
                 .iter()
                 .any(|h| h.outcome == ReloadOutcome::Succeeded),
-            "bundled plugin {id} must record a Succeeded reload entry"
+            "local plugin {id} must record a Succeeded reload entry"
         );
         let snap = host.introspect();
         let stale: Vec<_> = snap

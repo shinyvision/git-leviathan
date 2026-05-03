@@ -186,6 +186,26 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
         },
     },
     ApiFunction {
+        path: "leviathan.ui.remove_overlay",
+        name: "remove_overlay",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Remove an overlay owned by the calling plugin.",
+        params: &[ApiParam {
+            name: "id",
+            lua_type: "string",
+            required: true,
+            doc: "Overlay id to remove.",
+        }],
+        returns: &[],
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &["id must be a string"],
+            returns: &[],
+            notes: &["Only removes an overlay owned by the calling plugin."],
+        },
+    },
+    ApiFunction {
         path: "leviathan.ui.context_menu",
         name: "context_menu",
         since: "1.0",
