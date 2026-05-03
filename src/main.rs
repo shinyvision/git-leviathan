@@ -3,7 +3,7 @@ mod assets;
 mod config;
 mod core;
 mod message;
-mod plugin;
+pub mod plugin;
 mod screens;
 mod services;
 mod style;

@@ -9,7 +9,7 @@
 use std::fmt::Debug;
 use std::time::Instant;
 
-use iced::{Element, Subscription, Task};
+use iced::{Element, Task};
 
 use crate::message::Message;
 use crate::widgets::chrome::MainBarRegistry;
@@ -30,18 +30,6 @@ pub trait Screen {
     fn update(&mut self, msg: Self::Message) -> Task<Message>;
 
     fn view(&self) -> Element<'_, Message>;
-
-    fn subscription(&self) -> Subscription<Message> {
-        Subscription::none()
-    }
-
-    /// Called when the screen becomes the active one (tab focus, app start).
-    fn on_activate(&mut self) -> Task<Message> {
-        Task::none()
-    }
-
-    /// Called when the screen leaves focus. Use to release transient UI state.
-    fn on_deactivate(&mut self) {}
 
     /// Per-frame animation tick. Receives a clamped `dt_ms` from the App's
     /// animation clock. Returns an optional follow-up task.

@@ -429,10 +429,6 @@ impl Screen for RepositoryScreen {
         iced::widget::text("").into()
     }
 
-    fn subscription(&self) -> Subscription<Message> {
-        RepositoryScreen::subscription(self)
-    }
-
     fn toolbar<'a>(&'a self, ctx: &ToolbarCtx<'a>) -> Option<Element<'a, Message>> {
         Some(view::toolbar(self, ctx))
     }
