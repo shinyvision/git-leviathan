@@ -662,6 +662,7 @@ fn decode_tablist(
     let tabs_value = obj.get("tabs");
     let tabs = match tabs_value {
         None | Some(Value::Null) => Vec::new(),
+        Some(Value::Object(map)) if map.is_empty() => Vec::new(),
         Some(Value::Array(arr)) => {
             let mut out = Vec::with_capacity(arr.len());
             for (i, t) in arr.iter().enumerate() {
@@ -762,6 +763,7 @@ fn decode_children(
 ) -> Result<Vec<WidgetAst>, WidgetDecodeError> {
     let arr = match obj.get("children") {
         None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
         Some(Value::Array(a)) => a,
         Some(other) => {
             return Err(WidgetDecodeError::new(
@@ -1366,6 +1368,29 @@ mod tests {
             assert_eq!(t.tabs[0].name, "A");
             assert!(t.orderable);
             assert_eq!(t.on_select.as_deref(), Some("select"));
+        } else {
+            panic!();
+        }
+    }
+
+    #[test]
+    fn empty_lua_tables_decode_as_empty_arrays_for_list_fields() {
+        let tablist = ok(json!({
+            "kind": "tablist",
+            "tabs": {}
+        }));
+        if let WidgetNode::Tablist(t) = tablist.node {
+            assert!(t.tabs.is_empty());
+        } else {
+            panic!();
+        }
+
+        let row = ok(json!({
+            "kind": "row",
+            "children": {}
+        }));
+        if let WidgetNode::Row(r) = row.node {
+            assert!(r.children.is_empty());
         } else {
             panic!();
         }
