@@ -1357,7 +1357,7 @@
           "name": "overlay",
           "params": [
             {
-              "doc": "Overlay descriptor (id, widget, dismissible, priority).",
+              "doc": "Overlay descriptor (id, widget, dismissible, priority, key_events).",
               "lua_type": "LeviathanOverlaySpec",
               "name": "spec",
               "required": true
@@ -1371,10 +1371,40 @@
               "spec.id must be a string",
               "spec.widget must be a LeviathanWidget table",
               "spec.dismissible must be boolean",
-              "spec.priority must be a number"
+              "spec.priority must be a number",
+              "spec.key_events must be an array of supported named keys when present"
             ],
             "notes": [
-              "Host owns Esc / click-outside dismissal."
+              "Host owns Esc / click-outside dismissal.",
+              "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Remove an overlay owned by the calling plugin.",
+          "name": "remove_overlay",
+          "params": [
+            {
+              "doc": "Overlay id to remove.",
+              "lua_type": "string",
+              "name": "id",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.remove_overlay",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "id must be a string"
+            ],
+            "notes": [
+              "Only removes an overlay owned by the calling plugin."
             ],
             "returns": []
           }
@@ -5081,6 +5111,100 @@
       "since": "1.9"
     },
     {
+      "doc": "Plugin overlay.",
+      "fields": [
+        {
+          "doc": "Overlay id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Higher priority renders above lower priority overlays.",
+          "lua_type": "integer",
+          "name": "priority",
+          "required": false
+        },
+        {
+          "doc": "When true, Escape sends the overlay an `escape` event.",
+          "lua_type": "boolean",
+          "name": "dismissible",
+          "required": false
+        },
+        {
+          "doc": "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+          "lua_type": "string[]",
+          "name": "key_events",
+          "required": false
+        },
+        {
+          "doc": "Overlay widget tree.",
+          "lua_type": "LeviathanWidget",
+          "name": "widget",
+          "required": true
+        },
+        {
+          "doc": "Overlay callback.",
+          "lua_type": "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
+          "name": "on_event",
+          "required": false
+        },
+        {
+          "doc": "Legacy alias for `on_event`.",
+          "lua_type": "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
+          "name": "update",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanOverlaySpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Payload passed to overlay `on_event` when `event == \"key\"`.",
+      "fields": [
+        {
+          "doc": "Normalized key name: `tab`, `up`, `down`, etc.",
+          "lua_type": "string",
+          "name": "key",
+          "required": true
+        },
+        {
+          "doc": "Whether Ctrl was held.",
+          "lua_type": "boolean",
+          "name": "ctrl",
+          "required": true
+        },
+        {
+          "doc": "Whether Shift was held.",
+          "lua_type": "boolean",
+          "name": "shift",
+          "required": true
+        },
+        {
+          "doc": "Whether Alt was held.",
+          "lua_type": "boolean",
+          "name": "alt",
+          "required": true
+        },
+        {
+          "doc": "Whether the platform logo key was held.",
+          "lua_type": "boolean",
+          "name": "logo",
+          "required": true
+        },
+        {
+          "doc": "Whether the platform command modifier was held.",
+          "lua_type": "boolean",
+          "name": "command",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanOverlayKeyEvent",
+      "since": "1.0"
+    },
+    {
       "doc": "Plugin screen.",
       "fields": [
         {
@@ -5663,6 +5787,67 @@
         }
       ],
       "kind": "button",
+      "since": "1.0"
+    },
+    {
+      "doc": "Single-line text input that emits plugin events.",
+      "fields": [
+        {
+          "doc": "Stable node id used to preserve input focus across re-renders.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Placeholder text shown when the value is empty.",
+          "lua_type": "string",
+          "name": "placeholder",
+          "required": true
+        },
+        {
+          "doc": "Current input value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": true
+        },
+        {
+          "doc": "Event emitted with the new string value after edits.",
+          "lua_type": "string",
+          "name": "on_input",
+          "required": true
+        },
+        {
+          "doc": "Event emitted with null when Enter is pressed.",
+          "lua_type": "string",
+          "name": "on_submit",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Fixed pixels, fill, or shrink.",
+          "lua_type": "number|string",
+          "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Focus this input when its overlay is opened.",
+          "lua_type": "boolean",
+          "name": "autofocus",
+          "required": false
+        },
+        {
+          "doc": "Text input style overrides.",
+          "lua_type": "table",
+          "name": "style",
+          "required": false
+        }
+      ],
+      "kind": "text_input",
       "since": "1.0"
     },
     {

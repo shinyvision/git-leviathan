@@ -147,6 +147,25 @@
 ---@field plugin_id string Winning binding's plugin id.
 ---@field source string Winning binding's source tier.
 
+---Plugin overlay.
+---@class LeviathanOverlaySpec
+---@field id string Overlay id.
+---@field priority? integer Higher priority renders above lower priority overlays.
+---@field dismissible? boolean When true, Escape sends the overlay an `escape` event.
+---@field key_events? string[] Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.
+---@field widget LeviathanWidget Overlay widget tree.
+---@field on_event? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Overlay callback.
+---@field update? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Legacy alias for `on_event`.
+
+---Payload passed to overlay `on_event` when `event == "key"`.
+---@class LeviathanOverlayKeyEvent
+---@field key string Normalized key name: `tab`, `up`, `down`, etc.
+---@field ctrl boolean Whether Ctrl was held.
+---@field shift boolean Whether Shift was held.
+---@field alt boolean Whether Alt was held.
+---@field logo boolean Whether the platform logo key was held.
+---@field command boolean Whether the platform command modifier was held.
+
 ---Plugin screen.
 ---@class LeviathanScreenSpec
 ---@field id string Screen id.
@@ -395,8 +414,12 @@ function leviathan.ui.list_regions() end
 function leviathan.ui.register_screen(spec) end
 
 ---Register an overlay widget the host renders above the active screen.
----@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority).
+---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority, key_events).
 function leviathan.ui.overlay(spec) end
+
+---Remove an overlay owned by the calling plugin.
+---@param id string Overlay id to remove.
+function leviathan.ui.remove_overlay(id) end
 
 ---Contribute a context-menu item at an extension point.
 ---@param region string Extension point address (e.g. "repository.diff.context_menu").

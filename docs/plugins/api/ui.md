@@ -66,7 +66,16 @@ Register an overlay widget the host renders above the active screen.
 **Capabilities:** `ui:overlay`
 
 **Parameters:**
-- `spec` (`LeviathanOverlaySpec`; required) - Overlay descriptor (id, widget, dismissible, priority).
+- `spec` (`LeviathanOverlaySpec`; required) - Overlay descriptor (id, widget, dismissible, priority, key_events).
+
+### `leviathan.ui.remove_overlay(id)`
+
+Remove an overlay owned by the calling plugin.
+
+**Capabilities:** `ui:overlay`
+
+**Parameters:**
+- `id` (`string`; required) - Overlay id to remove.
 
 ### `leviathan.ui.context_menu(region, item)`
 

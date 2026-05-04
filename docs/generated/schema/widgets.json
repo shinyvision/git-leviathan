@@ -74,6 +74,67 @@
     ]
   },
   {
+    "kind": "text_input",
+    "since": "1.0",
+    "doc": "Single-line text input that emits plugin events.",
+    "fields": [
+      {
+        "name": "id",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Stable node id used to preserve input focus across re-renders."
+      },
+      {
+        "name": "placeholder",
+        "lua_type": "string",
+        "required": true,
+        "doc": "Placeholder text shown when the value is empty."
+      },
+      {
+        "name": "value",
+        "lua_type": "string",
+        "required": true,
+        "doc": "Current input value."
+      },
+      {
+        "name": "on_input",
+        "lua_type": "string",
+        "required": true,
+        "doc": "Event emitted with the new string value after edits."
+      },
+      {
+        "name": "on_submit",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Event emitted with null when Enter is pressed."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "autofocus",
+        "lua_type": "boolean",
+        "required": false,
+        "doc": "Focus this input when its overlay is opened."
+      },
+      {
+        "name": "style",
+        "lua_type": "table",
+        "required": false,
+        "doc": "Text input style overrides."
+      }
+    ]
+  },
+  {
     "kind": "row",
     "since": "1.0",
     "doc": "Horizontal widget layout.",

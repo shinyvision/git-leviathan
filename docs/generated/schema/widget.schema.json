@@ -116,6 +116,86 @@
     {
       "type": "object",
       "required": [
+        "kind",
+        "on_input",
+        "placeholder",
+        "value"
+      ],
+      "properties": {
+        "autofocus": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text_input"
+          ]
+        },
+        "on_input": {
+          "type": "string"
+        },
+        "on_submit": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "placeholder": {
+          "type": "string"
+        },
+        "style": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TextInputStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "kind"
       ],
       "properties": {
@@ -772,6 +852,43 @@
         }
       }
     },
+    "TextInputStyle": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "border": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Border"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "placeholder_color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text_color": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
     "WidgetKind": {
       "oneOf": [
         {
@@ -871,6 +988,86 @@
             },
             "value": {
               "default": null
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "on_input",
+            "placeholder",
+            "value"
+          ],
+          "properties": {
+            "autofocus": {
+              "default": null,
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "id": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "text_input"
+              ]
+            },
+            "on_input": {
+              "type": "string"
+            },
+            "on_submit": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "placeholder": {
+              "type": "string"
+            },
+            "style": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextInputStyle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "value": {
+              "type": "string"
             },
             "width": {
               "default": null,

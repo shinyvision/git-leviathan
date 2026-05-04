@@ -840,6 +840,7 @@ impl PluginHost {
                     "id": o.id,
                     "priority": o.priority,
                     "dismissible": o.dismissible,
+                    "key_events": o.key_events,
                     "widget_kind": o.widget.node.kind(),
                 })
             })

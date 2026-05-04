@@ -20,7 +20,11 @@ local C = {
 
 local state = {
   query = "",
+  filter_query = "",
+  selected = 1,
 }
+
+local render
 
 local function lower(s)
   return string.lower(tostring(s or ""))
@@ -207,43 +211,70 @@ local function syntax_for(item)
   return table.concat(parts, " ")
 end
 
-local function command_rows()
-  local query = lower(trim(state.query):match("^(%S+)") or "")
-  local rows = {}
-  local count = 0
+local function matching_commands()
+  local query = lower(trim(state.filter_query):match("^(%S+)") or "")
+  local matches = {}
 
   for _, item in ipairs(command.list()) do
     local syntax = syntax_for(item)
     local haystack = lower(syntax .. " " .. (item.title or "") .. " " .. (item.description or ""))
     if query == "" or string.find(haystack, query, 1, true) then
-      count = count + 1
-      rows[#rows + 1] = {
-        kind = "button",
-        on_click = "run",
-        value = { line = item.name },
-        width = "fill",
-        height = "shrink",
-        style = {
-          background = count == 1 and "#1d2d5a" or C.panel_2,
-          background_hover = "#22396f",
-          text_color = C.text,
-          border = { width = 1, radius = 6, color = count == 1 and C.blue_2 or C.border },
-        },
-        child = pad({ top = 10, right = 12, bottom = 10, left = 12, width = "fill" }, {
-          kind = "column",
-          spacing = 2,
-          width = "fill",
-          height = "shrink",
-          children = {
-            txt(item.name, 14, C.text),
-            txt(syntax, 11, item.destructive and C.danger or C.dim),
-          },
-        }),
+      matches[#matches + 1] = {
+        item = item,
+        syntax = syntax,
       }
     end
-    if count >= 8 then
+    if #matches >= 8 then
       break
     end
+  end
+
+  return matches
+end
+
+local function clamp_selection(count)
+  if count <= 0 then
+    state.selected = 1
+    return
+  end
+  if state.selected < 1 then
+    state.selected = 1
+  elseif state.selected > count then
+    state.selected = count
+  end
+end
+
+local function command_rows()
+  local matches = matching_commands()
+  clamp_selection(#matches)
+
+  local rows = {}
+  for index, entry in ipairs(matches) do
+    local item = entry.item
+    local selected = index == state.selected
+    rows[#rows + 1] = {
+      kind = "button",
+      on_click = "run",
+      value = { line = item.name },
+      width = "fill",
+      height = "shrink",
+      style = {
+        background = selected and "#1d2d5a" or C.panel_2,
+        background_hover = "#22396f",
+        text_color = C.text,
+        border = { width = 1, radius = 6, color = selected and C.blue_2 or C.border },
+      },
+      child = pad({ top = 10, right = 12, bottom = 10, left = 12, width = "fill" }, {
+        kind = "column",
+        spacing = 2,
+        width = "fill",
+        height = "shrink",
+        children = {
+          txt(item.name, 14, C.text),
+          txt(entry.syntax, 11, item.destructive and C.danger or C.dim),
+        },
+      }),
+    }
   end
 
   if #rows == 0 then
@@ -287,17 +318,38 @@ local function execute_line(line)
   end
 end
 
-local function execute_first()
-  local rows = command_rows()
-  local first = rows[1]
-  if first and first.value and first.value.line then
-    execute_line(first.value.line)
+local function execute_selected()
+  local matches = matching_commands()
+  clamp_selection(#matches)
+  local selected = matches[state.selected]
+  if selected and selected.item then
+    execute_line(selected.item.name)
   end
+end
+
+local function set_query(value)
+  state.query = tostring(value or "")
+  state.filter_query = state.query
+  state.selected = 1
+end
+
+local function move_selection(delta)
+  local matches = matching_commands()
+  local count = #matches
+  if count == 0 then
+    return
+  end
+  clamp_selection(count)
+  state.selected = ((state.selected - 1 + delta) % count) + 1
+  state.query = matches[state.selected].item.name
+  render()
 end
 
 local function close()
   ui.remove_overlay(OVERLAY_ID)
   state.query = ""
+  state.filter_query = ""
+  state.selected = 1
 end
 
 local function dismiss_area(width, height)
@@ -364,20 +416,30 @@ local function palette_panel()
   }
 end
 
-local function render()
+function render()
   ui.overlay({
     id = OVERLAY_ID,
     priority = 1000,
     dismissible = true,
+    key_events = { "Tab", "ArrowUp", "ArrowDown" },
     on_event = function(_, event, value)
       if event == "dismiss" or event == "escape" then
         close()
       elseif event == "query" then
-        state.query = tostring(value or "")
+        set_query(value)
         render()
+      elseif event == "key" then
+        local key = lower(type(value) == "table" and (value.key or value.name) or value)
+        if key == "tab" then
+          move_selection(type(value) == "table" and value.shift and -1 or 1)
+        elseif key == "down" or key == "arrowdown" or key == "arrow_down" then
+          move_selection(1)
+        elseif key == "up" or key == "arrowup" or key == "arrow_up" then
+          move_selection(-1)
+        end
       elseif event == "submit" then
         if trim(state.query) == "" then
-          execute_first()
+          execute_selected()
         else
           execute_line(state.query)
         end
@@ -402,7 +464,7 @@ local function render()
           {
             kind = "row",
             width = "fill",
-          height = 500,
+            height = 500,
             spacing = 0,
             children = {
               dismiss_area("fill", 500),
@@ -421,7 +483,7 @@ command.create("command_palette.open", {
   title = "Command Palette: Open",
   description = "Open the command palette.",
   run = function()
-    state.query = ""
+    set_query("")
     render()
   end,
 })

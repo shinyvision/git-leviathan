@@ -3,6 +3,7 @@
 use iced::{keyboard, Task};
 
 use crate::message::Message;
+use crate::plugin::extensions::OverlayRecord;
 use crate::plugin::keymap::{KeymapDispatchOutcome, Keystroke};
 use crate::screens::{BlankMessage, Screen};
 
@@ -65,6 +66,17 @@ impl App {
             }
         }
 
+        let overlays = self.plugin_host.extension_overlays();
+        if let Some(event) = overlay_key_event(&overlays, &key, modifiers) {
+            self.plugin_host.dispatch_overlay_event(
+                &event.plugin_id,
+                &event.overlay_id,
+                "key",
+                event.payload,
+            );
+            return self.focus_plugin_overlay_input();
+        }
+
         if let Some(keystroke) = keystroke_from_iced_key(&modified_key, modifiers) {
             let context = self.keymap_context();
             let outcome = self.plugin_host.dispatch_key(context, &[keystroke]);
@@ -112,8 +124,46 @@ impl App {
     }
 }
 
+struct OverlayKeyEvent {
+    plugin_id: String,
+    overlay_id: String,
+    payload: serde_json::Value,
+}
+
+fn overlay_key_event(
+    overlays: &[OverlayRecord],
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> Option<OverlayKeyEvent> {
+    let key_name = named_key_from_iced_key(key)?;
+    let top_overlay = overlays.first()?;
+    if !top_overlay.listens_for_key(key_name) {
+        return None;
+    }
+
+    Some(OverlayKeyEvent {
+        plugin_id: top_overlay.plugin_id.clone(),
+        overlay_id: top_overlay.id.clone(),
+        payload: serde_json::json!({
+            "key": key_name,
+            "ctrl": modifiers.control(),
+            "shift": modifiers.shift(),
+            "alt": modifiers.alt(),
+            "logo": modifiers.logo(),
+            "command": modifiers.command(),
+        }),
+    })
+}
+
 fn is_escape_key(key: &keyboard::Key) -> bool {
     matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
+}
+
+fn named_key_from_iced_key(key: &keyboard::Key) -> Option<&'static str> {
+    match key {
+        keyboard::Key::Named(named) => named_key_name(*named),
+        _ => None,
+    }
 }
 
 fn keystroke_from_iced_key(
@@ -245,5 +295,69 @@ mod tests {
         .expect("escape should convert");
 
         assert_eq!(stroke, Keystroke::plain("esc"));
+    }
+
+    fn overlay(id: &str, priority: i32, key_events: &[&str]) -> OverlayRecord {
+        OverlayRecord {
+            plugin_id: format!("plugin_{id}"),
+            id: id.to_string(),
+            priority,
+            dismissible: true,
+            key_events: key_events.iter().map(|key| key.to_string()).collect(),
+            widget: crate::plugin::ui::widget_ast::decode(&serde_json::json!({
+                "kind": "text",
+                "value": "hi",
+            }))
+            .expect("decode widget"),
+            source_location: None,
+        }
+    }
+
+    #[test]
+    fn overlay_key_event_routes_to_top_opted_in_overlay() {
+        let overlays = vec![
+            overlay("top", 100, &["tab"]),
+            overlay("bottom", 0, &["down"]),
+        ];
+
+        let event = overlay_key_event(
+            &overlays,
+            &keyboard::Key::Named(keyboard::key::Named::Tab),
+            keyboard::Modifiers::SHIFT,
+        )
+        .expect("tab should be captured");
+
+        assert_eq!(event.plugin_id, "plugin_top");
+        assert_eq!(event.overlay_id, "top");
+        assert_eq!(event.payload["key"], "tab");
+        assert_eq!(event.payload["shift"], true);
+    }
+
+    #[test]
+    fn overlay_key_event_does_not_route_to_lower_overlay() {
+        let overlays = vec![
+            overlay("top", 100, &["tab"]),
+            overlay("bottom", 0, &["down"]),
+        ];
+
+        let event = overlay_key_event(
+            &overlays,
+            &keyboard::Key::Named(keyboard::key::Named::ArrowDown),
+            keyboard::Modifiers::default(),
+        );
+
+        assert!(event.is_none());
+    }
+
+    #[test]
+    fn overlay_key_event_ignores_character_keys() {
+        let overlays = vec![overlay("top", 100, &["tab"])];
+        let event = overlay_key_event(
+            &overlays,
+            &keyboard::Key::Character("j".into()),
+            keyboard::Modifiers::default(),
+        );
+
+        assert!(event.is_none());
     }
 }

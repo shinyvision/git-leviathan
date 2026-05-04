@@ -348,6 +348,88 @@ const TYPE_AUTOCMD_GROUP_OPTS_FIELDS: &[ApiTypeField] = &[ApiTypeField {
     required: false,
     doc: "When true, removes any prior autocmds in the group before returning the handle.",
 }];
+const TYPE_OVERLAY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Overlay id.",
+    },
+    ApiTypeField {
+        name: "priority",
+        lua_type: "integer",
+        required: false,
+        doc: "Higher priority renders above lower priority overlays.",
+    },
+    ApiTypeField {
+        name: "dismissible",
+        lua_type: "boolean",
+        required: false,
+        doc: "When true, Escape sends the overlay an `escape` event.",
+    },
+    ApiTypeField {
+        name: "key_events",
+        lua_type: "string[]",
+        required: false,
+        doc: "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+    },
+    ApiTypeField {
+        name: "widget",
+        lua_type: "LeviathanWidget",
+        required: true,
+        doc: "Overlay widget tree.",
+    },
+    ApiTypeField {
+        name: "on_event",
+        lua_type: "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
+        required: false,
+        doc: "Overlay callback.",
+    },
+    ApiTypeField {
+        name: "update",
+        lua_type: "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
+        required: false,
+        doc: "Legacy alias for `on_event`.",
+    },
+];
+const TYPE_OVERLAY_KEY_EVENT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "key",
+        lua_type: "string",
+        required: true,
+        doc: "Normalized key name: `tab`, `up`, `down`, etc.",
+    },
+    ApiTypeField {
+        name: "ctrl",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether Ctrl was held.",
+    },
+    ApiTypeField {
+        name: "shift",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether Shift was held.",
+    },
+    ApiTypeField {
+        name: "alt",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether Alt was held.",
+    },
+    ApiTypeField {
+        name: "logo",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the platform logo key was held.",
+    },
+    ApiTypeField {
+        name: "command",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the platform command modifier was held.",
+    },
+];
 const TYPE_SCREEN_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "id",
@@ -959,6 +1041,20 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.9",
         doc: "Reference to the winning binding for a conflict-lost keymap row.",
         fields: TYPE_KEYMAP_CONFLICT_REF_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanOverlaySpec",
+        since: "1.0",
+        doc: "Plugin overlay.",
+        fields: TYPE_OVERLAY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanOverlayKeyEvent",
+        since: "1.0",
+        doc: "Payload passed to overlay `on_event` when `event == \"key\"`.",
+        fields: TYPE_OVERLAY_KEY_EVENT_FIELDS,
         methods: &[],
     },
     ApiType {

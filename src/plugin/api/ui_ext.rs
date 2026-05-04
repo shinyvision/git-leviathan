@@ -19,8 +19,8 @@ use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::extensions::{
-    ContextMenuItemRecord, DiffDecorationRecord, ExtensionRegistry, GraphDecorationRecord,
-    OverlayCallbacks, OverlayRecord,
+    normalize_overlay_key_event, ContextMenuItemRecord, DiffDecorationRecord, ExtensionRegistry,
+    GraphDecorationRecord, OverlayCallbacks, OverlayRecord,
 };
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::widget_ast;
@@ -78,6 +78,7 @@ fn install_overlay(
             let id: String = spec.get("id")?;
             let dismissible: bool = spec.get::<Option<bool>>("dismissible")?.unwrap_or(true);
             let priority: i32 = spec.get::<Option<i32>>("priority")?.unwrap_or(0);
+            let key_events = read_overlay_key_events(&spec)?;
             let widget_value: LuaValue = spec.get("widget")?;
             let widget_json: serde_json::Value = lua_inner
                 .from_value(widget_value)
@@ -107,6 +108,7 @@ fn install_overlay(
                 id,
                 priority,
                 dismissible,
+                key_events,
                 widget,
                 source_location: source,
             });
@@ -322,6 +324,26 @@ fn validate_context_menu_region(region: &str) -> Result<(), String> {
         };
     }
     Err(format!("unknown region in '{region}'"))
+}
+
+fn read_overlay_key_events(spec: &Table) -> mlua::Result<Vec<String>> {
+    let Some(table) = spec.get::<Option<Table>>("key_events")? else {
+        return Ok(Vec::new());
+    };
+
+    let mut keys = Vec::new();
+    for raw in table.sequence_values::<String>() {
+        let raw = raw?;
+        let Some(normalized) = normalize_overlay_key_event(&raw) else {
+            return Err(mlua::Error::external(format!(
+                "overlay.key_events contains unsupported key `{raw}`"
+            )));
+        };
+        if !keys.iter().any(|key| key == normalized) {
+            keys.push(normalized.to_string());
+        }
+    }
+    Ok(keys)
 }
 
 /// Split `s` at the n-th `.` from the start. `n=1` returns

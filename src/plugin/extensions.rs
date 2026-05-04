@@ -29,8 +29,66 @@ pub struct OverlayRecord {
     pub id: String,
     pub priority: i32,
     pub dismissible: bool,
+    pub key_events: Vec<String>,
     pub widget: WidgetAst,
     pub source_location: Option<String>,
+}
+
+impl OverlayRecord {
+    pub fn listens_for_key(&self, key: &str) -> bool {
+        self.key_events.iter().any(|candidate| candidate == key)
+    }
+}
+
+pub fn normalize_overlay_key_event(raw: &str) -> Option<&'static str> {
+    let compact: String = raw
+        .trim()
+        .chars()
+        .filter(|c| !matches!(c, '-' | '_' | ' '))
+        .flat_map(char::to_lowercase)
+        .collect();
+
+    Some(match compact.as_str() {
+        "enter" | "return" => "enter",
+        "esc" | "escape" => "esc",
+        "tab" => "tab",
+        "space" => "space",
+        "backspace" => "backspace",
+        "delete" | "del" => "delete",
+        "arrowup" | "up" => "up",
+        "arrowdown" | "down" => "down",
+        "arrowleft" | "left" => "left",
+        "arrowright" | "right" => "right",
+        "home" => "home",
+        "end" => "end",
+        "pageup" => "pageup",
+        "pagedown" => "pagedown",
+        "f1" => "f1",
+        "f2" => "f2",
+        "f3" => "f3",
+        "f4" => "f4",
+        "f5" => "f5",
+        "f6" => "f6",
+        "f7" => "f7",
+        "f8" => "f8",
+        "f9" => "f9",
+        "f10" => "f10",
+        "f11" => "f11",
+        "f12" => "f12",
+        "f13" => "f13",
+        "f14" => "f14",
+        "f15" => "f15",
+        "f16" => "f16",
+        "f17" => "f17",
+        "f18" => "f18",
+        "f19" => "f19",
+        "f20" => "f20",
+        "f21" => "f21",
+        "f22" => "f22",
+        "f23" => "f23",
+        "f24" => "f24",
+        _ => return None,
+    })
 }
 
 /// Lua callbacks owned by plugin overlays. Shared between the Lua API
@@ -285,6 +343,7 @@ mod tests {
                 id: id.into(),
                 priority,
                 dismissible: true,
+                key_events: Vec::new(),
                 widget: fake_widget(),
                 source_location: None,
             });
@@ -305,6 +364,7 @@ mod tests {
                 id: id.into(),
                 priority: 0,
                 dismissible: true,
+                key_events: Vec::new(),
                 widget: fake_widget(),
                 source_location: None,
             });
@@ -324,6 +384,15 @@ mod tests {
                 ("p2".to_string(), "same".to_string())
             ]
         );
+    }
+
+    #[test]
+    fn overlay_key_names_normalize_common_named_aliases() {
+        assert_eq!(normalize_overlay_key_event("Tab"), Some("tab"));
+        assert_eq!(normalize_overlay_key_event("ArrowUp"), Some("up"));
+        assert_eq!(normalize_overlay_key_event("page-down"), Some("pagedown"));
+        assert_eq!(normalize_overlay_key_event("F12"), Some("f12"));
+        assert_eq!(normalize_overlay_key_event("nope"), None);
     }
 
     #[test]

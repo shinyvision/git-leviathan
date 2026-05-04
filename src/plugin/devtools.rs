@@ -376,6 +376,7 @@ pub struct OverlaySummary {
     pub id: String,
     pub priority: i32,
     pub dismissible: bool,
+    pub key_events: Vec<String>,
     pub widget: crate::plugin::ui::widget_ast::WidgetAst,
     pub source_location: Option<String>,
 }

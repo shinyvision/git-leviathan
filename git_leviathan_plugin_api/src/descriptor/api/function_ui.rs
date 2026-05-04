@@ -180,9 +180,13 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
                 "spec.widget must be a LeviathanWidget table",
                 "spec.dismissible must be boolean",
                 "spec.priority must be a number",
+                "spec.key_events must be an array of supported named keys when present",
             ],
             returns: &[],
-            notes: &["Host owns Esc / click-outside dismissal."],
+            notes: &[
+                "Host owns Esc / click-outside dismissal.",
+                "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input.",
+            ],
         },
     },
     ApiFunction {
@@ -343,7 +347,7 @@ const UI_OVERLAY_PARAM: &[ApiParam] = &[ApiParam {
     name: "spec",
     lua_type: "LeviathanOverlaySpec",
     required: true,
-    doc: "Overlay descriptor (id, widget, dismissible, priority).",
+    doc: "Overlay descriptor (id, widget, dismissible, priority, key_events).",
 }];
 
 const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[

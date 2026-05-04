@@ -121,6 +121,7 @@ fn overlay_registration_appears_in_devtools() {
             id = "confirm",
             priority = 100,
             dismissible = true,
+            key_events = { "Tab", "ArrowUp", "ArrowDown" },
             widget = { kind = "text", value = "Are you sure?" },
         }
         "##,
@@ -135,6 +136,7 @@ fn overlay_registration_appears_in_devtools() {
         .expect("overlay row present");
     assert_eq!(overlay.priority, 100);
     assert!(overlay.dismissible);
+    assert_eq!(overlay.key_events, vec!["tab", "up", "down"]);
     // `widget` is carried through verbatim from the plugin-supplied AST so
     // devtools can introspect the overlay payload. `source_location` is
     // unset for inline-loaded plugins; the field still has to project so
