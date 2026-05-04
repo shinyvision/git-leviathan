@@ -5,6 +5,7 @@ pub mod diff;
 pub mod dropdown;
 pub mod graph;
 pub mod list;
+pub mod media;
 pub mod palette;
 pub mod primitives;
 pub mod search_widget;
