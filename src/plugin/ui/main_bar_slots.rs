@@ -52,6 +52,7 @@ pub struct PreparedSlot {
 pub enum PreparedSlotOp {
     Add(PreparedSlot),
     Remove {
+        plugin_id: String,
         region: String,
         container: Container,
         id: String,

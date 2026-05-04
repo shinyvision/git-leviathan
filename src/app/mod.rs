@@ -50,15 +50,16 @@ pub struct App {
     /// latest snapshot ever reaches the main thread.
     pub(super) reload_refs_abort: Option<iced::task::Handle>,
     pub(super) plugin_host: PluginHost,
-    /// Authoritative slot registry for the main bar. Built once at startup
-    /// from built-ins + plugin contributions; `view` walks it each frame.
+    /// Authoritative slot registry for the main bar. Rebuilt from built-ins
+    /// + current plugin contributions after plugin host mutations.
     pub(super) main_bar_registry: MainBarRegistry,
-    /// Authoritative slot registry for the tab bar. Plugin contributions
-    /// wired in Task 9; empty for now.
+    /// Authoritative slot registry for the tab bar. Rebuilt from built-ins
+    /// + current plugin contributions after plugin host mutations.
     pub(super) tab_bar_registry: TabBarRegistry,
-    /// Authoritative slot registry for the repository region. Plugin
-    /// contributions wired in Task 11; consumed by the view in Task 12.
+    /// Authoritative slot registry for the repository region. Rebuilt from
+    /// current plugin contributions after plugin host mutations.
     pub(super) repo_region_registry: RepoRegionRegistry,
+    pub(super) slot_registry_revision: u64,
 }
 
 impl App {
@@ -79,20 +80,9 @@ impl App {
         plugin_host.drop_breaker_state_for_plugin("");
         plugin_host.drop_breaker_state_for_generation("", 0);
 
-        let mut main_bar_registry = MainBarRegistry::new();
-        main_bar_builtins::register_all(&mut main_bar_registry);
-        // Plugin contributions run after built-ins so plugins can remove
-        // or replace built-in slots. Legacy `add_main_bar_button` buttons
-        // land on the right; new `main_bar.{add,remove,replace}` ops run
-        // in source order across all plugins.
-        plugin_host.apply_main_bar_slots(&mut main_bar_registry);
-
-        let mut tab_bar_registry = TabBarRegistry::new();
-        tab_bar_builtins::register_all(&mut tab_bar_registry);
-        plugin_host.apply_tab_bar_slots(&mut tab_bar_registry);
-
-        let mut repo_region_registry = RepoRegionRegistry::new();
-        plugin_host.apply_repo_region_slots(&mut repo_region_registry);
+        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+            build_slot_registries(&plugin_host);
+        let slot_registry_revision = plugin_host.slot_ops_revision();
 
         let mut app = App {
             tabs: TabManager::new(presenter),
@@ -106,6 +96,7 @@ impl App {
             main_bar_registry,
             tab_bar_registry,
             repo_region_registry,
+            slot_registry_revision,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -129,6 +120,7 @@ impl App {
         let task = app.load_initial_repos();
         app.sync_repository_to_plugins();
         app.process_tab_changes();
+        app.rebuild_slot_registries();
         (app, task)
     }
 
@@ -162,8 +154,22 @@ impl App {
         self.sync_repository_to_plugins();
         self.process_tab_changes();
         let drain = self.drain_pending_tab_ops();
+        self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
         Task::batch(vec![task, drain])
+    }
+
+    fn rebuild_slot_registries(&mut self) {
+        let revision = self.plugin_host.slot_ops_revision();
+        if self.slot_registry_revision == revision {
+            return;
+        }
+        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+            build_slot_registries(&self.plugin_host);
+        self.main_bar_registry = main_bar_registry;
+        self.tab_bar_registry = tab_bar_registry;
+        self.repo_region_registry = repo_region_registry;
+        self.slot_registry_revision = revision;
     }
 
     /// Push the active tab's branch refs into every plugin's
@@ -419,5 +425,182 @@ fn parse_force_screen() -> Option<ForceScreen> {
             );
             None
         }
+    }
+}
+
+fn build_slot_registries(
+    plugin_host: &PluginHost,
+) -> (MainBarRegistry, TabBarRegistry, RepoRegionRegistry) {
+    let mut main_bar_registry = MainBarRegistry::new();
+    main_bar_builtins::register_all(&mut main_bar_registry);
+    // Plugin contributions run after built-ins so plugins can remove
+    // or replace built-in slots. Legacy `add_main_bar_button` buttons
+    // land on the right; new `main_bar.{add,remove,replace}` ops run
+    // in source order across all plugins.
+    plugin_host.apply_main_bar_slots(&mut main_bar_registry);
+
+    let mut tab_bar_registry = TabBarRegistry::new();
+    tab_bar_builtins::register_all(&mut tab_bar_registry);
+    plugin_host.apply_tab_bar_slots(&mut tab_bar_registry);
+
+    let mut repo_region_registry = RepoRegionRegistry::new();
+    plugin_host.apply_repo_region_slots(&mut repo_region_registry);
+
+    (main_bar_registry, tab_bar_registry, repo_region_registry)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::tests::harness::MockHost;
+
+    const MANIFEST: &str = r#"
+id = "slots"
+name = "Slots"
+version = "0.1.0"
+api_version = "1.0"
+"#;
+
+    const INIT: &str = r#"
+leviathan.ui.regions.add_slot{
+    region = "main_bar",
+    section = "left",
+    id = "plugin.slots.main",
+    priority = 5,
+    widget = { kind = "text", value = "main" },
+}
+
+leviathan.ui.regions.add_slot{
+    region = "tab_bar",
+    section = "left",
+    id = "plugin.slots.tab",
+    priority = 5,
+    widget = { kind = "text", value = "tab" },
+}
+
+leviathan.ui.regions.add_slot{
+    region = "repository",
+    pane = "sidebar",
+    section = "top",
+    id = "plugin.slots.repo",
+    priority = 5,
+    widget = { kind = "text", value = "repo" },
+}
+"#;
+
+    #[test]
+    fn rebuilding_slot_registries_reflects_plugin_disable_and_enable() {
+        let mut host = MockHost::new();
+        host.load_inline("slots", MANIFEST, INIT)
+            .expect("load slots plugin");
+        let load_revision = host.host().slot_ops_revision();
+        assert!(load_revision > 0);
+
+        let (main, tabs, repo) = build_slot_registries(host.host());
+        assert!(main.contains("builtin.repo_info"));
+        assert!(tabs.contains("builtin.plus_button"));
+        assert!(main.contains("plugin.slots.main"));
+        assert!(tabs.contains("plugin.slots.tab"));
+        assert!(repo.contains("plugin.slots.repo"));
+
+        assert!(host.host_mut().disable_plugin("slots"));
+        let disable_revision = host.host().slot_ops_revision();
+        assert!(disable_revision > load_revision);
+
+        let (main, tabs, repo) = build_slot_registries(host.host());
+        assert!(main.contains("builtin.repo_info"));
+        assert!(tabs.contains("builtin.plus_button"));
+        assert!(!main.contains("plugin.slots.main"));
+        assert!(!tabs.contains("plugin.slots.tab"));
+        assert!(!repo.contains("plugin.slots.repo"));
+
+        let reloaded = host
+            .host_mut()
+            .enable_plugin("slots")
+            .expect("enable slots plugin");
+        assert!(reloaded);
+        assert!(host.host().slot_ops_revision() > disable_revision);
+
+        let (main, tabs, repo) = build_slot_registries(host.host());
+        assert!(main.contains("plugin.slots.main"));
+        assert!(tabs.contains("plugin.slots.tab"));
+        assert!(repo.contains("plugin.slots.repo"));
+    }
+
+    #[test]
+    fn app_rebuilds_slot_registries_only_when_slot_ops_revision_changes() {
+        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+
+        const REMOVE_MISSING_INIT: &str = r#"
+leviathan.ui.regions.remove_slot{
+    region = "main_bar",
+    section = "left",
+    id = "missing.slot",
+}
+"#;
+
+        let tmp = tempfile::tempdir().expect("tmp");
+        let dir = tmp.path().join("missing_remove");
+        std::fs::create_dir_all(&dir).expect("plugin dir");
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+id = "missing_remove"
+name = "Missing Remove"
+version = "0.1.0"
+api_version = "1.0"
+"#,
+        )
+        .expect("manifest");
+        std::fs::write(dir.join("init.lua"), REMOVE_MISSING_INIT).expect("init");
+
+        let mut plugin_host = PluginHost::new();
+        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
+        plugin_host
+            .load_plugin(&dir)
+            .expect("load missing-remove plugin");
+
+        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+            build_slot_registries(&plugin_host);
+        let slot_registry_revision = plugin_host.slot_ops_revision();
+        let initial_missing_count = plugin_host
+            .diagnostics()
+            .entries()
+            .iter()
+            .filter(|diag| diag.code == "schema.slot_remove_missing")
+            .count();
+        assert_eq!(initial_missing_count, 1);
+
+        let mut app = App {
+            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())),
+            blank_screen: BlankScreen::new(),
+            no_git_screen: None,
+            toasts: ToastManager::default(),
+            last_animation_tick: None,
+            fetch: FetchPolicy::new(),
+            reload_refs_abort: None,
+            plugin_host,
+            main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
+            slot_registry_revision,
+        };
+
+        app.rebuild_slot_registries();
+        app.rebuild_slot_registries();
+        let missing_count_after_noop_rebuilds = app
+            .plugin_host
+            .diagnostics()
+            .entries()
+            .iter()
+            .filter(|diag| diag.code == "schema.slot_remove_missing")
+            .count();
+        assert_eq!(missing_count_after_noop_rebuilds, initial_missing_count);
+
+        assert!(app.plugin_host.disable_plugin("missing_remove"));
+        let disabled_revision = app.plugin_host.slot_ops_revision();
+        assert_ne!(app.slot_registry_revision, disabled_revision);
+        app.rebuild_slot_registries();
+        assert_eq!(app.slot_registry_revision, disabled_revision);
     }
 }

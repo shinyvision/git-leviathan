@@ -56,6 +56,7 @@ fn install_regions_api(
 
     let b = Rc::clone(&build);
     let ledger_for_remove = ledger.clone();
+    let remove_plugin_id = ledger_for_remove.plugin_id().to_string();
     regions.set(
         "remove_slot",
         lua.create_function(move |_, target: Table| {
@@ -68,6 +69,7 @@ fn install_regions_api(
             let handle = slot_handle(desc.name, &container, &id);
             ledger_for_remove.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
             b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
+                plugin_id: remove_plugin_id.clone(),
                 region: desc.name.to_string(),
                 container,
                 id,

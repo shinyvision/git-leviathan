@@ -17,7 +17,9 @@ pub(super) fn op_belongs_to(op: &PreparedSlotOp, plugin_id: &str) -> bool {
     match op {
         PreparedSlotOp::Add(p) => p.plugin_id == plugin_id,
         PreparedSlotOp::Replace { spec, .. } => spec.plugin_id == plugin_id,
-        PreparedSlotOp::Remove { .. } => false,
+        PreparedSlotOp::Remove {
+            plugin_id: owner, ..
+        } => owner == plugin_id,
     }
 }
 
@@ -65,10 +67,12 @@ pub(crate) fn prepare_op(
             Ok(PreparedSlotOp::Add(prepared))
         }
         RawSlotOp::Remove {
+            plugin_id,
             region,
             container,
             id,
         } => Ok(PreparedSlotOp::Remove {
+            plugin_id,
             region,
             container: parse_container(&container),
             id,

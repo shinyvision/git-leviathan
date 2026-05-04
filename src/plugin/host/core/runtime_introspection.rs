@@ -625,6 +625,7 @@ impl PluginHost {
                     region,
                     container,
                     id,
+                    ..
                 } => {
                     slot_map.remove(&(region.clone(), container.key(), id.clone()));
                 }

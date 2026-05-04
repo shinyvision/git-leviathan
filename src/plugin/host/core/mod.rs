@@ -170,6 +170,7 @@ impl PluginHost {
         let mut host = Self {
             plugins: HashMap::new(),
             slot_ops: Vec::new(),
+            slot_ops_revision: 0,
             active_screen: None,
             widget_tree: None,
             split_sizes: HashMap::new(),
@@ -238,6 +239,14 @@ impl PluginHost {
     /// True when at least one plugin has loaded into a Lua state.
     pub fn has_loaded_plugins(&self) -> bool {
         !self.plugins.is_empty()
+    }
+
+    pub fn slot_ops_revision(&self) -> u64 {
+        self.slot_ops_revision
+    }
+
+    fn mark_slot_ops_changed(&mut self) {
+        self.slot_ops_revision = self.slot_ops_revision.wrapping_add(1);
     }
 
     /// The app only needs to poll the Lua runtime while there is work that can

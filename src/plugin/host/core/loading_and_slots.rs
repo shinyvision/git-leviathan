@@ -401,6 +401,7 @@ impl PluginHost {
 
         let mut slot_handlers = HashMap::new();
         let mut dynamic_widgets = HashMap::new();
+        let mut installed_slot_ops = false;
         for op in slot_ops {
             match prepare_op(
                 &manifest.id,
@@ -410,7 +411,10 @@ impl PluginHost {
                 &mut slot_handlers,
                 &mut dynamic_widgets,
             ) {
-                Ok(prepared) => self.slot_ops.push(prepared),
+                Ok(prepared) => {
+                    self.slot_ops.push(prepared);
+                    installed_slot_ops = true;
+                }
                 Err(e) => {
                     self.diagnostics.record(
                         PluginDiagnostic::new(
@@ -543,6 +547,9 @@ impl PluginHost {
         // Populate dynamic widget caches so the first render has a real
         // tree instead of a placeholder null.
         self.refresh_dynamic_widgets_for_plugin(&manifest.id);
+        if installed_slot_ops {
+            self.mark_slot_ops_changed();
+        }
         Ok(())
     }
 
@@ -658,11 +665,16 @@ impl PluginHost {
                         );
                     }
                 }
-                PreparedSlotOp::Remove { region, id, .. } if region == region_name => {
+                PreparedSlotOp::Remove {
+                    plugin_id,
+                    region,
+                    id,
+                    ..
+                } if region == region_name => {
                     if !registry.remove(id) {
                         self.diagnostics.record(
                             PluginDiagnostic::new(
-                                PluginId::from("<unknown>"),
+                                PluginId::from(plugin_id.clone()),
                                 DiagnosticSeverity::Warning,
                                 "schema.slot_remove_missing",
                                 format!(

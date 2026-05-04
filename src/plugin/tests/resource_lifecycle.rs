@@ -1,4 +1,39 @@
+use crate::plugin::slots::Container;
 use crate::plugin::tests::harness::MockHost;
+use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry};
+
+fn replay_main_bar(host: &MockHost) -> MainBarRegistry {
+    let mut registry = MainBarRegistry::new();
+    main_bar_builtins::register_all(&mut registry);
+    host.host().apply_main_bar_slots(&mut registry);
+    registry
+}
+
+fn main_bar_slot_priority(registry: &MainBarRegistry, id: &str) -> Option<i32> {
+    for section in ["left", "center", "right"] {
+        if let Some(slot) = registry
+            .iter_container(Container::Section(section.to_string()))
+            .find(|slot| slot.id == id)
+        {
+            return Some(slot.priority);
+        }
+    }
+    None
+}
+
+fn builtin_main_bar_slot_priority(id: &str) -> Option<i32> {
+    let mut registry = MainBarRegistry::new();
+    main_bar_builtins::register_all(&mut registry);
+    main_bar_slot_priority(&registry, id)
+}
+
+fn slot_owner(host: &MockHost, region: &str, container: &str, id: &str) -> Option<String> {
+    host.introspect()
+        .slots
+        .into_iter()
+        .find(|slot| slot.region == region && slot.container == container && slot.id == id)
+        .map(|slot| slot.owner_plugin_id)
+}
 
 fn manifest(id: &str) -> String {
     format!(
@@ -8,6 +43,17 @@ name = "{id}"
 version = "0.1.0"
 api_version = "1.0"
 provides_services = ["math@1"]
+"#
+    )
+}
+
+fn bare_manifest(id: &str) -> String {
+    format!(
+        r#"
+id = "{id}"
+name = "{id}"
+version = "0.1.0"
+api_version = "1.0"
 "#
     )
 }
@@ -141,6 +187,275 @@ fn unload_removes_all_ledger_resources_and_host_state() {
         .iter()
         .all(|service| service.publisher_plugin_id != "unload"));
     assert!(host.host().last_reload_error("unload").is_none());
+}
+
+#[test]
+fn unload_removes_owned_remove_op_so_peer_slot_replays() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "peer",
+        &bare_manifest("peer"),
+        r#"
+        leviathan.ui.regions.add_slot{ region = "main_bar",
+            id = "peer.slot",
+            section = "left",
+            priority = 10,
+            widget = { kind = "text", value = "peer" },
+        }
+        "#,
+    )
+    .expect("load peer");
+
+    host.load_inline(
+        "remover",
+        &bare_manifest("remover"),
+        r#"
+        leviathan.ui.regions.remove_slot{
+            region = "main_bar",
+            section = "left",
+            id = "peer.slot",
+        }
+        "#,
+    )
+    .expect("load remover");
+
+    assert!(!host.has_slot("peer", "main_bar", "left", "peer.slot"));
+    let mut hidden = MainBarRegistry::new();
+    host.host().apply_main_bar_slots(&mut hidden);
+    assert!(!hidden.contains("peer.slot"));
+
+    host.host_mut().unload_plugin("remover").expect("unload");
+
+    assert!(host.has_slot("peer", "main_bar", "left", "peer.slot"));
+    let mut replayed = MainBarRegistry::new();
+    host.host().apply_main_bar_slots(&mut replayed);
+    assert!(replayed.contains("peer.slot"));
+}
+
+#[test]
+fn replace_over_replace_restores_previous_replacement_then_builtin() {
+    let mut host = MockHost::new();
+    let builtin_fetch_priority =
+        builtin_main_bar_slot_priority("builtin.fetch_indicator").expect("fetch indicator builtin");
+
+    host.load_inline(
+        "replace_a",
+        &bare_manifest("replace_a"),
+        r#"
+        leviathan.ui.regions.replace_slot(
+            { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
+            {
+                region = "main_bar",
+                section = "left",
+                id = "builtin.fetch_indicator",
+                priority = 401,
+                widget = { kind = "text", value = "A" },
+            }
+        )
+        "#,
+    )
+    .expect("load replace_a");
+    host.load_inline(
+        "replace_b",
+        &bare_manifest("replace_b"),
+        r#"
+        leviathan.ui.regions.replace_slot(
+            { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
+            {
+                region = "main_bar",
+                section = "left",
+                id = "builtin.fetch_indicator",
+                priority = 402,
+                widget = { kind = "text", value = "B" },
+            }
+        )
+        "#,
+    )
+    .expect("load replace_b");
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
+        Some(402)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "builtin.fetch_indicator").as_deref(),
+        Some("replace_b")
+    );
+
+    assert!(host.host_mut().disable_plugin("replace_b"));
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
+        Some(401)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "builtin.fetch_indicator").as_deref(),
+        Some("replace_a")
+    );
+
+    host.unload_plugin("replace_a").expect("unload replace_a");
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
+        Some(builtin_fetch_priority)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "builtin.fetch_indicator"),
+        None
+    );
+}
+
+#[test]
+fn remove_over_add_restores_peer_add_then_removes_with_owner() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "add_owner",
+        &bare_manifest("add_owner"),
+        r#"
+        leviathan.ui.regions.add_slot{
+            region = "main_bar",
+            section = "left",
+            id = "plugin.a.slot",
+            priority = 411,
+            widget = { kind = "text", value = "A" },
+        }
+        "#,
+    )
+    .expect("load add_owner");
+    host.load_inline(
+        "remove_owner",
+        &bare_manifest("remove_owner"),
+        r#"
+        leviathan.ui.regions.remove_slot{
+            region = "main_bar",
+            section = "left",
+            id = "plugin.a.slot",
+        }
+        "#,
+    )
+    .expect("load remove_owner");
+
+    let replayed = replay_main_bar(&host);
+    assert!(!replayed.contains("plugin.a.slot"));
+    assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
+
+    assert!(host.host_mut().disable_plugin("remove_owner"));
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "plugin.a.slot"),
+        Some(411)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
+        Some("add_owner")
+    );
+
+    host.unload_plugin("add_owner").expect("unload add_owner");
+
+    let replayed = replay_main_bar(&host);
+    assert!(!replayed.contains("plugin.a.slot"));
+    assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
+}
+
+#[test]
+fn remove_builtin_reappears_after_remover_unloads() {
+    let mut host = MockHost::new();
+    let builtin_fetch_priority =
+        builtin_main_bar_slot_priority("builtin.fetch_indicator").expect("fetch indicator builtin");
+
+    host.load_inline(
+        "builtin_remover",
+        &bare_manifest("builtin_remover"),
+        r#"
+        leviathan.ui.regions.remove_slot{
+            region = "main_bar",
+            section = "left",
+            id = "builtin.fetch_indicator",
+        }
+        "#,
+    )
+    .expect("load builtin_remover");
+
+    let replayed = replay_main_bar(&host);
+    assert!(!replayed.contains("builtin.fetch_indicator"));
+
+    host.unload_plugin("builtin_remover")
+        .expect("unload builtin_remover");
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
+        Some(builtin_fetch_priority)
+    );
+}
+
+#[test]
+fn replace_over_plugin_add_restores_add_when_replacer_unloads() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "plugin_add",
+        &bare_manifest("plugin_add"),
+        r#"
+        leviathan.ui.regions.add_slot{
+            region = "main_bar",
+            section = "left",
+            id = "plugin.a.slot",
+            priority = 421,
+            widget = { kind = "text", value = "A" },
+        }
+        "#,
+    )
+    .expect("load plugin_add");
+    host.load_inline(
+        "plugin_replace",
+        &bare_manifest("plugin_replace"),
+        r#"
+        leviathan.ui.regions.replace_slot(
+            { region = "main_bar", section = "left", id = "plugin.a.slot" },
+            {
+                region = "main_bar",
+                section = "left",
+                id = "plugin.a.slot",
+                priority = 422,
+                widget = { kind = "text", value = "B" },
+            }
+        )
+        "#,
+    )
+    .expect("load plugin_replace");
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "plugin.a.slot"),
+        Some(422)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
+        Some("plugin_replace")
+    );
+
+    host.unload_plugin("plugin_replace")
+        .expect("unload plugin_replace");
+
+    let replayed = replay_main_bar(&host);
+    assert_eq!(
+        main_bar_slot_priority(&replayed, "plugin.a.slot"),
+        Some(421)
+    );
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
+        Some("plugin_add")
+    );
+
+    host.unload_plugin("plugin_add").expect("unload plugin_add");
+
+    let replayed = replay_main_bar(&host);
+    assert!(!replayed.contains("plugin.a.slot"));
+    assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
 }
 
 #[test]

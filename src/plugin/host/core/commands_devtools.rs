@@ -805,6 +805,10 @@ impl PluginHost {
                         }),
                     );
                 }
+                PreparedSlotOp::Add(p) => {
+                    let key = (p.region.clone(), p.container.key(), p.id.clone());
+                    slot_map.remove(&key);
+                }
                 PreparedSlotOp::Replace {
                     region,
                     container,
@@ -826,7 +830,24 @@ impl PluginHost {
                         }),
                     );
                 }
-                _ => {}
+                PreparedSlotOp::Replace {
+                    region,
+                    container,
+                    id,
+                    ..
+                } => {
+                    let key = (region.clone(), container.key(), id.clone());
+                    slot_map.remove(&key);
+                }
+                PreparedSlotOp::Remove {
+                    region,
+                    container,
+                    id,
+                    ..
+                } => {
+                    let key = (region.clone(), container.key(), id.clone());
+                    slot_map.remove(&key);
+                }
             }
         }
         let slots: Vec<serde_json::Value> = slot_map.into_values().collect();

@@ -76,6 +76,7 @@ pub enum WidgetSource {
 pub enum RawSlotOp {
     Add(RawSlotSpec),
     Remove {
+        plugin_id: String,
         region: String,
         container: String,
         id: String,

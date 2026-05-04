@@ -194,12 +194,18 @@ impl PluginHost {
     }
 
     pub(super) fn cleanup_ledger(&mut self, ledger: &ResourceLedger) {
-        let mut cleaner = HostResourceCleaner {
-            slot_ops: &mut self.slot_ops,
-            event_bus: &mut self.event_bus,
-            service_registry: Rc::clone(&self.service_registry),
+        let slot_ops_len_before = self.slot_ops.len();
+        let report = {
+            let mut cleaner = HostResourceCleaner {
+                slot_ops: &mut self.slot_ops,
+                event_bus: &mut self.event_bus,
+                service_registry: Rc::clone(&self.service_registry),
+            };
+            ledger.cleanup_all(&mut cleaner)
         };
-        let report = ledger.cleanup_all(&mut cleaner);
+        if self.slot_ops.len() != slot_ops_len_before {
+            self.mark_slot_ops_changed();
+        }
         if report.has_errors() {
             for error in report.errors {
                 let diag = PluginDiagnostic::new(

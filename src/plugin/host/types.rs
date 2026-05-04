@@ -125,6 +125,7 @@ pub(super) struct SplitDragInfo {
 pub struct PluginHost {
     pub(super) plugins: HashMap<String, LoadedPlugin>,
     pub(super) slot_ops: Vec<PreparedSlotOp>,
+    pub(super) slot_ops_revision: u64,
     pub(super) active_screen: Option<(String, String)>,
     pub(super) widget_tree: Option<WidgetAst>,
     pub(super) split_sizes: HashMap<String, Vec<f32>>,

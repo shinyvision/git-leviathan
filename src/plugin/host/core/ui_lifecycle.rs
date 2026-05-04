@@ -301,6 +301,7 @@ impl PluginHost {
                     region: r,
                     container: c,
                     id,
+                    ..
                 } if r == region && c.key() == container && id == slot_id => {
                     return false;
                 }
@@ -368,6 +369,14 @@ impl PluginHost {
         // bindings from peers automatically reactivate.
         self.keymap_registry.borrow_mut().drop_for_plugin(plugin_id);
         self.cleanup_ledger(&plugin.generation.ledger);
+        // Remove ops are owned host state, but they are not slot
+        // resources. Drop them explicitly so peer/built-in slots can
+        // reappear when registries are replayed after this plugin unloads.
+        let slot_ops_len_before = self.slot_ops.len();
+        self.slot_ops.retain(|op| !op_belongs_to(op, plugin_id));
+        if self.slot_ops.len() != slot_ops_len_before {
+            self.mark_slot_ops_changed();
+        }
         // extension points: drop overlays / context-menu items / decorations
         // owned by this plugin. Records came from a non-Slot ledger
         // path so the cleaner above didn't touch the registry.
@@ -644,19 +653,27 @@ impl PluginHost {
             drop(previous);
         }
         // Defensive sweep: remove any straggler slot_ops/autocmds for
-        // this plugin id that the ledger walk did not own (e.g. raw
-        // `Remove` ops, which are host-owned and not ledger-tracked).
+        // this plugin id that the ledger walk did not own (e.g.
+        // plugin-owned `Remove` ops, which are not ledger-tracked).
         // Safe even when the cleanup already emptied them.
+        let slot_ops_len_before = self.slot_ops.len();
         self.slot_ops
             .retain(|op| !op_belongs_to(op, &plugin_id_str));
+        if self.slot_ops.len() != slot_ops_len_before {
+            self.mark_slot_ops_changed();
+        }
         // Drop *every* prior autocmd row for this plugin id regardless
         // of generation; the ledger walk already removed the previous
         // gen's, this catches any residue.
         let _ = self.event_bus.drop_for_plugin(&plugin_id_str);
 
         // Splice staged ops into the live host tables.
+        let installed_slot_ops = !staged_slot_ops.is_empty();
         for op in staged_slot_ops {
             self.slot_ops.push(op);
+        }
+        if installed_slot_ops {
+            self.mark_slot_ops_changed();
         }
         // Splice staged autocmd group handles + clears + entries into
         // the live `EventBus` in plugin-local declaration order.
