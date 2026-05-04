@@ -590,7 +590,7 @@ pub(super) const FS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.fs.watch",
         name: "watch",
-        since: "1.12",
+        since: "1.0",
         compatibility: "v1",
         doc: "Watch a path for filesystem changes and dispatch events to a callback.",
         params: &[

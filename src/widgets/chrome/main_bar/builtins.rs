@@ -31,8 +31,7 @@ use iced::{
 
 use crate::{
     assets,
-    message::Message,
-    screens::repository::{panel_messages::CenterAction as CenterAct, RepositoryMessage},
+    message::{AppMessage, Message},
     style as shared_style, theme,
     widgets::primitives::spinner,
 };
@@ -153,7 +152,7 @@ fn pull_slot() -> MainBarSlot {
             Some(started_at) => spinner_inset(started_at, icon_color),
             None => assets::toolbar_icon(assets::PULL, icon_color),
         };
-        let on_press = enabled.then(|| Message::repo(RepositoryMessage::PullRequested));
+        let on_press = enabled.then(|| command_message("repository.pull", serde_json::Value::Null));
         action_button(icon, "Pull", label_color, on_press)
     })
 }
@@ -167,7 +166,7 @@ fn push_slot() -> MainBarSlot {
             Some(started_at) => spinner_inset(started_at, icon_color),
             None => assets::toolbar_icon(assets::PUSH, icon_color),
         };
-        let on_press = enabled.then(|| Message::repo(RepositoryMessage::PushRequested));
+        let on_press = enabled.then(|| command_message("repository.push", serde_json::Value::Null));
         action_button(icon, "Push", label_color, on_press)
     })
 }
@@ -199,9 +198,7 @@ fn stash_slot() -> MainBarSlot {
             .style(style::action_btn)
             .padding(Padding::from([6, 12]))
             .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32))
-            .on_press(Message::repo(RepositoryMessage::Center(
-                CenterAct::StashCreateRequested,
-            )))
+            .on_press(command_message("stash.push", serde_json::Value::Null))
             .into()
     })
 }
@@ -221,9 +218,10 @@ fn pop_slot() -> MainBarSlot {
             .style(style::action_btn)
             .padding(Padding::from([6, 12]))
             .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32))
-            .on_press(Message::repo(RepositoryMessage::Center(
-                CenterAct::StashPopRequested { stash_index: 0 },
-            )))
+            .on_press(command_message(
+                "stash.pop",
+                serde_json::json!({ "index": 0 }),
+            ))
             .into()
     })
 }
@@ -240,8 +238,18 @@ fn search_slot() -> MainBarSlot {
         .height(Length::Fixed(size))
         .padding(0)
         .style(style::search_btn)
-        .on_press(Message::repo(RepositoryMessage::OpenCommitSearch))
+        .on_press(command_message(
+            "repository.open_search",
+            serde_json::Value::Null,
+        ))
         .into()
+    })
+}
+
+fn command_message(id: &'static str, args: serde_json::Value) -> Message {
+    Message::App(AppMessage::InvokeCommand {
+        id: id.to_string(),
+        args,
     })
 }
 

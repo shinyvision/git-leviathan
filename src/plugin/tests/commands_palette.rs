@@ -26,7 +26,7 @@ fn diag_codes(host: &MockHost) -> Vec<String> {
 }
 
 #[test]
-fn host_owns_three_built_in_commands_at_startup() {
+fn host_owns_core_built_in_commands_at_startup() {
     let host = MockHost::new();
     let registry = host.command_registry();
     let summaries = registry.borrow().summaries();
@@ -36,8 +36,9 @@ fn host_owns_three_built_in_commands_at_startup() {
         .map(|s| s.name.clone())
         .collect();
     assert!(host_names.contains(&"repository.fetch".to_string()));
-    assert!(host_names.contains(&"repository.refresh".to_string()));
-    assert!(host_names.contains(&"repository.open".to_string()));
+    assert!(host_names.contains(&"app.open_repository".to_string()));
+    assert!(host_names.contains(&"repository.open_search".to_string()));
+    assert!(host_names.contains(&"tab.close".to_string()));
 }
 
 #[test]

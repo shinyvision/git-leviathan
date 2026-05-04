@@ -17,10 +17,13 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use iced::Element;
+use mlua::RegistryKey;
 
 use crate::message::Message;
+use crate::plugin::api::DynamicWidgetCall;
 use crate::plugin::bridge::widget_tree::{self, build_error_widget, BuildCtx, DispatchScope};
-use crate::plugin::slots::Container;
+use crate::plugin::slots::{Container, SlotAddress};
+use crate::plugin::ui::invalidation::{DynamicWidgetTelemetry, UiDependency};
 use crate::plugin::ui::widget_ast::WidgetAst;
 use crate::widgets::chrome::main_bar::{MainBarSlot, SlotCtx as MainBarSlotCtx};
 use crate::widgets::chrome::repo_region::{RepoPaneCtx, RepoPaneSlot};
@@ -32,6 +35,14 @@ use crate::widgets::chrome::tab_bar_slots::{TabBarCtx, TabBarSlot};
 /// user sees something explicit.
 pub type DynamicAstCache = Rc<RefCell<Option<WidgetAst>>>;
 
+pub struct DynamicWidgetRegistration {
+    pub key: RegistryKey,
+    pub cache: DynamicAstCache,
+    pub call: DynamicWidgetCall,
+    pub dependencies: Vec<UiDependency>,
+    pub telemetry: Rc<RefCell<DynamicWidgetTelemetry>>,
+}
+
 #[derive(Clone)]
 pub enum SlotWidget {
     Static(Box<WidgetAst>),
@@ -42,6 +53,8 @@ pub enum SlotWidget {
 pub struct PreparedSlot {
     pub plugin_id: String,
     pub id: String,
+    pub address: SlotAddress,
+    pub mount_address: SlotAddress,
     pub region: String,
     pub container: Container,
     pub priority: i32,
@@ -49,18 +62,16 @@ pub struct PreparedSlot {
     pub plugin_root: PathBuf,
 }
 
+#[derive(Clone)]
 pub enum PreparedSlotOp {
     Add(PreparedSlot),
     Remove {
-        plugin_id: String,
-        region: String,
-        container: Container,
-        id: String,
+        requester_plugin_id: String,
+        target: SlotAddress,
     },
     Replace {
-        region: String,
-        container: Container,
-        id: String,
+        requester_plugin_id: String,
+        target: SlotAddress,
         spec: PreparedSlot,
     },
 }
@@ -97,11 +108,13 @@ impl PreparedSlot {
 
     pub fn into_main_bar(self) -> MainBarSlot {
         let container = self.container.clone();
+        let address = self.mount_address.clone();
         let priority = self.priority;
         let id = self.id.clone();
         let prepared = self;
         MainBarSlot {
             id,
+            address,
             container,
             priority,
             builder: Box::new(move |_ctx: &MainBarSlotCtx<'_>| prepared.render()),
@@ -110,11 +123,13 @@ impl PreparedSlot {
 
     pub fn into_tab_bar(self) -> TabBarSlot {
         let container = self.container.clone();
+        let address = self.mount_address.clone();
         let priority = self.priority;
         let id = self.id.clone();
         let prepared = self;
         TabBarSlot {
             id,
+            address,
             container,
             priority,
             builder: Box::new(move |_ctx: &TabBarCtx<'_>| prepared.render()),
@@ -123,15 +138,22 @@ impl PreparedSlot {
 
     pub fn into_repo_pane(self) -> RepoPaneSlot {
         let container = self.container.clone();
+        let address = self.mount_address.clone();
         let priority = self.priority;
         let id = self.id.clone();
         let prepared = self;
         RepoPaneSlot {
             id,
+            address,
             container,
             priority,
             builder: Box::new(move |_ctx: &RepoPaneCtx<'_>| prepared.render()),
         }
+    }
+
+    pub fn mounted_at(mut self, target: SlotAddress) -> Self {
+        self.mount_address = target;
+        self
     }
 }
 

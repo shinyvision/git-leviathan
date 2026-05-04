@@ -201,8 +201,28 @@
       "since": "1.0"
     },
     {
-      "doc": "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`).",
+      "doc": "Add controls to a UI region such as the main toolbar (`ui:region:main_bar`) or repository panes (`ui:region:repository`).",
       "name": "ui:region:<region>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Replace native host slots such as the repository label in the main toolbar.",
+      "name": "ui:replace:builtin",
+      "since": "1.0"
+    },
+    {
+      "doc": "Replace one concrete slot, e.g. `ui:replace:main_bar:left:builtin.repo_info`.",
+      "name": "ui:replace:<region>:<container>:<id>",
+      "since": "1.0"
+    },
+    {
+      "doc": "Remove native host slots such as built-in toolbar controls.",
+      "name": "ui:remove:builtin",
+      "since": "1.0"
+    },
+    {
+      "doc": "Remove one concrete slot owned by another source.",
+      "name": "ui:remove:<region>:<container>:<id>",
       "since": "1.0"
     },
     {
@@ -218,22 +238,22 @@
     {
       "doc": "Spawn a host-managed background worker thread.",
       "name": "async:spawn",
-      "since": "1.12"
+      "since": "1.0"
     },
     {
       "doc": "Schedule one-shot or repeating timers.",
       "name": "timer:create",
-      "since": "1.12"
+      "since": "1.0"
     },
     {
       "doc": "Watch plugin-scoped paths for filesystem events.",
       "name": "fs:watch",
-      "since": "1.12"
+      "since": "1.0"
     },
     {
       "doc": "Watch paths under an explicit user-chosen directory.",
       "name": "fs:watch:scope:<dir>",
-      "since": "1.12"
+      "since": "1.0"
     },
     {
       "doc": "Register modal overlays that the host renders above the active screen.",
@@ -241,19 +261,68 @@
       "since": "1.0"
     },
     {
-      "doc": "Contribute items to host-rendered context menus at extension points.",
-      "name": "ui:context_menu",
+      "doc": "Contribute menu items to a target such as `repository.diff.context_menu`.",
+      "name": "ui:context_menu:<region>",
       "since": "1.0"
     },
     {
-      "doc": "Attach badges, icons, markers, or lanes to commit rows in the graph.",
-      "name": "ui:graph_decoration",
+      "doc": "Draw decorations in the commit graph view.",
+      "name": "ui:decoration:graph",
       "since": "1.0"
     },
     {
-      "doc": "Attach line hints, hunk badges, or line gutters to the diff view.",
-      "name": "ui:diff_decoration",
+      "doc": "Draw decorations in the diff view.",
+      "name": "ui:decoration:diff",
       "since": "1.0"
+    },
+    {
+      "doc": "Register full plugin screens.",
+      "name": "ui:screen",
+      "since": "1.0"
+    },
+    {
+      "doc": "Register dockable UI panels when the dock surface is available.",
+      "name": "ui:dock",
+      "since": "1.0"
+    },
+    {
+      "doc": "Register status widgets when the status surface is available.",
+      "name": "ui:status",
+      "since": "1.0"
+    },
+    {
+      "doc": "Use raw colors in native chrome instead of theme tokens.",
+      "name": "ui:style:raw_color",
+      "since": "1.0"
+    }
+  ],
+  "compatibility_matrix": [
+    {
+      "extension_points": [
+        "main_bar.left",
+        "main_bar.center",
+        "main_bar.right",
+        "tab_bar.left",
+        "tab_bar.right",
+        "repository.sidebar.top",
+        "repository.sidebar.bottom",
+        "repository.graph.top",
+        "repository.graph.bottom",
+        "repository.details.top",
+        "repository.details.bottom",
+        "repository.diff.context_menu",
+        "repository.graph.context_menu",
+        "repository.graph.row_badge",
+        "repository.diff.line_gutter",
+        "overlays",
+        "screens",
+        "commands",
+        "settings.panel",
+        "dock.pane"
+      ],
+      "host_version": "1.0",
+      "plugin_api_version": "1.0",
+      "widget_schema": 1
     }
   ],
   "events": [
@@ -264,7 +333,7 @@
       "name": "AppStarted",
       "payload_fields": [],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -273,7 +342,7 @@
       "name": "AppWillQuit",
       "payload_fields": [],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -295,7 +364,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -317,7 +386,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -339,7 +408,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -355,7 +424,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -371,7 +440,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -409,7 +478,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -425,7 +494,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -441,7 +510,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -457,7 +526,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -473,7 +542,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -489,7 +558,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -505,7 +574,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -521,7 +590,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -587,7 +656,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -603,7 +672,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -619,7 +688,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -635,7 +704,7 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -654,10 +723,22 @@
           "lua_type": "string",
           "name": "plugin_id",
           "required": false
+        },
+        {
+          "doc": "True when command dispatch succeeded.",
+          "lua_type": "boolean",
+          "name": "ok",
+          "required": true
+        },
+        {
+          "doc": "Dispatch duration in milliseconds.",
+          "lua_type": "integer",
+          "name": "duration_ms",
+          "required": false
         }
       ],
       "payload_type": "table",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "aliases": [],
@@ -697,7 +778,246 @@
         }
       ],
       "payload_type": "table",
-      "since": "1.9"
+      "since": "1.0"
+    }
+  ],
+  "experimental_apis": [],
+  "extension_points": [
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.left",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.center",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.right",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:tab_bar"
+      ],
+      "context_schema": "TabBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "tab_bar.left",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::TabBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:tab_bar"
+      ],
+      "context_schema": "TabBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "tab_bar.right",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::TabBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.sidebar.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.sidebar.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.graph.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.graph.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.details.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.details.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:context_menu:repository.diff.context_menu"
+      ],
+      "context_schema": "RepositoryDiffContext",
+      "contribution_schema": "LeviathanContextMenuItem",
+      "id": "repository.diff.context_menu",
+      "kind": "context_menu",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + point id + item id",
+      "render_mount_handler": "ExtensionRegistry::context_menu_items"
+    },
+    {
+      "capabilities": [
+        "ui:context_menu:repository.graph.context_menu"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanContextMenuItem",
+      "id": "repository.graph.context_menu",
+      "kind": "context_menu",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + point id + item id",
+      "render_mount_handler": "ExtensionRegistry::context_menu_items"
+    },
+    {
+      "capabilities": [
+        "ui:decoration:graph"
+      ],
+      "context_schema": "RepositoryGraphRowContext",
+      "contribution_schema": "LeviathanGraphDecorationContribution",
+      "id": "repository.graph.row_badge",
+      "kind": "decoration",
+      "ordering_model": "static rows by commit/plugin/id; providers in plugin/id order",
+      "ownership_rules": "owned by plugin + point id + decoration/provider id",
+      "render_mount_handler": "ExtensionRegistry::graph_decorations_for"
+    },
+    {
+      "capabilities": [
+        "ui:decoration:diff"
+      ],
+      "context_schema": "RepositoryDiffLineContext",
+      "contribution_schema": "LeviathanDiffDecorationContribution",
+      "id": "repository.diff.line_gutter",
+      "kind": "decoration",
+      "ordering_model": "static rows by plugin/id; providers in plugin/id order",
+      "ownership_rules": "owned by plugin + point id + decoration/provider id",
+      "render_mount_handler": "ExtensionRegistry::diff_decorations_for_line"
+    },
+    {
+      "capabilities": [
+        "ui:overlay"
+      ],
+      "context_schema": "OverlayContext",
+      "contribution_schema": "LeviathanOverlaySpec",
+      "id": "overlays",
+      "kind": "overlay",
+      "ordering_model": "priority descending, then plugin/id",
+      "ownership_rules": "owned by plugin + overlay id",
+      "render_mount_handler": "ExtensionRegistry::overlays"
+    },
+    {
+      "capabilities": [
+        "ui:screen"
+      ],
+      "context_schema": "ScreenContext",
+      "contribution_schema": "LeviathanScreenSpec",
+      "id": "screens",
+      "kind": "screen",
+      "ordering_model": "selected explicitly by command/user action",
+      "ownership_rules": "owned by plugin + screen id",
+      "render_mount_handler": "PluginHost::open_screen"
+    },
+    {
+      "capabilities": [],
+      "context_schema": "LeviathanUiContext",
+      "contribution_schema": "LeviathanCommandSpec",
+      "id": "commands",
+      "kind": "command",
+      "ordering_model": "registry order by plugin/name; palette/keymap projections sort independently",
+      "ownership_rules": "owned by plugin + command id",
+      "render_mount_handler": "CommandRegistry"
+    },
+    {
+      "capabilities": [],
+      "context_schema": "SettingsContext",
+      "contribution_schema": "LeviathanSettingsSchema",
+      "id": "settings.panel",
+      "kind": "settings_panel",
+      "ordering_model": "plugin id",
+      "ownership_rules": "owned by plugin settings storage",
+      "render_mount_handler": "SettingsSummary"
+    },
+    {
+      "capabilities": [
+        "ui:dock"
+      ],
+      "context_schema": "DockPanelContext",
+      "contribution_schema": "LeviathanDockPanelSpec",
+      "id": "dock.pane",
+      "kind": "dock_pane",
+      "ordering_model": "area order, then plugin/id",
+      "ownership_rules": "owned by plugin + dock panel id",
+      "render_mount_handler": "DockManager"
     }
   ],
   "host_api_version": {
@@ -746,7 +1066,9 @@
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:screen"
+          ],
           "compatibility": "v1",
           "doc": "Log a message via the host.",
           "name": "log",
@@ -768,7 +1090,9 @@
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:region:<region>"
+          ],
           "compatibility": "v1",
           "doc": "Defer a callback to the next tick (top-level alias of `leviathan.api.schedule`).",
           "name": "schedule",
@@ -782,7 +1106,7 @@
           ],
           "path": "leviathan.schedule",
           "returns": [],
-          "since": "1.12",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -832,7 +1156,11 @@
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:region:<region>",
+            "ui:remove:builtin",
+            "ui:remove:<region>:<container>:<id>"
+          ],
           "compatibility": "v1",
           "doc": "Run a Lua callback on the next plugin host tick.",
           "name": "schedule",
@@ -858,7 +1186,11 @@
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:region:<region>",
+            "ui:replace:builtin",
+            "ui:replace:<region>:<container>:<id>"
+          ],
           "compatibility": "v1",
           "doc": "Run a Lua callback after a host-side millisecond delay.",
           "name": "defer_fn",
@@ -933,7 +1265,7 @@
           ],
           "path": "leviathan.command.create",
           "returns": [],
-          "since": "1.8",
+          "since": "1.0",
           "validation": {
             "args": [
               "name must be a non-empty string",
@@ -949,7 +1281,12 @@
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "command:invoke:<id>",
+            "git:write:<op>",
+            "repo:read",
+            "clipboard:write"
+          ],
           "compatibility": "v1",
           "doc": "Invoke a registered command by name through the host dispatcher.",
           "name": "invoke",
@@ -974,14 +1311,15 @@
               "lua_type": "boolean"
             }
           ],
-          "since": "1.8",
+          "since": "1.0",
           "validation": {
             "args": [
               "name must be a registered command",
               "args must be a table or nil"
             ],
             "notes": [
-              "Argument validation, capability checks, and dispatch happen host-side."
+              "Argument validation, caller capability checks, and dispatch happen host-side.",
+              "Built-in commands declare their plugin-invocation capabilities in command.list()."
             ],
             "returns": [
               "boolean"
@@ -1001,7 +1339,7 @@
               "lua_type": "LeviathanCommandSummary[]"
             }
           ],
-          "since": "1.8",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -1064,7 +1402,7 @@
           ],
           "path": "leviathan.keymap.set",
           "returns": [],
-          "since": "1.9",
+          "since": "1.0",
           "validation": {
             "args": [
               "context must be a non-empty string",
@@ -1099,7 +1437,7 @@
           ],
           "path": "leviathan.keymap.del",
           "returns": [],
-          "since": "1.9",
+          "since": "1.0",
           "validation": {
             "args": [
               "context must be a string",
@@ -1124,7 +1462,7 @@
               "lua_type": "LeviathanKeymapSummary[]"
             }
           ],
-          "since": "1.9",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -1203,7 +1541,7 @@
               "lua_type": "integer"
             }
           ],
-          "since": "1.7",
+          "since": "1.0",
           "validation": {
             "args": [
               "name must be a string",
@@ -1238,7 +1576,7 @@
           ],
           "path": "leviathan.autocmd.create",
           "returns": [],
-          "since": "1.7",
+          "since": "1.0",
           "validation": {
             "args": [
               "event must name a registered host event",
@@ -1269,7 +1607,7 @@
           ],
           "path": "leviathan.autocmd.clear",
           "returns": [],
-          "since": "1.7",
+          "since": "1.0",
           "validation": {
             "args": [
               "group must be an integer returned by leviathan.autocmd.group"
@@ -1301,53 +1639,6 @@
       "doc": "UI region and plugin screen APIs.",
       "events": [],
       "functions": [
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "List names of registered UI regions.",
-          "name": "list_regions",
-          "params": [],
-          "path": "leviathan.ui.list_regions",
-          "returns": [
-            {
-              "doc": "Region names in descriptor order.",
-              "lua_type": "string[]"
-            }
-          ],
-          "since": "1.0",
-          "validation": {
-            "args": [],
-            "notes": [],
-            "returns": []
-          }
-        },
-        {
-          "capabilities": [],
-          "compatibility": "v1",
-          "doc": "Register a plugin screen with init/view/update lifecycle callbacks.",
-          "name": "register_screen",
-          "params": [
-            {
-              "doc": "Screen descriptor.",
-              "lua_type": "LeviathanScreenSpec",
-              "name": "spec",
-              "required": true
-            }
-          ],
-          "path": "leviathan.ui.register_screen",
-          "returns": [],
-          "since": "1.0",
-          "validation": {
-            "args": [
-              "spec.id must be a string",
-              "spec.init/view/update must be functions"
-            ],
-            "notes": [
-              "serialize and deserialize are optional functions."
-            ],
-            "returns": []
-          }
-        },
         {
           "capabilities": [
             "ui:overlay"
@@ -1411,7 +1702,60 @@
         },
         {
           "capabilities": [
-            "ui:context_menu"
+            "ui:region:<region>",
+            "ui:context_menu:<region>",
+            "ui:decoration:graph",
+            "ui:decoration:diff",
+            "ui:overlay",
+            "ui:screen",
+            "ui:dock"
+          ],
+          "compatibility": "v1",
+          "doc": "Contribute to a typed UI extension point and return a ledger-backed handle.",
+          "name": "contribute",
+          "params": [
+            {
+              "doc": "Extension point id such as `repository.diff.context_menu`.",
+              "lua_type": "string",
+              "name": "point_id",
+              "required": true
+            },
+            {
+              "doc": "Contribution spec for the selected point.",
+              "lua_type": "LeviathanContributionSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.contribute",
+          "returns": [
+            {
+              "doc": "Contribution handle on success, nil on failure.",
+              "lua_type": "LeviathanContributionHandle|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "point_id must be a known extension point",
+              "spec.id must be a string",
+              "spec.provider may be a function for dynamic decorations"
+            ],
+            "notes": [
+              "Convenience wrappers call this contribution path."
+            ],
+            "returns": [
+              "LeviathanContributionHandle plus nil error, or nil plus error string"
+            ]
+          }
+        },
+        {
+          "capabilities": [
+            "ui:context_menu:<region>"
           ],
           "compatibility": "v1",
           "doc": "Contribute a context-menu item at an extension point.",
@@ -1447,7 +1791,7 @@
         },
         {
           "capabilities": [
-            "ui:graph_decoration"
+            "ui:decoration:graph"
           ],
           "compatibility": "v1",
           "doc": "Attach a decoration to a commit row (badge / icon / marker / lane).",
@@ -1481,7 +1825,7 @@
         },
         {
           "capabilities": [
-            "ui:diff_decoration"
+            "ui:decoration:diff"
           ],
           "compatibility": "v1",
           "doc": "Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).",
@@ -1512,9 +1856,13 @@
       "table": "leviathan.ui",
       "types": [
         "leviathan.ui",
-        "LeviathanScreenSpec",
         "LeviathanSlotSpec",
-        "LeviathanSlotTarget"
+        "LeviathanSlotTarget",
+        "LeviathanContributionSpec",
+        "LeviathanContributionHandle",
+        "LeviathanContextMenuItem",
+        "LeviathanGraphDecorationContribution",
+        "LeviathanDiffDecorationContribution"
       ],
       "version": {
         "compatibility": "v1",
@@ -1524,15 +1872,70 @@
       }
     },
     {
-      "capabilities": [],
-      "doc": "Descriptor-backed region slot API.",
+      "capabilities": [
+        "ui:screen"
+      ],
+      "doc": "Plugin screen namespace.",
       "events": [],
       "functions": [
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:screen"
+          ],
           "compatibility": "v1",
-          "doc": "Add a slot to a UI region.",
-          "name": "add_slot",
+          "doc": "Register a plugin screen with init/view/update lifecycle callbacks.",
+          "name": "register",
+          "params": [
+            {
+              "doc": "Screen descriptor.",
+              "lua_type": "LeviathanScreenSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.screen.register",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.init/view/update must be functions"
+            ],
+            "notes": [
+              "serialize, deserialize, and can_close are optional functions."
+            ],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.screen",
+      "table": "leviathan.ui.screen",
+      "types": [
+        "leviathan.ui.screen",
+        "LeviathanScreenSpec",
+        "ScreenContext"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "ui:region:<region>"
+      ],
+      "doc": "UI slot namespace.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "ui:region:<region>"
+          ],
+          "compatibility": "v1",
+          "doc": "Add a slot and return a ledger-backed handle.",
+          "name": "add",
           "params": [
             {
               "doc": "Slot spec including region, section/pane, id, priority, and widget.",
@@ -1541,26 +1944,43 @@
               "required": true
             }
           ],
-          "path": "leviathan.ui.regions.add_slot",
-          "returns": [],
+          "path": "leviathan.ui.slot.add",
+          "returns": [
+            {
+              "doc": "Slot handle on success, nil on failure.",
+              "lua_type": "LeviathanSlotHandle|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
           "since": "1.0",
           "validation": {
             "args": [
+              "region must be a known region",
               "section must match the region descriptor",
               "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
+              "widget must validate as a LeviathanWidget or be a function",
+              "depends_on entries must be known UI dependencies when present"
             ],
             "notes": [
-              "Slot ownership is recorded in the resource ledger."
+              "Use handle:remove() and handle:replace(spec) for owned slot resources."
             ],
-            "returns": []
+            "returns": [
+              "success value plus nil error, or nil plus error string"
+            ]
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:region:<region>",
+            "ui:remove:builtin",
+            "ui:remove:<region>:<container>:<id>"
+          ],
           "compatibility": "v1",
-          "doc": "Remove a slot from a UI region.",
-          "name": "remove_slot",
+          "doc": "Remove a slot by full address.",
+          "name": "remove",
           "params": [
             {
               "doc": "Slot address including region, section/pane, and id.",
@@ -1569,26 +1989,43 @@
               "required": true
             }
           ],
-          "path": "leviathan.ui.regions.remove_slot",
-          "returns": [],
+          "path": "leviathan.ui.slot.remove",
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
           "since": "1.0",
           "validation": {
             "args": [
+              "region must be a known region",
               "section must match the region descriptor",
               "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
+              "widget must validate as a LeviathanWidget or be a function",
+              "depends_on entries must be known UI dependencies when present"
             ],
             "notes": [
-              "Slot ownership is recorded in the resource ledger."
+              "Use handle:remove() and handle:replace(spec) for owned slot resources."
             ],
-            "returns": []
+            "returns": [
+              "success value plus nil error, or nil plus error string"
+            ]
           }
         },
         {
-          "capabilities": [],
+          "capabilities": [
+            "ui:region:<region>",
+            "ui:replace:builtin",
+            "ui:replace:<region>:<container>:<id>"
+          ],
           "compatibility": "v1",
-          "doc": "Replace a slot in a UI region.",
-          "name": "replace_slot",
+          "doc": "Replace a slot by full address and return a handle.",
+          "name": "replace",
           "params": [
             {
               "doc": "Existing slot address including region and id.",
@@ -1603,28 +2040,343 @@
               "required": true
             }
           ],
-          "path": "leviathan.ui.regions.replace_slot",
+          "path": "leviathan.ui.slot.replace",
+          "returns": [
+            {
+              "doc": "Slot handle on success, nil on failure.",
+              "lua_type": "LeviathanSlotHandle|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "region must be a known region",
+              "section must match the region descriptor",
+              "content regions require pane",
+              "widget must validate as a LeviathanWidget or be a function",
+              "depends_on entries must be known UI dependencies when present"
+            ],
+            "notes": [
+              "Use handle:remove() and handle:replace(spec) for owned slot resources."
+            ],
+            "returns": [
+              "success value plus nil error, or nil plus error string"
+            ]
+          }
+        }
+      ],
+      "name": "ui.slot",
+      "table": "leviathan.ui.slot",
+      "types": [
+        "leviathan.ui.slot",
+        "LeviathanSlotSpec",
+        "LeviathanSlotTarget",
+        "LeviathanSlotHandle"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "UI region discovery namespace.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "List mounted UI regions.",
+          "name": "list",
+          "params": [],
+          "path": "leviathan.ui.region.list",
+          "returns": [
+            {
+              "doc": "Region names in descriptor order.",
+              "lua_type": "string[]"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Describe one mounted UI region.",
+          "name": "describe",
+          "params": [
+            {
+              "doc": "Region name.",
+              "lua_type": "string",
+              "name": "name",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.region.describe",
+          "returns": [
+            {
+              "doc": "Region descriptor on success, nil on failure.",
+              "lua_type": "table|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.region",
+      "table": "leviathan.ui.region",
+      "types": [
+        "leviathan.ui.region"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "UI current context namespace.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return the current typed UI context.",
+          "name": "current",
+          "params": [],
+          "path": "leviathan.ui.context.current",
+          "returns": [
+            {
+              "doc": "Typed current UI context.",
+              "lua_type": "LeviathanUiContext|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [],
+            "notes": [],
+            "returns": []
+          }
+        }
+      ],
+      "name": "ui.context",
+      "table": "leviathan.ui.context",
+      "types": [
+        "leviathan.ui.context",
+        "LeviathanUiContext",
+        "MainBarContext",
+        "TabBarContext",
+        "StatusBarContext",
+        "RepositorySidebarContext",
+        "RepositoryGraphContext",
+        "RepositoryGraphRowContext",
+        "RepositoryDetailsContext",
+        "RepositoryDiffContext",
+        "RepositoryDiffLineContext",
+        "OverlayContext",
+        "ScreenContext",
+        "SettingsContext",
+        "DockPanelContext",
+        "LeviathanUiThemeTokens",
+        "LeviathanRepositorySummary",
+        "LeviathanTabSummary",
+        "LeviathanSelectionSummary",
+        "LeviathanFocusSummary",
+        "LeviathanViewportSummary"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [
+        "ui:dock"
+      ],
+      "doc": "Persistent dock panel namespace.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [
+            "ui:dock"
+          ],
+          "compatibility": "v1",
+          "doc": "Register a persistent dock panel with host-owned layout state.",
+          "name": "register",
+          "params": [
+            {
+              "doc": "Dock panel descriptor.",
+              "lua_type": "LeviathanDockPanelSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dock.register",
+          "returns": [
+            {
+              "doc": "Dock panel handle on success.",
+              "lua_type": "LeviathanDockPanelHandle|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id/title/area must be strings",
+              "spec.view must be a function",
+              "spec.update is optional"
+            ],
+            "notes": [
+              "view(ctx) returns a LeviathanWidget; update(state, event, value) may return { state = new_state }."
+            ],
+            "returns": [
+              "handle plus nil error, or nil plus error string"
+            ]
+          }
+        }
+      ],
+      "name": "ui.dock",
+      "table": "leviathan.ui.dock",
+      "types": [
+        "leviathan.ui.dock",
+        "LeviathanDockPanelSpec",
+        "LeviathanDockPanelHandle",
+        "DockPanelContext"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Plugin settings panel namespace.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Register a custom settings panel view for the plugin.",
+          "name": "register",
+          "params": [
+            {
+              "doc": "Settings panel descriptor.",
+              "lua_type": "LeviathanSettingsPanelSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.settings.register",
           "returns": [],
           "since": "1.0",
           "validation": {
             "args": [
-              "section must match the region descriptor",
-              "content regions require pane",
-              "widget must validate as a LeviathanWidget or be a function"
+              "spec.view must be a function"
             ],
             "notes": [
-              "Slot ownership is recorded in the resource ledger."
+              "Schema-only plugins get a generated settings form from leviathan.settings.define_schema."
             ],
             "returns": []
           }
         }
       ],
-      "name": "ui.regions",
-      "table": "leviathan.ui.regions",
+      "name": "ui.settings",
+      "table": "leviathan.ui.settings",
       "types": [
-        "leviathan.ui.regions",
-        "LeviathanSlotSpec",
-        "LeviathanSlotTarget"
+        "leviathan.ui.settings",
+        "LeviathanSettingsPanelSpec",
+        "SettingsContext"
+      ],
+      "version": {
+        "compatibility": "v1",
+        "label": "1.0",
+        "major": 1,
+        "minor": 0
+      }
+    },
+    {
+      "capabilities": [],
+      "doc": "Plugin asset handle APIs.",
+      "events": [],
+      "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Return an SVG asset handle rooted in the plugin assets directory.",
+          "name": "load_svg",
+          "params": [
+            {
+              "doc": "Relative asset path.",
+              "lua_type": "string",
+              "name": "path",
+              "required": true
+            }
+          ],
+          "path": "leviathan.assets.load_svg",
+          "returns": [
+            {
+              "doc": "Asset handle on success.",
+              "lua_type": "LeviathanAssetHandle|nil"
+            },
+            {
+              "doc": "Error string on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "path must be a safe relative path under the plugin directory"
+            ],
+            "notes": [
+              "Use the returned handle in widget asset fields."
+            ],
+            "returns": [
+              "asset handle plus nil error, or nil plus error string"
+            ]
+          }
+        }
+      ],
+      "name": "assets",
+      "table": "leviathan.assets",
+      "types": [
+        "leviathan.assets",
+        "LeviathanAssetHandle"
       ],
       "version": {
         "compatibility": "v1",
@@ -2727,7 +3479,7 @@
               "lua_type": "LeviathanFsWatchHandle"
             }
           ],
-          "since": "1.12",
+          "since": "1.0",
           "validation": {
             "args": [
               "path must resolve under a granted fs:watch scope"
@@ -3829,7 +4581,7 @@
               "lua_type": "boolean"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [
               "callback receives a transaction userdata"
@@ -3888,7 +4640,7 @@
               "lua_type": "string|nil"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -3908,7 +4660,7 @@
               "lua_type": "table"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -3939,7 +4691,7 @@
               "lua_type": "string|nil"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -3961,7 +4713,7 @@
           ],
           "path": "leviathan.settings.on_change",
           "returns": [],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4010,7 +4762,7 @@
           ],
           "path": "leviathan.secrets.set",
           "returns": [],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4039,7 +4791,7 @@
               "lua_type": "string|nil"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4063,7 +4815,7 @@
           ],
           "path": "leviathan.secrets.delete",
           "returns": [],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4085,7 +4837,7 @@
               "lua_type": "string[]"
             }
           ],
-          "since": "1.13",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4287,7 +5039,7 @@
               "lua_type": "LeviathanJobHandle"
             }
           ],
-          "since": "1.12",
+          "since": "1.0",
           "validation": {
             "args": [
               "body must be a Lua function (no upvalues)"
@@ -4350,7 +5102,7 @@
               "lua_type": "LeviathanTimerHandle"
             }
           ],
-          "since": "1.12",
+          "since": "1.0",
           "validation": {
             "args": [],
             "notes": [],
@@ -4385,7 +5137,7 @@
               "lua_type": "LeviathanTimerHandle"
             }
           ],
-          "since": "1.12",
+          "since": "1.0",
           "validation": {
             "args": [
               "ms must be > 0"
@@ -4435,23 +5187,10 @@
       ]
     },
     {
-      "kind": "chrome",
-      "name": "status_bar",
-      "panes": [],
-      "sections": [
-        "left",
-        "center",
-        "right"
-      ]
-    },
-    {
       "kind": "content",
       "name": "repository",
       "panes": [
         {
-          "dynamic_section_prefixes": [
-            "section:"
-          ],
           "name": "sidebar",
           "sections": [
             "top",
@@ -4459,7 +5198,14 @@
           ]
         },
         {
-          "name": "main",
+          "name": "graph",
+          "sections": [
+            "top",
+            "bottom"
+          ]
+        },
+        {
+          "name": "details",
           "sections": [
             "top",
             "bottom"
@@ -4467,58 +5213,31 @@
         }
       ],
       "sections": []
-    },
-    {
-      "kind": "content",
-      "name": "repository.graph",
-      "panes": [
-        {
-          "dynamic_section_prefixes": [
-            "row:"
-          ],
-          "name": "graph",
-          "sections": [
-            "top",
-            "decorations",
-            "context_menu"
-          ]
-        }
-      ],
-      "sections": []
-    },
-    {
-      "kind": "content",
-      "name": "repository.details",
-      "panes": [
-        {
-          "name": "details",
-          "sections": [
-            "commit_header",
-            "files"
-          ]
-        }
-      ],
-      "sections": []
-    },
-    {
-      "kind": "content",
-      "name": "repository.diff",
-      "panes": [
-        {
-          "dynamic_section_prefixes": [
-            "line:",
-            "hunk:"
-          ],
-          "name": "diff",
-          "sections": [
-            "toolbar",
-            "context_menu"
-          ]
-        }
-      ],
-      "sections": []
     }
   ],
+  "semver_policy": {
+    "can_add": [
+      "new functions, types, optional fields, widgets, capabilities, events, and extension points in host 1.x",
+      "new enum values only when older plugins can ignore them"
+    ],
+    "can_remove": [
+      "nothing from public UI v1 during host 1.x",
+      "experimental entries only after their descriptor marks the replacement promise"
+    ],
+    "descriptor_versioning": "Descriptor schema changes increment descriptor_version; plugin api major changes reset the stable descriptor contract.",
+    "requires_deprecation": [
+      "renaming public functions, fields, widgets, capabilities, events, or extension points",
+      "tightening validation for an accepted public v1 shape"
+    ]
+  },
+  "stability_policy": {
+    "descriptor_version": 1,
+    "extension_point_schema_version": 1,
+    "migration_promise": "UI v1 descriptors keep source-compatible additions within host 1.x; removals require a later major API.",
+    "public_api_version": "1.0",
+    "stability": "stable",
+    "widget_schema_version": 1
+  },
   "types": [
     {
       "doc": "Root host API table.",
@@ -4533,6 +5252,12 @@
           "doc": "UI namespace.",
           "lua_type": "leviathan.ui",
           "name": "ui",
+          "required": true
+        },
+        {
+          "doc": "Asset handle namespace.",
+          "lua_type": "leviathan.assets",
+          "name": "assets",
           "required": true
         },
         {
@@ -4603,9 +5328,88 @@
     },
     {
       "doc": "UI namespace.",
-      "fields": [],
+      "fields": [
+        {
+          "doc": "UI slot namespace.",
+          "lua_type": "leviathan.ui.slot",
+          "name": "slot",
+          "required": true
+        },
+        {
+          "doc": "UI region namespace.",
+          "lua_type": "leviathan.ui.region",
+          "name": "region",
+          "required": true
+        },
+        {
+          "doc": "UI context namespace.",
+          "lua_type": "leviathan.ui.context",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Persistent dock panel namespace.",
+          "lua_type": "leviathan.ui.dock",
+          "name": "dock",
+          "required": true
+        },
+        {
+          "doc": "Plugin screen namespace.",
+          "lua_type": "leviathan.ui.screen",
+          "name": "screen",
+          "required": true
+        },
+        {
+          "doc": "Plugin settings panel namespace.",
+          "lua_type": "leviathan.ui.settings",
+          "name": "settings",
+          "required": true
+        }
+      ],
       "methods": [],
       "name": "leviathan.ui",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI slot namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.slot",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI region namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.region",
+      "since": "1.0"
+    },
+    {
+      "doc": "UI context namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.context",
+      "since": "1.0"
+    },
+    {
+      "doc": "Plugin screen namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.screen",
+      "since": "1.0"
+    },
+    {
+      "doc": "Persistent dock panel namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.dock",
+      "since": "1.0"
+    },
+    {
+      "doc": "Plugin asset namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.assets",
       "since": "1.0"
     },
     {
@@ -4747,21 +5551,21 @@
       "fields": [],
       "methods": [],
       "name": "leviathan.settings",
-      "since": "1.13"
+      "since": "1.0"
     },
     {
       "doc": "Settings schema table.",
       "fields": [],
       "methods": [],
       "name": "LeviathanSettingsSchema",
-      "since": "1.13"
+      "since": "1.0"
     },
     {
       "doc": "Secrets namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.secrets",
-      "since": "1.13"
+      "since": "1.0"
     },
     {
       "doc": "Health namespace.",
@@ -4845,7 +5649,7 @@
       ],
       "methods": [],
       "name": "LeviathanAutocmdEvent",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "doc": "Options accepted by `leviathan.autocmd.group`.",
@@ -4859,21 +5663,21 @@
       ],
       "methods": [],
       "name": "LeviathanAutocmdGroupOpts",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "doc": "Autocmd group and typed-event namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.autocmd",
-      "since": "1.7"
+      "since": "1.0"
     },
     {
       "doc": "Typed command registry namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.command",
-      "since": "1.8"
+      "since": "1.0"
     },
     {
       "doc": "Descriptor accepted by `leviathan.command.create`.",
@@ -4923,7 +5727,7 @@
       ],
       "methods": [],
       "name": "LeviathanCommandSpec",
-      "since": "1.8"
+      "since": "1.0"
     },
     {
       "doc": "One entry in a command's `args` schema.",
@@ -4961,7 +5765,7 @@
       ],
       "methods": [],
       "name": "LeviathanCommandArg",
-      "since": "1.8"
+      "since": "1.0"
     },
     {
       "doc": "Compact view of a registered command, returned by `leviathan.command.list`.",
@@ -5001,18 +5805,60 @@
           "lua_type": "boolean",
           "name": "destructive",
           "required": true
+        },
+        {
+          "doc": "Capabilities checked against the command owner.",
+          "lua_type": "string[]",
+          "name": "capabilities",
+          "required": true
+        },
+        {
+          "doc": "Capabilities checked against a plugin invoking this command.",
+          "lua_type": "string[]",
+          "name": "plugin_invocation_capabilities",
+          "required": true
+        },
+        {
+          "doc": "Current static enabled status.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": true
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string|nil",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Whether keymaps should dispatch this command.",
+          "lua_type": "boolean",
+          "name": "keymap_eligible",
+          "required": true
+        },
+        {
+          "doc": "Whether palettes should list this command.",
+          "lua_type": "boolean",
+          "name": "palette_visible",
+          "required": true
+        },
+        {
+          "doc": "Supported hook metadata: before, after, veto, replace.",
+          "lua_type": "table",
+          "name": "hooks",
+          "required": true
         }
       ],
       "methods": [],
       "name": "LeviathanCommandSummary",
-      "since": "1.8"
+      "since": "1.0"
     },
     {
       "doc": "Context-aware keymap registry namespace.",
       "fields": [],
       "methods": [],
       "name": "leviathan.keymap",
-      "since": "1.9"
+      "since": "1.0"
     },
     {
       "doc": "Options table accepted by `leviathan.keymap.set`.",
@@ -5032,7 +5878,7 @@
       ],
       "methods": [],
       "name": "LeviathanKeymapOpts",
-      "since": "1.9"
+      "since": "1.0"
     },
     {
       "doc": "Compact view of a registered keymap, returned by `leviathan.keymap.list`.",
@@ -5088,7 +5934,7 @@
       ],
       "methods": [],
       "name": "LeviathanKeymapSummary",
-      "since": "1.9"
+      "since": "1.0"
     },
     {
       "doc": "Reference to the winning binding for a conflict-lost keymap row.",
@@ -5108,7 +5954,7 @@
       ],
       "methods": [],
       "name": "LeviathanKeymapConflictRef",
-      "since": "1.9"
+      "since": "1.0"
     },
     {
       "doc": "Plugin overlay.",
@@ -5150,7 +5996,7 @@
           "required": false
         },
         {
-          "doc": "Legacy alias for `on_event`.",
+          "doc": "Alias for `on_event`.",
           "lua_type": "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
           "name": "update",
           "required": false
@@ -5214,33 +6060,57 @@
           "required": true
         },
         {
+          "doc": "Tab title shown by host chrome.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Navigation breadcrumbs for host chrome and diagnostics.",
+          "lua_type": "string[]",
+          "name": "breadcrumbs",
+          "required": false
+        },
+        {
+          "doc": "Bind the screen tab to the active repository when opened.",
+          "lua_type": "boolean",
+          "name": "bind_repository",
+          "required": false
+        },
+        {
           "doc": "Initial state callback.",
-          "lua_type": "fun(): table",
+          "lua_type": "fun(ctx: ScreenContext): table",
           "name": "init",
           "required": true
         },
         {
           "doc": "View callback.",
-          "lua_type": "fun(state: table): LeviathanWidget",
+          "lua_type": "fun(state: table, ctx: ScreenContext): LeviathanWidget",
           "name": "view",
           "required": true
         },
         {
           "doc": "Update callback.",
-          "lua_type": "fun(state: table, event: string, value: LeviathanJson): table",
+          "lua_type": "fun(state: table, event: string, value: LeviathanJson, ctx: ScreenContext): table",
           "name": "update",
           "required": true
         },
         {
-          "doc": "Reload state serializer.",
+          "doc": "Reload and restart state serializer.",
           "lua_type": "fun(state: table): LeviathanJson",
           "name": "serialize",
           "required": false
         },
         {
-          "doc": "Reload state deserializer.",
-          "lua_type": "fun(value: LeviathanJson): table",
+          "doc": "Reload and restart state deserializer.",
+          "lua_type": "fun(value: LeviathanJson, ctx: ScreenContext): table",
           "name": "deserialize",
+          "required": false
+        },
+        {
+          "doc": "Return false to block tab close.",
+          "lua_type": "fun(state: table, ctx: ScreenContext): boolean",
+          "name": "can_close",
           "required": false
         }
       ],
@@ -5252,10 +6122,10 @@
       "doc": "UI slot.",
       "fields": [
         {
-          "doc": "Region name; inferred by direct handles.",
+          "doc": "Region name.",
           "lua_type": "string",
           "name": "region",
-          "required": false
+          "required": true
         },
         {
           "doc": "Content region pane.",
@@ -5282,10 +6152,16 @@
           "required": true
         },
         {
-          "doc": "Static or dynamic widget.",
-          "lua_type": "LeviathanWidget|fun(): LeviathanWidget",
+          "doc": "Static widget or dynamic widget with context.",
+          "lua_type": "LeviathanWidget|fun(ctx: LeviathanUiContext): LeviathanWidget",
           "name": "widget",
           "required": true
+        },
+        {
+          "doc": "Dynamic refresh dependencies: plugin_state, repository, tab, selection, diff, theme, layout.",
+          "lua_type": "string[]",
+          "name": "depends_on",
+          "required": false
         },
         {
           "doc": "Slot callback.",
@@ -5301,6 +6177,18 @@
     {
       "doc": "UI slot target.",
       "fields": [
+        {
+          "doc": "Target owner. Omit for the current plugin or builtin slots.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": false
+        },
+        {
+          "doc": "Region name.",
+          "lua_type": "string",
+          "name": "region",
+          "required": true
+        },
         {
           "doc": "Content region pane.",
           "lua_type": "string",
@@ -5325,10 +6213,1720 @@
       "since": "1.0"
     },
     {
+      "doc": "Ledger-backed UI slot handle.",
+      "fields": [
+        {
+          "doc": "Target owner.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Region name.",
+          "lua_type": "string",
+          "name": "region",
+          "required": true
+        },
+        {
+          "doc": "Content region pane.",
+          "lua_type": "string",
+          "name": "pane",
+          "required": false
+        },
+        {
+          "doc": "Region section.",
+          "lua_type": "string",
+          "name": "section",
+          "required": true
+        },
+        {
+          "doc": "Slot id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Full slot address.",
+          "lua_type": "LeviathanSlotTarget",
+          "name": "address",
+          "required": true
+        }
+      ],
+      "methods": [
+        {
+          "doc": "Remove this slot if the handle is still live.",
+          "name": "remove",
+          "params": [],
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ]
+        },
+        {
+          "doc": "Replace this slot if the handle is still live.",
+          "name": "replace",
+          "params": [
+            {
+              "doc": "Replacement spec. Address fields may be omitted.",
+              "lua_type": "LeviathanSlotSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "returns": [
+            {
+              "doc": "The same handle on success, nil on failure.",
+              "lua_type": "LeviathanSlotHandle|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ]
+        }
+      ],
+      "name": "LeviathanSlotHandle",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context-menu contribution spec.",
+      "fields": [
+        {
+          "doc": "Contribution id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Menu label.",
+          "lua_type": "string",
+          "name": "label",
+          "required": true
+        },
+        {
+          "doc": "Command id invoked by the item.",
+          "lua_type": "string",
+          "name": "command",
+          "required": true
+        },
+        {
+          "doc": "Lower values render earlier.",
+          "lua_type": "integer",
+          "name": "priority",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanContextMenuItem",
+      "since": "1.0"
+    },
+    {
+      "doc": "Static or dynamic graph-row decoration contribution.",
+      "fields": [
+        {
+          "doc": "Contribution id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Static target commit hash.",
+          "lua_type": "string",
+          "name": "commit_hash",
+          "required": false
+        },
+        {
+          "doc": "Static graph decoration.",
+          "lua_type": "LeviathanGraphDecoration",
+          "name": "decoration",
+          "required": false
+        },
+        {
+          "doc": "Dynamic provider called per graph row.",
+          "lua_type": "fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil",
+          "name": "provider",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanGraphDecorationContribution",
+      "since": "1.0"
+    },
+    {
+      "doc": "Static or dynamic diff decoration contribution.",
+      "fields": [
+        {
+          "doc": "Contribution id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Static diff decoration.",
+          "lua_type": "LeviathanDiffDecoration",
+          "name": "decoration",
+          "required": false
+        },
+        {
+          "doc": "Dynamic provider called per diff line.",
+          "lua_type": "fun(ctx: RepositoryDiffLineContext): LeviathanDiffDecoration|LeviathanDiffDecoration[]|nil",
+          "name": "provider",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDiffDecorationContribution",
+      "since": "1.0"
+    },
+    {
+      "doc": "Base spec accepted by `leviathan.ui.contribute`.",
+      "fields": [],
+      "methods": [],
+      "name": "LeviathanContributionSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Ledger-backed UI contribution handle.",
+      "fields": [
+        {
+          "doc": "Owner plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Extension point id.",
+          "lua_type": "string",
+          "name": "point_id",
+          "required": true
+        },
+        {
+          "doc": "Contribution id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        }
+      ],
+      "methods": [
+        {
+          "doc": "Remove this contribution if the handle is still live.",
+          "name": "remove",
+          "params": [],
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ]
+        }
+      ],
+      "name": "LeviathanContributionHandle",
+      "since": "1.0"
+    },
+    {
+      "doc": "Base UI context.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanUiContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to main-bar dynamic widgets.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "MainBarContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to tab-bar dynamic widgets.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "TabBarContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved status-bar context schema.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "StatusBarContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to repository sidebar slot widgets.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositorySidebarContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to repository graph slot widgets.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositoryGraphContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved repository graph row context schema.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositoryGraphRowContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to repository details slot widgets.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositoryDetailsContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved repository diff context schema.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositoryDiffContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved repository diff line context schema.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "RepositoryDiffLineContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Reserved overlay context schema.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "OverlayContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context shape returned outside a mounted slot render.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "ScreenContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to settings panel render callbacks.",
+      "fields": [
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Declared settings schema.",
+          "lua_type": "LeviathanSettingsSchema",
+          "name": "schema",
+          "required": true
+        },
+        {
+          "doc": "Current settings values with defaults applied.",
+          "lua_type": "table",
+          "name": "values",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "SettingsContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Context passed to dock panel render callbacks.",
+      "fields": [
+        {
+          "doc": "Context schema version.",
+          "lua_type": "integer",
+          "name": "version",
+          "required": true
+        },
+        {
+          "doc": "Current plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Current plugin generation.",
+          "lua_type": "integer",
+          "name": "generation_id",
+          "required": true
+        },
+        {
+          "doc": "Concrete context type name.",
+          "lua_type": "string",
+          "name": "type",
+          "required": true
+        },
+        {
+          "doc": "Current coarse UI surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Relevant feature gates.",
+          "lua_type": "table<string, boolean>",
+          "name": "features",
+          "required": true
+        },
+        {
+          "doc": "Stable host theme tokens.",
+          "lua_type": "LeviathanUiThemeTokens",
+          "name": "theme",
+          "required": true
+        },
+        {
+          "doc": "Active repository summary without commit lists or diffs.",
+          "lua_type": "LeviathanRepositorySummary",
+          "name": "repository",
+          "required": true
+        },
+        {
+          "doc": "Active tab summary.",
+          "lua_type": "LeviathanTabSummary",
+          "name": "tab",
+          "required": true
+        },
+        {
+          "doc": "Selection summary when the host has one for the surface.",
+          "lua_type": "LeviathanSelectionSummary",
+          "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Focused surface, region, pane, and section where available.",
+          "lua_type": "LeviathanFocusSummary",
+          "name": "focus",
+          "required": true
+        },
+        {
+          "doc": "Viewport constraints when known.",
+          "lua_type": "LeviathanViewportSummary",
+          "name": "viewport",
+          "required": true
+        },
+        {
+          "doc": "Surface-specific ids and lightweight metadata.",
+          "lua_type": "table",
+          "name": "payload",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "DockPanelContext",
+      "since": "1.0"
+    },
+    {
+      "doc": "Stable theme tokens in a UI context.",
+      "fields": [
+        {
+          "doc": "Theme id.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Hex color tokens.",
+          "lua_type": "table<string, string>",
+          "name": "colors",
+          "required": true
+        },
+        {
+          "doc": "Dimension tokens in pixels.",
+          "lua_type": "table<string, number>",
+          "name": "dimensions",
+          "required": true
+        },
+        {
+          "doc": "Font size tokens in pixels.",
+          "lua_type": "table<string, number>",
+          "name": "fonts",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanUiThemeTokens",
+      "since": "1.0"
+    },
+    {
+      "doc": "Active repository summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether a repository is active.",
+          "lua_type": "boolean",
+          "name": "is_open",
+          "required": true
+        },
+        {
+          "doc": "Repository display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Active workdir path.",
+          "lua_type": "string",
+          "name": "workdir_path",
+          "required": true
+        },
+        {
+          "doc": "Current branch display name.",
+          "lua_type": "string",
+          "name": "current_branch_name",
+          "required": true
+        },
+        {
+          "doc": "Current HEAD hash or empty string.",
+          "lua_type": "string",
+          "name": "head_hash",
+          "required": true
+        },
+        {
+          "doc": "Default remote name or empty string.",
+          "lua_type": "string",
+          "name": "default_remote_name",
+          "required": true
+        },
+        {
+          "doc": "Whether a default remote is available.",
+          "lua_type": "boolean",
+          "name": "has_remote",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanRepositorySummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Active tab summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether a tab is active.",
+          "lua_type": "boolean",
+          "name": "is_open",
+          "required": true
+        },
+        {
+          "doc": "Active tab id.",
+          "lua_type": "integer|nil",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Active tab repository path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Active tab display name.",
+          "lua_type": "string",
+          "name": "name",
+          "required": true
+        },
+        {
+          "doc": "Zero-based active tab index.",
+          "lua_type": "integer|nil",
+          "name": "index",
+          "required": true
+        },
+        {
+          "doc": "Open tab count.",
+          "lua_type": "integer",
+          "name": "count",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanTabSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Selection summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether selection data is available for this surface.",
+          "lua_type": "boolean",
+          "name": "available",
+          "required": true
+        },
+        {
+          "doc": "Selection kind.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Selected commit id when available.",
+          "lua_type": "string|nil",
+          "name": "selected_commit_id",
+          "required": true
+        },
+        {
+          "doc": "Selected file path when available.",
+          "lua_type": "string|nil",
+          "name": "selected_file_path",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanSelectionSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Focus summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Focused surface.",
+          "lua_type": "string",
+          "name": "surface",
+          "required": true
+        },
+        {
+          "doc": "Focused region.",
+          "lua_type": "string",
+          "name": "region",
+          "required": false
+        },
+        {
+          "doc": "Focused pane.",
+          "lua_type": "string",
+          "name": "pane",
+          "required": false
+        },
+        {
+          "doc": "Focused section.",
+          "lua_type": "string",
+          "name": "section",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanFocusSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Viewport summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether concrete viewport dimensions are known.",
+          "lua_type": "boolean",
+          "name": "known",
+          "required": true
+        },
+        {
+          "doc": "Viewport width.",
+          "lua_type": "number|nil",
+          "name": "width",
+          "required": true
+        },
+        {
+          "doc": "Viewport height.",
+          "lua_type": "number|nil",
+          "name": "height",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanViewportSummary",
+      "since": "1.0"
+    },
+    {
       "doc": "Tagged widget tree node.",
       "fields": [],
       "methods": [],
       "name": "LeviathanWidget",
+      "since": "1.0"
+    },
+    {
+      "doc": "Plugin settings panel namespace.",
+      "fields": [],
+      "methods": [],
+      "name": "leviathan.ui.settings",
+      "since": "1.0"
+    },
+    {
+      "doc": "Persistent dock panel registration spec.",
+      "fields": [
+        {
+          "doc": "Plugin-local panel id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Panel title shown by host chrome.",
+          "lua_type": "string",
+          "name": "title",
+          "required": true
+        },
+        {
+          "doc": "Dock area: left, right, bottom, graph, diff, tab, or floating.",
+          "lua_type": "string",
+          "name": "area",
+          "required": true
+        },
+        {
+          "doc": "Initial open state when no user layout exists.",
+          "lua_type": "boolean",
+          "name": "default_open",
+          "required": false
+        },
+        {
+          "doc": "Render callback.",
+          "lua_type": "fun(ctx: DockPanelContext): LeviathanWidget",
+          "name": "view",
+          "required": true
+        },
+        {
+          "doc": "Event callback. Return `{ state = next_state }` to persist panel state.",
+          "lua_type": "fun(state: table, event: string, value: LeviathanJson): table|nil",
+          "name": "update",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDockPanelSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Custom settings panel registration spec.",
+      "fields": [
+        {
+          "doc": "Render callback for the plugin settings panel.",
+          "lua_type": "fun(ctx: SettingsContext): LeviathanWidget",
+          "name": "view",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanSettingsPanelSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dock panel registration handle.",
+      "fields": [
+        {
+          "doc": "Owner plugin id.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Plugin-local panel id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Stable host panel key.",
+          "lua_type": "string",
+          "name": "key",
+          "required": true
+        },
+        {
+          "doc": "Panel title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": true
+        },
+        {
+          "doc": "Current dock area.",
+          "lua_type": "string",
+          "name": "area",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDockPanelHandle",
+      "since": "1.0"
+    },
+    {
+      "doc": "Opaque plugin asset handle.",
+      "fields": [
+        {
+          "doc": "Relative asset path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Asset kind.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Opaque host handle.",
+          "lua_type": "string",
+          "name": "handle",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanAssetHandle",
       "since": "1.0"
     },
     {
@@ -6219,6 +8817,2389 @@
         }
       ],
       "kind": "resizable_split",
+      "since": "1.0"
+    },
+    {
+      "doc": "Button that invokes a command id.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "command_button",
+      "since": "1.0"
+    },
+    {
+      "doc": "Compact toolbar action button.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "toolbar_button",
+      "since": "1.0"
+    },
+    {
+      "doc": "Status-line item.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "status_item",
+      "since": "1.0"
+    },
+    {
+      "doc": "Small status badge.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "badge",
+      "since": "1.0"
+    },
+    {
+      "doc": "Small tag pill.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "tag",
+      "since": "1.0"
+    },
+    {
+      "doc": "Semantic list.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "list",
+      "since": "1.0"
+    },
+    {
+      "doc": "Semantic tree.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "tree",
+      "since": "1.0"
+    },
+    {
+      "doc": "Semantic table.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "table",
+      "since": "1.0"
+    },
+    {
+      "doc": "Titled content section.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "section",
+      "since": "1.0"
+    },
+    {
+      "doc": "Form field group.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "form",
+      "since": "1.0"
+    },
+    {
+      "doc": "Checkbox control.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "checkbox",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toggle control.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "toggle",
+      "since": "1.0"
+    },
+    {
+      "doc": "Select control.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "select",
+      "since": "1.0"
+    },
+    {
+      "doc": "Radio option group.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "radio_group",
+      "since": "1.0"
+    },
+    {
+      "doc": "Visual divider.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "divider",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tooltip wrapper.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "tooltip",
+      "since": "1.0"
+    },
+    {
+      "doc": "Popover wrapper.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "popover",
+      "since": "1.0"
+    },
+    {
+      "doc": "Menu list.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "menu",
+      "since": "1.0"
+    },
+    {
+      "doc": "Empty-state presentation.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "empty_state",
+      "since": "1.0"
+    },
+    {
+      "doc": "Code text block.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "code",
+      "since": "1.0"
+    },
+    {
+      "doc": "Diff text block.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "diff",
+      "since": "1.0"
+    },
+    {
+      "doc": "Commit reference chip.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "commit_ref",
+      "since": "1.0"
+    },
+    {
+      "doc": "Branch reference chip.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "branch_ref",
+      "since": "1.0"
+    },
+    {
+      "doc": "Remote reference chip.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "remote_ref",
+      "since": "1.0"
+    },
+    {
+      "doc": "Progress indicator.",
+      "fields": [
+        {
+          "doc": "Accessible label or visible fallback.",
+          "lua_type": "string",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Section or item title.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": false
+        },
+        {
+          "doc": "Command id to invoke.",
+          "lua_type": "string",
+          "name": "command",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted on click.",
+          "lua_type": "string",
+          "name": "on_click",
+          "required": false
+        },
+        {
+          "doc": "Plugin event emitted when value changes.",
+          "lua_type": "string",
+          "name": "on_change",
+          "required": false
+        },
+        {
+          "doc": "Reason shown when disabled.",
+          "lua_type": "string",
+          "name": "disabled_reason",
+          "required": false
+        },
+        {
+          "doc": "Keyboard shortcut hint.",
+          "lua_type": "string",
+          "name": "shortcut",
+          "required": false
+        },
+        {
+          "doc": "Primary nested widget.",
+          "lua_type": "LeviathanWidget",
+          "name": "child",
+          "required": false
+        },
+        {
+          "doc": "Nested widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "List, tree, or menu items.",
+          "lua_type": "table[]",
+          "name": "items",
+          "required": false
+        },
+        {
+          "doc": "Select or radio options.",
+          "lua_type": "table[]",
+          "name": "options",
+          "required": false
+        },
+        {
+          "doc": "Theme token or raw color where allowed.",
+          "lua_type": "string|{token:string}",
+          "name": "color",
+          "required": false
+        }
+      ],
+      "kind": "progress",
+      "since": "1.0"
+    },
+    {
+      "doc": "Stack children vertically.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "stack",
+      "since": "1.0"
+    },
+    {
+      "doc": "Grid layout.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "grid",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dock-style layout primitive.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "dock",
+      "since": "1.0"
+    },
+    {
+      "doc": "Semantic split layout primitive.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "split",
+      "since": "1.0"
+    },
+    {
+      "doc": "Tabbed layout primitive.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "tabs",
+      "since": "1.0"
+    },
+    {
+      "doc": "Large-list layout primitive.",
+      "fields": [
+        {
+          "doc": "Child widgets.",
+          "lua_type": "LeviathanWidget[]",
+          "name": "children",
+          "required": false
+        },
+        {
+          "doc": "Tab descriptors with child widgets.",
+          "lua_type": "table[]",
+          "name": "tabs",
+          "required": false
+        },
+        {
+          "doc": "horizontal or vertical.",
+          "lua_type": "string",
+          "name": "direction",
+          "required": false
+        },
+        {
+          "doc": "Grid column count.",
+          "lua_type": "number",
+          "name": "columns",
+          "required": false
+        },
+        {
+          "doc": "Theme spacing token or pixels.",
+          "lua_type": "number|{token:string}",
+          "name": "spacing",
+          "required": false
+        },
+        {
+          "doc": "Keyboard focus ordering hint.",
+          "lua_type": "number",
+          "name": "focus_order",
+          "required": false
+        }
+      ],
+      "kind": "virtual_list",
       "since": "1.0"
     }
   ]

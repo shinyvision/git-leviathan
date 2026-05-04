@@ -1,9 +1,4 @@
 //! Plugin screen render + subscription helpers.
-//!
-//! A "plugin screen" is not a separate `Screen` trait impl — it's rendered
-//! directly from the host's cached widget tree whenever `active_screen()` is
-//! `Some`. Keeping it out of the trait avoids inventing a second Message type
-//! and lets `App::view` stay a single match on the active-screen enum.
 
 use iced::widget::{container, text};
 use iced::{event, mouse, Element, Event, Length, Subscription, Theme};
@@ -18,6 +13,14 @@ pub fn view(host: &PluginHost) -> Element<'_, Message> {
     let Some((plugin_id, screen_id)) = host.active_screen() else {
         return fallback("no active plugin screen".to_string());
     };
+    view_for(host, plugin_id, screen_id)
+}
+
+pub fn view_for<'a>(
+    host: &'a PluginHost,
+    plugin_id: &'a str,
+    screen_id: &'a str,
+) -> Element<'a, Message> {
     let Some(ast) = host.widget_tree() else {
         return fallback(format!("plugin {plugin_id}/{screen_id}: empty widget tree"));
     };

@@ -18,12 +18,40 @@
 use std::sync::Arc;
 
 use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
-use crate::plugin::performance::{BudgetTracker, CallbackKind, MockClock, Outcome as PerfOutcome};
+use crate::plugin::performance::{
+    BudgetTracker, CallbackKind, MockClock, Outcome as PerfOutcome, RenderBudgetSkip,
+};
 use crate::plugin::resources::{GenerationId, PluginId};
 use crate::plugin::tests::harness::MockHost;
 
 fn store() -> DiagnosticStore {
     DiagnosticStore::with_sink(Arc::new(NullSink))
+}
+
+#[test]
+fn render_frame_budgets_skip_plugin_and_region_until_next_frame() {
+    let s = store();
+    let t = BudgetTracker::new(s);
+    let p1 = PluginId::from("render_a");
+    let p2 = PluginId::from("render_b");
+    let gen = GenerationId::new(1);
+
+    t.begin_render_frame();
+    assert!(t.render_budget_skip(&p1, gen, "main_bar").is_none());
+    t.record_render_frame_cost(&p1, gen, "main_bar", 20);
+    assert!(matches!(
+        t.render_budget_skip(&p1, gen, "main_bar"),
+        Some(RenderBudgetSkip::PluginFrame { .. })
+    ));
+
+    t.begin_render_frame();
+    assert!(t.render_budget_skip(&p1, gen, "main_bar").is_none());
+    t.record_render_frame_cost(&p1, gen, "main_bar", 12);
+    t.record_render_frame_cost(&p2, gen, "main_bar", 12);
+    assert!(matches!(
+        t.render_budget_skip(&p2, gen, "main_bar"),
+        Some(RenderBudgetSkip::RegionFrame { .. })
+    ));
 }
 
 #[test]

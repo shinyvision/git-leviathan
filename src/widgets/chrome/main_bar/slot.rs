@@ -9,7 +9,7 @@ use std::time::Instant;
 use iced::Element;
 
 use crate::message::Message;
-use crate::plugin::slots::{Container, IsSlot};
+use crate::plugin::slots::{Container, IsSlot, SlotAddress};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Section {
@@ -69,6 +69,7 @@ pub type SlotBuilder =
 
 pub struct MainBarSlot {
     pub id: String,
+    pub address: SlotAddress,
     pub container: Container,
     pub priority: i32,
     pub builder: SlotBuilder,
@@ -79,9 +80,12 @@ impl MainBarSlot {
     where
         F: for<'ctx, 'data> Fn(&'ctx SlotCtx<'data>) -> Element<'data, Message> + 'static,
     {
+        let id = id.into();
+        let container = section.container();
         Self {
-            id: id.into(),
-            container: section.container(),
+            address: SlotAddress::builtin("main_bar", container.clone(), id.clone()),
+            id,
+            container,
             priority,
             builder: Box::new(builder),
         }
@@ -89,14 +93,17 @@ impl MainBarSlot {
 }
 
 impl IsSlot for MainBarSlot {
-    fn id(&self) -> &str {
-        &self.id
+    fn address(&self) -> &SlotAddress {
+        &self.address
     }
-    fn container(&self) -> &Container {
-        &self.container
+    fn display_id(&self) -> &str {
+        &self.id
     }
     fn priority(&self) -> i32 {
         self.priority
+    }
+    fn set_priority(&mut self, priority: i32) {
+        self.priority = priority;
     }
 }
 

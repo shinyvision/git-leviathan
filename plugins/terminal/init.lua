@@ -5,7 +5,7 @@ local BG_HOVER       = "#20222f"
 local TOOLBAR_HEIGHT = 50
 local FONT_XS        = 10
 
-leviathan.ui.regions.add_slot {
+leviathan.ui.slot.add {
   region   = "main_bar",
   id       = "plugin.terminal.terminal",
   section  = "center",

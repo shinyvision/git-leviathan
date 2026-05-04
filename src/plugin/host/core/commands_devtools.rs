@@ -268,6 +268,23 @@ fn git_request_from_command(
     }
 }
 
+fn git_command_capabilities(name: &str) -> Vec<String> {
+    let caps: &[&str] = match name {
+        "git.checkout" => &["git:write:checkout"],
+        "git.create_branch" | "git.delete_branch" => &["git:write:branch"],
+        "git.create_tag" | "git.delete_tag" => &["git:write:tag"],
+        "git.commit" => &["git:write:commit"],
+        "git.stash_push" | "git.stash_pop" => &["git:write:stash"],
+        "git.reset" => &["git:write:reset"],
+        "git.fetch" => &["git:write:fetch"],
+        "git.push" => &["git:write:push"],
+        "git.merge" => &["git:write:merge"],
+        "git.rebase" => &["git:write:rebase"],
+        _ => &[],
+    };
+    caps.iter().map(|cap| cap.to_string()).collect()
+}
+
 fn string_arg(args: &serde_json::Value, key: &str) -> Option<String> {
     args.get(key)
         .and_then(|value| value.as_str())
@@ -291,6 +308,61 @@ fn integer_arg(args: &serde_json::Value, key: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+#[derive(Clone, Copy)]
+enum DockCommandKind {
+    Open,
+    Close,
+    Move,
+    Reset,
+}
+
+fn run_dock_command(
+    dock: &crate::plugin::dock::DockManager,
+    kind: DockCommandKind,
+    args: &serde_json::Value,
+) -> Result<(), String> {
+    match kind {
+        DockCommandKind::Open => dock.open_panel(
+            required_str_arg(args, "plugin_id")?,
+            required_str_arg(args, "id")?,
+        ),
+        DockCommandKind::Close => dock.close_panel(
+            required_str_arg(args, "plugin_id")?,
+            required_str_arg(args, "id")?,
+        ),
+        DockCommandKind::Move => dock.move_panel(
+            required_str_arg(args, "plugin_id")?,
+            required_str_arg(args, "id")?,
+            crate::plugin::dock::DockArea::parse(required_str_arg(args, "area")?)?,
+            args.get("order")
+                .and_then(|value| value.as_i64())
+                .map(|value| value.max(0) as usize),
+        ),
+        DockCommandKind::Reset => {
+            dock.reset_layout();
+            Ok(())
+        }
+    }
+}
+
+fn required_str_arg<'a>(args: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
+    args.get(key)
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("missing required arg `{key}`"))
+}
+
+fn contribution_key_from_action(
+    action: &crate::plugin::devtools_commands::DevtoolsAction,
+) -> crate::plugin::ui::contribution_overrides::ContributionKey {
+    crate::plugin::ui::contribution_overrides::ContributionKey::new(
+        action.arg_str("plugin_id").unwrap_or(""),
+        action.arg_str("region").unwrap_or(""),
+        action.arg_str("container").unwrap_or(""),
+        action.arg_str("id").unwrap_or(""),
+    )
+}
+
 impl PluginHost {
     /// Build the [`CommandDispatchEnv`] handle plugins are handed at
     /// API install time. Cheap-clone (every member is `Rc`-backed); the
@@ -301,49 +373,19 @@ impl PluginHost {
             plugin_registry: self.command_plugin_registry.clone(),
             diagnostics: self.diagnostics.clone(),
             pending_events: self.pending_command_events.clone(),
+            active_context: Rc::clone(&self.command_active_context),
             budget_tracker: self.budget_tracker.clone(),
         }
     }
 
     pub(super) fn register_builtin_host_commands(&mut self) {
-        let commands_to_register = [
-            (
-                "repository.fetch",
-                "Repository: Fetch",
-                "Fetch from the active remote.",
-            ),
-            (
-                "repository.refresh",
-                "Repository: Refresh",
-                "Refresh the active repository projection.",
-            ),
-            (
-                "repository.open",
-                "Repository: Open",
-                "Open a repository tab by path.",
-            ),
-        ];
-        for (name, title, description) in commands_to_register {
-            let descriptor = CommandDescriptor {
-                name: name.into(),
-                title: title.into(),
-                description: description.into(),
-                plugin_id: HOST_COMMAND_PLUGIN_ID.into(),
-                generation_id: None,
-                context: CommandContext::GLOBAL.into(),
-                args: Vec::new(),
-                destructive: false,
-                capabilities: Vec::new(),
-                run: CommandBody::Host(Box::new(|_args| Ok(()))),
-            };
-            self.command_registry
-                .borrow_mut()
-                .register(descriptor, &self.diagnostics);
-        }
+        crate::plugin::core_commands::register(
+            &mut self.command_registry.borrow_mut(),
+            self.core_command_actions.clone(),
+            &self.diagnostics,
+        );
+        self.register_builtin_dock_commands();
 
-        // Register `git.<op>` host commands so command palettes and
-        // keymaps can route through `leviathan.command.invoke(...)`.
-        // Bodies use the same GitOpsContext funnel as `leviathan.git.*`.
         for spec in builtin_git_command_specs() {
             let git_ctx = self.git_ops_context();
             let pending_events = self.pending_git_events.clone();
@@ -359,6 +401,11 @@ impl PluginHost {
                 args: spec.args,
                 destructive: spec.destructive,
                 capabilities: Vec::new(),
+                plugin_invocation_capabilities: git_command_capabilities(spec.name),
+                availability: commands::CommandAvailability::enabled(),
+                keymap_eligible: true,
+                palette_visible: true,
+                hooks: commands::CommandHooks::result_event_only(),
                 run: CommandBody::Host(Box::new(move |args| {
                     let request = git_request_from_command(&command_name, args)?;
                     if background {
@@ -392,6 +439,77 @@ impl PluginHost {
             self.command_registry
                 .borrow_mut()
                 .register(descriptor, &self.diagnostics);
+        }
+    }
+
+    fn register_builtin_dock_commands(&mut self) {
+        use commands::CommandArgType::{Integer, String as StringArg};
+        let dock = self.dock_manager.clone();
+        let specs = [
+            (
+                "ui.dock.open",
+                "Dock: Open Panel",
+                "Open a dock panel.",
+                vec![
+                    command_arg("plugin_id", StringArg.clone(), true, None, "Plugin id."),
+                    command_arg("id", StringArg.clone(), true, None, "Panel id."),
+                ],
+                DockCommandKind::Open,
+            ),
+            (
+                "ui.dock.close",
+                "Dock: Close Panel",
+                "Close a dock panel.",
+                vec![
+                    command_arg("plugin_id", StringArg.clone(), true, None, "Plugin id."),
+                    command_arg("id", StringArg.clone(), true, None, "Panel id."),
+                ],
+                DockCommandKind::Close,
+            ),
+            (
+                "ui.dock.move",
+                "Dock: Move Panel",
+                "Move a dock panel to another area.",
+                vec![
+                    command_arg("plugin_id", StringArg.clone(), true, None, "Plugin id."),
+                    command_arg("id", StringArg.clone(), true, None, "Panel id."),
+                    command_arg("area", StringArg.clone(), true, None, "Target dock area."),
+                    command_arg("order", Integer, false, None, "Target order."),
+                ],
+                DockCommandKind::Move,
+            ),
+            (
+                "ui.dock.reset_layout",
+                "Dock: Reset Layout",
+                "Reset dock layout to plugin defaults.",
+                vec![],
+                DockCommandKind::Reset,
+            ),
+        ];
+        for (name, title, description, args, kind) in specs {
+            let dock = dock.clone();
+            self.command_registry.borrow_mut().register(
+                CommandDescriptor {
+                    name: name.into(),
+                    title: title.into(),
+                    description: description.into(),
+                    plugin_id: HOST_COMMAND_PLUGIN_ID.into(),
+                    generation_id: None,
+                    context: CommandContext::GLOBAL.into(),
+                    args,
+                    destructive: false,
+                    capabilities: Vec::new(),
+                    plugin_invocation_capabilities: vec![format!("command:invoke:{name}")],
+                    availability: commands::CommandAvailability::enabled(),
+                    keymap_eligible: true,
+                    palette_visible: true,
+                    hooks: commands::CommandHooks::result_event_only(),
+                    run: CommandBody::Host(Box::new(move |args| {
+                        run_dock_command(&dock, kind, args)
+                    })),
+                },
+                &self.diagnostics,
+            );
         }
     }
 
@@ -523,6 +641,72 @@ impl PluginHost {
                         })
                     }
                 }
+            }
+            "plugin.inspect_ui_context" => serde_json::json!({
+                "ok": true,
+                "context": self.current_ui_context_snapshot(),
+            }),
+            "plugin.inspect_dock_layout" => serde_json::json!({
+                "ok": true,
+                "panels": self.dock_panels().into_iter().map(|panel| serde_json::json!({
+                    "plugin_id": panel.plugin_id,
+                    "generation_id": panel.generation_id,
+                    "id": panel.id,
+                    "key": panel.key,
+                    "title": panel.title,
+                    "area": panel.area,
+                    "area_label": panel.area_label,
+                    "open": panel.open,
+                    "order": panel.order,
+                    "split_size": panel.split_size,
+                    "selected": panel.selected,
+                    "state": panel.state,
+                    "source_location": panel.source_location,
+                })).collect::<Vec<_>>(),
+                "layout": self.dock_layout_json(),
+            }),
+            "plugin_ui.toggle_contribution" => {
+                let key = contribution_key_from_action(&action);
+                let hidden = match action.args.get("hidden").and_then(|v| v.as_bool()) {
+                    Some(value) => {
+                        self.contribution_overrides.set_hidden(&key, value);
+                        value
+                    }
+                    None => self.contribution_overrides.toggle_hidden(&key),
+                };
+                if let Some(priority) = action.args.get("priority").and_then(|v| v.as_i64()) {
+                    self.contribution_overrides
+                        .set_priority(&key, priority as i32);
+                }
+                self.mark_slot_ops_changed();
+                serde_json::json!({
+                    "ok": true,
+                    "plugin_id": key.plugin_id,
+                    "region": key.region,
+                    "container": key.container,
+                    "id": key.id,
+                    "hidden": hidden,
+                    "priority": self.contribution_overrides.inspect(&key).priority,
+                })
+            }
+            "plugin_ui.reset_layout" => {
+                self.contribution_overrides.reset();
+                self.dock_manager.reset_layout();
+                self.mark_slot_ops_changed();
+                serde_json::json!({ "ok": true })
+            }
+            "plugin_ui.inspect_contribution" => {
+                let key = contribution_key_from_action(&action);
+                let row = self.contribution_overrides.inspect(&key);
+                serde_json::json!({
+                    "ok": true,
+                    "plugin_id": row.plugin_id,
+                    "region": row.region,
+                    "container": row.container,
+                    "id": row.id,
+                    "hidden": row.hidden,
+                    "priority": row.priority,
+                })
             }
             "plugin.run_health_check" => {
                 let plugin_id = action.arg_str("plugin_id").unwrap_or("").to_string();
@@ -782,17 +966,15 @@ impl PluginHost {
         if !self.plugins.contains_key(plugin_id) {
             return None;
         }
-        // Slots owned by this plugin. We walk `slot_ops` the same way
-        // `introspect()` does to materialise the live set, then filter
-        // to `plugin_id`.
-        let mut slot_map: std::collections::BTreeMap<(String, String, String), serde_json::Value> =
-            std::collections::BTreeMap::new();
+        let mut slot_map: std::collections::BTreeMap<
+            crate::plugin::slots::SlotAddress,
+            serde_json::Value,
+        > = std::collections::BTreeMap::new();
         for op in &self.slot_ops {
             match op {
                 PreparedSlotOp::Add(p) if p.plugin_id == plugin_id => {
-                    let key = (p.region.clone(), p.container.key(), p.id.clone());
                     slot_map.insert(
-                        key,
+                        p.mount_address.clone(),
                         serde_json::json!({
                             "id": p.id,
                             "region": p.region,
@@ -805,23 +987,14 @@ impl PluginHost {
                         }),
                     );
                 }
-                PreparedSlotOp::Add(p) => {
-                    let key = (p.region.clone(), p.container.key(), p.id.clone());
-                    slot_map.remove(&key);
-                }
-                PreparedSlotOp::Replace {
-                    region,
-                    container,
-                    id,
-                    spec,
-                } if spec.plugin_id == plugin_id => {
-                    let key = (region.clone(), container.key(), id.clone());
+                PreparedSlotOp::Add(_) => {}
+                PreparedSlotOp::Replace { target, spec, .. } if spec.plugin_id == plugin_id => {
                     slot_map.insert(
-                        key,
+                        target.clone(),
                         serde_json::json!({
-                            "id": id,
-                            "region": region,
-                            "container": container.key(),
+                            "id": target.slot_id().as_str(),
+                            "region": target.region().as_str(),
+                            "container": target.container().key(),
                             "priority": spec.priority,
                             "kind": match &spec.widget {
                                 crate::plugin::ui::main_bar_slots::SlotWidget::Static(_) => "static",
@@ -830,23 +1003,11 @@ impl PluginHost {
                         }),
                     );
                 }
-                PreparedSlotOp::Replace {
-                    region,
-                    container,
-                    id,
-                    ..
-                } => {
-                    let key = (region.clone(), container.key(), id.clone());
-                    slot_map.remove(&key);
+                PreparedSlotOp::Replace { target, .. } => {
+                    slot_map.remove(target);
                 }
-                PreparedSlotOp::Remove {
-                    region,
-                    container,
-                    id,
-                    ..
-                } => {
-                    let key = (region.clone(), container.key(), id.clone());
-                    slot_map.remove(&key);
+                PreparedSlotOp::Remove { target, .. } => {
+                    slot_map.remove(target);
                 }
             }
         }
@@ -881,6 +1042,22 @@ impl PluginHost {
                 })
             })
             .collect();
+        let contributions: Vec<serde_json::Value> = self
+            .extension_registry
+            .all_contributions()
+            .into_iter()
+            .filter(|c| c.plugin_id == plugin_id)
+            .map(|c| {
+                serde_json::json!({
+                    "point_id": c.point_id,
+                    "kind": c.kind,
+                    "id": c.id,
+                    "resource_kind": c.resource_kind,
+                    "owner_key": c.owner_key,
+                    "dynamic": c.dynamic,
+                })
+            })
+            .collect();
         let active_screen = self
             .active_screen
             .as_ref()
@@ -892,10 +1069,27 @@ impl PluginHost {
                     "widget_kind": self.widget_tree.as_ref().map(|t| t.node.kind()),
                 })
             });
+        let dock_panels: Vec<serde_json::Value> = self
+            .dock_panels()
+            .into_iter()
+            .filter(|panel| panel.plugin_id == plugin_id)
+            .map(|panel| {
+                serde_json::json!({
+                    "id": panel.id,
+                    "title": panel.title,
+                    "area": panel.area,
+                    "open": panel.open,
+                    "selected": panel.selected,
+                    "state": panel.state,
+                })
+            })
+            .collect();
         Some(serde_json::json!({
             "slots": slots,
             "overlays": overlays,
             "context_menu": context_menu,
+            "contributions": contributions,
+            "dock_panels": dock_panels,
             "active_screen": active_screen,
         }))
     }
@@ -1071,6 +1265,29 @@ impl PluginHost {
                 })
             })
             .collect();
+        let ui_render_diagnostics: Vec<serde_json::Value> = snap
+            .ui_render_diagnostics
+            .iter()
+            .filter(|r| plugin_id.map(|pid| r.plugin_id == pid).unwrap_or(true))
+            .map(|r| {
+                serde_json::json!({
+                    "plugin_id": r.plugin_id,
+                    "generation_id": r.generation_id,
+                    "region": r.region,
+                    "container": r.container,
+                    "slot_id": r.slot_id,
+                    "dependencies": r.dependencies,
+                    "last_refresh_causes": r.last_refresh_causes,
+                    "refresh_count": r.refresh_count,
+                    "skipped_count": r.skipped_count,
+                    "stale_count": r.stale_count,
+                    "last_duration_ms": r.last_duration_ms,
+                    "last_status": r.last_status,
+                    "last_error": r.last_error,
+                    "diagnostic_badge": r.diagnostic_badge,
+                })
+            })
+            .collect();
 
         // Plugin state (when requested). Walks every storage surface
         // EXCEPT secrets; secret values must never appear in the
@@ -1116,6 +1333,7 @@ impl PluginHost {
             "reload_history": reload_history,
             "performance_traces": performance_traces,
             "circuit_breakers": circuit_breakers,
+            "ui_render_diagnostics": ui_render_diagnostics,
             "state": state,
             "include_secrets": include_secrets,
             "secret_metadata": secret_metadata,
@@ -1260,6 +1478,12 @@ impl PluginHost {
 
     pub fn command_registry(&self) -> Rc<RefCell<CommandRegistry>> {
         Rc::clone(&self.command_registry)
+    }
+
+    pub fn take_core_command_actions(
+        &mut self,
+    ) -> Vec<crate::plugin::core_commands::CoreCommandAction> {
+        self.core_command_actions.drain()
     }
 
     pub fn keymap_registry(&self) -> Rc<RefCell<KeymapRegistry>> {

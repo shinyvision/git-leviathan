@@ -53,7 +53,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_db_at_version_zero_gets_upgraded() {
+    fn version_zero_db_gets_upgraded() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             r#"

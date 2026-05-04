@@ -1,0 +1,6 @@
+id = "example_status_bar"
+name = "Example Status Bar"
+version = "0.1.0"
+api_version = "1.0"
+description = "Status-style contribution using the available main bar status surface."
+capabilities = ["ui:region:main_bar"]

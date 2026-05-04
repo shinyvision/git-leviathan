@@ -1,0 +1,1 @@
+Graph decoration acceptance fixture.

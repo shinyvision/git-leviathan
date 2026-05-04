@@ -66,7 +66,10 @@ impl App {
                 self.plugin_host.split_drag_released();
             }
         }
-        self.focus_plugin_overlay_input()
+        Task::batch(vec![
+            self.drain_pending_navigation_effects(),
+            self.focus_plugin_overlay_input(),
+        ])
     }
 
     pub(super) fn update_app(&mut self, msg: AppMessage) -> Task<Message> {
@@ -100,6 +103,9 @@ impl App {
                 if self.no_git_screen.is_some() || self.tabs.is_empty() {
                     return Task::none();
                 }
+                if self.tabs.active_plugin_screen().is_some() {
+                    return Task::none();
+                }
                 if let Some(screen) = self.tabs.active_screen_mut() {
                     screen.on_modifiers_changed(modifiers);
                 }
@@ -108,6 +114,10 @@ impl App {
             AppMessage::OpenRepoDialog => self.open_repo_dialog(),
             AppMessage::RepoPathChosen(Some(path)) => self.open_repo_from_path(path),
             AppMessage::RepoPathChosen(None) => Task::none(),
+            AppMessage::InvokeCommand { id, args } => {
+                let _ = self.plugin_host.invoke_command(&id, args);
+                Task::none()
+            }
             AppMessage::TabRegistryOp(op) => {
                 if let crate::plugin::tab_snapshot::TabRegistryOp::Select(ref path) = op {
                     if self.tabs.tab_id_for_path(path) == Some(self.tabs.active_tab_id()) {

@@ -30,6 +30,8 @@ impl Default for SettingsFile {
 #[derive(Debug, Clone)]
 pub struct SettingsMetadata {
     pub path: String,
+    pub schema: Value,
+    pub values: Value,
     pub schema_keys: Vec<String>,
     pub value_keys: Vec<String>,
     pub valid: bool,
@@ -148,12 +150,88 @@ pub fn metadata(path: &Path) -> SettingsMetadata {
     let values = with_defaults(&file.schema, &file.values);
     file.values = values.clone();
     let validation = validate_settings(&file.schema, &values);
+    let schema_keys = object_keys(&file.schema);
+    let value_keys = object_keys(&file.values);
     SettingsMetadata {
         path: path.display().to_string(),
-        schema_keys: object_keys(&file.schema),
-        value_keys: object_keys(&values),
+        schema: file.schema,
+        values,
+        schema_keys,
+        value_keys,
         valid: validation.is_ok(),
         errors: validation.err().unwrap_or_default(),
+    }
+}
+
+pub fn generated_form_widget(
+    schema: &Value,
+    values: &Value,
+) -> Option<crate::plugin::ui::widget_ast::WidgetAst> {
+    let schema = schema.as_object()?;
+    if schema.is_empty() {
+        return None;
+    }
+    let mut children = Vec::new();
+    for (key, spec) in schema {
+        let ty = spec.get("type").and_then(Value::as_str).unwrap_or("json");
+        let label = spec
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or(key.as_str());
+        let value = values.get(key).cloned().unwrap_or(Value::Null);
+        children.push(setting_widget(key, label, ty, spec, value));
+    }
+    crate::plugin::ui::widget_ast::decode(&json!({
+        "kind": "form",
+        "title": "Settings",
+        "children": children,
+    }))
+    .ok()
+}
+
+fn setting_widget(key: &str, label: &str, ty: &str, spec: &Value, value: Value) -> Value {
+    if let Some(options) = spec.get("enum").and_then(Value::as_array) {
+        return json!({
+            "kind": "select",
+            "id": key,
+            "label": label,
+            "selected": value,
+            "options": options.iter().map(|item| json!({
+                "value": item,
+                "label": item.as_str().map(str::to_string).unwrap_or_else(|| item.to_string()),
+            })).collect::<Vec<_>>(),
+        });
+    }
+    match ty {
+        "boolean" => json!({
+            "kind": "toggle",
+            "id": key,
+            "label": label,
+            "checked": value.as_bool().unwrap_or(false),
+            "value": value,
+        }),
+        "string" | "integer" | "number" => json!({
+            "kind": "text_input",
+            "id": key,
+            "placeholder": label,
+            "value": scalar_text(&value),
+            "on_input": format!("settings.{key}.input"),
+        }),
+        _ => json!({
+            "kind": "code",
+            "id": key,
+            "label": label,
+            "language": "json",
+            "value_text": serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".into()),
+        }),
+    }
+}
+
+fn scalar_text(value: &Value) -> String {
+    match value {
+        Value::String(s) => s.clone(),
+        Value::Null => String::new(),
+        other => other.to_string(),
     }
 }
 

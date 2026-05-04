@@ -2,7 +2,9 @@
 
 use std::collections::HashMap;
 
-use crate::plugin::commands::{dispatch_command, CommandDispatchEnv, InvokeOutcome};
+use crate::plugin::commands::{
+    dispatch_command_as, CommandDispatchEnv, CommandInvocationCaller, InvokeOutcome,
+};
 use crate::plugin::diagnostic::{
     DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
 };
@@ -803,7 +805,14 @@ impl KeymapRegistry {
                 context: ctx,
                 plugin_id,
             } => {
-                let outcome = dispatch_command(env, &command, args.clone());
+                let caller = match plugin_id.as_str() {
+                    HOST_KEYMAP_PLUGIN_ID | USER_KEYMAP_PLUGIN_ID => None,
+                    _ => Some(CommandInvocationCaller {
+                        plugin_id: plugin_id.clone(),
+                        capability_guard: None,
+                    }),
+                };
+                let outcome = dispatch_command_as(env, caller, &command, args.clone());
                 let key_label = render_chord(buffer);
                 diagnostics.record(
                     PluginDiagnostic::new(
@@ -1016,6 +1025,7 @@ fn outcome_label(out: &InvokeOutcome) -> &'static str {
         InvokeOutcome::Ok => "ok",
         InvokeOutcome::InvalidArgs(_) => "invalid_args",
         InvokeOutcome::CapabilityDenied(_) => "capability_denied",
+        InvokeOutcome::ContextDenied(_) => "context_denied",
         InvokeOutcome::NotFound => "not_found",
         InvokeOutcome::Failed(_) => "failed",
     }

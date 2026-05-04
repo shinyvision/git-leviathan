@@ -16,11 +16,14 @@ use crate::{
     config::AppConfig,
     message::Message,
     plugin::events::EventPayload,
+    plugin::navigation::PluginNavigationEffect,
     plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
     plugin::PluginHost,
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
-    services::{detect_git, DefaultPresenter, GitStatus, Presenter, SettingsService},
+    services::{
+        detect_git, DefaultPresenter, GitStatus, PersistedPluginTab, Presenter, SettingsService,
+    },
     toast::ToastManager,
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
     widgets::chrome::repo_region::RepoRegionRegistry,
@@ -118,6 +121,7 @@ impl App {
         }
 
         let task = app.load_initial_repos();
+        app.restore_plugin_tabs();
         app.sync_repository_to_plugins();
         app.process_tab_changes();
         app.rebuild_slot_registries();
@@ -144,6 +148,105 @@ impl App {
         Task::batch(initial_tasks)
     }
 
+    fn restore_plugin_tabs(&mut self) {
+        let Ok(settings) = SettingsService::new() else {
+            return;
+        };
+        let Ok(tabs) = settings.load_plugin_tabs() else {
+            return;
+        };
+        for tab in tabs {
+            if !self
+                .plugin_host
+                .screen_exists(&tab.plugin_id, &tab.screen_id)
+            {
+                continue;
+            }
+            if let Some(state) = tab.state {
+                let _ = self.plugin_host.deserialize_screen_state(
+                    &tab.plugin_id,
+                    &tab.screen_id,
+                    state,
+                );
+            }
+            self.open_plugin_screen_tab(tab.plugin_id, tab.screen_id, tab.bound_repo_path);
+        }
+    }
+
+    pub(super) fn drain_pending_navigation_effects(&mut self) -> Task<Message> {
+        let effects = self.plugin_host.take_pending_navigation_effects();
+        for effect in effects {
+            match effect {
+                PluginNavigationEffect::NavigateRepository => self.navigate_to_repository_tab(),
+                PluginNavigationEffect::OpenScreen {
+                    plugin_id,
+                    screen_id,
+                } => self.open_plugin_screen_tab(plugin_id, screen_id, None),
+            }
+        }
+        Task::none()
+    }
+
+    fn navigate_to_repository_tab(&mut self) {
+        let bound = self
+            .tabs
+            .active_plugin_screen()
+            .and_then(|s| s.bound_repo_path().map(ToOwned::to_owned));
+        let target = bound
+            .as_deref()
+            .and_then(|path| self.tabs.tab_id_for_path(path))
+            .or_else(|| self.tabs.first_repository_tab_id());
+        if let Some(tab_id) = target {
+            let _ = self.tabs.select(tab_id);
+            self.plugin_host.clear_active_screen();
+        }
+    }
+
+    fn open_plugin_screen_tab(
+        &mut self,
+        plugin_id: String,
+        screen_id: String,
+        restored_bound_repo_path: Option<String>,
+    ) {
+        let Some(summary) = self.plugin_host.screen_summary(&plugin_id, &screen_id) else {
+            return;
+        };
+        let bound_repo_path = restored_bound_repo_path.or_else(|| {
+            if summary.bind_repository {
+                self.tabs
+                    .active_entry()
+                    .and_then(|entry| entry.repo_path().map(ToOwned::to_owned))
+            } else {
+                None
+            }
+        });
+        self.plugin_host.open_screen(plugin_id, screen_id);
+        self.tabs.open_plugin_screen(summary, bound_repo_path);
+    }
+
+    fn persist_plugin_tabs(&mut self) {
+        let tabs: Vec<PersistedPluginTab> = self
+            .tabs
+            .tabs()
+            .iter()
+            .filter_map(|entry| {
+                let screen = self.tabs.plugin_screen(entry.id)?;
+                Some(PersistedPluginTab {
+                    plugin_id: screen.plugin_id().to_string(),
+                    screen_id: screen.screen_id().to_string(),
+                    title: screen.title().to_string(),
+                    bound_repo_path: screen.bound_repo_path().map(ToOwned::to_owned),
+                    state: self
+                        .plugin_host
+                        .serialize_screen_state(screen.plugin_id(), screen.screen_id()),
+                })
+            })
+            .collect();
+        if let Ok(settings) = SettingsService::new() {
+            let _ = settings.save_plugin_tabs(&tabs);
+        }
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         let task = match message {
             Message::App(am) => self.update_app(am),
@@ -151,12 +254,15 @@ impl App {
             Message::Toast(tm) => self.update_toast(tm),
             Message::Plugin(pm) => self.update_plugin(pm),
         };
+        self.sync_active_plugin_screen_to_host();
         self.sync_repository_to_plugins();
         self.process_tab_changes();
+        let command_actions = self.drain_core_command_actions();
         let drain = self.drain_pending_tab_ops();
+        self.persist_plugin_tabs();
         self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
-        Task::batch(vec![task, drain])
+        Task::batch(vec![task, command_actions, drain])
     }
 
     fn rebuild_slot_registries(&mut self) {
@@ -172,6 +278,19 @@ impl App {
         self.slot_registry_revision = revision;
     }
 
+    fn sync_active_plugin_screen_to_host(&mut self) {
+        if let Some(screen) = self.tabs.active_plugin_screen() {
+            if self.plugin_host.active_screen() != Some((screen.plugin_id(), screen.screen_id())) {
+                self.plugin_host.open_screen(
+                    screen.plugin_id().to_string(),
+                    screen.screen_id().to_string(),
+                );
+            }
+        } else if self.plugin_host.active_screen().is_some() {
+            self.plugin_host.clear_active_screen();
+        }
+    }
+
     /// Push the active tab's branch refs into every plugin's
     /// `leviathan.repository` and fire `BranchChanged` when they differ
     /// from the last sync. Called at the end of `update` — the plugin
@@ -183,33 +302,38 @@ impl App {
     /// mutably; the list is small (<= a few dozen entries on typical
     /// repos) so the clone is cheap.
     fn sync_repository_to_plugins(&mut self) {
-        let active_gateway = self
+        let bound_repo_tab = self
+            .tabs
+            .active_plugin_screen()
+            .and_then(|s| s.bound_repo_path().map(ToOwned::to_owned))
+            .and_then(|path| self.tabs.tab_id_for_path(&path));
+        let source_screen = self
             .tabs
             .active_screen()
-            .map(|screen| screen.active_gateway());
-        let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) = self
-            .tabs
-            .active_screen()
-            .map(|screen| {
-                (
-                    screen.repo_name().to_string(),
-                    screen.active_worktree_path().to_string_lossy().into_owned(),
-                    screen.current_branch().to_string(),
-                    screen.head_hash().unwrap_or("").to_string(),
-                    screen.default_remote_name().unwrap_or("").to_string(),
-                    screen.branch_refs().to_vec(),
-                )
-            })
-            .unwrap_or_else(|| {
-                (
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    Vec::new(),
-                )
-            });
+            .or_else(|| bound_repo_tab.and_then(|id| self.tabs.screen(id)));
+        let active_gateway = source_screen.map(|screen| screen.active_gateway());
+        let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) =
+            source_screen
+                .map(|screen| {
+                    (
+                        screen.repo_name().to_string(),
+                        screen.active_worktree_path().to_string_lossy().into_owned(),
+                        screen.current_branch().to_string(),
+                        screen.head_hash().unwrap_or("").to_string(),
+                        screen.default_remote_name().unwrap_or("").to_string(),
+                        screen.branch_refs().to_vec(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    (
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        Vec::new(),
+                    )
+                });
         // Keep the plugin host's view of the active gateway
         // in sync with the active tab. None when no repository is open;
         // plugin git reads/writes then surface "no repository open"
@@ -269,7 +393,7 @@ impl App {
             .iter()
             .map(|t| TabSnapshotEntry {
                 id: t.id,
-                path: t.repo_path.clone(),
+                path: t.path_key().to_string(),
                 name: t.name.clone(),
             })
             .collect();
@@ -352,6 +476,11 @@ impl App {
             }
             TabRegistryOp::Remove(path) => {
                 if let Some(id) = self.tabs.tab_id_for_path(&path) {
+                    if let Some(screen) = self.tabs.plugin_screen(id) {
+                        if !screen.can_close(&self.plugin_host) {
+                            return None;
+                        }
+                    }
                     self.tabs.close_tab(id);
                 }
                 None
@@ -433,10 +562,6 @@ fn build_slot_registries(
 ) -> (MainBarRegistry, TabBarRegistry, RepoRegionRegistry) {
     let mut main_bar_registry = MainBarRegistry::new();
     main_bar_builtins::register_all(&mut main_bar_registry);
-    // Plugin contributions run after built-ins so plugins can remove
-    // or replace built-in slots. Legacy `add_main_bar_button` buttons
-    // land on the right; new `main_bar.{add,remove,replace}` ops run
-    // in source order across all plugins.
     plugin_host.apply_main_bar_slots(&mut main_bar_registry);
 
     let mut tab_bar_registry = TabBarRegistry::new();
@@ -459,10 +584,15 @@ id = "slots"
 name = "Slots"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = [
+  "ui:region:main_bar",
+  "ui:region:tab_bar",
+  "ui:region:repository",
+]
 "#;
 
     const INIT: &str = r#"
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "main_bar",
     section = "left",
     id = "plugin.slots.main",
@@ -470,7 +600,7 @@ leviathan.ui.regions.add_slot{
     widget = { kind = "text", value = "main" },
 }
 
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "tab_bar",
     section = "left",
     id = "plugin.slots.tab",
@@ -478,7 +608,7 @@ leviathan.ui.regions.add_slot{
     widget = { kind = "text", value = "tab" },
 }
 
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "repository",
     pane = "sidebar",
     section = "top",
@@ -497,22 +627,22 @@ leviathan.ui.regions.add_slot{
         assert!(load_revision > 0);
 
         let (main, tabs, repo) = build_slot_registries(host.host());
-        assert!(main.contains("builtin.repo_info"));
-        assert!(tabs.contains("builtin.plus_button"));
-        assert!(main.contains("plugin.slots.main"));
-        assert!(tabs.contains("plugin.slots.tab"));
-        assert!(repo.contains("plugin.slots.repo"));
+        assert!(main.contains_display_id("builtin.repo_info"));
+        assert!(tabs.contains_display_id("builtin.plus_button"));
+        assert!(main.contains_display_id("plugin.slots.main"));
+        assert!(tabs.contains_display_id("plugin.slots.tab"));
+        assert!(repo.contains_display_id("plugin.slots.repo"));
 
         assert!(host.host_mut().disable_plugin("slots"));
         let disable_revision = host.host().slot_ops_revision();
         assert!(disable_revision > load_revision);
 
         let (main, tabs, repo) = build_slot_registries(host.host());
-        assert!(main.contains("builtin.repo_info"));
-        assert!(tabs.contains("builtin.plus_button"));
-        assert!(!main.contains("plugin.slots.main"));
-        assert!(!tabs.contains("plugin.slots.tab"));
-        assert!(!repo.contains("plugin.slots.repo"));
+        assert!(main.contains_display_id("builtin.repo_info"));
+        assert!(tabs.contains_display_id("builtin.plus_button"));
+        assert!(!main.contains_display_id("plugin.slots.main"));
+        assert!(!tabs.contains_display_id("plugin.slots.tab"));
+        assert!(!repo.contains_display_id("plugin.slots.repo"));
 
         let reloaded = host
             .host_mut()
@@ -522,9 +652,9 @@ leviathan.ui.regions.add_slot{
         assert!(host.host().slot_ops_revision() > disable_revision);
 
         let (main, tabs, repo) = build_slot_registries(host.host());
-        assert!(main.contains("plugin.slots.main"));
-        assert!(tabs.contains("plugin.slots.tab"));
-        assert!(repo.contains("plugin.slots.repo"));
+        assert!(main.contains_display_id("plugin.slots.main"));
+        assert!(tabs.contains_display_id("plugin.slots.tab"));
+        assert!(repo.contains_display_id("plugin.slots.repo"));
     }
 
     #[test]
@@ -532,7 +662,14 @@ leviathan.ui.regions.add_slot{
         use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
 
         const REMOVE_MISSING_INIT: &str = r#"
-leviathan.ui.regions.remove_slot{
+leviathan.ui.slot.add{
+    region = "main_bar",
+    section = "left",
+    id = "present.slot",
+    priority = 10,
+    widget = { kind = "text", value = "present" },
+}
+leviathan.ui.slot.remove{
     region = "main_bar",
     section = "left",
     id = "missing.slot",
@@ -549,13 +686,15 @@ id = "missing_remove"
 name = "Missing Remove"
 version = "0.1.0"
 api_version = "1.0"
-"#,
+capabilities = ["ui:region:main_bar"]
+	"#,
         )
         .expect("manifest");
         std::fs::write(dir.join("init.lua"), REMOVE_MISSING_INIT).expect("init");
 
         let mut plugin_host = PluginHost::new();
         plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
+        plugin_host.trust_local_plugin_root(tmp.path());
         plugin_host
             .load_plugin(&dir)
             .expect("load missing-remove plugin");

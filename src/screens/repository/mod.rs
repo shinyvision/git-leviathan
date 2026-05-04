@@ -36,6 +36,12 @@ pub enum FileView {
     Tree,
 }
 
+#[derive(Debug, Clone)]
+pub enum SelectedDiffTarget {
+    Dirty { path: String, is_staged: bool },
+    Commit { commit_idx: usize, path: String },
+}
+
 pub use panels::diff::CenterViewMode;
 
 /// Eight fields, one purpose each: identity (`tab_id`), collaborators
@@ -211,6 +217,67 @@ impl RepositoryScreen {
 
     pub fn get_selected_commit_index(&self) -> usize {
         self.data.selection.selected_commit()
+    }
+
+    pub(crate) fn selected_commit_hash(&self) -> Option<(usize, String)> {
+        let idx = self.data.selection.selected_commit();
+        let commit = self.data.selected_commit(idx)?;
+        if commit.kind == crate::core::CommitKind::Commit {
+            Some((idx, commit.hash.clone()))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn selected_commit_reword_seed(&self) -> Option<(String, String)> {
+        let idx = self.data.selection.selected_commit();
+        let commit = self.data.selected_commit(idx)?;
+        if commit.kind == crate::core::CommitKind::Commit {
+            Some((commit.hash.clone(), commit.message.clone()))
+        } else {
+            None
+        }
+    }
+
+    pub(crate) fn selected_diff_target(&self) -> Option<SelectedDiffTarget> {
+        let idx = self.data.selection.selected_commit();
+        let commit = self.data.selected_commit(idx)?;
+        match commit.kind {
+            crate::core::CommitKind::Dirty => commit
+                .staged_files
+                .first()
+                .map(|file| SelectedDiffTarget::Dirty {
+                    path: file.path.clone(),
+                    is_staged: true,
+                })
+                .or_else(|| {
+                    commit
+                        .unstaged_files
+                        .first()
+                        .map(|file| SelectedDiffTarget::Dirty {
+                            path: file.path.clone(),
+                            is_staged: false,
+                        })
+                })
+                .or_else(|| {
+                    commit
+                        .conflicted_files
+                        .first()
+                        .map(|file| SelectedDiffTarget::Dirty {
+                            path: file.path.clone(),
+                            is_staged: false,
+                        })
+                }),
+            crate::core::CommitKind::Commit | crate::core::CommitKind::Stash => self
+                .data
+                .cache
+                .state(idx)
+                .and_then(|state| state.files.first())
+                .map(|file| SelectedDiffTarget::Commit {
+                    commit_idx: idx,
+                    path: file.path.clone(),
+                }),
+        }
     }
 
     pub fn select_commit(&mut self, idx: usize) -> Task<Message> {

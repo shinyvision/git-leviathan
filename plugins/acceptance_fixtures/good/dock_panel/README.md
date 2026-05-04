@@ -1,0 +1,1 @@
+Dock panel acceptance fixture.

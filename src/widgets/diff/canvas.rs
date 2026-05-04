@@ -40,7 +40,6 @@ pub fn search_scroll_breadcrumb_offset() -> f32 {
 
 pub const CANVAS_ID: CanvasId = CanvasId(1);
 
-// Legacy re-exports for existing call sites.
 pub use text::{
     CanvasId as DiffCanvasId, SelectionMode, TextCanvasData as DiffCanvasData,
     TextPosition as DiffPosition, TextSelection as DiffSelection,

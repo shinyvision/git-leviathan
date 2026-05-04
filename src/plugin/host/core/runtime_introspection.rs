@@ -1,6 +1,54 @@
 use super::*;
 
 impl PluginHost {
+    pub fn current_ui_context_snapshot(&self) -> serde_json::Value {
+        crate::plugin::ui::context::context_for_surface(
+            crate::plugin::commands::HOST_COMMAND_PLUGIN_ID,
+            GenerationId::new(0),
+            crate::plugin::ui::context::UiContextSurface::Screen,
+            self.repository_context_snapshot().as_ref(),
+            &self.last_tab_snapshot,
+        )
+    }
+
+    pub(super) fn refresh_command_active_context(&self) {
+        *self.command_active_context.borrow_mut() = self.current_ui_context_snapshot();
+    }
+
+    pub(super) fn repository_context_snapshot(
+        &self,
+    ) -> Option<crate::plugin::ui::context::RepositoryContextSnapshot> {
+        self.last_repository_shape.as_ref().map(|facts| {
+            crate::plugin::ui::context::RepositoryContextSnapshot {
+                name: facts.repo_name.clone(),
+                workdir_path: facts.workdir.to_string_lossy().into_owned(),
+                current_branch_name: facts.current_branch.clone(),
+                head_hash: facts.head_hash.clone(),
+                default_remote_name: facts.default_remote.clone(),
+                has_remote: facts.has_remote,
+            }
+        })
+    }
+
+    fn custom_settings_view(
+        &self,
+        plugin: &LoadedPlugin,
+        schema: &serde_json::Value,
+        values: &serde_json::Value,
+    ) -> Option<crate::plugin::ui::widget_ast::WidgetAst> {
+        let panel = plugin.settings_panel.as_ref()?;
+        let view = plugin.lua().registry_value::<Function>(&panel.view).ok()?;
+        let ctx = serde_json::json!({
+            "plugin_id": plugin.id(),
+            "schema": schema,
+            "values": values,
+        });
+        let arg = plugin.lua().to_value(&ctx).ok()?;
+        let value: LuaValue = view.call(arg).ok()?;
+        let json: serde_json::Value = plugin.lua().from_value(value).ok()?;
+        crate::plugin::ui::widget_ast::decode(&json).ok()
+    }
+
     /// Drain every plugin's deferred-call queue. Order per plugin:
     ///
     /// 1. Immediate (`leviathan.api.schedule(fn)`) callbacks, in FIFO order.
@@ -25,6 +73,7 @@ impl PluginHost {
         let now = Instant::now();
         let ids: Vec<String> = self.plugins.keys().cloned().collect();
         let mut pending: Vec<PluginDiagnostic> = Vec::new();
+        let mut deferred_state_changed: HashSet<String> = HashSet::new();
         for id in ids {
             let Some(plugin) = self.plugins.get(&id) else {
                 continue;
@@ -39,6 +88,7 @@ impl PluginHost {
             for callback in immediate {
                 match lua.registry_value::<Function>(&callback.key) {
                     Ok(f) => {
+                        deferred_state_changed.insert(id.clone());
                         if let Err(e) = f.call::<()>(()) {
                             pending.push(
                                 PluginDiagnostic::new(
@@ -72,6 +122,7 @@ impl PluginHost {
             for callback in due {
                 match lua.registry_value::<Function>(&callback.key) {
                     Ok(f) => {
+                        deferred_state_changed.insert(id.clone());
                         if let Err(e) = f.call::<()>(()) {
                             pending.push(
                                 PluginDiagnostic::new(
@@ -124,6 +175,7 @@ impl PluginHost {
                         continue;
                     }
                 };
+                deferred_state_changed.insert(id.clone());
                 if let Err(e) = thread.resume::<()>(()) {
                     pending.push(
                         PluginDiagnostic::new(
@@ -175,6 +227,12 @@ impl PluginHost {
         for diag in pending {
             self.diagnostics.record(diag);
         }
+        if !deferred_state_changed.is_empty() {
+            self.invalidate_dynamic_widgets(
+                &[UiInvalidationCause::PluginStateChanged],
+                Some(&deferred_state_changed),
+            );
+        }
 
         // async runtime: drain finished async jobs, due timers, and queued
         // file-watcher events. Each fires a Lua callback on the
@@ -188,6 +246,7 @@ impl PluginHost {
     /// next.
     pub(super) fn drive_async_runtime(&mut self, now: Instant) {
         let mut pending: Vec<PluginDiagnostic> = Vec::new();
+        let mut state_causes: HashMap<String, Vec<UiInvalidationCause>> = HashMap::new();
 
         // Async jobs.
         for job in self.async_jobs.drain_finished() {
@@ -242,17 +301,30 @@ impl PluginHost {
                     JobOutcome::Failed(msg) => func.call::<()>((false, msg)),
                 },
             );
-            if let PerfOutcome::Err(e) = perf_outcome {
-                pending.push(
-                    PluginDiagnostic::new(
-                        job.plugin_id.clone(),
-                        DiagnosticSeverity::Error,
-                        "lua.callback_error",
-                        "async on_complete error".to_string(),
-                    )
-                    .with_generation(job.generation_id)
-                    .with_mlua_error(&chunk_name, &e),
-                );
+            match perf_outcome {
+                PerfOutcome::Ok(()) => push_ui_cause(
+                    &mut state_causes,
+                    job.plugin_id.as_str(),
+                    UiInvalidationCause::JobCallbackChangedPluginState,
+                ),
+                PerfOutcome::Err(e) => {
+                    push_ui_cause(
+                        &mut state_causes,
+                        job.plugin_id.as_str(),
+                        UiInvalidationCause::JobCallbackChangedPluginState,
+                    );
+                    pending.push(
+                        PluginDiagnostic::new(
+                            job.plugin_id.clone(),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            "async on_complete error".to_string(),
+                        )
+                        .with_generation(job.generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                }
+                PerfOutcome::Skipped => {}
             }
         }
 
@@ -291,17 +363,30 @@ impl PluginHost {
                 &callback_id,
                 || func.call::<()>(()),
             );
-            if let PerfOutcome::Err(e) = perf_outcome {
-                pending.push(
-                    PluginDiagnostic::new(
-                        due.plugin_id.clone(),
-                        DiagnosticSeverity::Error,
-                        "lua.callback_error",
-                        format!("timer.{} callback error", due.kind.as_str()),
-                    )
-                    .with_generation(due.generation_id)
-                    .with_mlua_error(&chunk_name, &e),
-                );
+            match perf_outcome {
+                PerfOutcome::Ok(()) => push_ui_cause(
+                    &mut state_causes,
+                    due.plugin_id.as_str(),
+                    UiInvalidationCause::TimerCallbackChangedPluginState,
+                ),
+                PerfOutcome::Err(e) => {
+                    push_ui_cause(
+                        &mut state_causes,
+                        due.plugin_id.as_str(),
+                        UiInvalidationCause::TimerCallbackChangedPluginState,
+                    );
+                    pending.push(
+                        PluginDiagnostic::new(
+                            due.plugin_id.clone(),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            format!("timer.{} callback error", due.kind.as_str()),
+                        )
+                        .with_generation(due.generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                }
+                PerfOutcome::Skipped => {}
             }
         }
 
@@ -341,22 +426,47 @@ impl PluginHost {
                 }
             };
             let chunk_name = format!("plugins/{}/init.lua", ev.plugin_id.as_str());
-            if let Err(e) = func.call::<()>(event_table) {
-                pending.push(
-                    PluginDiagnostic::new(
-                        ev.plugin_id.clone(),
-                        DiagnosticSeverity::Error,
-                        "lua.callback_error",
-                        "fs.watch callback error".to_string(),
-                    )
-                    .with_generation(ev.generation_id)
-                    .with_mlua_error(&chunk_name, &e),
-                );
+            let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
+                CallbackKind::EventCallback,
+                &ev.plugin_id,
+                ev.generation_id,
+                &format!("fs.watch:{}", ev.watch_id.get()),
+                || func.call::<()>(event_table),
+            );
+            match perf_outcome {
+                PerfOutcome::Ok(()) => push_ui_cause(
+                    &mut state_causes,
+                    ev.plugin_id.as_str(),
+                    UiInvalidationCause::WatchCallbackChangedPluginState,
+                ),
+                PerfOutcome::Err(e) => {
+                    push_ui_cause(
+                        &mut state_causes,
+                        ev.plugin_id.as_str(),
+                        UiInvalidationCause::WatchCallbackChangedPluginState,
+                    );
+                    pending.push(
+                        PluginDiagnostic::new(
+                            ev.plugin_id.clone(),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            "fs.watch callback error".to_string(),
+                        )
+                        .with_generation(ev.generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                }
+                PerfOutcome::Skipped => {}
             }
         }
 
         for diag in pending {
             self.diagnostics.record(diag);
+        }
+        for (plugin_id, causes) in state_causes {
+            let mut only = HashSet::new();
+            only.insert(plugin_id);
+            self.invalidate_dynamic_widgets(&causes, Some(&only));
         }
     }
 
@@ -462,13 +572,51 @@ impl PluginHost {
     /// services + audit)). Consumed by the in-app inspector and tests.
     pub fn introspect(&self) -> crate::plugin::devtools::InspectorSnapshot {
         use crate::plugin::devtools::{
-            AutocmdSummary, CommandSummaryRow, DependencySummaryRow, DiagnosticSummary,
+            AutocmdSummary, CommandSummaryRow, ContributionOverrideSummary,
+            DecorationInvalidationSummary, DependencySummaryRow, DiagnosticSummary,
+            DockPanelSummary, ExtensionContributionSummary, ExtensionPointSummary,
             InspectorSnapshot, KeymapConflictRef, KeymapSummaryRow, LoadedModuleSummary,
             PluginSummary, ResourceSummary, RuntimePathSummary, SecretSummary,
             ServiceCallTraceSummary, ServiceGraphEdge, ServiceSummary, SettingsSummary,
-            SlotSummary, StorageSurfaceSummary,
+            SlotSummary, StorageSurfaceSummary, UiRenderDiagnosticSummary,
         };
         let mut snap = InspectorSnapshot::default();
+        snap.extension_points =
+            git_leviathan_plugin_api::descriptor::extension_point::EXTENSION_POINTS
+                .iter()
+                .map(|point| ExtensionPointSummary {
+                    id: point.id.to_string(),
+                    kind: format!("{:?}", point.kind),
+                    context_schema: point.context_schema.to_string(),
+                    contribution_schema: point.contribution_schema.to_string(),
+                    ordering_model: point.ordering_model.to_string(),
+                    ownership_rules: point.ownership_rules.to_string(),
+                    capabilities: point
+                        .capabilities
+                        .iter()
+                        .map(|cap| cap.to_string())
+                        .collect(),
+                    render_mount_handler: point.render_mount_handler.to_string(),
+                })
+                .collect();
+        snap.dock_panels = self
+            .dock_panels()
+            .into_iter()
+            .map(|panel| DockPanelSummary {
+                plugin_id: panel.plugin_id,
+                generation_id: panel.generation_id,
+                id: panel.id,
+                key: panel.key,
+                title: panel.title,
+                area: panel.area,
+                open: panel.open,
+                order: panel.order,
+                selected: panel.selected,
+                state: panel.state,
+                source_location: panel.source_location,
+            })
+            .collect();
+        snap.dock_layout = self.dock_layout_json();
 
         for (id, plugin) in &self.plugins {
             let m = &plugin.manifest;
@@ -545,9 +693,22 @@ impl PluginHost {
                 });
             }
             let settings_meta = crate::plugin::settings::metadata(&storage.settings_path());
+            let generated_form = crate::plugin::settings::generated_form_widget(
+                &settings_meta.schema,
+                &settings_meta.values,
+            );
+            let custom_view =
+                self.custom_settings_view(plugin, &settings_meta.schema, &settings_meta.values);
+            let custom_view_source = plugin
+                .settings_panel
+                .as_ref()
+                .and_then(|panel| panel.source_location.clone());
             snap.settings.push(SettingsSummary {
                 plugin_id: id.clone(),
                 path: settings_meta.path,
+                generated_form,
+                custom_view,
+                custom_view_source,
                 schema_keys: settings_meta.schema_keys,
                 value_keys: settings_meta.value_keys,
                 valid: settings_meta.valid,
@@ -560,6 +721,29 @@ impl PluginHost {
                 key_count: secret_meta.key_count,
                 keys: secret_meta.keys,
             });
+            for (address, dynamic) in &plugin.dynamic_widgets {
+                let telemetry = dynamic.telemetry.borrow().clone();
+                snap.ui_render_diagnostics.push(UiRenderDiagnosticSummary {
+                    plugin_id: id.clone(),
+                    generation_id: plugin.generation.generation_id.get(),
+                    region: address.region().as_str().to_string(),
+                    container: address.container().key(),
+                    slot_id: address.slot_id().as_str().to_string(),
+                    dependencies: dynamic
+                        .dependencies
+                        .iter()
+                        .map(|dep| dep.as_str().to_string())
+                        .collect(),
+                    last_refresh_causes: telemetry.last_causes,
+                    refresh_count: telemetry.refresh_count,
+                    skipped_count: telemetry.skipped_count,
+                    stale_count: telemetry.stale_count,
+                    last_duration_ms: telemetry.last_duration_ms,
+                    last_status: telemetry.last_status,
+                    last_error: telemetry.last_error,
+                    diagnostic_badge: telemetry.diagnostic_badge,
+                });
+            }
         }
         snap.runtime_paths
             .sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id));
@@ -582,56 +766,114 @@ impl PluginHost {
         });
         snap.settings.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id));
         snap.secrets.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id));
+        snap.ui_render_diagnostics.sort_by(|a, b| {
+            a.plugin_id
+                .cmp(&b.plugin_id)
+                .then(a.region.cmp(&b.region))
+                .then(a.container.cmp(&b.container))
+                .then(a.slot_id.cmp(&b.slot_id))
+        });
 
-        // Walk slot_ops in order, applying Add/Replace/Remove to a
-        // (region, container, id) keyed map so the snapshot reflects the
-        // currently-owned slots rather than the raw op log.
-        let mut slot_map: std::collections::BTreeMap<(String, String, String), SlotSummary> =
-            std::collections::BTreeMap::new();
+        let mut slot_map: std::collections::BTreeMap<
+            crate::plugin::slots::SlotAddress,
+            SlotSummary,
+        > = std::collections::BTreeMap::new();
+        for builtin in crate::plugin::slots::builtins::BUILTIN_SLOTS {
+            let address = builtin.address();
+            slot_map.insert(
+                address.clone(),
+                SlotSummary {
+                    region: builtin.region.to_string(),
+                    container: builtin.container.to_string(),
+                    id: builtin.id.to_string(),
+                    priority: builtin.priority,
+                    hidden: self.contribution_overrides.is_hidden(&address),
+                    effective_priority: self
+                        .contribution_overrides
+                        .priority(&address)
+                        .unwrap_or(builtin.priority),
+                    owner_plugin_id: crate::plugin::slots::BUILTIN_PLUGIN_ID.to_string(),
+                    replace_capability: Some(builtin.replace_capability.to_string()),
+                    remove_capability: Some(builtin.remove_capability.to_string()),
+                },
+            );
+        }
         for op in &self.slot_ops {
             match op {
                 PreparedSlotOp::Add(p) => {
-                    let key = (p.region.clone(), p.container.key(), p.id.clone());
+                    let builtin = crate::plugin::slots::builtins::get(
+                        p.region.as_str(),
+                        p.container.key().as_str(),
+                        p.id.as_str(),
+                    );
                     slot_map.insert(
-                        key,
+                        p.mount_address.clone(),
                         SlotSummary {
                             region: p.region.clone(),
                             container: p.container.key(),
                             id: p.id.clone(),
                             priority: p.priority,
+                            hidden: self.contribution_overrides.is_hidden(&p.mount_address),
+                            effective_priority: self
+                                .contribution_overrides
+                                .priority(&p.mount_address)
+                                .unwrap_or(p.priority),
                             owner_plugin_id: p.plugin_id.clone(),
+                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
+                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
                         },
                     );
                 }
-                PreparedSlotOp::Replace {
-                    region,
-                    container,
-                    id,
-                    spec,
-                } => {
-                    let key = (region.clone(), container.key(), id.clone());
+                PreparedSlotOp::Replace { target, spec, .. } => {
+                    let builtin = crate::plugin::slots::builtins::get(
+                        target.region().as_str(),
+                        target.container().key().as_str(),
+                        target.slot_id().as_str(),
+                    );
                     slot_map.insert(
-                        key,
+                        target.clone(),
                         SlotSummary {
-                            region: region.clone(),
-                            container: container.key(),
-                            id: id.clone(),
+                            region: target.region().as_str().to_string(),
+                            container: target.container().key(),
+                            id: target.slot_id().as_str().to_string(),
                             priority: spec.priority,
+                            hidden: self.contribution_overrides.is_hidden(target),
+                            effective_priority: self
+                                .contribution_overrides
+                                .priority(target)
+                                .unwrap_or(spec.priority),
                             owner_plugin_id: spec.plugin_id.clone(),
+                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
+                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
                         },
                     );
                 }
-                PreparedSlotOp::Remove {
-                    region,
-                    container,
-                    id,
-                    ..
-                } => {
-                    slot_map.remove(&(region.clone(), container.key(), id.clone()));
+                PreparedSlotOp::Remove { target, .. } => {
+                    slot_map.remove(target);
                 }
             }
         }
         snap.slots = slot_map.into_values().collect();
+        snap.slots.sort_by(|a, b| {
+            a.region
+                .cmp(&b.region)
+                .then(a.container.cmp(&b.container))
+                .then(a.id.cmp(&b.id))
+                .then(a.owner_plugin_id.cmp(&b.owner_plugin_id))
+        });
+        snap.contribution_overrides = self
+            .contribution_overrides
+            .summaries()
+            .into_iter()
+            .map(|row| ContributionOverrideSummary {
+                plugin_id: row.plugin_id,
+                region: row.region,
+                container: row.container,
+                id: row.id,
+                hidden: row.hidden,
+                priority: row.priority,
+            })
+            .collect();
 
         {
             let registry = self.service_registry.borrow();
@@ -769,6 +1011,15 @@ impl PluginHost {
                 context: desc.context.clone(),
                 destructive: desc.destructive,
                 capabilities: desc.capabilities.clone(),
+                plugin_invocation_capabilities: desc.plugin_invocation_capabilities.clone(),
+                enabled: desc.availability.enabled,
+                disabled_reason: desc.availability.reason.clone(),
+                keymap_eligible: desc.keymap_eligible,
+                palette_visible: desc.palette_visible,
+                hook_before: desc.hooks.before,
+                hook_after: desc.hooks.after,
+                hook_veto: desc.hooks.veto,
+                replaceable: desc.hooks.replace,
                 fires: entry.runtime.fires,
                 failures: entry.runtime.failures,
                 last_outcome: entry.runtime.last_outcome.clone(),
@@ -977,6 +1228,109 @@ impl PluginHost {
                 }
             })
             .collect();
+        snap.decoration_revision = self.extension_registry.decoration_revision();
+        snap.decoration_invalidations = self
+            .extension_registry
+            .decoration_invalidations()
+            .into_iter()
+            .map(|row| DecorationInvalidationSummary {
+                revision: row.revision,
+                reason: row.reason,
+            })
+            .collect();
+        snap.extension_contributions = self
+            .extension_registry
+            .all_contributions()
+            .into_iter()
+            .map(|row| ExtensionContributionSummary {
+                plugin_id: row.plugin_id,
+                point_id: row.point_id,
+                kind: row.kind,
+                id: row.id,
+                resource_kind: row.resource_kind,
+                owner_key: row.owner_key,
+                dynamic: row.dynamic,
+                source_location: row.source_location,
+            })
+            .collect();
+        for slot in &snap.slots {
+            snap.extension_contributions
+                .push(ExtensionContributionSummary {
+                    plugin_id: slot.owner_plugin_id.clone(),
+                    point_id: format!("{}.{}", slot.region, slot.container),
+                    kind: "Slot".into(),
+                    id: slot.id.clone(),
+                    resource_kind: "slot".into(),
+                    owner_key: format!(
+                        "{}:{}:{}:{}",
+                        slot.owner_plugin_id, slot.region, slot.container, slot.id
+                    ),
+                    dynamic: false,
+                    source_location: None,
+                });
+        }
+        for command in &snap.commands {
+            snap.extension_contributions
+                .push(ExtensionContributionSummary {
+                    plugin_id: command.plugin_id.clone(),
+                    point_id: "commands".into(),
+                    kind: "Command".into(),
+                    id: command.name.clone(),
+                    resource_kind: "command".into(),
+                    owner_key: format!("{}:{}", command.plugin_id, command.name),
+                    dynamic: false,
+                    source_location: None,
+                });
+        }
+        for (plugin_id, plugin) in &self.plugins {
+            for screen_id in plugin.screens.keys() {
+                snap.extension_contributions
+                    .push(ExtensionContributionSummary {
+                        plugin_id: plugin_id.clone(),
+                        point_id: "screens".into(),
+                        kind: "Screen".into(),
+                        id: screen_id.clone(),
+                        resource_kind: "screen".into(),
+                        owner_key: format!("{plugin_id}:{screen_id}"),
+                        dynamic: true,
+                        source_location: None,
+                    });
+            }
+        }
+        for settings in &snap.settings {
+            if !settings.schema_keys.is_empty() {
+                snap.extension_contributions
+                    .push(ExtensionContributionSummary {
+                        plugin_id: settings.plugin_id.clone(),
+                        point_id: "settings.panel".into(),
+                        kind: "SettingsPanel".into(),
+                        id: "settings".into(),
+                        resource_kind: "settings".into(),
+                        owner_key: settings.plugin_id.clone(),
+                        dynamic: false,
+                        source_location: None,
+                    });
+            }
+        }
+        for panel in &snap.dock_panels {
+            snap.extension_contributions
+                .push(ExtensionContributionSummary {
+                    plugin_id: panel.plugin_id.clone(),
+                    point_id: "dock.pane".into(),
+                    kind: "DockPane".into(),
+                    id: panel.id.clone(),
+                    resource_kind: "dock_panel".into(),
+                    owner_key: panel.key.clone(),
+                    dynamic: true,
+                    source_location: panel.source_location.clone(),
+                });
+        }
+        snap.extension_contributions.sort_by(|a, b| {
+            a.point_id
+                .cmp(&b.point_id)
+                .then(a.plugin_id.cmp(&b.plugin_id))
+                .then(a.id.cmp(&b.id))
+        });
 
         // performance traces + circuit-breaker rows. Both
         // are cheap clones from the tracker; sort here so the
@@ -1042,6 +1396,9 @@ impl PluginHost {
                 }
             }
         }
+
+        snap.current_context = self.current_ui_context_snapshot();
+        populate_authoring_trees(&mut snap);
 
         snap
     }
@@ -1126,52 +1483,140 @@ impl PluginHost {
     }
 
     pub(super) fn refresh_dynamic_widgets_for_plugin(&self, plugin_id: &str) {
+        self.budget_tracker.begin_render_frame();
+        self.refresh_dynamic_widgets_for_plugin_caused(
+            plugin_id,
+            &[UiInvalidationCause::InitialLoad],
+        );
+    }
+
+    pub(super) fn invalidate_dynamic_widgets(
+        &self,
+        causes: &[UiInvalidationCause],
+        only_plugins: Option<&HashSet<String>>,
+    ) {
+        if causes.is_empty() {
+            return;
+        }
+        self.budget_tracker.begin_render_frame();
+        let mut ids: Vec<String> = self.plugins.keys().cloned().collect();
+        ids.sort();
+        for plugin_id in ids {
+            if only_plugins
+                .map(|set| !set.contains(&plugin_id))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            self.refresh_dynamic_widgets_for_plugin_caused(&plugin_id, causes);
+        }
+    }
+
+    pub(super) fn refresh_dynamic_widgets_for_plugin_caused(
+        &self,
+        plugin_id: &str,
+        causes: &[UiInvalidationCause],
+    ) {
         let Some(plugin) = self.plugins.get(plugin_id) else {
             return;
         };
         let generation_id = plugin.generation.generation_id;
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
-        for (slot_id, (key, cache)) in &plugin.dynamic_widgets {
-            let func: Function = match plugin.lua().registry_value(key) {
+        let repository = self.repository_context_snapshot();
+        for (address, dynamic) in &plugin.dynamic_widgets {
+            if !crate::plugin::ui::invalidation::dependencies_match(&dynamic.dependencies, causes) {
+                continue;
+            }
+            let cause_labels = crate::plugin::ui::invalidation::cause_labels(causes);
+            let region = address.region().as_str();
+            let pid = PluginId::from(plugin_id);
+            let cb_id = format!("dynamic_widget:{address}");
+            if let Some(skip) = self
+                .budget_tracker
+                .render_budget_skip(&pid, generation_id, region)
+            {
+                let reason = skip.reason();
+                {
+                    let mut telemetry = dynamic.telemetry.borrow_mut();
+                    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
+                    telemetry.last_causes = cause_labels;
+                    telemetry.last_status = "skipped".to_string();
+                    telemetry.last_error = Some(reason.clone());
+                    telemetry.diagnostic_badge = true;
+                }
+                self.diagnostics.record(
+                    PluginDiagnostic::new(
+                        pid,
+                        DiagnosticSeverity::Warning,
+                        "performance.render_budget_skipped",
+                        reason,
+                    )
+                    .with_generation(generation_id)
+                    .with_source(PluginSourceSpan::Widget {
+                        path: format!("slot:{address}"),
+                    }),
+                );
+                continue;
+            }
+            let func: Function = match plugin.lua().registry_value(&dynamic.key) {
                 Ok(f) => f,
                 Err(e) => {
+                    record_dynamic_error(
+                        dynamic,
+                        &cause_labels,
+                        format!("handler lookup failed: {e}"),
+                    );
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
                             DiagnosticSeverity::Error,
                             "lua.handler_lookup_failed",
-                            format!("dynamic widget fn lookup failed for {slot_id}: {e}"),
+                            format!("dynamic widget fn lookup failed for {address}: {e}"),
                         )
                         .with_generation(generation_id)
                         .with_source(PluginSourceSpan::ApiFunction {
-                            name: format!("dynamic_widget:{slot_id}"),
+                            name: format!("dynamic_widget:{address}"),
                         }),
                     );
                     continue;
                 }
             };
-            // Budget the dynamic-widget render against the
-            // `UiCallback` budget. UI callbacks have the tightest
-            // budgets in the plan because they run on every frame.
-            let pid = PluginId::from(plugin_id);
-            let cb_id = format!("dynamic_widget:{slot_id}");
+            let ctx = crate::plugin::ui::context::context_for_slot(
+                plugin_id,
+                generation_id,
+                address,
+                repository.as_ref(),
+                &self.last_tab_snapshot,
+            );
+            plugin.ui_context.set(ctx.clone());
+            let started = std::time::Instant::now();
             let perf_outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
                 CallbackKind::UiCallback,
                 &pid,
                 generation_id,
                 &cb_id,
-                || func.call(()),
+                || {
+                    let arg = plugin.lua().to_value(&ctx)?;
+                    func.call(arg)
+                },
             );
+            let duration_ms = started.elapsed().as_millis();
+            self.budget_tracker
+                .record_render_frame_cost(&pid, generation_id, region, duration_ms);
             let lua_val: LuaValue = match perf_outcome {
                 PerfOutcome::Ok(v) => v,
-                PerfOutcome::Skipped => continue,
+                PerfOutcome::Skipped => {
+                    record_dynamic_skip(dynamic, &cause_labels, "callback circuit breaker tripped");
+                    continue;
+                }
                 PerfOutcome::Err(e) => {
+                    record_dynamic_error(dynamic, &cause_labels, e.to_string());
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
                             DiagnosticSeverity::Error,
                             "lua.callback_error",
-                            format!("dynamic widget fn error for {slot_id}"),
+                            format!("dynamic widget fn error for {address}"),
                         )
                         .with_generation(generation_id)
                         .with_mlua_error(&chunk_name, &e),
@@ -1182,6 +1627,7 @@ impl PluginHost {
             let json: serde_json::Value = match plugin.lua().from_value(lua_val) {
                 Ok(v) => v,
                 Err(e) => {
+                    record_dynamic_error(dynamic, &cause_labels, e.to_string());
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -1191,7 +1637,7 @@ impl PluginHost {
                         )
                         .with_generation(generation_id)
                         .with_source(PluginSourceSpan::Widget {
-                            path: format!("slot:{slot_id}"),
+                            path: format!("slot:{address}"),
                         }),
                     );
                     continue;
@@ -1199,19 +1645,236 @@ impl PluginHost {
             };
             match widget_ast::decode(&json) {
                 Ok(ast) => {
-                    *cache.borrow_mut() = Some(ast);
+                    *dynamic.cache.borrow_mut() = Some(ast);
+                    let mut telemetry = dynamic.telemetry.borrow_mut();
+                    telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
+                    telemetry.last_duration_ms = duration_ms;
+                    telemetry.last_causes = cause_labels;
+                    telemetry.last_status = "ok".to_string();
+                    telemetry.last_error = None;
+                    telemetry.diagnostic_badge = false;
                 }
                 Err(decode_err) => {
+                    record_dynamic_error(dynamic, &cause_labels, decode_err.message.clone());
                     self.diagnostics.record(widget_decode_diagnostic(
                         plugin_id,
                         generation_id,
-                        &format!("slot:{slot_id}"),
+                        &format!("slot:{address}"),
                         &decode_err,
                     ));
-                    // Leave the cache as-is (previous good AST or `None`).
                 }
             }
         }
+    }
+}
+
+fn record_dynamic_error(
+    dynamic: &crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration,
+    causes: &[String],
+    error: String,
+) {
+    let mut telemetry = dynamic.telemetry.borrow_mut();
+    telemetry.last_causes = causes.to_vec();
+    telemetry.last_status = if dynamic.cache.borrow().is_some() {
+        telemetry.stale_count = telemetry.stale_count.saturating_add(1);
+        "stale".to_string()
+    } else {
+        "error".to_string()
+    };
+    telemetry.last_error = Some(error);
+    telemetry.diagnostic_badge = true;
+}
+
+fn populate_authoring_trees(snap: &mut crate::plugin::devtools::InspectorSnapshot) {
+    let diagnostic_codes_by_plugin = {
+        let mut map: HashMap<String, Vec<String>> = HashMap::new();
+        for diagnostic in &snap.diagnostics {
+            map.entry(diagnostic.plugin_id.clone())
+                .or_default()
+                .push(diagnostic.code.clone());
+        }
+        for render in &snap.ui_render_diagnostics {
+            if render.diagnostic_badge {
+                map.entry(render.plugin_id.clone())
+                    .or_default()
+                    .push(format!("render:{}", render.last_status));
+            }
+        }
+        map
+    };
+
+    snap.plugin_tree = snap
+        .plugins
+        .iter()
+        .map(|plugin| {
+            let children = [
+                format!("contributions:{}", plugin.id),
+                format!("commands:{}", plugin.id),
+                format!("autocmds:{}", plugin.id),
+                format!("capabilities:{}", plugin.id),
+                format!("diagnostics:{}", plugin.id),
+            ]
+            .into_iter()
+            .collect();
+            crate::plugin::devtools::PluginTreeNode {
+                id: plugin.id.clone(),
+                label: plugin.name.clone(),
+                version: plugin.version.clone(),
+                children,
+            }
+        })
+        .collect();
+
+    let hidden = snap
+        .contribution_overrides
+        .iter()
+        .filter(|row| row.hidden)
+        .map(|row| {
+            format!(
+                "{}:{}:{}:{}",
+                row.plugin_id, row.region, row.container, row.id
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    let slot_visibility = snap
+        .slots
+        .iter()
+        .map(|slot| {
+            let key = format!(
+                "{}:{}:{}:{}",
+                slot.owner_plugin_id, slot.region, slot.container, slot.id
+            );
+            (key.clone(), !slot.hidden && !hidden.contains(&key))
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut contribution_tree = Vec::new();
+    for slot in &snap.slots {
+        let key = format!(
+            "{}:{}:{}:{}",
+            slot.owner_plugin_id, slot.region, slot.container, slot.id
+        );
+        contribution_tree.push(crate::plugin::devtools::ContributionTreeNode {
+            id: slot.id.clone(),
+            plugin_id: slot.owner_plugin_id.clone(),
+            kind: "slot".into(),
+            location: format!("{}:{}", slot.region, slot.container),
+            visible: !slot.hidden && !hidden.contains(&key),
+            diagnostics: diagnostic_codes_by_plugin
+                .get(&slot.owner_plugin_id)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    for contribution in &snap.extension_contributions {
+        if contribution.resource_kind == "slot" {
+            continue;
+        }
+        contribution_tree.push(crate::plugin::devtools::ContributionTreeNode {
+            id: contribution.id.clone(),
+            plugin_id: contribution.plugin_id.clone(),
+            kind: contribution.kind.clone(),
+            location: contribution.point_id.clone(),
+            visible: slot_visibility
+                .get(&contribution.owner_key)
+                .copied()
+                .unwrap_or(true),
+            diagnostics: diagnostic_codes_by_plugin
+                .get(&contribution.plugin_id)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    for panel in &snap.dock_panels {
+        contribution_tree.push(crate::plugin::devtools::ContributionTreeNode {
+            id: panel.id.clone(),
+            plugin_id: panel.plugin_id.clone(),
+            kind: "dock_panel".into(),
+            location: panel.area.clone(),
+            visible: panel.open,
+            diagnostics: diagnostic_codes_by_plugin
+                .get(&panel.plugin_id)
+                .cloned()
+                .unwrap_or_default(),
+        });
+    }
+    contribution_tree.sort_by(|a, b| {
+        a.plugin_id
+            .cmp(&b.plugin_id)
+            .then(a.kind.cmp(&b.kind))
+            .then(a.id.cmp(&b.id))
+    });
+    snap.contribution_tree = contribution_tree;
+
+    snap.command_tree = snap
+        .commands
+        .iter()
+        .map(|command| {
+            let mut children = vec![format!("context:{}", command.context)];
+            if !command.capabilities.is_empty() {
+                children.push(format!("capabilities:{}", command.capabilities.join(",")));
+            }
+            if !command.plugin_invocation_capabilities.is_empty() {
+                children.push(format!(
+                    "plugin_invocation_capabilities:{}",
+                    command.plugin_invocation_capabilities.join(",")
+                ));
+            }
+            crate::plugin::devtools::CommandTreeNode {
+                id: command.name.clone(),
+                plugin_id: command.plugin_id.clone(),
+                title: command.title.clone(),
+                enabled: command.enabled,
+                children,
+            }
+        })
+        .collect();
+
+    snap.autocmd_tree = snap
+        .autocmds
+        .iter()
+        .map(|autocmd| {
+            let status = if autocmd.disabled {
+                "disabled"
+            } else if autocmd.consecutive_failures > 0 {
+                "failing"
+            } else {
+                "active"
+            };
+            crate::plugin::devtools::AutocmdTreeNode {
+                id: autocmd.id.to_string(),
+                plugin_id: autocmd.plugin_id.clone(),
+                event: autocmd.event.clone(),
+                status: status.into(),
+                children: vec![
+                    format!("fires:{}", autocmd.fires),
+                    format!("failures:{}", autocmd.failures),
+                ],
+            }
+        })
+        .collect();
+}
+
+fn record_dynamic_skip(
+    dynamic: &crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration,
+    causes: &[String],
+    reason: &str,
+) {
+    let mut telemetry = dynamic.telemetry.borrow_mut();
+    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
+    telemetry.last_causes = causes.to_vec();
+    telemetry.last_status = "skipped".to_string();
+    telemetry.last_error = Some(reason.to_string());
+    telemetry.diagnostic_badge = true;
+}
+
+fn push_ui_cause(
+    map: &mut HashMap<String, Vec<UiInvalidationCause>>,
+    plugin_id: &str,
+    cause: UiInvalidationCause,
+) {
+    let entry = map.entry(plugin_id.to_string()).or_default();
+    if !entry.contains(&cause) {
+        entry.push(cause);
     }
 }
 

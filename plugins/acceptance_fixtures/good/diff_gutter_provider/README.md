@@ -1,0 +1,1 @@
+Diff gutter acceptance fixture.

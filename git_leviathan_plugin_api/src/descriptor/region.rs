@@ -181,14 +181,6 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
             dynamic_section_prefixes: NO_PREFIXES,
         },
     },
-    // extension points: dedicated chrome region for the bottom status bar.
-    RegionDescriptor {
-        name: "status_bar",
-        kind: RegionKind::Chrome {
-            sections: &["left", "center", "right"],
-            dynamic_section_prefixes: NO_PREFIXES,
-        },
-    },
     RegionDescriptor {
         name: "repository",
         kind: RegionKind::Content {
@@ -196,53 +188,19 @@ pub static REGIONS: DescriptorTable<RegionDescriptor> = DescriptorTable(&[
                 PaneDescriptor {
                     name: "sidebar",
                     sections: &["top", "bottom"],
-                    // extension points: plugins can attach to plugin-defined
-                    // sidebar sections via `section:<id>`.
-                    dynamic_section_prefixes: &["section:"],
+                    dynamic_section_prefixes: NO_PREFIXES,
                 },
                 PaneDescriptor {
-                    name: "main",
+                    name: "graph",
+                    sections: &["top", "bottom"],
+                    dynamic_section_prefixes: NO_PREFIXES,
+                },
+                PaneDescriptor {
+                    name: "details",
                     sections: &["top", "bottom"],
                     dynamic_section_prefixes: NO_PREFIXES,
                 },
             ],
-        },
-    },
-    // extension points: graph extension points (commit row decorations and
-    // graph context menu live here).
-    RegionDescriptor {
-        name: "repository.graph",
-        kind: RegionKind::Content {
-            panes: &[PaneDescriptor {
-                name: "graph",
-                sections: &["top", "decorations", "context_menu"],
-                // `row:<commit_hash>` for per-row decorations.
-                dynamic_section_prefixes: &["row:"],
-            }],
-        },
-    },
-    // extension points: details panel — commit header + files panes.
-    RegionDescriptor {
-        name: "repository.details",
-        kind: RegionKind::Content {
-            panes: &[PaneDescriptor {
-                name: "details",
-                sections: &["commit_header", "files"],
-                dynamic_section_prefixes: NO_PREFIXES,
-            }],
-        },
-    },
-    // extension points: diff panel — toolbar, hunk badges, line gutters,
-    // context menu.
-    RegionDescriptor {
-        name: "repository.diff",
-        kind: RegionKind::Content {
-            panes: &[PaneDescriptor {
-                name: "diff",
-                sections: &["toolbar", "context_menu"],
-                // `line:<file>:<line>` and `hunk:<id>`.
-                dynamic_section_prefixes: &["line:", "hunk:"],
-            }],
         },
     },
 ]);
@@ -280,65 +238,15 @@ mod tests {
     }
 
     #[test]
-    fn validate_status_bar_sections() {
-        let d = REGIONS.get("status_bar").unwrap();
-        assert!(d.validate_address(None, Some("left")).is_ok());
-        assert!(d.validate_address(None, Some("center")).is_ok());
-        assert!(d.validate_address(None, Some("right")).is_ok());
-        assert!(d.validate_address(None, Some("middle")).is_err());
-    }
-
-    #[test]
-    fn validate_dynamic_sidebar_section() {
+    fn validate_repository_panes() {
         let d = REGIONS.get("repository").unwrap();
-        assert!(d
-            .validate_address(Some("sidebar"), Some("section:foo"))
-            .is_ok());
-        // Empty tail rejected with a precise message.
-        let err = d
-            .validate_address(Some("sidebar"), Some("section:"))
-            .unwrap_err();
-        assert!(err.contains("empty tail"), "got: {err}");
-    }
-
-    #[test]
-    fn validate_dynamic_diff_addresses() {
-        let d = REGIONS.get("repository.diff").unwrap();
-        assert!(d
-            .validate_address(Some("diff"), Some("line:src/foo.rs:42"))
-            .is_ok());
-        assert!(d.validate_address(Some("diff"), Some("hunk:7")).is_ok());
-        assert!(d.validate_address(Some("diff"), Some("toolbar")).is_ok());
-        assert!(d
-            .validate_address(Some("diff"), Some("context_menu"))
-            .is_ok());
-        // Unknown prefix.
-        assert!(d.validate_address(Some("diff"), Some("zzz:1")).is_err());
-    }
-
-    #[test]
-    fn validate_dynamic_graph_row() {
-        let d = REGIONS.get("repository.graph").unwrap();
+        for pane in ["sidebar", "graph", "details"] {
+            assert!(d.validate_address(Some(pane), Some("top")).is_ok());
+            assert!(d.validate_address(Some(pane), Some("bottom")).is_ok());
+        }
         assert!(d
             .validate_address(Some("graph"), Some("row:abc123"))
-            .is_ok());
-        assert!(d
-            .validate_address(Some("graph"), Some("decorations"))
-            .is_ok());
-        assert!(d
-            .validate_address(Some("graph"), Some("context_menu"))
-            .is_ok());
-        // Static-only fixed section that doesn't exist.
-        assert!(d.validate_address(Some("graph"), Some("nope")).is_err());
-    }
-
-    #[test]
-    fn validate_details_sections() {
-        let d = REGIONS.get("repository.details").unwrap();
-        assert!(d
-            .validate_address(Some("details"), Some("commit_header"))
-            .is_ok());
-        assert!(d.validate_address(Some("details"), Some("files")).is_ok());
+            .is_err());
         assert!(d.validate_address(Some("details"), Some("nope")).is_err());
     }
 }

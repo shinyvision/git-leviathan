@@ -1,0 +1,9 @@
+id = "full_screen"
+name = "Full Screen"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture exercising public v1 plugin screens."
+capabilities = ["ui:screen"]
+
+[runtime]
+strict_globals = false

@@ -1,0 +1,9 @@
+id = "dock_panel"
+name = "Dock Panel"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture exercising public v1 dock panels."
+capabilities = ["ui:dock"]
+
+[runtime]
+strict_globals = false

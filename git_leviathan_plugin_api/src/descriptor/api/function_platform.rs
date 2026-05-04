@@ -163,7 +163,7 @@ pub(super) const PERSIST_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.persist.transaction",
         name: "transaction",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Run a persistence transaction and atomically commit only if the callback succeeds.",
         params: &[ApiParam {
@@ -189,7 +189,7 @@ pub(super) const SETTINGS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.settings.define_schema",
         name: "define_schema",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Declare a schema used to validate plugin settings before save.",
         params: &[ApiParam {
@@ -205,7 +205,7 @@ pub(super) const SETTINGS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.settings.get",
         name: "get",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Return current settings with schema defaults applied.",
         params: &[],
@@ -219,7 +219,7 @@ pub(super) const SETTINGS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.settings.set",
         name: "set",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Validate and save settings, then fire on_change callbacks.",
         params: &[ApiParam {
@@ -235,7 +235,7 @@ pub(super) const SETTINGS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.settings.on_change",
         name: "on_change",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Register a callback fired after validated settings are saved.",
         params: &[ApiParam {
@@ -254,7 +254,7 @@ pub(super) const SECRETS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.secrets.set",
         name: "set",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Store a plugin-local secret in the secrets surface.",
         params: &[
@@ -278,7 +278,7 @@ pub(super) const SECRETS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.secrets.get",
         name: "get",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Read a plugin-local secret value.",
         params: &[ApiParam {
@@ -297,7 +297,7 @@ pub(super) const SECRETS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.secrets.delete",
         name: "delete",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "Delete a plugin-local secret.",
         params: &[ApiParam {
@@ -313,7 +313,7 @@ pub(super) const SECRETS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.secrets.list",
         name: "list",
-        since: "1.13",
+        since: "1.0",
         compatibility: "v1",
         doc: "List plugin-local secret keys without exposing values.",
         params: &[],
@@ -417,7 +417,7 @@ pub(super) const HEALTH_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
 pub(super) const ASYNC_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
     path: "leviathan.async.spawn",
     name: "spawn",
-    since: "1.12",
+    since: "1.0",
     compatibility: "v1",
     doc: "Spawn a host-managed worker thread running a Lua body. Returns a handle with `:cancel()`.",
     params: &[
@@ -450,7 +450,7 @@ pub(super) const TIMER_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.timer.after",
         name: "after",
-        since: "1.12",
+        since: "1.0",
         compatibility: "v1",
         doc: "Schedule a one-shot callback after `ms` milliseconds.",
         params: &[
@@ -477,7 +477,7 @@ pub(super) const TIMER_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.timer.every",
         name: "every",
-        since: "1.12",
+        since: "1.0",
         compatibility: "v1",
         doc: "Schedule a repeating callback every `ms` milliseconds.",
         params: &[
@@ -511,7 +511,7 @@ pub(super) const COMMAND_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.command.create",
         name: "create",
-        since: "1.8",
+        since: "1.0",
         compatibility: "v1",
         doc: "Register a typed user command in the host registry.",
         params: &[
@@ -547,7 +547,7 @@ pub(super) const COMMAND_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.command.invoke",
         name: "invoke",
-        since: "1.8",
+        since: "1.0",
         compatibility: "v1",
         doc: "Invoke a registered command by name through the host dispatcher.",
         params: &[
@@ -568,20 +568,28 @@ pub(super) const COMMAND_FUNCTIONS: &[ApiFunction] = &[
             lua_type: "boolean",
             doc: "True when dispatch succeeded; false on validation/capability/run failure.",
         }],
-        capabilities: &[],
+        capabilities: &[
+            "command:invoke:<id>",
+            "git:write:<op>",
+            "repo:read",
+            "clipboard:write",
+        ],
         validation: ApiValidation {
             args: &[
                 "name must be a registered command",
                 "args must be a table or nil",
             ],
             returns: &["boolean"],
-            notes: &["Argument validation, capability checks, and dispatch happen host-side."],
+            notes: &[
+                "Argument validation, caller capability checks, and dispatch happen host-side.",
+                "Built-in commands declare their plugin-invocation capabilities in command.list().",
+            ],
         },
     },
     ApiFunction {
         path: "leviathan.command.list",
         name: "list",
-        since: "1.8",
+        since: "1.0",
         compatibility: "v1",
         doc: "List every registered command.",
         params: &[],
@@ -598,7 +606,7 @@ pub(super) const KEYMAP_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.keymap.set",
         name: "set",
-        since: "1.9",
+        since: "1.0",
         compatibility: "v1",
         doc: "Bind a key chord to a registered command in a context.",
         params: &[
@@ -645,7 +653,7 @@ pub(super) const KEYMAP_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.keymap.del",
         name: "del",
-        since: "1.9",
+        since: "1.0",
         compatibility: "v1",
         doc: "Remove a previously-registered keymap owned by the calling plugin generation.",
         params: &[
@@ -673,7 +681,7 @@ pub(super) const KEYMAP_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.keymap.list",
         name: "list",
-        since: "1.9",
+        since: "1.0",
         compatibility: "v1",
         doc: "List every registered keymap (built-in, user, plugin) including conflict losers.",
         params: &[],
@@ -690,7 +698,7 @@ pub(super) const AUTOCMD_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.autocmd.group",
         name: "group",
-        since: "1.7",
+        since: "1.0",
         compatibility: "v1",
         doc: "Create or fetch an autocmd group handle. Pass `{ clear = true }` to remove any prior autocmds in the group before returning the handle.",
         params: &[
@@ -726,7 +734,7 @@ pub(super) const AUTOCMD_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.autocmd.create",
         name: "create",
-        since: "1.7",
+        since: "1.0",
         compatibility: "v1",
         doc: "Register an autocmd for a single typed event.",
         params: &[
@@ -763,7 +771,7 @@ pub(super) const AUTOCMD_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
         path: "leviathan.autocmd.clear",
         name: "clear",
-        since: "1.7",
+        since: "1.0",
         compatibility: "v1",
         doc: "Remove every autocmd registered against a group handle.",
         params: &[ApiParam {

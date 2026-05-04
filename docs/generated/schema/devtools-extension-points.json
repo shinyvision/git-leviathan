@@ -1,0 +1,566 @@
+{
+  "cleanup": {
+    "reload": "successful reload clears previous generation extension records before staged records are installed; failed reload keeps the previous generation live",
+    "unload": "PluginHost::unload_plugin drops slot ops, dock panels, overlays, context menu items, graph decorations, and diff decorations owned by the plugin."
+  },
+  "collections": [
+    {
+      "dynamic_context": "dynamic widget functions receive the typed context for their mounted surface",
+      "fields": [
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "container",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "priority",
+          "type": "integer"
+        },
+        {
+          "name": "owner_plugin_id",
+          "type": "string"
+        }
+      ],
+      "identity": [
+        "region",
+        "container",
+        "id"
+      ],
+      "name": "slots",
+      "ordering": "host replay order; per-render registries sort by priority ascending with insertion-order ties",
+      "owner_field": "owner_plugin_id",
+      "snapshot_field": "InspectorSnapshot.slots"
+    },
+    {
+      "fields": [
+        {
+          "name": "version",
+          "type": "integer"
+        },
+        {
+          "name": "type",
+          "type": "string"
+        },
+        {
+          "name": "surface",
+          "type": "string"
+        },
+        {
+          "name": "features",
+          "type": "table<string, boolean>"
+        },
+        {
+          "name": "theme",
+          "type": "LeviathanUiThemeTokens"
+        },
+        {
+          "name": "repository",
+          "type": "LeviathanRepositorySummary"
+        },
+        {
+          "name": "tab",
+          "type": "LeviathanTabSummary"
+        },
+        {
+          "name": "selection",
+          "type": "LeviathanSelectionSummary"
+        },
+        {
+          "name": "focus",
+          "type": "LeviathanFocusSummary"
+        },
+        {
+          "name": "viewport",
+          "type": "LeviathanViewportSummary"
+        },
+        {
+          "name": "payload",
+          "type": "table"
+        }
+      ],
+      "identity": [
+        "type",
+        "surface"
+      ],
+      "mounted_context_types": [
+        "MainBarContext",
+        "TabBarContext",
+        "RepositorySidebarContext",
+        "RepositoryGraphContext",
+        "RepositoryDetailsContext"
+      ],
+      "name": "ui_contexts",
+      "placeholder_context_types": [
+        "StatusBarContext",
+        "RepositoryDiffContext",
+        "RepositoryGraphRowContext",
+        "RepositoryDiffLineContext",
+        "OverlayContext",
+        "ScreenContext",
+        "SettingsContext"
+      ],
+      "snapshot_field": "Plugin: Inspect UI Context"
+    },
+    {
+      "api": "leviathan.ui.overlay",
+      "capability": "ui:overlay",
+      "fields": [
+        {
+          "name": "plugin_id",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "priority",
+          "type": "integer"
+        },
+        {
+          "name": "dismissible",
+          "type": "boolean"
+        },
+        {
+          "name": "key_events",
+          "type": "string[]"
+        },
+        {
+          "name": "widget",
+          "type": "LeviathanWidget"
+        },
+        {
+          "name": "source_location",
+          "type": "string|null"
+        }
+      ],
+      "identity": [
+        "plugin_id",
+        "id"
+      ],
+      "name": "overlays",
+      "ordering": "priority descending, then plugin_id, then id",
+      "remove_api": "leviathan.ui.remove_overlay",
+      "snapshot_field": "InspectorSnapshot.overlays"
+    },
+    {
+      "api": "leviathan.ui.context_menu",
+      "capability": "ui:context_menu:<region>",
+      "fields": [
+        {
+          "name": "plugin_id",
+          "type": "string"
+        },
+        {
+          "name": "region",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "label",
+          "type": "string"
+        },
+        {
+          "name": "command",
+          "type": "string"
+        },
+        {
+          "name": "priority",
+          "type": "integer"
+        },
+        {
+          "name": "condition_capability",
+          "type": "string|null"
+        },
+        {
+          "name": "source_location",
+          "type": "string|null"
+        }
+      ],
+      "identity": [
+        "plugin_id",
+        "region",
+        "id"
+      ],
+      "name": "context_menu_items",
+      "ordering": "region, priority ascending, plugin_id, id",
+      "snapshot_field": "InspectorSnapshot.context_menu_items"
+    },
+    {
+      "api": "leviathan.ui.dock.register",
+      "capability": "ui:dock",
+      "dynamic_context": "view callbacks receive DockPanelContext with payload.dock metadata and persisted state",
+      "fields": [
+        {
+          "name": "plugin_id",
+          "type": "string"
+        },
+        {
+          "name": "generation_id",
+          "type": "integer"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "key",
+          "type": "string"
+        },
+        {
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "name": "area",
+          "type": "string"
+        },
+        {
+          "name": "open",
+          "type": "boolean"
+        },
+        {
+          "name": "selected",
+          "type": "boolean"
+        },
+        {
+          "name": "state",
+          "type": "LeviathanJson"
+        }
+      ],
+      "identity": [
+        "plugin_id",
+        "id"
+      ],
+      "name": "dock_panels",
+      "ordering": "area order, then panel order, plugin_id, id",
+      "snapshot_field": "InspectorSnapshot.dock_panels"
+    },
+    {
+      "api": "leviathan.ui.graph_decoration",
+      "capability": "ui:decoration:graph",
+      "fields": [
+        {
+          "name": "plugin_id",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "commit_hash",
+          "type": "string"
+        },
+        {
+          "name": "kind",
+          "type": "badge|icon|marker|lane"
+        },
+        {
+          "name": "decoration",
+          "type": "LeviathanGraphDecoration"
+        },
+        {
+          "name": "source_location",
+          "type": "string|null"
+        }
+      ],
+      "identity": [
+        "plugin_id",
+        "commit_hash",
+        "id"
+      ],
+      "name": "graph_decorations",
+      "ordering": "commit_hash, plugin_id, id",
+      "snapshot_field": "InspectorSnapshot.graph_decorations"
+    },
+    {
+      "api": "leviathan.ui.diff_decoration",
+      "capability": "ui:decoration:diff",
+      "fields": [
+        {
+          "name": "plugin_id",
+          "type": "string"
+        },
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "kind",
+          "type": "line_hint|hunk_badge|line_gutter"
+        },
+        {
+          "name": "decoration",
+          "type": "LeviathanDiffDecoration"
+        },
+        {
+          "name": "source_location",
+          "type": "string|null"
+        }
+      ],
+      "identity": [
+        "plugin_id",
+        "id"
+      ],
+      "name": "diff_decorations",
+      "ordering": "plugin_id, id",
+      "snapshot_field": "InspectorSnapshot.diff_decorations"
+    }
+  ],
+  "extension_points": [
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.left",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.center",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:main_bar"
+      ],
+      "context_schema": "MainBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "main_bar.right",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::MainBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:tab_bar"
+      ],
+      "context_schema": "TabBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "tab_bar.left",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::TabBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:tab_bar"
+      ],
+      "context_schema": "TabBarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "tab_bar.right",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::TabBar"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.sidebar.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.sidebar.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.graph.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.graph.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.details.top",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:region:repository"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanSlotSpec",
+      "id": "repository.details.bottom",
+      "kind": "slot",
+      "ordering_model": "priority ascending, then owner/id",
+      "ownership_rules": "owned by full SlotAddress(plugin, region, container, id)",
+      "render_mount_handler": "RegionMountRegistry::Repository"
+    },
+    {
+      "capabilities": [
+        "ui:context_menu:repository.diff.context_menu"
+      ],
+      "context_schema": "RepositoryDiffContext",
+      "contribution_schema": "LeviathanContextMenuItem",
+      "id": "repository.diff.context_menu",
+      "kind": "context_menu",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + point id + item id",
+      "render_mount_handler": "ExtensionRegistry::context_menu_items"
+    },
+    {
+      "capabilities": [
+        "ui:context_menu:repository.graph.context_menu"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanContextMenuItem",
+      "id": "repository.graph.context_menu",
+      "kind": "context_menu",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + point id + item id",
+      "render_mount_handler": "ExtensionRegistry::context_menu_items"
+    },
+    {
+      "capabilities": [
+        "ui:decoration:graph"
+      ],
+      "context_schema": "RepositoryGraphRowContext",
+      "contribution_schema": "LeviathanGraphDecorationContribution",
+      "id": "repository.graph.row_badge",
+      "kind": "decoration",
+      "ordering_model": "static rows by commit/plugin/id; providers in plugin/id order",
+      "ownership_rules": "owned by plugin + point id + decoration/provider id",
+      "render_mount_handler": "ExtensionRegistry::graph_decorations_for"
+    },
+    {
+      "capabilities": [
+        "ui:decoration:diff"
+      ],
+      "context_schema": "RepositoryDiffLineContext",
+      "contribution_schema": "LeviathanDiffDecorationContribution",
+      "id": "repository.diff.line_gutter",
+      "kind": "decoration",
+      "ordering_model": "static rows by plugin/id; providers in plugin/id order",
+      "ownership_rules": "owned by plugin + point id + decoration/provider id",
+      "render_mount_handler": "ExtensionRegistry::diff_decorations_for_line"
+    },
+    {
+      "capabilities": [
+        "ui:overlay"
+      ],
+      "context_schema": "OverlayContext",
+      "contribution_schema": "LeviathanOverlaySpec",
+      "id": "overlays",
+      "kind": "overlay",
+      "ordering_model": "priority descending, then plugin/id",
+      "ownership_rules": "owned by plugin + overlay id",
+      "render_mount_handler": "ExtensionRegistry::overlays"
+    },
+    {
+      "capabilities": [
+        "ui:screen"
+      ],
+      "context_schema": "ScreenContext",
+      "contribution_schema": "LeviathanScreenSpec",
+      "id": "screens",
+      "kind": "screen",
+      "ordering_model": "selected explicitly by command/user action",
+      "ownership_rules": "owned by plugin + screen id",
+      "render_mount_handler": "PluginHost::open_screen"
+    },
+    {
+      "capabilities": [],
+      "context_schema": "LeviathanUiContext",
+      "contribution_schema": "LeviathanCommandSpec",
+      "id": "commands",
+      "kind": "command",
+      "ordering_model": "registry order by plugin/name; palette/keymap projections sort independently",
+      "ownership_rules": "owned by plugin + command id",
+      "render_mount_handler": "CommandRegistry"
+    },
+    {
+      "capabilities": [],
+      "context_schema": "SettingsContext",
+      "contribution_schema": "LeviathanSettingsSchema",
+      "id": "settings.panel",
+      "kind": "settings_panel",
+      "ordering_model": "plugin id",
+      "ownership_rules": "owned by plugin settings storage",
+      "render_mount_handler": "SettingsSummary"
+    },
+    {
+      "capabilities": [
+        "ui:dock"
+      ],
+      "context_schema": "DockPanelContext",
+      "contribution_schema": "LeviathanDockPanelSpec",
+      "id": "dock.pane",
+      "kind": "dock_pane",
+      "ordering_model": "area order, then plugin/id",
+      "ownership_rules": "owned by plugin + dock panel id",
+      "render_mount_handler": "DockManager"
+    }
+  ],
+  "schema_version": 1,
+  "sources": [
+    "src/plugin/devtools.rs::InspectorSnapshot",
+    "src/plugin/host/core/runtime_introspection.rs::PluginHost::introspect",
+    "src/plugin/extensions.rs::ExtensionRegistry"
+  ],
+  "title": "Git Leviathan plugin UI devtools extension-point summary"
+}

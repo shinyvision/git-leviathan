@@ -1,0 +1,9 @@
+id = "diff_gutter_provider"
+name = "Diff Gutter Provider"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture exercising public v1 diff gutter decorations."
+capabilities = ["ui:decoration:diff"]
+
+[runtime]
+strict_globals = false

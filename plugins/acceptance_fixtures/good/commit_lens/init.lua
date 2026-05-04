@@ -26,10 +26,10 @@ leviathan.ui.graph_decoration("abc1234", {
   bg = "#305c7a",
 })
 
-leviathan.ui.regions.add_slot({
-  region = "repository.details",
+leviathan.ui.slot.add({
+  region = "repository",
   pane = "details",
-  section = "commit_header",
+  section = "top",
   id = "plugin.commit_lens.annotation",
   priority = 15,
   widget = function()

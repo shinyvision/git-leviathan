@@ -1,0 +1,6 @@
+id = "example_command_wrapper"
+name = "Example Command Wrapper"
+version = "0.1.0"
+api_version = "1.0"
+description = "Command wrapper example."
+capabilities = ["command:invoke:repository.refresh"]

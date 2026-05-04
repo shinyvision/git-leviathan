@@ -24,11 +24,11 @@ local function info_column(label, value, value_color)
   }
 end
 
-leviathan.ui.regions.replace_slot(
+leviathan.ui.slot.replace(
   { region = "main_bar", section = "left", id = "builtin.repo_info" },
   {
   region = "main_bar",
-  id = "plugin.repository_info.repository_info",
+  id = "builtin.repo_info",
   section = "left",
   priority = 10,
   widget = function()
@@ -55,7 +55,7 @@ leviathan.ui.regions.replace_slot(
   }
 )
 
-leviathan.ui.regions.remove_slot({ region = "main_bar", section = "left", id = "builtin.separator_chevron" })
-leviathan.ui.regions.remove_slot({ region = "main_bar", section = "left", id = "builtin.branch_info" })
+assert(leviathan.ui.slot.remove({ region = "main_bar", section = "left", id = "builtin.separator_chevron" }))
+assert(leviathan.ui.slot.remove({ region = "main_bar", section = "left", id = "builtin.branch_info" }))
 
 leviathan.log("repository_info plugin loaded")

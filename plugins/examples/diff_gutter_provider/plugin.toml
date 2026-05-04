@@ -1,0 +1,6 @@
+id = "example_diff_gutter_provider"
+name = "Example Diff Gutter Provider"
+version = "0.1.0"
+api_version = "1.0"
+description = "Diff gutter decoration example."
+capabilities = ["ui:decoration:diff"]

@@ -173,6 +173,110 @@ impl CapabilityGuard {
         Ok(())
     }
 
+    pub fn check_named_for_target(
+        &self,
+        capability: &str,
+        target: &str,
+        api_name: &str,
+        source_location: Option<&str>,
+        remediation: &str,
+    ) -> Result<(), String> {
+        self.check_any_named_for_target(
+            &[capability.to_string()],
+            target,
+            api_name,
+            source_location,
+            remediation,
+        )
+    }
+
+    pub fn check_any_named_for_target(
+        &self,
+        capabilities: &[String],
+        target: &str,
+        api_name: &str,
+        source_location: Option<&str>,
+        remediation: &str,
+    ) -> Result<(), String> {
+        self.check_any_named_for_target_self(
+            capabilities,
+            target,
+            api_name,
+            source_location,
+            remediation,
+        )?;
+        if let Some(caller) = self.active_service_caller() {
+            caller
+                .check_any_named_for_target_self(
+                    capabilities,
+                    target,
+                    api_name,
+                    source_location,
+                    remediation,
+                )
+                .map_err(|reason| {
+                    format!(
+                        "service caller `{}` lacks UI capability for `{target}`: {reason}",
+                        caller.plugin_id()
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    fn check_any_named_for_target_self(
+        &self,
+        capabilities: &[String],
+        target: &str,
+        api_name: &str,
+        source_location: Option<&str>,
+        remediation: &str,
+    ) -> Result<(), String> {
+        for capability in capabilities {
+            if !self.requested_set.contains(capability) {
+                continue;
+            }
+            if matches!(
+                self.grant_store
+                    .check(&self.plugin_id, &self.plugin_version, capability),
+                CheckOutcome::Allow
+            ) {
+                self.record_audit(capability, target, AuditOutcome::Allowed);
+                return Ok(());
+            }
+        }
+
+        let capability_label = capabilities.join(" or ");
+        let primary = capabilities.first().map(String::as_str).unwrap_or("");
+        let declared = capabilities
+            .iter()
+            .any(|capability| self.requested_set.contains(capability));
+        let message = if declared {
+            format!(
+                "plugin `{}` denied `{capability_label}` for `{target}` at {}; {remediation}",
+                self.plugin_id,
+                source_location.unwrap_or(api_name)
+            )
+        } else {
+            format!(
+                "plugin `{}` did not declare `{capability_label}` for `{target}` at {}; {remediation}",
+                self.plugin_id,
+                source_location.unwrap_or(api_name)
+            )
+        };
+        self.record_audit(primary, target, AuditOutcome::Denied);
+        self.record_target_diagnostic(
+            "capability.denied",
+            &capability_label,
+            target,
+            api_name,
+            source_location,
+            remediation,
+            message.clone(),
+        );
+        Err(message)
+    }
+
     fn check_named_self(&self, capability: &str) -> Result<(), String> {
         if !self.requested_set.contains(capability) {
             // Manifest never asked for this capability — the dispatcher
@@ -213,6 +317,37 @@ impl CapabilityGuard {
                 self.record_diagnostic("capability.denied", capability, "", msg.clone());
                 Err(msg)
             }
+        }
+    }
+
+    fn record_target_diagnostic(
+        &self,
+        code: &str,
+        capability: &str,
+        target: &str,
+        api_name: &str,
+        source_location: Option<&str>,
+        remediation: &str,
+        message: String,
+    ) {
+        if let Some((store, plugin_id, generation_id)) = &self.diagnostics {
+            let context = serde_json::json!({
+                "plugin_id": self.plugin_id,
+                "plugin_version": self.plugin_version,
+                "capability": capability,
+                "target": target,
+                "api": api_name,
+                "source_location": source_location,
+                "remediation": remediation,
+            });
+            store.record(
+                PluginDiagnostic::new(plugin_id.clone(), DiagnosticSeverity::Error, code, message)
+                    .with_generation(*generation_id)
+                    .with_source(PluginSourceSpan::ApiFunction {
+                        name: api_name.to_string(),
+                    })
+                    .with_context(context),
+            );
         }
     }
 

@@ -79,7 +79,7 @@ impl App {
 
         if let Some(keystroke) = keystroke_from_iced_key(&modified_key, modifiers) {
             let context = self.keymap_context();
-            let outcome = self.plugin_host.dispatch_key(context, &[keystroke]);
+            let outcome = self.plugin_host.dispatch_key(&context, &[keystroke]);
             if matches!(
                 outcome,
                 KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending
@@ -90,6 +90,10 @@ impl App {
 
         if self.no_git_screen.is_some() {
             return Task::none();
+        }
+        if let Some(screen) = self.tabs.active_plugin_screen() {
+            let msg = screen.handle_key_pressed(key, modifiers);
+            return self.update_plugin(msg);
         }
         if self.tabs.is_empty() {
             return self
@@ -102,14 +106,13 @@ impl App {
             .unwrap_or(Task::none())
     }
 
-    fn keymap_context(&self) -> &'static str {
-        if self.plugin_host.active_screen().is_none()
-            && self.no_git_screen.is_none()
-            && self.tabs.active_screen().is_some()
-        {
-            "repository"
+    fn keymap_context(&self) -> String {
+        if let Some(screen) = self.tabs.active_plugin_screen() {
+            format!("plugin_screen:{}", screen.screen_id())
+        } else if self.no_git_screen.is_none() && self.tabs.active_screen().is_some() {
+            "repository".to_string()
         } else {
-            "global"
+            "global".to_string()
         }
     }
 

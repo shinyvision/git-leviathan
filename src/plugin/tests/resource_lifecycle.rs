@@ -43,6 +43,7 @@ name = "{id}"
 version = "0.1.0"
 api_version = "1.0"
 provides_services = ["math@1"]
+capabilities = ["ui:region:main_bar", "ui:screen"]
 "#
     )
 }
@@ -54,6 +55,19 @@ id = "{id}"
 name = "{id}"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
+"#
+    )
+}
+
+fn builtin_manifest(id: &str) -> String {
+    format!(
+        r#"
+id = "{id}"
+name = "{id}"
+version = "0.1.0"
+api_version = "1.0"
+capabilities = ["ui:region:main_bar", "ui:replace:builtin", "ui:remove:builtin"]
 "#
     )
 }
@@ -88,7 +102,7 @@ fn ledger_introspection_lists_resource_lifecycle_entries() {
             ctx:ok("ok")
         end)
 
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "ledger.slot",
             section = "left",
             priority = 10,
@@ -98,7 +112,7 @@ fn ledger_introspection_lists_resource_lifecycle_entries() {
             on_click = function() end,
         }
 
-        leviathan.ui.register_screen{
+        leviathan.ui.screen.register{
             id = "screen",
             init = function() return { n = 1 } end,
             view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -155,7 +169,7 @@ fn unload_removes_all_ledger_resources_and_host_state() {
         leviathan.autocmd.create({ "FetchStarted" }, {
             callback = function() end,
         })
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "unload.slot",
             section = "left",
             priority = 10,
@@ -190,13 +204,13 @@ fn unload_removes_all_ledger_resources_and_host_state() {
 }
 
 #[test]
-fn unload_removes_owned_remove_op_so_peer_slot_replays() {
+fn remove_other_plugin_slot_is_denied() {
     let mut host = MockHost::new();
     host.load_inline(
         "peer",
         &bare_manifest("peer"),
         r#"
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "peer.slot",
             section = "left",
             priority = 10,
@@ -210,7 +224,7 @@ fn unload_removes_owned_remove_op_so_peer_slot_replays() {
         "remover",
         &bare_manifest("remover"),
         r#"
-        leviathan.ui.regions.remove_slot{
+        leviathan.ui.slot.remove{
             region = "main_bar",
             section = "left",
             id = "peer.slot",
@@ -219,17 +233,21 @@ fn unload_removes_owned_remove_op_so_peer_slot_replays() {
     )
     .expect("load remover");
 
-    assert!(!host.has_slot("peer", "main_bar", "left", "peer.slot"));
+    assert!(host.has_slot("peer", "main_bar", "left", "peer.slot"));
     let mut hidden = MainBarRegistry::new();
     host.host().apply_main_bar_slots(&mut hidden);
-    assert!(!hidden.contains("peer.slot"));
+    assert!(hidden.contains_display_id("peer.slot"));
+    assert!(!host
+        .diagnostics()
+        .by_code("schema.slot_mutation_unauthorized")
+        .is_empty());
 
     host.host_mut().unload_plugin("remover").expect("unload");
 
     assert!(host.has_slot("peer", "main_bar", "left", "peer.slot"));
     let mut replayed = MainBarRegistry::new();
     host.host().apply_main_bar_slots(&mut replayed);
-    assert!(replayed.contains("peer.slot"));
+    assert!(replayed.contains_display_id("peer.slot"));
 }
 
 #[test]
@@ -240,9 +258,9 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
 
     host.load_inline(
         "replace_a",
-        &bare_manifest("replace_a"),
+        &builtin_manifest("replace_a"),
         r#"
-        leviathan.ui.regions.replace_slot(
+        leviathan.ui.slot.replace(
             { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
             {
                 region = "main_bar",
@@ -257,9 +275,9 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
     .expect("load replace_a");
     host.load_inline(
         "replace_b",
-        &bare_manifest("replace_b"),
+        &builtin_manifest("replace_b"),
         r#"
-        leviathan.ui.regions.replace_slot(
+        leviathan.ui.slot.replace(
             { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
             {
                 region = "main_bar",
@@ -303,19 +321,19 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
         Some(builtin_fetch_priority)
     );
     assert_eq!(
-        slot_owner(&host, "main_bar", "left", "builtin.fetch_indicator"),
-        None
+        slot_owner(&host, "main_bar", "left", "builtin.fetch_indicator").as_deref(),
+        Some("builtin")
     );
 }
 
 #[test]
-fn remove_over_add_restores_peer_add_then_removes_with_owner() {
+fn remove_other_plugin_add_is_denied() {
     let mut host = MockHost::new();
     host.load_inline(
         "add_owner",
         &bare_manifest("add_owner"),
         r#"
-        leviathan.ui.regions.add_slot{
+        leviathan.ui.slot.add{
             region = "main_bar",
             section = "left",
             id = "plugin.a.slot",
@@ -329,7 +347,7 @@ fn remove_over_add_restores_peer_add_then_removes_with_owner() {
         "remove_owner",
         &bare_manifest("remove_owner"),
         r#"
-        leviathan.ui.regions.remove_slot{
+        leviathan.ui.slot.remove{
             region = "main_bar",
             section = "left",
             id = "plugin.a.slot",
@@ -339,8 +357,15 @@ fn remove_over_add_restores_peer_add_then_removes_with_owner() {
     .expect("load remove_owner");
 
     let replayed = replay_main_bar(&host);
-    assert!(!replayed.contains("plugin.a.slot"));
-    assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
+    assert!(replayed.contains_display_id("plugin.a.slot"));
+    assert_eq!(
+        slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
+        Some("add_owner")
+    );
+    assert!(!host
+        .diagnostics()
+        .by_code("schema.slot_mutation_unauthorized")
+        .is_empty());
 
     assert!(host.host_mut().disable_plugin("remove_owner"));
 
@@ -357,7 +382,7 @@ fn remove_over_add_restores_peer_add_then_removes_with_owner() {
     host.unload_plugin("add_owner").expect("unload add_owner");
 
     let replayed = replay_main_bar(&host);
-    assert!(!replayed.contains("plugin.a.slot"));
+    assert!(!replayed.contains_display_id("plugin.a.slot"));
     assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
 }
 
@@ -369,9 +394,9 @@ fn remove_builtin_reappears_after_remover_unloads() {
 
     host.load_inline(
         "builtin_remover",
-        &bare_manifest("builtin_remover"),
+        &builtin_manifest("builtin_remover"),
         r#"
-        leviathan.ui.regions.remove_slot{
+        leviathan.ui.slot.remove{
             region = "main_bar",
             section = "left",
             id = "builtin.fetch_indicator",
@@ -381,7 +406,7 @@ fn remove_builtin_reappears_after_remover_unloads() {
     .expect("load builtin_remover");
 
     let replayed = replay_main_bar(&host);
-    assert!(!replayed.contains("builtin.fetch_indicator"));
+    assert!(!replayed.contains_display_id("builtin.fetch_indicator"));
 
     host.unload_plugin("builtin_remover")
         .expect("unload builtin_remover");
@@ -394,13 +419,13 @@ fn remove_builtin_reappears_after_remover_unloads() {
 }
 
 #[test]
-fn replace_over_plugin_add_restores_add_when_replacer_unloads() {
+fn replace_other_plugin_add_is_denied() {
     let mut host = MockHost::new();
     host.load_inline(
         "plugin_add",
         &bare_manifest("plugin_add"),
         r#"
-        leviathan.ui.regions.add_slot{
+        leviathan.ui.slot.add{
             region = "main_bar",
             section = "left",
             id = "plugin.a.slot",
@@ -414,7 +439,7 @@ fn replace_over_plugin_add_restores_add_when_replacer_unloads() {
         "plugin_replace",
         &bare_manifest("plugin_replace"),
         r#"
-        leviathan.ui.regions.replace_slot(
+        leviathan.ui.slot.replace(
             { region = "main_bar", section = "left", id = "plugin.a.slot" },
             {
                 region = "main_bar",
@@ -431,12 +456,16 @@ fn replace_over_plugin_add_restores_add_when_replacer_unloads() {
     let replayed = replay_main_bar(&host);
     assert_eq!(
         main_bar_slot_priority(&replayed, "plugin.a.slot"),
-        Some(422)
+        Some(421)
     );
     assert_eq!(
         slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
-        Some("plugin_replace")
+        Some("plugin_add")
     );
+    assert!(!host
+        .diagnostics()
+        .by_code("schema.slot_mutation_unauthorized")
+        .is_empty());
 
     host.unload_plugin("plugin_replace")
         .expect("unload plugin_replace");
@@ -454,7 +483,7 @@ fn replace_over_plugin_add_restores_add_when_replacer_unloads() {
     host.unload_plugin("plugin_add").expect("unload plugin_add");
 
     let replayed = replay_main_bar(&host);
-    assert!(!replayed.contains("plugin.a.slot"));
+    assert!(!replayed.contains_display_id("plugin.a.slot"));
     assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
 }
 
@@ -545,13 +574,13 @@ fn reload_cleanup_survives_failing_lua_serialize_callback() {
         &manifest("reload_cleanup"),
         r#"
         leviathan.services.register("math@1", { id = function() return 1 end })
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "old.slot",
             section = "left",
             priority = 10,
             widget = { kind = "text", value = "old" },
         }
-        leviathan.ui.register_screen{
+        leviathan.ui.screen.register{
             id = "screen",
             init = function() return { n = 1 } end,
             view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -569,7 +598,7 @@ fn reload_cleanup_survives_failing_lua_serialize_callback() {
         &manifest("reload_cleanup"),
         r#"
         leviathan.services.register("math@1", { id = function() return 2 end })
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "new.slot",
             section = "left",
             priority = 10,

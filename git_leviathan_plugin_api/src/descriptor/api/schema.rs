@@ -1,6 +1,41 @@
 use serde::Serialize;
 
+use crate::descriptor::extension_point::ExtensionPoint;
 use crate::descriptor::widget::WidgetDescriptor;
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct StabilityPolicy {
+    pub public_api_version: &'static str,
+    pub descriptor_version: u32,
+    pub widget_schema_version: u32,
+    pub extension_point_schema_version: u32,
+    pub stability: &'static str,
+    pub migration_promise: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct CompatibilityMatrixRow {
+    pub host_version: &'static str,
+    pub plugin_api_version: &'static str,
+    pub widget_schema: u32,
+    pub extension_points: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SemverPolicy {
+    pub descriptor_versioning: &'static str,
+    pub can_add: &'static [&'static str],
+    pub requires_deprecation: &'static [&'static str],
+    pub can_remove: &'static [&'static str],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ExperimentalApi {
+    pub path: &'static str,
+    pub since: &'static str,
+    pub stability: &'static str,
+    pub migration_promise: &'static str,
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ApiVersionInfo {
@@ -129,11 +164,16 @@ pub struct ApiRegionPane {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HostApiDescription {
+    pub stability_policy: StabilityPolicy,
+    pub compatibility_matrix: &'static [CompatibilityMatrixRow],
+    pub semver_policy: SemverPolicy,
+    pub experimental_apis: &'static [ExperimentalApi],
     pub host_api_version: ApiVersionInfo,
     pub modules: &'static [ApiModule],
     pub events: &'static [ApiEvent],
     pub types: &'static [ApiType],
     pub capabilities: &'static [ApiCapability],
     pub regions: Vec<ApiRegion>,
+    pub extension_points: &'static [ExtensionPoint],
     pub widgets: Vec<&'static WidgetDescriptor>,
 }

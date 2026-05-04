@@ -165,6 +165,49 @@ fn settings_validate_before_save_and_fire_on_change() {
     assert!(PathBuf::from(&row.path).ends_with("settings.json"));
     assert!(row.schema_keys.contains(&"limit".to_string()));
     assert!(row.value_keys.contains(&"limit".to_string()));
+    assert!(row.generated_form.is_some());
+    assert!(row.custom_view.is_none());
+}
+
+#[test]
+fn settings_panel_can_use_custom_view() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "persistence_settings",
+        MANIFEST,
+        r#"
+        leviathan.settings.define_schema({
+          enabled = { type = "boolean", default = true },
+        })
+        leviathan.ui.settings.register({
+          view = function(ctx)
+            return {
+              kind = "form",
+              title = "Custom",
+              children = {
+                { kind = "text", value = "enabled=" .. tostring(ctx.values.enabled) },
+              },
+            }
+          end,
+        })
+        "#,
+    )
+    .expect("load");
+
+    let snap = host.introspect();
+    let row = snap
+        .settings
+        .iter()
+        .find(|row| row.plugin_id == "persistence_settings")
+        .expect("settings row");
+    assert!(row.generated_form.is_some());
+    assert!(row.custom_view.is_some());
+    assert!(row.custom_view_source.is_some());
+    assert!(snap.extension_contributions.iter().any(|contribution| {
+        contribution.point_id == "settings.panel"
+            && contribution.plugin_id == "persistence_settings"
+            && contribution.kind == "SettingsPanel"
+    }));
 }
 
 #[test]

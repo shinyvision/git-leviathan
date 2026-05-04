@@ -20,6 +20,8 @@ use mlua::RegistryKey;
 
 use crate::plugin::ui::widget_ast::WidgetAst;
 
+pub const MAX_EXTENSION_RECORDS_PER_KIND: usize = 1024;
+
 /// One overlay registered by a plugin. The widget tree is captured
 /// statically — overlay re-rendering on plugin state change is out of
 /// scope for extension points.
@@ -117,6 +119,103 @@ impl OverlayCallbacks {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecorationProviderTarget {
+    GraphRowBadge,
+    DiffLineGutter,
+}
+
+impl DecorationProviderTarget {
+    pub fn point_id(self) -> &'static str {
+        match self {
+            Self::GraphRowBadge => "repository.graph.row_badge",
+            Self::DiffLineGutter => "repository.diff.line_gutter",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::GraphRowBadge => "graph_row_badge",
+            Self::DiffLineGutter => "diff_line_gutter",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DecorationProviderRecord {
+    pub plugin_id: String,
+    pub id: String,
+    pub point_id: String,
+    pub target: DecorationProviderTarget,
+    pub source_location: Option<String>,
+}
+
+impl DecorationProviderRecord {
+    pub fn handle(&self) -> String {
+        format!("{}:{}", self.point_id, self.id)
+    }
+}
+
+#[derive(Default)]
+pub struct DecorationProviderCallbacks {
+    handlers: HashMap<String, RegistryKey>,
+}
+
+impl DecorationProviderCallbacks {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&mut self, handle: String, key: RegistryKey) {
+        self.handlers.insert(handle, key);
+    }
+
+    pub fn remove(&mut self, handle: &str) {
+        self.handlers.remove(handle);
+    }
+
+    pub fn get(&self, handle: &str) -> Option<&RegistryKey> {
+        self.handlers.get(handle)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecorationInvalidationReason {
+    Selection,
+    DiffLoaded,
+    RefsChanged,
+    PluginState,
+}
+
+impl DecorationInvalidationReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Selection => "selection",
+            Self::DiffLoaded => "diff_load",
+            Self::RefsChanged => "refs_change",
+            Self::PluginState => "plugin_state",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct DecorationInvalidationRecord {
+    pub revision: u64,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionContributionRecord {
+    pub plugin_id: String,
+    pub point_id: String,
+    pub kind: String,
+    pub id: String,
+    pub resource_kind: String,
+    pub owner_key: String,
+    pub dynamic: bool,
+    pub source_location: Option<String>,
+}
+
 /// One context-menu item registered at an extension point address
 /// (e.g. `repository.diff.context_menu`). The host sorts items by
 /// priority ascending; ties broken by `(plugin_id, id)` so output is
@@ -169,6 +268,9 @@ struct ExtensionInner {
     context_menu_items: Vec<ContextMenuItemRecord>,
     graph_decorations: Vec<GraphDecorationRecord>,
     diff_decorations: Vec<DiffDecorationRecord>,
+    decoration_providers: Vec<DecorationProviderRecord>,
+    decoration_revision: u64,
+    decoration_invalidations: Vec<DecorationInvalidationRecord>,
 }
 
 impl ExtensionRegistry {
@@ -178,13 +280,11 @@ impl ExtensionRegistry {
 
     pub fn add_overlay(&self, record: OverlayRecord) {
         let mut inner = self.inner.borrow_mut();
-        // Replace any prior overlay with the same (plugin_id, id) so a
-        // plugin re-registering during the same init sees stable
-        // single-occupancy semantics.
         inner
             .overlays
             .retain(|o| !(o.plugin_id == record.plugin_id && o.id == record.id));
         inner.overlays.push(record);
+        cap_vec(&mut inner.overlays);
     }
 
     pub fn remove_overlay(&self, plugin_id: &str, id: &str) {
@@ -202,6 +302,7 @@ impl ExtensionRegistry {
                 && item.id == record.id)
         });
         inner.context_menu_items.push(record);
+        cap_vec(&mut inner.context_menu_items);
     }
 
     pub fn add_graph_decoration(&self, record: GraphDecorationRecord) {
@@ -212,6 +313,8 @@ impl ExtensionRegistry {
                 && d.id == record.id)
         });
         inner.graph_decorations.push(record);
+        cap_vec(&mut inner.graph_decorations);
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
     }
 
     pub fn add_diff_decoration(&self, record: DiffDecorationRecord) {
@@ -220,6 +323,49 @@ impl ExtensionRegistry {
             .diff_decorations
             .retain(|d| !(d.plugin_id == record.plugin_id && d.id == record.id));
         inner.diff_decorations.push(record);
+        cap_vec(&mut inner.diff_decorations);
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
+    }
+
+    pub fn add_decoration_provider(&self, record: DecorationProviderRecord) {
+        let mut inner = self.inner.borrow_mut();
+        inner.decoration_providers.retain(|d| {
+            !(d.plugin_id == record.plugin_id && d.point_id == record.point_id && d.id == record.id)
+        });
+        inner.decoration_providers.push(record);
+        cap_vec(&mut inner.decoration_providers);
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
+    }
+
+    pub fn remove_context_menu_item(&self, plugin_id: &str, point_id: &str, id: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner.context_menu_items.retain(|item| {
+            !(item.plugin_id == plugin_id && item.region == point_id && item.id == id)
+        });
+    }
+
+    pub fn remove_graph_decoration(&self, plugin_id: &str, commit_hash: &str, id: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .graph_decorations
+            .retain(|d| !(d.plugin_id == plugin_id && d.commit_hash == commit_hash && d.id == id));
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
+    }
+
+    pub fn remove_diff_decoration(&self, plugin_id: &str, id: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .diff_decorations
+            .retain(|d| !(d.plugin_id == plugin_id && d.id == id));
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
+    }
+
+    pub fn remove_decoration_provider(&self, plugin_id: &str, point_id: &str, id: &str) {
+        let mut inner = self.inner.borrow_mut();
+        inner
+            .decoration_providers
+            .retain(|d| !(d.plugin_id == plugin_id && d.point_id == point_id && d.id == id));
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
     }
 
     /// Drop every record owned by `plugin_id`. Used on `unload` /
@@ -232,6 +378,67 @@ impl ExtensionRegistry {
             .retain(|item| item.plugin_id != plugin_id);
         inner.graph_decorations.retain(|d| d.plugin_id != plugin_id);
         inner.diff_decorations.retain(|d| d.plugin_id != plugin_id);
+        inner
+            .decoration_providers
+            .retain(|d| d.plugin_id != plugin_id);
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
+    }
+
+    pub fn replace_plugin_records_from(&self, plugin_id: &str, staged: &ExtensionRegistry) {
+        let staged_inner = staged.inner.borrow();
+        let mut inner = self.inner.borrow_mut();
+        inner.overlays.retain(|o| o.plugin_id != plugin_id);
+        inner
+            .context_menu_items
+            .retain(|item| item.plugin_id != plugin_id);
+        inner.graph_decorations.retain(|d| d.plugin_id != plugin_id);
+        inner.diff_decorations.retain(|d| d.plugin_id != plugin_id);
+        inner
+            .decoration_providers
+            .retain(|d| d.plugin_id != plugin_id);
+
+        inner.overlays.extend(
+            staged_inner
+                .overlays
+                .iter()
+                .filter(|o| o.plugin_id == plugin_id)
+                .cloned(),
+        );
+        inner.context_menu_items.extend(
+            staged_inner
+                .context_menu_items
+                .iter()
+                .filter(|item| item.plugin_id == plugin_id)
+                .cloned(),
+        );
+        inner.graph_decorations.extend(
+            staged_inner
+                .graph_decorations
+                .iter()
+                .filter(|d| d.plugin_id == plugin_id)
+                .cloned(),
+        );
+        inner.diff_decorations.extend(
+            staged_inner
+                .diff_decorations
+                .iter()
+                .filter(|d| d.plugin_id == plugin_id)
+                .cloned(),
+        );
+        inner.decoration_providers.extend(
+            staged_inner
+                .decoration_providers
+                .iter()
+                .filter(|d| d.plugin_id == plugin_id)
+                .cloned(),
+        );
+
+        cap_vec(&mut inner.overlays);
+        cap_vec(&mut inner.context_menu_items);
+        cap_vec(&mut inner.graph_decorations);
+        cap_vec(&mut inner.diff_decorations);
+        cap_vec(&mut inner.decoration_providers);
+        invalidate_inner(&mut inner, DecorationInvalidationReason::PluginState);
     }
 
     pub fn overlays(&self) -> Vec<OverlayRecord> {
@@ -315,6 +522,179 @@ impl ExtensionRegistry {
         let mut v = inner.diff_decorations.clone();
         v.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.id.cmp(&b.id)));
         v
+    }
+
+    pub fn diff_decorations_for_line(&self, file: &str, line: u32) -> Vec<DiffDecorationRecord> {
+        let inner = self.inner.borrow();
+        let mut v: Vec<DiffDecorationRecord> = inner
+            .diff_decorations
+            .iter()
+            .filter(|d| diff_decoration_matches_line(&d.decoration, file, line))
+            .cloned()
+            .collect();
+        v.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.id.cmp(&b.id)));
+        v
+    }
+
+    pub fn decoration_providers(
+        &self,
+        target: DecorationProviderTarget,
+    ) -> Vec<DecorationProviderRecord> {
+        let inner = self.inner.borrow();
+        let mut v: Vec<DecorationProviderRecord> = inner
+            .decoration_providers
+            .iter()
+            .filter(|p| p.target == target)
+            .cloned()
+            .collect();
+        v.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.id.cmp(&b.id)));
+        v
+    }
+
+    pub fn all_decoration_providers(&self) -> Vec<DecorationProviderRecord> {
+        let inner = self.inner.borrow();
+        let mut v = inner.decoration_providers.clone();
+        v.sort_by(|a, b| {
+            a.point_id
+                .cmp(&b.point_id)
+                .then(a.plugin_id.cmp(&b.plugin_id))
+                .then(a.id.cmp(&b.id))
+        });
+        v
+    }
+
+    pub fn invalidate_decorations(&self, reason: DecorationInvalidationReason) {
+        invalidate_inner(&mut self.inner.borrow_mut(), reason);
+    }
+
+    pub fn decoration_revision(&self) -> u64 {
+        self.inner.borrow().decoration_revision
+    }
+
+    pub fn decoration_invalidations(&self) -> Vec<DecorationInvalidationRecord> {
+        self.inner.borrow().decoration_invalidations.clone()
+    }
+
+    pub fn all_contributions(&self) -> Vec<ExtensionContributionRecord> {
+        let inner = self.inner.borrow();
+        let mut rows = Vec::new();
+        for o in &inner.overlays {
+            rows.push(ExtensionContributionRecord {
+                plugin_id: o.plugin_id.clone(),
+                point_id: "overlays".into(),
+                kind: "Overlay".into(),
+                id: o.id.clone(),
+                resource_kind: "overlay".into(),
+                owner_key: format!("{}:{}", o.plugin_id, o.id),
+                dynamic: false,
+                source_location: o.source_location.clone(),
+            });
+        }
+        for c in &inner.context_menu_items {
+            rows.push(ExtensionContributionRecord {
+                plugin_id: c.plugin_id.clone(),
+                point_id: c.region.clone(),
+                kind: "ContextMenu".into(),
+                id: c.id.clone(),
+                resource_kind: "context_menu_item".into(),
+                owner_key: format!("{}:{}:{}", c.plugin_id, c.region, c.id),
+                dynamic: false,
+                source_location: c.source_location.clone(),
+            });
+        }
+        for g in &inner.graph_decorations {
+            rows.push(ExtensionContributionRecord {
+                plugin_id: g.plugin_id.clone(),
+                point_id: graph_point_id(&g.decoration).into(),
+                kind: "Decoration".into(),
+                id: g.id.clone(),
+                resource_kind: "graph_decoration".into(),
+                owner_key: format!("{}:{}:{}", g.plugin_id, g.commit_hash, g.id),
+                dynamic: false,
+                source_location: g.source_location.clone(),
+            });
+        }
+        for d in &inner.diff_decorations {
+            rows.push(ExtensionContributionRecord {
+                plugin_id: d.plugin_id.clone(),
+                point_id: diff_point_id(&d.decoration).into(),
+                kind: "Decoration".into(),
+                id: d.id.clone(),
+                resource_kind: "diff_decoration".into(),
+                owner_key: format!("{}:{}", d.plugin_id, d.id),
+                dynamic: false,
+                source_location: d.source_location.clone(),
+            });
+        }
+        for p in &inner.decoration_providers {
+            rows.push(ExtensionContributionRecord {
+                plugin_id: p.plugin_id.clone(),
+                point_id: p.point_id.clone(),
+                kind: "Decoration".into(),
+                id: p.id.clone(),
+                resource_kind: format!("{}_provider", p.target.as_str()),
+                owner_key: format!("{}:{}:{}", p.plugin_id, p.point_id, p.id),
+                dynamic: true,
+                source_location: p.source_location.clone(),
+            });
+        }
+        rows.sort_by(|a, b| {
+            a.point_id
+                .cmp(&b.point_id)
+                .then(a.plugin_id.cmp(&b.plugin_id))
+                .then(a.id.cmp(&b.id))
+        });
+        rows
+    }
+}
+
+fn cap_vec<T>(values: &mut Vec<T>) {
+    if values.len() > MAX_EXTENSION_RECORDS_PER_KIND {
+        let overflow = values.len() - MAX_EXTENSION_RECORDS_PER_KIND;
+        values.drain(0..overflow);
+    }
+}
+
+fn invalidate_inner(inner: &mut ExtensionInner, reason: DecorationInvalidationReason) {
+    inner.decoration_revision = inner.decoration_revision.wrapping_add(1);
+    inner
+        .decoration_invalidations
+        .push(DecorationInvalidationRecord {
+            revision: inner.decoration_revision,
+            reason: reason.as_str().to_string(),
+        });
+    if inner.decoration_invalidations.len() > 32 {
+        let overflow = inner.decoration_invalidations.len() - 32;
+        inner.decoration_invalidations.drain(0..overflow);
+    }
+}
+
+fn diff_decoration_matches_line(decoration: &DiffDecoration, file: &str, line: u32) -> bool {
+    match decoration {
+        DiffDecoration::LineHint {
+            file: f, line: l, ..
+        }
+        | DiffDecoration::LineGutter {
+            file: f, line: l, ..
+        } => f == file && *l == line,
+        DiffDecoration::HunkBadge { .. } => false,
+    }
+}
+
+fn graph_point_id(decoration: &GraphDecoration) -> &'static str {
+    match decoration {
+        GraphDecoration::Badge { .. } => "repository.graph.row_badge",
+        GraphDecoration::Icon { .. } => "repository.graph.row_icon",
+        GraphDecoration::Marker { .. } => "repository.graph.row_marker",
+        GraphDecoration::Lane { .. } => "repository.graph.lane",
+    }
+}
+
+fn diff_point_id(decoration: &DiffDecoration) -> &'static str {
+    match decoration {
+        DiffDecoration::LineHint { .. } => "repository.diff.line_hint",
+        DiffDecoration::HunkBadge { .. } => "repository.diff.hunk_badge",
+        DiffDecoration::LineGutter { .. } => "repository.diff.line_gutter",
     }
 }
 

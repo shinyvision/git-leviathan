@@ -465,6 +465,7 @@ api_version = "1.0"
 			name = "P"
 			version = "0.1.0"
 			api_version = "1.0"
+			capabilities = ["ui:region:main_bar"]
 		"#,
             "",
         )
@@ -702,16 +703,24 @@ api_version = "1.0"
         assert_eq!(
             snapshot,
             concat!(
-				"api_version = \"1.0\"\n",
-				"main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
-				"main_bar left builtin.fetch_indicator priority=40 owner=dancing_banana_test\n",
-				"main_bar left builtin.repo_info priority=10 owner=repository_info\n",
-				"main_bar right plugin.file_explorer.files priority=100 owner=file_explorer\n",
-				"main_bar right plugin.foo_demo.foo priority=101 owner=foo_demo\n",
-				"repository sidebar.top plugin.regions_demo.banner priority=10 owner=regions_demo\n",
-				"tab_bar center builtin.tab_list priority=10 owner=tablist_demo\n",
-				"tab_bar right plugin.regions_demo.tag priority=10 owner=regions_demo\n",
-			)
+                "api_version = \"1.0\"\n",
+                "main_bar center builtin.branch priority=30 owner=builtin\n",
+                "main_bar center builtin.pop priority=50 owner=builtin\n",
+                "main_bar center builtin.pull priority=10 owner=builtin\n",
+                "main_bar center builtin.push priority=20 owner=builtin\n",
+                "main_bar center builtin.stash priority=40 owner=builtin\n",
+                "main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
+                "main_bar left builtin.fetch_indicator priority=40 owner=dancing_banana_test\n",
+                "main_bar left builtin.repo_info priority=10 owner=repository_info\n",
+                "main_bar right builtin.search priority=10 owner=builtin\n",
+                "main_bar right plugin.file_explorer.files priority=100 owner=file_explorer\n",
+                "main_bar right plugin.foo_demo.foo priority=101 owner=foo_demo\n",
+                "repository sidebar.top plugin.regions_demo.banner priority=10 owner=regions_demo\n",
+                "tab_bar center builtin.tab_list priority=10 owner=tablist_demo\n",
+                "tab_bar left builtin.plus_button priority=10 owner=builtin\n",
+                "tab_bar right builtin.version_label priority=10 owner=builtin\n",
+                "tab_bar right plugin.regions_demo.tag priority=10 owner=regions_demo\n",
+            )
         );
     }
 
@@ -765,11 +774,7 @@ api_version = "1.0"
                 "api_version = \"1.0\"\n",
                 "main_bar: chrome sections=[left, center, right]\n",
                 "tab_bar: chrome sections=[left, center, right]\n",
-                "status_bar: chrome sections=[left, center, right]\n",
-                "repository: content panes=[sidebar(top,bottom+dyn[section:]), main(top,bottom)]\n",
-                "repository.graph: content panes=[graph(top,decorations,context_menu+dyn[row:])]\n",
-                "repository.details: content panes=[details(commit_header,files)]\n",
-                "repository.diff: content panes=[diff(toolbar,context_menu+dyn[line:,hunk:])]\n",
+                "repository: content panes=[sidebar(top,bottom), graph(top,bottom), details(top,bottom)]\n",
             )
         );
     }
@@ -801,12 +806,13 @@ api_version = "1.0"
             r#"
 		[manifest]
 		id = "buggy"
-		name = "buggy"
-		version = "0.1.0"
-		api_version = "1.0"
+			name = "buggy"
+			version = "0.1.0"
+			api_version = "1.0"
+			capabilities = ["ui:region:main_bar"]
 
 		[init.lua]
-		leviathan.ui.regions.add_slot{ region = "main_bar", id = "x", section = "nope", priority = 0, widget = { kind = "text", value = "hi" } }
+		assert(leviathan.ui.slot.add{ region = "main_bar", id = "x", section = "nope", priority = 0, widget = { kind = "text", value = "hi" } })
 		"#,
         );
         let s = match r {
@@ -825,12 +831,13 @@ api_version = "1.0"
             "counter",
             r#"
 			id = "counter"
-			name = "Counter"
-			version = "0.1.0"
-			api_version = "1.0"
+				name = "Counter"
+				version = "0.1.0"
+				api_version = "1.0"
+				capabilities = ["ui:screen"]
 			"#,
             r#"
-			leviathan.ui.register_screen{
+			leviathan.ui.screen.register{
 				id = "counter",
 				init = function() return { n = 0 } end,
 				view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -864,12 +871,13 @@ api_version = "1.0"
             "no_persist",
             r#"
 			id = "no_persist"
-			name = "no_persist"
-			version = "0.1.0"
-			api_version = "1.0"
+				name = "no_persist"
+				version = "0.1.0"
+				api_version = "1.0"
+				capabilities = ["ui:screen"]
 			"#,
             r#"
-			leviathan.ui.register_screen{
+			leviathan.ui.screen.register{
 				id = "main",
 				init = function() return { n = 0 } end,
 				view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -899,12 +907,13 @@ api_version = "1.0"
             "v1plugin",
             r#"
 			id = "v1plugin"
-			name = "v1"
-			version = "0.1.0"
-			api_version = "1.0"
+				name = "v1"
+				version = "0.1.0"
+				api_version = "1.0"
+				capabilities = ["ui:region:main_bar"]
 			"#,
             r#"
-			leviathan.ui.regions.add_slot{ region = "main_bar",
+			leviathan.ui.slot.add{ region = "main_bar",
 				id = "v1.slot",
 				section = "left",
 				priority = 50,
@@ -1254,7 +1263,7 @@ api_version = "1.0"
 				id = "{id}"
 				name = "{id}"
 				version = "0.1.0"
-				api_version = "1.0"
+					api_version = "1.0"
 				"#
                 ),
                 &format!(
@@ -1280,10 +1289,10 @@ api_version = "1.0"
                 &format!(
                     r#"
 				id = "{id}"
-				name = "{id}"
-				version = "0.1.0"
-				api_version = "1.0"
-				"#
+					name = "{id}"
+					version = "0.1.0"
+					api_version = "1.0"
+					"#
                 ),
                 "",
             )
@@ -1315,11 +1324,12 @@ api_version = "1.0"
             r#"
 			id = "owner"
 			name = "owner"
-			version = "0.1.0"
-			api_version = "1.0"
+				version = "0.1.0"
+				api_version = "1.0"
+				capabilities = ["ui:region:main_bar"]
 			"#,
             r#"
-			leviathan.ui.regions.add_slot{ region = "main_bar",
+			leviathan.ui.slot.add{ region = "main_bar",
 				id = "owner.slot",
 				section = "left",
 				priority = 50,
@@ -1347,8 +1357,9 @@ api_version = "1.0"
             r#"
 			id = "publisher"
 			name = "publisher"
-			version = "0.1.0"
-			api_version = "1.0"
+				version = "0.1.0"
+				api_version = "1.0"
+				capabilities = ["ui:region:main_bar"]
 			provides_services = ["math@1"]
 			"#,
             r#"

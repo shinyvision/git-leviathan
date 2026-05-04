@@ -145,6 +145,47 @@ impl CommandContext {
     pub const GLOBAL: &'static str = "global";
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandAvailability {
+    pub enabled: bool,
+    pub reason: Option<String>,
+}
+
+impl CommandAvailability {
+    pub fn enabled() -> Self {
+        Self {
+            enabled: true,
+            reason: None,
+        }
+    }
+
+    pub fn disabled(reason: impl Into<String>) -> Self {
+        Self {
+            enabled: false,
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CommandHooks {
+    pub before: bool,
+    pub after: bool,
+    pub veto: bool,
+    pub replace: bool,
+}
+
+impl CommandHooks {
+    pub fn result_event_only() -> Self {
+        Self {
+            before: false,
+            after: true,
+            veto: false,
+            replace: false,
+        }
+    }
+}
+
 /// One command — descriptor + body + ownership info.
 pub struct CommandDescriptor {
     pub name: String,
@@ -156,6 +197,11 @@ pub struct CommandDescriptor {
     pub args: Vec<CommandArg>,
     pub destructive: bool,
     pub capabilities: Vec<String>,
+    pub plugin_invocation_capabilities: Vec<String>,
+    pub availability: CommandAvailability,
+    pub keymap_eligible: bool,
+    pub palette_visible: bool,
+    pub hooks: CommandHooks,
     pub run: CommandBody,
 }
 
@@ -177,6 +223,7 @@ pub enum InvokeOutcome {
     Ok,
     InvalidArgs(Vec<String>),
     CapabilityDenied(String),
+    ContextDenied(String),
     NotFound,
     /// The body returned an error (Lua raised, or a host runner
     /// returned `Err`). The string is the runner-reported cause.
@@ -226,6 +273,18 @@ pub trait CommandRunner {
     /// when denied. Implementations should also emit an audit-log
     /// entry so the security trail is complete.
     fn check_capability(&mut self, plugin_id: &str, capability: &str) -> Result<(), String>;
+
+    fn check_invocation_capability(
+        &mut self,
+        command_name: &str,
+        capability: &str,
+    ) -> Result<(), String>;
+
+    fn check_invocation_context(
+        &mut self,
+        command_name: &str,
+        command_context: &str,
+    ) -> Result<(), String>;
 
     /// Fire the typed `CommandExecuted` event. The registry calls this
     /// after every dispatch attempt that reached the body (i.e. not
@@ -465,6 +524,12 @@ impl CommandRegistry {
                 context: e.descriptor.context.clone(),
                 destructive: e.descriptor.destructive,
                 capabilities: e.descriptor.capabilities.clone(),
+                plugin_invocation_capabilities: e.descriptor.plugin_invocation_capabilities.clone(),
+                enabled: e.descriptor.availability.enabled,
+                disabled_reason: e.descriptor.availability.reason.clone(),
+                keymap_eligible: e.descriptor.keymap_eligible,
+                palette_visible: e.descriptor.palette_visible,
+                hooks: e.descriptor.hooks,
                 args: e
                     .descriptor
                     .args
@@ -515,6 +580,7 @@ fn invoke_entry(
     let plugin_id = entry.descriptor.plugin_id.clone();
     let context = entry.descriptor.context.clone();
     let capabilities = entry.descriptor.capabilities.clone();
+    let invocation_capabilities = entry.descriptor.plugin_invocation_capabilities.clone();
     let generation_id = entry.descriptor.generation_id;
 
     // Validate.
@@ -565,6 +631,52 @@ fn invoke_entry(
                 diag = diag.with_generation(gid);
             }
             diagnostics.record(diag);
+            return (InvokeOutcome::CapabilityDenied(cap.clone()), 0);
+        }
+    }
+
+    if let Err(reason) = runner.check_invocation_context(name, &context) {
+        diagnostics.record(
+            PluginDiagnostic::new(
+                PluginId::from(plugin_id.as_str()),
+                DiagnosticSeverity::Error,
+                "command.context_denied",
+                format!("command `{name}` denied in context `{context}`: {reason}"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("command:{name}"),
+            })
+            .with_context(serde_json::json!({
+                "name": name,
+                "plugin_id": plugin_id,
+                "context": context,
+                "target": name,
+                "reason": reason,
+            })),
+        );
+        return (InvokeOutcome::ContextDenied(context), 0);
+    }
+
+    for cap in &invocation_capabilities {
+        if let Err(reason) = runner.check_invocation_capability(name, cap) {
+            diagnostics.record(
+                PluginDiagnostic::new(
+                    PluginId::from(plugin_id.as_str()),
+                    DiagnosticSeverity::Error,
+                    "command.capability_denied",
+                    format!("command `{name}` denied: caller lacks `{cap}` ({reason})"),
+                )
+                .with_source(PluginSourceSpan::ApiFunction {
+                    name: format!("command:{name}"),
+                })
+                .with_context(serde_json::json!({
+                    "name": name,
+                    "capability": cap,
+                    "plugin_id": plugin_id,
+                    "context": context,
+                    "target": name,
+                })),
+            );
             return (InvokeOutcome::CapabilityDenied(cap.clone()), 0);
         }
     }
@@ -696,6 +808,12 @@ pub struct CommandSummary {
     pub context: String,
     pub destructive: bool,
     pub capabilities: Vec<String>,
+    pub plugin_invocation_capabilities: Vec<String>,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
+    pub keymap_eligible: bool,
+    pub palette_visible: bool,
+    pub hooks: CommandHooks,
     pub args: Vec<CommandArgSummary>,
     pub fires: u64,
     pub failures: u64,
@@ -849,6 +967,11 @@ pub fn build_descriptor(
         args,
         destructive: raw.destructive,
         capabilities: raw.capabilities,
+        plugin_invocation_capabilities: Vec::new(),
+        availability: CommandAvailability::enabled(),
+        keymap_eligible: true,
+        palette_visible: true,
+        hooks: CommandHooks::result_event_only(),
         run: CommandBody::Lua {
             callback: raw.callback,
         },
@@ -954,10 +1077,17 @@ pub struct CommandDispatchEnv {
     pub plugin_registry: CommandPluginRegistry,
     pub diagnostics: DiagnosticStore,
     pub pending_events: PendingCommandEvents,
+    pub active_context: Rc<RefCell<serde_json::Value>>,
     /// performance budget tracker. Threaded through so the dispatcher
     /// can wrap each command body in a `track_call` against the
     /// `CommandCallback` budget.
     pub budget_tracker: crate::plugin::performance::BudgetTracker,
+}
+
+#[derive(Clone)]
+pub struct CommandInvocationCaller {
+    pub plugin_id: String,
+    pub capability_guard: Option<Rc<crate::plugin::capabilities::CapabilityGuard>>,
 }
 
 /// Synchronous dispatch entry point used by both the Lua shim and the
@@ -974,9 +1104,20 @@ pub fn dispatch_command(
     name: &str,
     args: serde_json::Value,
 ) -> InvokeOutcome {
+    dispatch_command_as(env, None, name, args)
+}
+
+pub fn dispatch_command_as(
+    env: &CommandDispatchEnv,
+    caller: Option<CommandInvocationCaller>,
+    name: &str,
+    args: serde_json::Value,
+) -> InvokeOutcome {
     let mut runner = DispatchEnvRunner {
         plugin_registry: env.plugin_registry.clone(),
         pending_events: env.pending_events.clone(),
+        active_context: Rc::clone(&env.active_context),
+        caller,
     };
     let Some((mut entry, index)) = detach_command_for_dispatch(&env.commands, name) else {
         record_command_not_found(&env.diagnostics, name);
@@ -1022,6 +1163,8 @@ fn reattach_command_after_dispatch(
 pub struct DispatchEnvRunner {
     plugin_registry: CommandPluginRegistry,
     pending_events: PendingCommandEvents,
+    active_context: Rc<RefCell<serde_json::Value>>,
+    caller: Option<CommandInvocationCaller>,
 }
 
 impl CommandRunner for DispatchEnvRunner {
@@ -1061,6 +1204,63 @@ impl CommandRunner for DispatchEnvRunner {
         ctx.capability_guard.check_named(capability)
     }
 
+    fn check_invocation_capability(
+        &mut self,
+        command_name: &str,
+        capability: &str,
+    ) -> Result<(), String> {
+        let Some(caller) = self.caller.as_ref() else {
+            return Ok(());
+        };
+        if caller.plugin_id == HOST_COMMAND_PLUGIN_ID
+            || caller.plugin_id == crate::plugin::keymap::USER_KEYMAP_PLUGIN_ID
+        {
+            return Ok(());
+        }
+        if let Some(guard) = caller.capability_guard.as_ref() {
+            return guard.check_named_for_target(
+                capability,
+                command_name,
+                "leviathan.command.invoke",
+                None,
+                "add the capability to plugin.toml",
+            );
+        }
+        let ctx = self
+            .plugin_registry
+            .get(&caller.plugin_id)
+            .ok_or_else(|| format!("plugin `{}` is not loaded", caller.plugin_id))?;
+        ctx.capability_guard.check_named_for_target(
+            capability,
+            command_name,
+            "leviathan.command.invoke",
+            None,
+            "add the capability to plugin.toml",
+        )
+    }
+
+    fn check_invocation_context(
+        &mut self,
+        _command_name: &str,
+        command_context: &str,
+    ) -> Result<(), String> {
+        let Some(caller) = self.caller.as_ref() else {
+            return Ok(());
+        };
+        if caller.plugin_id == HOST_COMMAND_PLUGIN_ID
+            || caller.plugin_id == crate::plugin::keymap::USER_KEYMAP_PLUGIN_ID
+            || caller.capability_guard.is_none()
+        {
+            return Ok(());
+        }
+        let active = self.active_context.borrow();
+        if command_context_allowed(command_context, &active) {
+            Ok(())
+        } else {
+            Err(format!("active surface is `{}`", context_surface(&active)))
+        }
+    }
+
     fn emit_command_executed(&mut self, name: &str, plugin_id: &str, ok: bool, duration_ms: u128) {
         self.pending_events.push(PendingCommandEvent {
             name: name.to_string(),
@@ -1069,6 +1269,30 @@ impl CommandRunner for DispatchEnvRunner {
             duration_ms,
         });
     }
+}
+
+fn command_context_allowed(command_context: &str, active: &serde_json::Value) -> bool {
+    if command_context == CommandContext::GLOBAL {
+        return true;
+    }
+    if command_context == "repository" || command_context.starts_with("repository.") {
+        return active
+            .pointer("/repository/is_open")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+    }
+    if command_context == "tab_bar" {
+        return active
+            .pointer("/tab/count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            > 0;
+    }
+    context_surface(active) == command_context
+}
+
+fn context_surface(active: &serde_json::Value) -> &str {
+    active.get("surface").and_then(|v| v.as_str()).unwrap_or("")
 }
 
 impl CommandEntry {
@@ -1152,6 +1376,9 @@ impl PaletteState {
         let needle = self.query.to_ascii_lowercase();
         let mut scored: Vec<(u32, &CommandSummary)> = Vec::new();
         for summary in summaries {
+            if !summary.palette_visible {
+                continue;
+            }
             if summary.destructive && !self.show_destructive {
                 continue;
             }
@@ -1224,6 +1451,11 @@ mod tests {
             args: Vec::new(),
             destructive: false,
             capabilities: Vec::new(),
+            plugin_invocation_capabilities: Vec::new(),
+            availability: CommandAvailability::enabled(),
+            keymap_eligible: true,
+            palette_visible: true,
+            hooks: CommandHooks::result_event_only(),
             run: CommandBody::Host(Box::new(|_| Ok(()))),
         }
     }
@@ -1254,6 +1486,20 @@ mod tests {
             } else {
                 Ok(())
             }
+        }
+        fn check_invocation_capability(
+            &mut self,
+            _command_name: &str,
+            capability: &str,
+        ) -> Result<(), String> {
+            self.check_capability("caller", capability)
+        }
+        fn check_invocation_context(
+            &mut self,
+            _command_name: &str,
+            _command_context: &str,
+        ) -> Result<(), String> {
+            Ok(())
         }
         fn emit_command_executed(
             &mut self,
@@ -1303,6 +1549,11 @@ mod tests {
                 args: Vec::new(),
                 destructive: false,
                 capabilities: Vec::new(),
+                plugin_invocation_capabilities: Vec::new(),
+                availability: CommandAvailability::enabled(),
+                keymap_eligible: true,
+                palette_visible: true,
+                hooks: CommandHooks::result_event_only(),
                 run: CommandBody::Host(Box::new(move |_| {
                     let names: Vec<String> = commands_for_body
                         .borrow()
@@ -1323,6 +1574,11 @@ mod tests {
             plugin_registry: CommandPluginRegistry::new(),
             diagnostics,
             pending_events: PendingCommandEvents::new(),
+            active_context: Rc::new(RefCell::new(serde_json::json!({
+                "surface": "screen",
+                "repository": { "is_open": false },
+                "tab": { "count": 0 },
+            }))),
             budget_tracker: budget_tracker(),
         };
 

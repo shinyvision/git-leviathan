@@ -4,12 +4,18 @@ use std::fmt;
 
 use serde_json::Value;
 
+use crate::plugin::ui::widget_ast_semantic::{
+    self, AstAssetRef, LayoutNode, LayoutTab, SemanticColumn, SemanticItem, SemanticNode,
+    SemanticOption, SemanticRow, WidgetMeta,
+};
+
 /// Hard ceilings on decoded widget trees.
 #[derive(Debug, Clone, Copy)]
 pub struct WidgetLimits {
     pub max_tree_depth: usize,
     pub max_node_count: usize,
     pub max_string_length: usize,
+    pub max_asset_path_length: usize,
     pub max_image_size_bytes: u64,
 }
 
@@ -18,6 +24,7 @@ impl WidgetLimits {
         max_tree_depth: 64,
         max_node_count: 4096,
         max_string_length: 64 * 1024,
+        max_asset_path_length: 256,
         max_image_size_bytes: 8 * 1024 * 1024,
     };
 }
@@ -42,6 +49,7 @@ pub mod codes {
     pub const NODE_COUNT_EXCEEDED: &str = "widget.node_count_exceeded";
     pub const STRING_TOO_LONG: &str = "widget.string_too_long";
     pub const IMAGE_TOO_LARGE: &str = "widget.image_too_large";
+    pub const ASSET_LIMIT_EXCEEDED: &str = "widget.asset_limit_exceeded";
     pub const NOT_A_TABLE: &str = "widget.not_a_table";
 }
 
@@ -115,6 +123,7 @@ pub enum AstAlignY {
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstColor {
     pub raw: String,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,6 +191,7 @@ impl NodeId {
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetAst {
     pub node_id: NodeId,
+    pub meta: WidgetMeta,
     pub node: WidgetNode,
 }
 
@@ -205,13 +215,15 @@ pub enum WidgetNode {
     MouseArea(MouseAreaNode),
     Tablist(TablistNode),
     ResizableSplit(ResizableSplitNode),
+    Semantic(SemanticNode),
+    Layout(LayoutNode),
 }
 
 impl WidgetNode {
     /// Stable kind discriminator — mirrors the `kind` field plugins
     /// write in Lua. Useful for telemetry, snapshot tests, and the
     /// `widget.decoded` diagnostic context.
-    pub fn kind(&self) -> &'static str {
+    pub fn kind(&self) -> &str {
         match self {
             Self::Text(_) => "text",
             Self::Button(_) => "button",
@@ -227,6 +239,8 @@ impl WidgetNode {
             Self::MouseArea(_) => "mouse_area",
             Self::Tablist(_) => "tablist",
             Self::ResizableSplit(_) => "resizable_split",
+            Self::Semantic(n) => n.kind.as_str(),
+            Self::Layout(n) => n.kind.as_str(),
         }
     }
 }
@@ -313,6 +327,7 @@ pub struct SpaceNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct IconNode {
     pub path: String,
+    pub asset: Option<AstAssetRef>,
     pub size: f32,
     pub color: Option<AstColor>,
 }
@@ -320,6 +335,7 @@ pub struct IconNode {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageNode {
     pub path: String,
+    pub asset: Option<AstAssetRef>,
     pub size: f32,
 }
 
@@ -455,6 +471,7 @@ fn decode_node(
         _ => NodeId::from_path(path),
     };
 
+    let meta = decode_meta(obj, path, ctx)?;
     let node = match kind {
         "text" => WidgetNode::Text(decode_text(obj, path, ctx)?),
         "button" => WidgetNode::Button(decode_button(obj, path, depth, ctx)?),
@@ -472,6 +489,12 @@ fn decode_node(
         "resizable_split" => {
             WidgetNode::ResizableSplit(decode_resizable_split(obj, path, depth, ctx)?)
         }
+        other if widget_ast_semantic::is_semantic_kind(other) => {
+            WidgetNode::Semantic(decode_semantic(other, obj, path, depth, ctx)?)
+        }
+        other if widget_ast_semantic::is_layout_kind(other) => {
+            WidgetNode::Layout(decode_layout(other, obj, path, depth, ctx)?)
+        }
         other => {
             return Err(WidgetDecodeError::new(
                 codes::UNKNOWN_KIND,
@@ -480,7 +503,11 @@ fn decode_node(
             ));
         }
     };
-    Ok(WidgetAst { node_id, node })
+    Ok(WidgetAst {
+        node_id,
+        meta,
+        node,
+    })
 }
 
 // ---- per-kind decoders --------------------------------------------------
@@ -596,7 +623,7 @@ fn decode_row(
     ctx: &mut DecodeCtx,
 ) -> Result<RowNode, WidgetDecodeError> {
     let children = decode_children(obj, path, depth, ctx)?;
-    let spacing = opt_f32(obj, "spacing", path)?.unwrap_or(0.0);
+    let spacing = opt_spacing_value(obj, "spacing", path, ctx)?.unwrap_or(0.0);
     let width = opt_length(obj, "width", path)?;
     let height = opt_length(obj, "height", path)?;
     let align_y = opt_align_y(obj, "align_y", path)?;
@@ -616,7 +643,7 @@ fn decode_column(
     ctx: &mut DecodeCtx,
 ) -> Result<ColumnNode, WidgetDecodeError> {
     let children = decode_children(obj, path, depth, ctx)?;
-    let spacing = opt_f32(obj, "spacing", path)?.unwrap_or(0.0);
+    let spacing = opt_spacing_value(obj, "spacing", path, ctx)?.unwrap_or(0.0);
     let width = opt_length(obj, "width", path)?;
     let height = opt_length(obj, "height", path)?;
     let align_x = opt_align_x(obj, "align_x", path)?;
@@ -657,10 +684,10 @@ fn decode_padding(
     ctx: &mut DecodeCtx,
 ) -> Result<PaddingNode, WidgetDecodeError> {
     Ok(PaddingNode {
-        top: opt_f32(obj, "top", path)?.unwrap_or(0.0),
-        right: opt_f32(obj, "right", path)?.unwrap_or(0.0),
-        bottom: opt_f32(obj, "bottom", path)?.unwrap_or(0.0),
-        left: opt_f32(obj, "left", path)?.unwrap_or(0.0),
+        top: opt_spacing_value(obj, "top", path, ctx)?.unwrap_or(0.0),
+        right: opt_spacing_value(obj, "right", path, ctx)?.unwrap_or(0.0),
+        bottom: opt_spacing_value(obj, "bottom", path, ctx)?.unwrap_or(0.0),
+        left: opt_spacing_value(obj, "left", path, ctx)?.unwrap_or(0.0),
         width: opt_length(obj, "width", path)?,
         height: opt_length(obj, "height", path)?,
         child: opt_child(obj, "child", path, depth, ctx)?,
@@ -675,9 +702,15 @@ fn decode_space(obj: &Obj, path: &str) -> Result<SpaceNode, WidgetDecodeError> {
 }
 
 fn decode_icon(obj: &Obj, path: &str, ctx: &mut DecodeCtx) -> Result<IconNode, WidgetDecodeError> {
-    let raw_path = opt_string(obj, "path", path, ctx)?.unwrap_or_default();
+    let asset = opt_asset(obj, "asset", path, ctx)?;
+    let raw_path = match &asset {
+        Some(asset) => asset.path.clone(),
+        None => opt_string(obj, "path", path, ctx)?.unwrap_or_default(),
+    };
+    check_asset_path_len(&raw_path, &format!("{path}.path"), ctx)?;
     Ok(IconNode {
         path: raw_path,
+        asset,
         size: opt_f32(obj, "size", path)?.unwrap_or(16.0),
         color: opt_color(obj, "color", path, ctx)?,
     })
@@ -688,9 +721,15 @@ fn decode_image(
     path: &str,
     ctx: &mut DecodeCtx,
 ) -> Result<ImageNode, WidgetDecodeError> {
-    let raw_path = opt_string(obj, "path", path, ctx)?.unwrap_or_default();
+    let asset = opt_asset(obj, "asset", path, ctx)?;
+    let raw_path = match &asset {
+        Some(asset) => asset.path.clone(),
+        None => opt_string(obj, "path", path, ctx)?.unwrap_or_default(),
+    };
+    check_asset_path_len(&raw_path, &format!("{path}.path"), ctx)?;
     Ok(ImageNode {
         path: raw_path,
+        asset,
         size: opt_f32(obj, "size", path)?.unwrap_or(16.0),
     })
 }
@@ -822,6 +861,274 @@ fn decode_resizable_split(
     })
 }
 
+fn decode_semantic(
+    kind: &str,
+    obj: &Obj,
+    path: &str,
+    depth: usize,
+    ctx: &mut DecodeCtx,
+) -> Result<SemanticNode, WidgetDecodeError> {
+    Ok(SemanticNode {
+        kind: kind.to_string(),
+        title: opt_string(obj, "title", path, ctx)?,
+        text: opt_string(obj, "text", path, ctx)?.or(opt_string(obj, "value_text", path, ctx)?),
+        label: opt_string(obj, "label", path, ctx)?,
+        command: opt_string(obj, "command", path, ctx)?,
+        on_click: opt_string(obj, "on_click", path, ctx)?,
+        on_change: opt_string(obj, "on_change", path, ctx)?,
+        value: obj.get("value").cloned().unwrap_or(Value::Null),
+        disabled: opt_bool(obj, "disabled", path)?.unwrap_or(false),
+        checked: opt_bool(obj, "checked", path)?.unwrap_or(false),
+        selected: obj.get("selected").cloned().unwrap_or(Value::Null),
+        progress: opt_f32(obj, "progress", path)?.or(opt_f32(obj, "value_number", path)?),
+        language: opt_string(obj, "language", path, ctx)?,
+        color: opt_color(obj, "color", path, ctx)?,
+        spacing: opt_spacing_value(obj, "spacing", path, ctx)?,
+        child: opt_child(obj, "child", path, depth, ctx)?,
+        children: decode_children(obj, path, depth, ctx)?,
+        items: decode_semantic_items(obj, "items", path, depth, ctx)?,
+        columns: decode_semantic_columns(obj, path)?,
+        rows: decode_semantic_rows(obj, path)?,
+        options: decode_semantic_options(obj, path, ctx)?,
+    })
+}
+
+fn decode_layout(
+    kind: &str,
+    obj: &Obj,
+    path: &str,
+    depth: usize,
+    ctx: &mut DecodeCtx,
+) -> Result<LayoutNode, WidgetDecodeError> {
+    Ok(LayoutNode {
+        kind: kind.to_string(),
+        direction: opt_string(obj, "direction", path, ctx)?,
+        columns: opt_usize(obj, "columns", path)?.unwrap_or(2).max(1),
+        spacing: opt_spacing_value(obj, "spacing", path, ctx)?,
+        active: obj.get("active").cloned().unwrap_or(Value::Null),
+        child: opt_child(obj, "child", path, depth, ctx)?,
+        children: decode_children(obj, path, depth, ctx)?,
+        tabs: decode_layout_tabs(obj, path, depth, ctx)?,
+    })
+}
+
+fn decode_meta(
+    obj: &Obj,
+    path: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<WidgetMeta, WidgetDecodeError> {
+    Ok(WidgetMeta {
+        label: opt_string(obj, "label", path, ctx)?,
+        role: opt_string(obj, "role", path, ctx)?,
+        shortcut: opt_string(obj, "shortcut", path, ctx)?,
+        disabled_reason: opt_string(obj, "disabled_reason", path, ctx)?,
+        focus_order: opt_i32(obj, "focus_order", path)?,
+    })
+}
+
+fn decode_semantic_items(
+    obj: &Obj,
+    key: &str,
+    path: &str,
+    depth: usize,
+    ctx: &mut DecodeCtx,
+) -> Result<Vec<SemanticItem>, WidgetDecodeError> {
+    let arr = match obj.get(key) {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
+        Some(Value::Array(a)) => a,
+        Some(other) => {
+            return Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{path}.{key}"),
+                format!("field '{key}' must be an array, got {}", json_kind(other)),
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, item) in arr.iter().enumerate() {
+        let item_path = format!("{path}.{key}[{i}]");
+        let tbl = item.as_object().ok_or_else(|| {
+            WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                &item_path,
+                format!("expected item table, got {}", json_kind(item)),
+            )
+        })?;
+        out.push(SemanticItem {
+            id: tbl.get("id").cloned().unwrap_or(Value::Null),
+            label: opt_string(tbl, "label", &item_path, ctx)?
+                .or(opt_string(tbl, "title", &item_path, ctx)?)
+                .unwrap_or_default(),
+            text: opt_string(tbl, "text", &item_path, ctx)?,
+            value: tbl.get("value").cloned().unwrap_or(Value::Null),
+            child: opt_child(tbl, "child", &item_path, depth, ctx)?,
+            children: decode_semantic_items(tbl, "children", &item_path, depth, ctx)?,
+        });
+    }
+    Ok(out)
+}
+
+fn decode_semantic_columns(
+    obj: &Obj,
+    path: &str,
+) -> Result<Vec<SemanticColumn>, WidgetDecodeError> {
+    let arr = match obj.get("columns") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
+        Some(Value::Array(a)) => a,
+        Some(other) => {
+            return Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{path}.columns"),
+                format!("field 'columns' must be an array, got {}", json_kind(other)),
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, column) in arr.iter().enumerate() {
+        let cpath = format!("{path}.columns[{i}]");
+        let tbl = column.as_object().ok_or_else(|| {
+            WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                &cpath,
+                format!("expected column table, got {}", json_kind(column)),
+            )
+        })?;
+        out.push(SemanticColumn {
+            id: tbl
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string(),
+            title: tbl
+                .get("title")
+                .and_then(Value::as_str)
+                .or_else(|| tbl.get("label").and_then(Value::as_str))
+                .unwrap_or_default()
+                .to_string(),
+            width: opt_length(tbl, "width", &cpath)?,
+        });
+    }
+    Ok(out)
+}
+
+fn decode_semantic_rows(obj: &Obj, path: &str) -> Result<Vec<SemanticRow>, WidgetDecodeError> {
+    let arr = match obj.get("rows") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
+        Some(Value::Array(a)) => a,
+        Some(other) => {
+            return Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{path}.rows"),
+                format!("field 'rows' must be an array, got {}", json_kind(other)),
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, row) in arr.iter().enumerate() {
+        let rpath = format!("{path}.rows[{i}]");
+        let tbl = row.as_object().ok_or_else(|| {
+            WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                &rpath,
+                format!("expected row table, got {}", json_kind(row)),
+            )
+        })?;
+        let cells = match tbl.get("cells") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(Value::Array(cells)) => cells.clone(),
+            Some(other) => {
+                return Err(WidgetDecodeError::new(
+                    codes::FIELD_TYPE_MISMATCH,
+                    format!("{rpath}.cells"),
+                    format!("field 'cells' must be an array, got {}", json_kind(other)),
+                ));
+            }
+        };
+        out.push(SemanticRow {
+            id: tbl.get("id").cloned().unwrap_or(Value::Null),
+            cells,
+        });
+    }
+    Ok(out)
+}
+
+fn decode_semantic_options(
+    obj: &Obj,
+    path: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<Vec<SemanticOption>, WidgetDecodeError> {
+    let arr = match obj.get("options") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
+        Some(Value::Array(a)) => a,
+        Some(other) => {
+            return Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{path}.options"),
+                format!("field 'options' must be an array, got {}", json_kind(other)),
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, option) in arr.iter().enumerate() {
+        let opath = format!("{path}.options[{i}]");
+        let tbl = option.as_object().ok_or_else(|| {
+            WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                &opath,
+                format!("expected option table, got {}", json_kind(option)),
+            )
+        })?;
+        out.push(SemanticOption {
+            value: tbl.get("value").cloned().unwrap_or(Value::Null),
+            label: opt_string(tbl, "label", &opath, ctx)?.unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}
+
+fn decode_layout_tabs(
+    obj: &Obj,
+    path: &str,
+    depth: usize,
+    ctx: &mut DecodeCtx,
+) -> Result<Vec<LayoutTab>, WidgetDecodeError> {
+    let arr = match obj.get("tabs") {
+        None | Some(Value::Null) => return Ok(Vec::new()),
+        Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
+        Some(Value::Array(a)) => a,
+        Some(other) => {
+            return Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{path}.tabs"),
+                format!("field 'tabs' must be an array, got {}", json_kind(other)),
+            ));
+        }
+    };
+    let mut out = Vec::with_capacity(arr.len());
+    for (i, tab) in arr.iter().enumerate() {
+        let tpath = format!("{path}.tabs[{i}]");
+        let tbl = tab.as_object().ok_or_else(|| {
+            WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                &tpath,
+                format!("expected tab table, got {}", json_kind(tab)),
+            )
+        })?;
+        out.push(LayoutTab {
+            id: tbl.get("id").cloned().unwrap_or(Value::Null),
+            title: opt_string(tbl, "title", &tpath, ctx)?
+                .or(opt_string(tbl, "label", &tpath, ctx)?)
+                .unwrap_or_default(),
+            child: opt_child(tbl, "child", &tpath, depth, ctx)?,
+        });
+    }
+    Ok(out)
+}
+
 fn decode_children(
     obj: &Obj,
     path: &str,
@@ -945,6 +1252,37 @@ fn opt_f32(obj: &Obj, key: &str, parent: &str) -> Result<Option<f32>, WidgetDeco
     }
 }
 
+fn opt_i32(obj: &Obj, key: &str, parent: &str) -> Result<Option<i32>, WidgetDecodeError> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => match v.as_i64() {
+            Some(n) => Ok(Some(n as i32)),
+            None => Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{parent}.{key}"),
+                format!("field '{key}' must be an integer, got {}", json_kind(v)),
+            )),
+        },
+    }
+}
+
+fn opt_usize(obj: &Obj, key: &str, parent: &str) -> Result<Option<usize>, WidgetDecodeError> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => match v.as_u64() {
+            Some(n) => Ok(Some(n as usize)),
+            None => Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{parent}.{key}"),
+                format!(
+                    "field '{key}' must be a positive integer, got {}",
+                    json_kind(v)
+                ),
+            )),
+        },
+    }
+}
+
 fn opt_bool(obj: &Obj, key: &str, parent: &str) -> Result<Option<bool>, WidgetDecodeError> {
     match obj.get(key) {
         None | Some(Value::Null) => Ok(None),
@@ -954,6 +1292,33 @@ fn opt_bool(obj: &Obj, key: &str, parent: &str) -> Result<Option<bool>, WidgetDe
             format!("{parent}.{key}"),
             format!("field '{key}' must be a boolean, got {}", json_kind(other)),
         )),
+    }
+}
+
+fn opt_spacing_value(
+    obj: &Obj,
+    key: &str,
+    parent: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<Option<f32>, WidgetDecodeError> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => {
+            if let Some(n) = v.as_f64() {
+                return Ok(Some(n as f32));
+            }
+            if let Some(token) = token_from_value(v, &format!("{parent}.{key}"), ctx)? {
+                return Ok(Some(resolve_spacing_token(&token)));
+            }
+            Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{parent}.{key}"),
+                format!(
+                    "field '{key}' must be a number or {{ token = string }}, got {}",
+                    json_kind(v)
+                ),
+            ))
+        }
     }
 }
 
@@ -993,9 +1358,66 @@ fn opt_color(
     parent: &str,
     ctx: &mut DecodeCtx,
 ) -> Result<Option<AstColor>, WidgetDecodeError> {
-    match opt_string(obj, key, parent, ctx)? {
-        Some(s) => Ok(Some(AstColor { raw: s })),
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => {
+            check_string_len(s, &format!("{parent}.{key}"), ctx)?;
+            Ok(Some(AstColor {
+                raw: s.clone(),
+                token: None,
+            }))
+        }
+        Some(v) => {
+            if let Some(token) = token_from_value(v, &format!("{parent}.{key}"), ctx)? {
+                return Ok(Some(AstColor {
+                    raw: String::new(),
+                    token: Some(token),
+                }));
+            }
+            Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{parent}.{key}"),
+                format!(
+                    "field '{key}' must be a string or {{ token = string }}, got {}",
+                    json_kind(v)
+                ),
+            ))
+        }
+    }
+}
+
+fn token_from_value(
+    value: &Value,
+    path: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<Option<String>, WidgetDecodeError> {
+    let Some(obj) = value.as_object() else {
+        return Ok(None);
+    };
+    match obj.get("token") {
+        Some(Value::String(s)) => {
+            check_string_len(s, &format!("{path}.token"), ctx)?;
+            Ok(Some(s.clone()))
+        }
+        Some(other) => Err(WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{path}.token"),
+            format!("field 'token' must be a string, got {}", json_kind(other)),
+        )),
         None => Ok(None),
+    }
+}
+
+fn resolve_spacing_token(token: &str) -> f32 {
+    match token {
+        "space.0" => 0.0,
+        "space.1" => 4.0,
+        "space.2" => 8.0,
+        "space.3" => 12.0,
+        "space.4" => 16.0,
+        "space.5" => 24.0,
+        "space.6" => 32.0,
+        _ => 0.0,
     }
 }
 
@@ -1066,6 +1488,177 @@ fn opt_border(
         radius: opt_f32(inner, "radius", &bpath)?.unwrap_or(0.0),
         color: opt_color(inner, "color", &bpath, ctx)?,
     }))
+}
+
+fn opt_asset(
+    obj: &Obj,
+    key: &str,
+    parent: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<Option<AstAssetRef>, WidgetDecodeError> {
+    let Some(v) = obj.get(key) else {
+        return Ok(None);
+    };
+    if matches!(v, Value::Null) {
+        return Ok(None);
+    }
+    let asset = v.as_object().ok_or_else(|| {
+        WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{parent}.{key}"),
+            format!(
+                "field '{key}' must be an asset handle table, got {}",
+                json_kind(v)
+            ),
+        )
+    })?;
+    let apath = format!("{parent}.{key}");
+    let path = opt_string(asset, "path", &apath, ctx)?.ok_or_else(|| {
+        WidgetDecodeError::new(
+            codes::FIELD_MISSING,
+            &apath,
+            "asset handle missing field 'path'",
+        )
+    })?;
+    check_asset_path_len(&path, &format!("{apath}.path"), ctx)?;
+    Ok(Some(AstAssetRef {
+        path,
+        kind: opt_string(asset, "kind", &apath, ctx)?,
+        handle: opt_string(asset, "handle", &apath, ctx)?.or(opt_string(
+            asset,
+            "__leviathan_asset_handle",
+            &apath,
+            ctx,
+        )?),
+    }))
+}
+
+fn check_asset_path_len(s: &str, path: &str, ctx: &DecodeCtx) -> Result<(), WidgetDecodeError> {
+    if s.len() > ctx.limits.max_asset_path_length {
+        return Err(WidgetDecodeError::new(
+            codes::ASSET_LIMIT_EXCEEDED,
+            path,
+            format!(
+                "asset path length {} exceeds max ({})",
+                s.len(),
+                ctx.limits.max_asset_path_length
+            ),
+        ));
+    }
+    Ok(())
+}
+
+pub fn raw_color_paths(ast: &WidgetAst) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_raw_color_paths(ast, "root", &mut out);
+    out
+}
+
+fn collect_raw_color_paths(ast: &WidgetAst, path: &str, out: &mut Vec<String>) {
+    match &ast.node {
+        WidgetNode::Text(node) => push_raw_color(out, path, "color", &node.color),
+        WidgetNode::Button(node) => {
+            push_raw_color(out, path, "style.background", &node.style.background);
+            push_raw_color(
+                out,
+                path,
+                "style.background_hover",
+                &node.style.background_hover,
+            );
+            push_raw_color(out, path, "style.text_color", &node.style.text_color);
+            if let Some(border) = &node.style.border {
+                push_raw_color(out, path, "style.border.color", &border.color);
+            }
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+        }
+        WidgetNode::TextInput(node) => {
+            push_raw_color(out, path, "style.background", &node.style.background);
+            push_raw_color(out, path, "style.text_color", &node.style.text_color);
+            push_raw_color(
+                out,
+                path,
+                "style.placeholder_color",
+                &node.style.placeholder_color,
+            );
+            if let Some(border) = &node.style.border {
+                push_raw_color(out, path, "style.border.color", &border.color);
+            }
+        }
+        WidgetNode::Container(node) => {
+            push_raw_color(out, path, "bg", &node.bg);
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+        }
+        WidgetNode::Icon(node) => push_raw_color(out, path, "color", &node.color),
+        WidgetNode::Row(node) => {
+            for (idx, child) in node.children.iter().enumerate() {
+                collect_raw_color_paths(child, &format!("{path}.children[{idx}]"), out);
+            }
+        }
+        WidgetNode::Column(node) => {
+            for (idx, child) in node.children.iter().enumerate() {
+                collect_raw_color_paths(child, &format!("{path}.children[{idx}]"), out);
+            }
+        }
+        WidgetNode::ResizableSplit(node) => {
+            for (idx, child) in node.children.iter().enumerate() {
+                collect_raw_color_paths(child, &format!("{path}.children[{idx}]"), out);
+            }
+        }
+        WidgetNode::Padding(node) => {
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+        }
+        WidgetNode::Scrollable(node) => {
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+        }
+        WidgetNode::MouseArea(node) => {
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+        }
+        WidgetNode::Semantic(node) => {
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+            for (idx, child) in node.children.iter().enumerate() {
+                collect_raw_color_paths(child, &format!("{path}.children[{idx}]"), out);
+            }
+            for (idx, item) in node.items.iter().enumerate() {
+                if let Some(child) = &item.child {
+                    collect_raw_color_paths(child, &format!("{path}.items[{idx}].child"), out);
+                }
+            }
+        }
+        WidgetNode::Layout(node) => {
+            if let Some(child) = &node.child {
+                collect_raw_color_paths(child, &format!("{path}.child"), out);
+            }
+            for (idx, child) in node.children.iter().enumerate() {
+                collect_raw_color_paths(child, &format!("{path}.children[{idx}]"), out);
+            }
+            for (idx, tab) in node.tabs.iter().enumerate() {
+                if let Some(child) = &tab.child {
+                    collect_raw_color_paths(child, &format!("{path}.tabs[{idx}].child"), out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_raw_color(out: &mut Vec<String>, path: &str, field: &str, color: &Option<AstColor>) {
+    if let Some(color) = color {
+        if color.token.is_none() && !color.raw.is_empty() {
+            out.push(format!("{path}.{field}"));
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1232,6 +1825,46 @@ fn snapshot_node(ast: &WidgetAst, indent: usize, out: &mut String) {
                 snapshot_node(c, indent + 1, out);
             }
         }
+        WidgetNode::Semantic(s) => {
+            out.push_str(&format!(
+                " title={:?} label={:?} text={:?} command={:?} disabled={}\n",
+                s.title, s.label, s.text, s.command, s.disabled
+            ));
+            if let Some(c) = &s.child {
+                snapshot_node(c, indent + 1, out);
+            }
+            for c in &s.children {
+                snapshot_node(c, indent + 1, out);
+            }
+            for item in &s.items {
+                let pad2 = "  ".repeat(indent + 1);
+                out.push_str(&pad2);
+                out.push_str(&format!(
+                    "item label={:?} text={:?}\n",
+                    item.label, item.text
+                ));
+            }
+        }
+        WidgetNode::Layout(l) => {
+            out.push_str(&format!(
+                " direction={:?} columns={} active={}\n",
+                l.direction, l.columns, l.active
+            ));
+            if let Some(c) = &l.child {
+                snapshot_node(c, indent + 1, out);
+            }
+            for c in &l.children {
+                snapshot_node(c, indent + 1, out);
+            }
+            for tab in &l.tabs {
+                let pad2 = "  ".repeat(indent + 1);
+                out.push_str(&pad2);
+                out.push_str(&format!("tab id={} title={:?}\n", tab.id, tab.title));
+                if let Some(c) = &tab.child {
+                    snapshot_node(c, indent + 2, out);
+                }
+            }
+        }
     }
 }
 
@@ -1248,303 +1881,8 @@ fn fmt_length(l: AstLength) -> String {
 #[cfg(test)]
 fn fmt_color(c: &Option<AstColor>) -> String {
     match c {
+        Some(c) if c.token.is_some() => format!("token({:?})", c.token.as_deref().unwrap()),
         Some(c) => format!("{:?}", c.raw),
         None => "none".into(),
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    fn ok(value: Value) -> WidgetAst {
-        decode(&value).expect("decode")
-    }
-
-    #[test]
-    fn decode_text_with_defaults() {
-        let ast = ok(json!({ "kind": "text", "value": "hello" }));
-        if let WidgetNode::Text(t) = &ast.node {
-            assert_eq!(t.value, "hello");
-            assert!((t.size - 14.0).abs() < 0.001);
-        } else {
-            panic!("expected text");
-        }
-        assert_eq!(ast.node_id.value, "root");
-        assert!(!ast.node_id.explicit);
-    }
-
-    #[test]
-    fn explicit_id_promoted() {
-        let ast = ok(json!({ "kind": "text", "id": "hello-id", "value": "x" }));
-        assert_eq!(ast.node_id.value, "hello-id");
-        assert!(ast.node_id.explicit);
-    }
-
-    #[test]
-    fn decode_text_input_required_fields_and_style() {
-        let ast = ok(json!({
-            "kind": "text_input",
-            "id": "palette-query",
-            "placeholder": "Run command",
-            "value": "che",
-            "on_input": "palette.changed",
-            "on_submit": "palette.submit",
-            "width": "fill",
-            "height": 32,
-            "autofocus": true,
-            "style": {
-                "background": "#101119",
-                "text_color": "#e1e5f4",
-                "placeholder_color": "#585d6e",
-                "border": { "width": 1, "radius": 4, "color": "#242535" }
-            }
-        }));
-        assert_eq!(ast.node_id.value, "palette-query");
-        assert!(ast.node_id.explicit);
-        if let WidgetNode::TextInput(t) = &ast.node {
-            assert_eq!(t.placeholder, "Run command");
-            assert_eq!(t.value, "che");
-            assert_eq!(t.on_input, "palette.changed");
-            assert_eq!(t.on_submit.as_deref(), Some("palette.submit"));
-            assert_eq!(t.width, AstLength::Fill);
-            assert_eq!(t.height, AstLength::Fixed(32.0));
-            assert!(t.autofocus);
-            assert_eq!(
-                t.style.placeholder_color.as_ref().map(|c| c.raw.as_str()),
-                Some("#585d6e")
-            );
-            assert_eq!(t.style.border.as_ref().map(|b| b.radius), Some(4.0));
-        } else {
-            panic!("expected text_input");
-        }
-    }
-
-    #[test]
-    fn text_input_requires_on_input() {
-        let err = decode(&json!({
-            "kind": "text_input",
-            "placeholder": "Run command",
-            "value": ""
-        }))
-        .unwrap_err();
-        assert_eq!(err.code, codes::FIELD_MISSING);
-        assert_eq!(err.path, "root");
-    }
-
-    #[test]
-    fn unknown_kind_errors_at_root_kind_field() {
-        let err = decode(&json!({ "kind": "rwo" })).unwrap_err();
-        assert_eq!(err.code, codes::UNKNOWN_KIND);
-        assert_eq!(err.path, "root.kind");
-    }
-
-    #[test]
-    fn missing_kind_errors() {
-        let err = decode(&json!({ "value": "x" })).unwrap_err();
-        assert_eq!(err.code, codes::FIELD_MISSING);
-        assert_eq!(err.path, "root");
-    }
-
-    #[test]
-    fn type_mismatch_points_at_field_path() {
-        let err = decode(&json!({
-            "kind": "row",
-            "children": [
-                { "kind": "text", "value": "a" },
-                { "kind": "button", "text": 7 }
-            ]
-        }))
-        .unwrap_err();
-        assert_eq!(err.code, codes::FIELD_TYPE_MISMATCH);
-        assert_eq!(err.path, "root.children[1].text");
-    }
-
-    #[test]
-    fn depth_limit_enforced() {
-        // Build a deeply nested padding tree.
-        let mut node = json!({ "kind": "space" });
-        for _ in 0..200 {
-            node = json!({ "kind": "padding", "child": node });
-        }
-        let err = decode(&node).unwrap_err();
-        assert_eq!(err.code, codes::DEPTH_EXCEEDED);
-    }
-
-    #[test]
-    fn node_count_limit_enforced() {
-        let limits = WidgetLimits {
-            max_node_count: 4,
-            ..WidgetLimits::DEFAULT
-        };
-        let tree = json!({
-            "kind": "row",
-            "children": [
-                { "kind": "text", "value": "a" },
-                { "kind": "text", "value": "b" },
-                { "kind": "text", "value": "c" },
-                { "kind": "text", "value": "d" }
-            ]
-        });
-        let err = decode_with_limits(&tree, limits).unwrap_err();
-        assert_eq!(err.code, codes::NODE_COUNT_EXCEEDED);
-    }
-
-    #[test]
-    fn string_too_long_caught() {
-        let limits = WidgetLimits {
-            max_string_length: 8,
-            ..WidgetLimits::DEFAULT
-        };
-        let err = decode_with_limits(
-            &json!({ "kind": "text", "value": "this is way too long" }),
-            limits,
-        )
-        .unwrap_err();
-        assert_eq!(err.code, codes::STRING_TOO_LONG);
-        assert_eq!(err.path, "root.value");
-    }
-
-    #[test]
-    fn nested_path_includes_array_index() {
-        let err = decode(&json!({
-            "kind": "row",
-            "children": [
-                { "kind": "row", "children": [
-                    { "kind": "button", "child": { "kind": "text", "value": 7 } }
-                ]}
-            ]
-        }))
-        .unwrap_err();
-        assert_eq!(err.path, "root.children[0].children[0].child.value");
-    }
-
-    #[test]
-    fn implicit_id_uses_path_for_children() {
-        let ast = ok(json!({
-            "kind": "row",
-            "children": [
-                { "kind": "text", "value": "a" },
-                { "kind": "text", "value": "b" }
-            ]
-        }));
-        if let WidgetNode::Row(r) = &ast.node {
-            assert_eq!(r.children[0].node_id.value, "root.children[0]");
-            assert_eq!(r.children[1].node_id.value, "root.children[1]");
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn padding_defaults_to_zero_each_side() {
-        let ast = ok(json!({ "kind": "padding" }));
-        if let WidgetNode::Padding(p) = &ast.node {
-            assert_eq!(p.top, 0.0);
-            assert_eq!(p.right, 0.0);
-            assert_eq!(p.bottom, 0.0);
-            assert_eq!(p.left, 0.0);
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn split_direction_validated() {
-        let err =
-            decode(&json!({ "kind": "resizable_split", "direction": "diagonal" })).unwrap_err();
-        assert_eq!(err.code, codes::FIELD_TYPE_MISMATCH);
-        assert_eq!(err.path, "root.direction");
-    }
-
-    #[test]
-    fn snapshot_text_button_row() {
-        let ast = ok(json!({
-            "kind": "row",
-            "spacing": 8,
-            "children": [
-                { "kind": "text", "value": "hi", "size": 14, "color": "#ff0000" },
-                { "kind": "button", "id": "go", "on_click": "click", "child": {
-                    "kind": "text", "value": "Go" } }
-            ]
-        }));
-        let snap = snapshot(&ast);
-        let expected = "row id=root spacing=8 width=auto height=auto align_y=None\n  text id=root.children[0] value=\"hi\" size=14 color=\"#ff0000\"\n  button id=*go text=None on_click=Some(\"click\") width=auto height=auto\n    text id=root.children[1].child value=\"Go\" size=14 color=none\n";
-        assert_eq!(snap, expected);
-    }
-
-    #[test]
-    fn snapshot_padding_container_split() {
-        let ast = ok(json!({
-            "kind": "padding",
-            "top": 2, "left": 4,
-            "child": {
-                "kind": "container",
-                "bg": "#102030",
-                "max_width": 200,
-                "child": { "kind": "space", "width": "fill", "height": 10 }
-            }
-        }));
-        let snap = snapshot(&ast);
-        // Just sanity-check structure. The exhaustive expected literal
-        // is in `tests::snapshot_text_button_row` above.
-        assert!(snap.contains("padding id=root"));
-        assert!(snap.contains("container id=root.child"));
-        assert!(snap.contains("space id=root.child.child"));
-        assert!(snap.contains("bg=\"#102030\""));
-    }
-
-    #[test]
-    fn tablist_decodes_tabs() {
-        let ast = ok(json!({
-            "kind": "tablist",
-            "tabs": [ { "id": "a", "name": "A" }, { "id": 7, "name": "B" } ],
-            "active": "a",
-            "orderable": true,
-            "on_select": "select"
-        }));
-        if let WidgetNode::Tablist(t) = ast.node {
-            assert_eq!(t.tabs.len(), 2);
-            assert_eq!(t.tabs[0].name, "A");
-            assert!(t.orderable);
-            assert_eq!(t.on_select.as_deref(), Some("select"));
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn empty_lua_tables_decode_as_empty_arrays_for_list_fields() {
-        let tablist = ok(json!({
-            "kind": "tablist",
-            "tabs": {}
-        }));
-        if let WidgetNode::Tablist(t) = tablist.node {
-            assert!(t.tabs.is_empty());
-        } else {
-            panic!();
-        }
-
-        let row = ok(json!({
-            "kind": "row",
-            "children": {}
-        }));
-        if let WidgetNode::Row(r) = row.node {
-            assert!(r.children.is_empty());
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn not_a_table_caught() {
-        let err = decode(&json!("hi")).unwrap_err();
-        assert_eq!(err.code, codes::NOT_A_TABLE);
-        assert_eq!(err.path, "root");
     }
 }

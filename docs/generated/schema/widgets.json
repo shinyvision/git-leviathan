@@ -504,5 +504,2388 @@
         "doc": "Child panels."
       }
     ]
+  },
+  {
+    "kind": "command_button",
+    "since": "1.0",
+    "doc": "Button that invokes a command id.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "toolbar_button",
+    "since": "1.0",
+    "doc": "Compact toolbar action button.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "status_item",
+    "since": "1.0",
+    "doc": "Status-line item.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "badge",
+    "since": "1.0",
+    "doc": "Small status badge.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "tag",
+    "since": "1.0",
+    "doc": "Small tag pill.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "list",
+    "since": "1.0",
+    "doc": "Semantic list.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "tree",
+    "since": "1.0",
+    "doc": "Semantic tree.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "table",
+    "since": "1.0",
+    "doc": "Semantic table.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "section",
+    "since": "1.0",
+    "doc": "Titled content section.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "form",
+    "since": "1.0",
+    "doc": "Form field group.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "checkbox",
+    "since": "1.0",
+    "doc": "Checkbox control.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "toggle",
+    "since": "1.0",
+    "doc": "Toggle control.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "select",
+    "since": "1.0",
+    "doc": "Select control.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "radio_group",
+    "since": "1.0",
+    "doc": "Radio option group.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "divider",
+    "since": "1.0",
+    "doc": "Visual divider.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "tooltip",
+    "since": "1.0",
+    "doc": "Tooltip wrapper.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "popover",
+    "since": "1.0",
+    "doc": "Popover wrapper.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "menu",
+    "since": "1.0",
+    "doc": "Menu list.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "empty_state",
+    "since": "1.0",
+    "doc": "Empty-state presentation.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "code",
+    "since": "1.0",
+    "doc": "Code text block.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "diff",
+    "since": "1.0",
+    "doc": "Diff text block.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "commit_ref",
+    "since": "1.0",
+    "doc": "Commit reference chip.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "branch_ref",
+    "since": "1.0",
+    "doc": "Branch reference chip.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "remote_ref",
+    "since": "1.0",
+    "doc": "Remote reference chip.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "progress",
+    "since": "1.0",
+    "doc": "Progress indicator.",
+    "fields": [
+      {
+        "name": "label",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Accessible label or visible fallback."
+      },
+      {
+        "name": "title",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Section or item title."
+      },
+      {
+        "name": "text",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Body text."
+      },
+      {
+        "name": "command",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Command id to invoke."
+      },
+      {
+        "name": "on_click",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted on click."
+      },
+      {
+        "name": "on_change",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Plugin event emitted when value changes."
+      },
+      {
+        "name": "disabled_reason",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Reason shown when disabled."
+      },
+      {
+        "name": "shortcut",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Keyboard shortcut hint."
+      },
+      {
+        "name": "child",
+        "lua_type": "LeviathanWidget",
+        "required": false,
+        "doc": "Primary nested widget."
+      },
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Nested widgets."
+      },
+      {
+        "name": "items",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "List, tree, or menu items."
+      },
+      {
+        "name": "options",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Select or radio options."
+      },
+      {
+        "name": "color",
+        "lua_type": "string|{token:string}",
+        "required": false,
+        "doc": "Theme token or raw color where allowed."
+      }
+    ]
+  },
+  {
+    "kind": "stack",
+    "since": "1.0",
+    "doc": "Stack children vertically.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
+  },
+  {
+    "kind": "grid",
+    "since": "1.0",
+    "doc": "Grid layout.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
+  },
+  {
+    "kind": "dock",
+    "since": "1.0",
+    "doc": "Dock-style layout primitive.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
+  },
+  {
+    "kind": "split",
+    "since": "1.0",
+    "doc": "Semantic split layout primitive.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
+  },
+  {
+    "kind": "tabs",
+    "since": "1.0",
+    "doc": "Tabbed layout primitive.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
+  },
+  {
+    "kind": "virtual_list",
+    "since": "1.0",
+    "doc": "Large-list layout primitive.",
+    "fields": [
+      {
+        "name": "children",
+        "lua_type": "LeviathanWidget[]",
+        "required": false,
+        "doc": "Child widgets."
+      },
+      {
+        "name": "tabs",
+        "lua_type": "table[]",
+        "required": false,
+        "doc": "Tab descriptors with child widgets."
+      },
+      {
+        "name": "direction",
+        "lua_type": "string",
+        "required": false,
+        "doc": "horizontal or vertical."
+      },
+      {
+        "name": "columns",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Grid column count."
+      },
+      {
+        "name": "spacing",
+        "lua_type": "number|{token:string}",
+        "required": false,
+        "doc": "Theme spacing token or pixels."
+      },
+      {
+        "name": "focus_order",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Keyboard focus ordering hint."
+      }
+    ]
   }
 ]

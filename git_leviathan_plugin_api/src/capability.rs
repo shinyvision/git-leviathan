@@ -51,6 +51,22 @@ pub enum Capability {
     GitWrite { op: GitWriteOp },
     /// `ui:region:<region>`.
     UiRegion { region: String },
+    /// `ui:replace:builtin`.
+    UiReplaceBuiltin,
+    /// `ui:replace:<region>:<container>:<id>`.
+    UiReplaceTarget {
+        region: String,
+        container: String,
+        id: String,
+    },
+    /// `ui:remove:builtin`.
+    UiRemoveBuiltin,
+    /// `ui:remove:<region>:<container>:<id>`.
+    UiRemoveTarget {
+        region: String,
+        container: String,
+        id: String,
+    },
     /// `services:provide:<name>@<version>` (plugin services).
     ServicesProvide { name: String, version: u32 },
     /// `services:consume:<name>@<version>` (plugin services).
@@ -68,12 +84,22 @@ pub enum Capability {
     FsWatchDir { dir: String },
     /// `ui:overlay` (extension points) — register modal overlays.
     UiOverlay,
-    /// `ui:context_menu` (extension points) — contribute context-menu items.
-    UiContextMenu,
-    /// `ui:graph_decoration` (extension points) — attach commit-row decorations.
-    UiGraphDecoration,
-    /// `ui:diff_decoration` (extension points) — attach diff line / hunk decorations.
-    UiDiffDecoration,
+    /// `ui:context_menu:<region>`.
+    UiContextMenuRegion { region: String },
+    /// `ui:decoration:graph`.
+    UiDecorationGraph,
+    /// `ui:decoration:diff`.
+    UiDecorationDiff,
+    /// `ui:screen`.
+    UiScreen,
+    /// `ui:dock`.
+    UiDock,
+    /// `ui:status`.
+    UiStatus,
+    /// `ui:style:raw_color`.
+    UiStyleRawColor,
+    /// `command:invoke:<id>`.
+    CommandInvoke { id: String },
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -211,6 +237,18 @@ impl TryFrom<String> for Capability {
             ["ui", "region", region] => Ok(Capability::UiRegion {
                 region: (*region).to_string(),
             }),
+            ["ui", "replace", "builtin"] => Ok(Capability::UiReplaceBuiltin),
+            ["ui", "replace", region, container, id] => Ok(Capability::UiReplaceTarget {
+                region: (*region).to_string(),
+                container: (*container).to_string(),
+                id: (*id).to_string(),
+            }),
+            ["ui", "remove", "builtin"] => Ok(Capability::UiRemoveBuiltin),
+            ["ui", "remove", region, container, id] => Ok(Capability::UiRemoveTarget {
+                region: (*region).to_string(),
+                container: (*container).to_string(),
+                id: (*id).to_string(),
+            }),
             ["services", "provide", spec] => {
                 let (name, ver) = parse_service_spec(spec)?;
                 Ok(Capability::ServicesProvide { name, version: ver })
@@ -231,9 +269,18 @@ impl TryFrom<String> for Capability {
                 scope: parse_scope(scope)?,
             }),
             ["ui", "overlay"] => Ok(Capability::UiOverlay),
-            ["ui", "context_menu"] => Ok(Capability::UiContextMenu),
-            ["ui", "graph_decoration"] => Ok(Capability::UiGraphDecoration),
-            ["ui", "diff_decoration"] => Ok(Capability::UiDiffDecoration),
+            ["ui", "context_menu", region] => Ok(Capability::UiContextMenuRegion {
+                region: (*region).to_string(),
+            }),
+            ["ui", "decoration", "graph"] => Ok(Capability::UiDecorationGraph),
+            ["ui", "decoration", "diff"] => Ok(Capability::UiDecorationDiff),
+            ["ui", "screen"] => Ok(Capability::UiScreen),
+            ["ui", "dock"] => Ok(Capability::UiDock),
+            ["ui", "status"] => Ok(Capability::UiStatus),
+            ["ui", "style", "raw_color"] => Ok(Capability::UiStyleRawColor),
+            ["command", "invoke", id] => Ok(Capability::CommandInvoke {
+                id: (*id).to_string(),
+            }),
             _ => Err(format!("unknown capability: {s}")),
         }
     }
@@ -282,6 +329,18 @@ impl From<Capability> for String {
             Capability::GitRead { op } => format!("git:read:{}", op.as_str()),
             Capability::GitWrite { op } => format!("git:write:{}", op.as_str()),
             Capability::UiRegion { region } => format!("ui:region:{region}"),
+            Capability::UiReplaceBuiltin => "ui:replace:builtin".into(),
+            Capability::UiReplaceTarget {
+                region,
+                container,
+                id,
+            } => format!("ui:replace:{region}:{container}:{id}"),
+            Capability::UiRemoveBuiltin => "ui:remove:builtin".into(),
+            Capability::UiRemoveTarget {
+                region,
+                container,
+                id,
+            } => format!("ui:remove:{region}:{container}:{id}"),
             Capability::ServicesProvide { name, version } => {
                 format!("services:provide:{name}@{version}")
             }
@@ -293,9 +352,14 @@ impl From<Capability> for String {
             Capability::FsWatch { scope } => format!("fs:watch:{}", scope_str(scope)),
             Capability::FsWatchDir { dir } => format!("fs:watch:scope:{dir}"),
             Capability::UiOverlay => "ui:overlay".into(),
-            Capability::UiContextMenu => "ui:context_menu".into(),
-            Capability::UiGraphDecoration => "ui:graph_decoration".into(),
-            Capability::UiDiffDecoration => "ui:diff_decoration".into(),
+            Capability::UiContextMenuRegion { region } => format!("ui:context_menu:{region}"),
+            Capability::UiDecorationGraph => "ui:decoration:graph".into(),
+            Capability::UiDecorationDiff => "ui:decoration:diff".into(),
+            Capability::UiScreen => "ui:screen".into(),
+            Capability::UiDock => "ui:dock".into(),
+            Capability::UiStatus => "ui:status".into(),
+            Capability::UiStyleRawColor => "ui:style:raw_color".into(),
+            Capability::CommandInvoke { id } => format!("command:invoke:{id}"),
         }
     }
 }
@@ -364,10 +428,20 @@ mod tests {
             "fs:watch:plugin",
             "fs:watch:any",
             "fs:watch:scope:/tmp/safe",
+            "ui:region:main_bar",
+            "ui:replace:builtin",
+            "ui:replace:main_bar:left:builtin.repo_info",
+            "ui:remove:builtin",
+            "ui:remove:main_bar:left:plugin.owner.slot",
             "ui:overlay",
-            "ui:context_menu",
-            "ui:graph_decoration",
-            "ui:diff_decoration",
+            "ui:context_menu:repository.diff.context_menu",
+            "ui:decoration:graph",
+            "ui:decoration:diff",
+            "ui:screen",
+            "ui:dock",
+            "ui:status",
+            "ui:style:raw_color",
+            "command:invoke:repository.open_search",
         ];
         for s in cases {
             let cap = Capability::try_from(s.to_string()).expect(s);

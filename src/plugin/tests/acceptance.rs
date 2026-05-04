@@ -25,6 +25,12 @@ const GOOD: &[&str] = &[
     "diff_notes",
     "repo_guard",
     "lazy_demo",
+    "toolbar_plugin",
+    "graph_decoration_provider",
+    "diff_gutter_provider",
+    "dock_panel",
+    "full_screen",
+    "settings_panel",
 ];
 
 fn fixtures_root() -> PathBuf {
@@ -73,6 +79,18 @@ fn copy_bad_fixture(host: &MockHost, name: &str) -> PathBuf {
     dst
 }
 
+fn collect_files(root: &Path, out: &mut Vec<PathBuf>) {
+    for entry in fs::read_dir(root).expect("read scan dir") {
+        let entry = entry.expect("scan dir entry");
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}
+
 fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F, timeout_ms: u64) {
     let start = Instant::now();
     loop {
@@ -95,6 +113,40 @@ fn generation_for(host: &MockHost, plugin_id: &str) -> u64 {
         .map(|r| r.generation_id)
         .max()
         .unwrap_or(0)
+}
+
+#[test]
+fn public_plugin_fixtures_do_not_use_retired_ui_names() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mut files = Vec::new();
+    collect_files(&repo.join("plugins/acceptance_fixtures"), &mut files);
+    collect_files(&repo.join("plugins/examples"), &mut files);
+    let forbidden = [
+        ["leviathan.ui.", "regions"].concat(),
+        ["leviathan.ui.", "main_bar"].concat(),
+        ["ui", ".", "v", "2"].concat(),
+        ["ui", "_", "v", "2"].concat(),
+        ["regions", ".add_slot"].concat(),
+        ["regions", ".replace_slot"].concat(),
+        ["regions", ".remove_slot"].concat(),
+        ["ui:", "graph_decoration"].concat(),
+        ["ui:", "diff_decoration"].concat(),
+        ["ui:", "context_menu", "\""].concat(),
+        ["compatibility", " alias"].concat(),
+        ["compatibility", " grant"].concat(),
+        ["migration", " guide"].concat(),
+    ];
+    for path in files {
+        let content = fs::read_to_string(&path).unwrap_or_default();
+        let lower = content.to_ascii_lowercase();
+        for term in &forbidden {
+            assert!(
+                !lower.contains(term),
+                "{} contains retired UI term `{term}`",
+                path.display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -141,9 +193,15 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     ));
     assert!(host.has_slot(
         "commit_lens",
-        "repository.details",
-        "details.commit_header",
+        "repository",
+        "details.top",
         "plugin.commit_lens.annotation"
+    ));
+    assert!(host.has_slot(
+        "toolbar_plugin",
+        "main_bar",
+        "right",
+        "plugin.toolbar_plugin.ping"
     ));
 
     assert!(snap
@@ -164,10 +222,17 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     assert!(snap.graph_decorations.iter().any(|d| {
         d.plugin_id == "commit_lens" && d.commit_hash == "abc1234" && d.kind == "badge"
     }));
+    assert!(snap.graph_decorations.iter().any(|d| {
+        d.plugin_id == "graph_decoration_provider" && d.id == "graph-provider.acceptance"
+    }));
     assert!(snap
         .diff_decorations
         .iter()
         .any(|d| d.plugin_id == "diff_notes" && d.kind == "line_hint"));
+    assert!(snap
+        .diff_decorations
+        .iter()
+        .any(|d| d.plugin_id == "diff_gutter_provider" && d.kind == "line_gutter"));
     assert!(snap
         .context_menu_items
         .iter()
@@ -176,6 +241,19 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         .settings
         .iter()
         .any(|s| s.plugin_id == "commit_lens" && s.schema_keys.contains(&"enabled".to_string())));
+    assert!(snap
+        .dock_panels
+        .iter()
+        .any(|p| p.plugin_id == "dock_panel" && p.id == "acceptance"));
+    assert!(snap
+        .extension_contributions
+        .iter()
+        .any(|c| { c.plugin_id == "full_screen" && c.point_id == "screens" && c.id == "home" }));
+    assert!(snap.settings.iter().any(|s| {
+        s.plugin_id == "settings_panel"
+            && s.schema_keys.contains(&"enabled".to_string())
+            && s.custom_view.is_some()
+    }));
     assert!(snap
         .storage
         .iter()
@@ -348,16 +426,9 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     }
 
     let final_snap = host.introspect();
-    for id in [
-        "issue_tracker",
-        "repository_info_v1",
-        "commit_lens",
-        "diff_notes",
-        "repo_guard",
-        "lazy_demo",
-    ] {
+    for id in GOOD {
         assert!(
-            final_snap.resources.iter().any(|r| r.plugin_id == id),
+            final_snap.resources.iter().any(|r| r.plugin_id == *id),
             "devtools resources should include {id}"
         );
     }
@@ -386,43 +457,36 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         .iter()
         .any(|w| w.plugin_id == "repo_guard"));
 
-    for id in [
-        "lazy_demo",
-        "repo_guard",
-        "diff_notes",
-        "commit_lens",
-        "repository_info_v1",
-        "issue_tracker",
-    ] {
+    for id in GOOD.iter().rev() {
         host.unload_plugin(id)
             .unwrap_or_else(|e| panic!("unload {id}: {e}"));
         let snap = host.introspect();
         assert!(
-            snap.resources.iter().all(|r| r.plugin_id != id),
+            snap.resources.iter().all(|r| r.plugin_id != *id),
             "{id} resources should be gone after unload"
         );
         assert!(
-            snap.slots.iter().all(|s| s.owner_plugin_id != id),
+            snap.slots.iter().all(|s| s.owner_plugin_id != *id),
             "{id} slots should be gone after unload"
         );
         assert!(
-            snap.commands.iter().all(|c| c.plugin_id != id),
+            snap.commands.iter().all(|c| c.plugin_id != *id),
             "{id} commands should be gone after unload"
         );
         assert!(
-            snap.keymaps.iter().all(|k| k.plugin_id != id),
+            snap.keymaps.iter().all(|k| k.plugin_id != *id),
             "{id} keymaps should be gone after unload"
         );
         assert!(
-            snap.async_jobs.iter().all(|j| j.plugin_id != id),
+            snap.async_jobs.iter().all(|j| j.plugin_id != *id),
             "{id} async jobs should be gone after unload"
         );
         assert!(
-            snap.timers.iter().all(|t| t.plugin_id != id),
+            snap.timers.iter().all(|t| t.plugin_id != *id),
             "{id} timers should be gone after unload"
         );
         assert!(
-            snap.file_watchers.iter().all(|w| w.plugin_id != id),
+            snap.file_watchers.iter().all(|w| w.plugin_id != *id),
             "{id} watchers should be gone after unload"
         );
     }

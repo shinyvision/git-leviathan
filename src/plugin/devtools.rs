@@ -25,6 +25,38 @@ pub struct SlotSummary {
     pub id: String,
     pub priority: i32,
     pub owner_plugin_id: String,
+    pub hidden: bool,
+    pub effective_priority: i32,
+    pub replace_capability: Option<String>,
+    pub remove_capability: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContributionOverrideSummary {
+    pub plugin_id: String,
+    pub region: String,
+    pub container: String,
+    pub id: String,
+    pub hidden: bool,
+    pub priority: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct UiRenderDiagnosticSummary {
+    pub plugin_id: String,
+    pub generation_id: u64,
+    pub region: String,
+    pub container: String,
+    pub slot_id: String,
+    pub dependencies: Vec<String>,
+    pub last_refresh_causes: Vec<String>,
+    pub refresh_count: u64,
+    pub skipped_count: u64,
+    pub stale_count: u64,
+    pub last_duration_ms: u128,
+    pub last_status: String,
+    pub last_error: Option<String>,
+    pub diagnostic_badge: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -222,16 +254,92 @@ pub struct CommandSummaryRow {
     pub context: String,
     pub destructive: bool,
     pub capabilities: Vec<String>,
+    pub plugin_invocation_capabilities: Vec<String>,
+    pub enabled: bool,
+    pub disabled_reason: Option<String>,
+    pub keymap_eligible: bool,
+    pub palette_visible: bool,
+    pub hook_before: bool,
+    pub hook_after: bool,
+    pub hook_veto: bool,
+    pub replaceable: bool,
     pub fires: u64,
     pub failures: u64,
     pub last_outcome: Option<String>,
     pub last_duration_ms: u128,
 }
 
+#[derive(Debug, Clone)]
+pub struct ExtensionPointSummary {
+    pub id: String,
+    pub kind: String,
+    pub context_schema: String,
+    pub contribution_schema: String,
+    pub ordering_model: String,
+    pub ownership_rules: String,
+    pub capabilities: Vec<String>,
+    pub render_mount_handler: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionContributionSummary {
+    pub plugin_id: String,
+    pub point_id: String,
+    pub kind: String,
+    pub id: String,
+    pub resource_kind: String,
+    pub owner_key: String,
+    pub dynamic: bool,
+    pub source_location: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PluginTreeNode {
+    pub id: String,
+    pub label: String,
+    pub version: String,
+    pub children: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContributionTreeNode {
+    pub id: String,
+    pub plugin_id: String,
+    pub kind: String,
+    pub location: String,
+    pub visible: bool,
+    pub diagnostics: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct CommandTreeNode {
+    pub id: String,
+    pub plugin_id: String,
+    pub title: String,
+    pub enabled: bool,
+    pub children: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct AutocmdTreeNode {
+    pub id: String,
+    pub plugin_id: String,
+    pub event: String,
+    pub status: String,
+    pub children: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DecorationInvalidationSummary {
+    pub revision: u64,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct InspectorSnapshot {
     pub plugins: Vec<PluginSummary>,
     pub slots: Vec<SlotSummary>,
+    pub ui_render_diagnostics: Vec<UiRenderDiagnosticSummary>,
     pub services: Vec<ServiceSummary>,
     /// plugin services: declared consumer/provider service edges. Required
     /// missing edges block plugin load, so live snapshots mainly show
@@ -265,6 +373,17 @@ pub struct InspectorSnapshot {
     /// (each loser carries a `conflict_with` cross-reference to the
     /// winner). Sorted by `(context, key, source, plugin_id)`.
     pub keymaps: Vec<KeymapSummaryRow>,
+    pub extension_points: Vec<ExtensionPointSummary>,
+    pub extension_contributions: Vec<ExtensionContributionSummary>,
+    pub plugin_tree: Vec<PluginTreeNode>,
+    pub contribution_tree: Vec<ContributionTreeNode>,
+    pub command_tree: Vec<CommandTreeNode>,
+    pub autocmd_tree: Vec<AutocmdTreeNode>,
+    pub contribution_overrides: Vec<ContributionOverrideSummary>,
+    pub dock_panels: Vec<DockPanelSummary>,
+    pub dock_layout: serde_json::Value,
+    pub decoration_revision: u64,
+    pub decoration_invalidations: Vec<DecorationInvalidationSummary>,
     /// Every recorded capability grant row, sorted by
     /// `(plugin_id, plugin_version, capability)`. Includes both
     /// allow/deny rows and `decided_by` lineage so a security-review
@@ -329,6 +448,7 @@ pub struct InspectorSnapshot {
     /// one recorded sample. Sorted by
     /// `(plugin_id, generation_id, callback_id)`.
     pub circuit_breakers: Vec<CircuitBreakerSummary>,
+    pub current_context: serde_json::Value,
 }
 
 /// performance-trace projection. Mirrors
@@ -412,6 +532,21 @@ pub struct DiffDecorationSummary {
     pub id: String,
     pub kind: String,
     pub decoration: serde_json::Value,
+    pub source_location: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DockPanelSummary {
+    pub plugin_id: String,
+    pub generation_id: u64,
+    pub id: String,
+    pub key: String,
+    pub title: String,
+    pub area: String,
+    pub open: bool,
+    pub order: usize,
+    pub selected: bool,
+    pub state: serde_json::Value,
     pub source_location: Option<String>,
 }
 
@@ -499,6 +634,9 @@ pub struct StorageSurfaceSummary {
 pub struct SettingsSummary {
     pub plugin_id: String,
     pub path: String,
+    pub generated_form: Option<crate::plugin::ui::widget_ast::WidgetAst>,
+    pub custom_view: Option<crate::plugin::ui::widget_ast::WidgetAst>,
+    pub custom_view_source: Option<String>,
     pub schema_keys: Vec<String>,
     pub value_keys: Vec<String>,
     pub valid: bool,

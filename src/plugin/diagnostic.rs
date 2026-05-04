@@ -62,7 +62,7 @@ pub enum PluginSourceSpan {
     },
     /// Widget AST coordinate, e.g. `screen.view.children[2].child`.
     Widget { path: String },
-    /// `leviathan.fs.read_file`, `leviathan.ui.regions.add_slot`, etc.
+    /// `leviathan.fs.read_file`, `leviathan.ui.slot.add`, etc.
     /// Used when failure is attributable to a specific host API call
     /// site that the host can name.
     ApiFunction { name: String },

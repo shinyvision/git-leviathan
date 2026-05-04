@@ -1,121 +1,67 @@
-//! `leviathan.ui` slot hooks and screen registration.
+//! `leviathan.ui` hooks and screen registration.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use mlua::{Function, Lua, Table};
 
-use git_leviathan_plugin_api::descriptor::region::REGIONS;
-
-use super::factory::{compose_container, read_address_with_id, read_spec, slot_handle};
-use super::{BuildState, RawSlotOp, ScreenDef};
+use super::{BuildState, ScreenDef, SettingsPanelDef};
+use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::diagnostic::DiagnosticStore;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
 pub fn install(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
+    guard: Rc<CapabilityGuard>,
+    diagnostics: DiagnosticStore,
+    ui_context: crate::plugin::ui::context::UiContextStore,
     leviathan: &Table,
 ) -> mlua::Result<()> {
     let ui = lua.create_table()?;
-
-    let names_owned: Vec<String> = REGIONS.iter().map(|d| d.name.to_string()).collect();
-    ui.set(
-        "list_regions",
-        lua.create_function(move |_, ()| Ok(names_owned.clone()))?,
+    super::ui_core::install(
+        lua,
+        Rc::clone(&build),
+        ledger.clone(),
+        Rc::clone(&guard),
+        diagnostics.clone(),
+        ui_context,
+        &ui,
     )?;
-
-    install_regions_api(lua, Rc::clone(&build), ledger.clone(), &ui)?;
-    install_screen_register(lua, build, ledger, &ui)?;
+    install_settings_register(lua, Rc::clone(&build), ledger.clone(), &ui)?;
+    install_screen_register(lua, build, ledger, guard, &ui)?;
     leviathan.set("ui", ui)?;
     Ok(())
 }
 
-fn install_regions_api(
+fn install_settings_register(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
     ui: &Table,
 ) -> mlua::Result<()> {
-    let regions = lua.create_table()?;
-
-    let b = Rc::clone(&build);
-    let ledger_for_add = ledger.clone();
-    regions.set(
-        "add_slot",
+    let settings = lua.create_table()?;
+    settings.set(
+        "register",
         lua.create_function(move |lua_inner, spec: Table| {
-            let region: String = spec.get("region")?;
-            let desc = REGIONS
-                .get(&region)
-                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
-            let raw = read_spec(lua_inner, &spec, desc, &ledger_for_add)?;
-            b.borrow_mut().slot_ops.push(RawSlotOp::Add(raw));
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    let ledger_for_remove = ledger.clone();
-    let remove_plugin_id = ledger_for_remove.plugin_id().to_string();
-    regions.set(
-        "remove_slot",
-        lua.create_function(move |_, target: Table| {
-            let region: String = target.get("region")?;
-            let desc = REGIONS
-                .get(&region)
-                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
-            let (pane, section, id) = read_address_with_id(&target, desc)?;
-            let container = compose_container(pane.as_deref(), &section);
-            let handle = slot_handle(desc.name, &container, &id);
-            ledger_for_remove.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
-            b.borrow_mut().slot_ops.push(RawSlotOp::Remove {
-                plugin_id: remove_plugin_id.clone(),
-                region: desc.name.to_string(),
-                container,
-                id,
-            });
-            Ok(())
-        })?,
-    )?;
-
-    let b = Rc::clone(&build);
-    regions.set(
-        "replace_slot",
-        lua.create_function(move |lua_inner, (target, spec): (Table, Table)| {
-            let region: String = target.get("region")?;
-            let desc = REGIONS
-                .get(&region)
-                .ok_or_else(|| mlua::Error::external(format!("unknown region: {region}")))?;
-            let (pane, section, id) = read_address_with_id(&target, desc)?;
-            let container = compose_container(pane.as_deref(), &section);
-            let mut raw = read_spec(lua_inner, &spec, desc, &ledger)?;
-            if raw.container != container {
-                return Err(mlua::Error::external(format!(
-                    "{}.replace_slot: spec container '{}' != target '{}'",
-                    desc.name, raw.container, container
-                )));
-            }
-            let spec_handle = slot_handle(&raw.region, &raw.container, &raw.id);
-            ledger.remove_by_kind_handle(PluginResourceKind::Slot, &spec_handle);
-            raw.id = id.clone();
-            let handle = slot_handle(desc.name, &container, &id);
-            ledger.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
+            let view: Function = spec.get("view")?;
+            let source = ResourceLedger::source_location(lua_inner);
+            let key = lua_inner.create_registry_value(view)?;
+            ledger.remove_by_handle_prefix("settings_panel");
             ledger.record(
-                PluginResourceKind::Slot,
-                handle,
-                raw.source_location.clone(),
+                PluginResourceKind::LuaRegistryKey,
+                "settings_panel:view",
+                source.clone(),
             );
-            b.borrow_mut().slot_ops.push(RawSlotOp::Replace {
-                region: desc.name.to_string(),
-                container,
-                id,
-                spec: raw,
+            build.borrow_mut().settings_panel = Some(SettingsPanelDef {
+                view: key,
+                source_location: source,
             });
             Ok(())
         })?,
     )?;
-
-    ui.set("regions", regions)?;
+    ui.set("settings", settings)?;
     Ok(())
 }
 
@@ -123,22 +69,41 @@ fn install_screen_register(
     lua: &Lua,
     build: Rc<RefCell<BuildState>>,
     ledger: ResourceLedger,
+    guard: Rc<CapabilityGuard>,
     ui: &Table,
 ) -> mlua::Result<()> {
-    ui.set(
-        "register_screen",
+    let screen = lua.create_table()?;
+    screen.set(
+        "register",
         lua.create_function(move |lua_inner, spec: Table| {
             let id: String = spec.get("id")?;
+            let title: Option<String> = spec.get("title")?;
+            let breadcrumbs: Option<Vec<String>> = spec.get("breadcrumbs")?;
+            let bind_repository: Option<bool> = spec.get("bind_repository")?;
+            let source = ResourceLedger::source_location(lua_inner);
+            guard
+                .check_named_for_target(
+                    "ui:screen",
+                    &format!("screen:{id}"),
+                    "leviathan.ui.screen.register",
+                    source.as_deref(),
+                    "Declare and grant `ui:screen`.",
+                )
+                .map_err(mlua::Error::external)?;
             let init: Function = spec.get("init")?;
             let view: Function = spec.get("view")?;
             let update: Function = spec.get("update")?;
             let serialize_opt: Option<Function> = spec.get("serialize")?;
             let deserialize_opt: Option<Function> = spec.get("deserialize")?;
-            let source = ResourceLedger::source_location(lua_inner);
+            let can_close_opt: Option<Function> = spec.get("can_close")?;
             let prefix = format!("screen:{id}");
             ledger.remove_by_handle_prefix(&prefix);
             ledger.record(PluginResourceKind::Screen, prefix.clone(), source.clone());
             let def = ScreenDef {
+                id: id.clone(),
+                title: title.unwrap_or_else(|| id.clone()),
+                breadcrumbs: breadcrumbs.unwrap_or_default(),
+                bind_repository: bind_repository.unwrap_or(false),
                 init: register_screen_key(
                     lua_inner,
                     &ledger,
@@ -187,11 +152,24 @@ fn install_screen_register(
                         )
                     })
                     .transpose()?,
+                can_close: can_close_opt
+                    .map(|f| {
+                        register_screen_key(
+                            lua_inner,
+                            &ledger,
+                            &prefix,
+                            "can_close",
+                            f,
+                            source.clone(),
+                        )
+                    })
+                    .transpose()?,
             };
             build.borrow_mut().screens.insert(id, def);
             Ok(())
         })?,
     )?;
+    ui.set("screen", screen)?;
     Ok(())
 }
 
@@ -215,8 +193,11 @@ fn register_screen_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};
+    use git_leviathan_plugin_api::capability::Capability;
     use mlua::Lua;
     use std::cell::RefCell;
+    use std::path::PathBuf;
     use std::rc::Rc;
 
     fn install_test_harness() -> (Lua, Rc<RefCell<BuildState>>) {
@@ -227,7 +208,48 @@ mod tests {
             "test".into(),
             crate::plugin::resources::GenerationId::new(1),
         );
-        super::install(&lua, Rc::clone(&build), ledger, &leviathan).unwrap();
+        let store = GrantStore::new_in_memory();
+        for cap in ["ui:region:main_bar", "ui:screen"] {
+            store
+                .record_decision(
+                    "test",
+                    "0.1.0",
+                    cap,
+                    Decision::Allow,
+                    DecidedBy::Default,
+                    None,
+                )
+                .unwrap();
+        }
+        let root = PathBuf::from("/tmp/git-leviathan-ui-test");
+        let guard = Rc::new(CapabilityGuard::new(
+            "test",
+            "0.1.0",
+            vec![
+                Capability::try_from("ui:region:main_bar".to_string()).unwrap(),
+                Capability::try_from("ui:screen".to_string()).unwrap(),
+            ],
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: root.clone(),
+                state_dir: root.clone(),
+                config_dir: root,
+                workdir: None,
+            },
+            store,
+        ));
+        super::install(
+            &lua,
+            Rc::clone(&build),
+            ledger,
+            guard,
+            DiagnosticStore::default(),
+            crate::plugin::ui::context::UiContextStore::new(
+                "test",
+                crate::plugin::resources::GenerationId::new(1),
+            ),
+            &leviathan,
+        )
+        .unwrap();
         lua.globals().set("leviathan", leviathan).unwrap();
         (lua, build)
     }
@@ -236,7 +258,7 @@ mod tests {
     fn direct_region_handles_are_not_installed() {
         let (lua, _) = install_test_harness();
         let ok: bool = lua
-            .load(r#"return leviathan.ui["main_bar"] == nil and leviathan.ui["region"] == nil"#)
+            .load(r#"return leviathan.ui["main_bar"] == nil and leviathan.ui.region ~= nil and leviathan.ui.slot ~= nil"#)
             .eval()
             .unwrap();
         assert!(ok);
@@ -246,35 +268,24 @@ mod tests {
     fn list_regions_returns_all() {
         let (lua, _) = install_test_harness();
         let names: Vec<String> = lua
-            .load("return leviathan.ui.list_regions()")
+            .load("local names = assert(leviathan.ui.region.list()); return names")
             .eval()
             .unwrap();
-        assert_eq!(
-            names,
-            vec![
-                "main_bar",
-                "tab_bar",
-                "status_bar",
-                "repository",
-                "repository.graph",
-                "repository.details",
-                "repository.diff",
-            ]
-        );
+        assert_eq!(names, vec!["main_bar", "tab_bar", "repository"]);
     }
 
     #[test]
-    fn regions_api_adds_slot() {
+    fn slot_api_adds_slot() {
         let (lua, build) = install_test_harness();
         lua.load(
             r#"
-            leviathan.ui.regions.add_slot{
+            assert(leviathan.ui.slot.add{
                 region = "main_bar",
                 section = "left",
                 id = "x",
                 priority = 0,
                 widget = { kind = "text", value = "hi" },
-            }
+            })
         "#,
         )
         .exec()

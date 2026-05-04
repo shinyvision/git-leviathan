@@ -2,3 +2,4 @@ id = "terminal"
 name = "Terminal"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]

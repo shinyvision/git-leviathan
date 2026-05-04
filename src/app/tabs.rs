@@ -14,6 +14,7 @@ use iced::{keyboard, Task};
 use crate::{
     core::TabId,
     message::Message,
+    screens::plugin::{PluginScreen, PluginScreenSummary},
     screens::repository::state::GatewayFleet,
     screens::RepositoryScreen,
     services::{resolve_primary_and_active, GitRepositoryGateway, Presenter, SettingsService},
@@ -21,13 +22,36 @@ use crate::{
 
 pub struct TabEntry {
     pub id: TabId,
-    pub repo_path: String,
     pub name: String,
+    pub kind: TabKind,
+}
+
+#[derive(Clone)]
+pub enum TabKind {
+    Repository { path: String },
+    Plugin { key: String },
+}
+
+impl TabEntry {
+    pub fn path_key(&self) -> &str {
+        match &self.kind {
+            TabKind::Repository { path } => path,
+            TabKind::Plugin { key, .. } => key,
+        }
+    }
+
+    pub fn repo_path(&self) -> Option<&str> {
+        match &self.kind {
+            TabKind::Repository { path } => Some(path),
+            TabKind::Plugin { .. } => None,
+        }
+    }
 }
 
 pub struct TabManager {
     tabs: Vec<TabEntry>,
     screens: HashMap<TabId, RepositoryScreen>,
+    plugin_screens: HashMap<TabId, PluginScreen>,
     active_tab_id: TabId,
     next_tab_id: TabId,
     /// Tracks whether the currently active tab has already been written to the
@@ -48,6 +72,7 @@ impl TabManager {
         Self {
             tabs: Vec::new(),
             screens: HashMap::new(),
+            plugin_screens: HashMap::new(),
             active_tab_id: TabId(0),
             next_tab_id: TabId(0),
             active_tab_persisted_as_recent: false,
@@ -68,7 +93,21 @@ impl TabManager {
     }
 
     pub fn tab_id_for_path(&self, path: &str) -> Option<TabId> {
-        self.tabs.iter().find(|t| t.repo_path == path).map(|t| t.id)
+        self.tabs
+            .iter()
+            .find(|t| t.path_key() == path)
+            .map(|t| t.id)
+    }
+
+    pub fn first_repository_tab_id(&self) -> Option<TabId> {
+        self.tabs
+            .iter()
+            .find(|t| matches!(t.kind, TabKind::Repository { .. }))
+            .map(|t| t.id)
+    }
+
+    pub fn active_entry(&self) -> Option<&TabEntry> {
+        self.tabs.iter().find(|t| t.id == self.active_tab_id)
     }
 
     pub fn active_screen(&self) -> Option<&RepositoryScreen> {
@@ -79,12 +118,20 @@ impl TabManager {
         self.screens.get_mut(&self.active_tab_id)
     }
 
+    pub fn active_plugin_screen(&self) -> Option<&PluginScreen> {
+        self.plugin_screens.get(&self.active_tab_id)
+    }
+
     pub fn screen(&self, tab_id: TabId) -> Option<&RepositoryScreen> {
         self.screens.get(&tab_id)
     }
 
     pub fn screen_mut(&mut self, tab_id: TabId) -> Option<&mut RepositoryScreen> {
         self.screens.get_mut(&tab_id)
+    }
+
+    pub fn plugin_screen(&self, tab_id: TabId) -> Option<&PluginScreen> {
+        self.plugin_screens.get(&tab_id)
     }
 
     /// Create one tab per `repo_paths` entry. Sets the active tab to the one
@@ -141,8 +188,8 @@ impl TabManager {
 
         self.tabs.push(TabEntry {
             id: tab_id,
-            repo_path,
             name,
+            kind: TabKind::Repository { path: repo_path },
         });
         self.screens.insert(tab_id, screen);
         (tab_id, task)
@@ -158,7 +205,7 @@ impl TabManager {
         }
         let repo_path = path.to_string_lossy().to_string();
 
-        if let Some(existing_tab) = self.tabs.iter().find(|t| t.repo_path == repo_path) {
+        if let Some(existing_tab) = self.tabs.iter().find(|t| t.path_key() == repo_path) {
             if self.active_tab_id != existing_tab.id {
                 self.active_tab_id = existing_tab.id;
                 self.active_tab_persisted_as_recent = false;
@@ -176,11 +223,36 @@ impl TabManager {
         Ok(task)
     }
 
+    pub fn open_plugin_screen(
+        &mut self,
+        summary: PluginScreenSummary,
+        bound_repo_path: Option<String>,
+    ) -> TabId {
+        let key = plugin_tab_key(&summary.plugin_id, &summary.screen_id);
+        if let Some(existing_tab) = self.tabs.iter().find(|t| t.path_key() == key) {
+            let id = existing_tab.id;
+            let _ = self.activate_tab(id);
+            return id;
+        }
+
+        let tab_id = self.next_tab_id;
+        self.next_tab_id = TabId(self.next_tab_id.raw() + 1);
+        let screen = PluginScreen::new(summary.clone(), bound_repo_path);
+        self.tabs.push(TabEntry {
+            id: tab_id,
+            name: summary.title,
+            kind: TabKind::Plugin { key },
+        });
+        self.plugin_screens.insert(tab_id, screen);
+        let _ = self.activate_tab(tab_id);
+        tab_id
+    }
+
     /// Remove a tab on user-initiated close. Writes the removal to settings
     /// so it doesn't re-open on next launch.
     pub fn close_tab(&mut self, tab_id: TabId) {
         let tab_idx = self.tabs.iter().position(|t| t.id == tab_id);
-        let repo_path = tab_idx.map(|i| self.tabs[i].repo_path.clone());
+        let repo_path = tab_idx.and_then(|i| self.tabs[i].repo_path().map(ToOwned::to_owned));
         self.remove_tab_inner(tab_id, tab_idx);
         if let (Ok(settings), Some(path)) = (SettingsService::new(), repo_path) {
             let _ = settings.remove_repo(&path);
@@ -198,6 +270,7 @@ impl TabManager {
     fn remove_tab_inner(&mut self, tab_id: TabId, tab_idx: Option<usize>) {
         self.tabs.retain(|t| t.id != tab_id);
         self.screens.remove(&tab_id);
+        self.plugin_screens.remove(&tab_id);
         if self.active_tab_id == tab_id {
             let new_idx = tab_idx
                 .map(|i| if i > 0 { i - 1 } else { 0 })
@@ -265,7 +338,11 @@ impl TabManager {
 
     fn persist_tab_order(&self) {
         if let Ok(settings) = SettingsService::new() {
-            let paths: Vec<String> = self.tabs.iter().map(|t| t.repo_path.clone()).collect();
+            let paths: Vec<String> = self
+                .tabs
+                .iter()
+                .filter_map(|t| t.repo_path().map(ToOwned::to_owned))
+                .collect();
             let _ = settings.set_repo_order(&paths);
         }
     }
@@ -284,6 +361,9 @@ impl TabManager {
         if let Some(prev) = self.screens.get_mut(&prev_tab_id) {
             prev.hibernate();
         }
+        if let Some(prev) = self.plugin_screens.get_mut(&prev_tab_id) {
+            prev.set_focused(false);
+        }
         self.active_tab_id = new_tab_id;
         self.active_tab_persisted_as_recent = false;
         if let Some(screen) = self.screens.get_mut(&new_tab_id) {
@@ -300,6 +380,9 @@ impl TabManager {
                 screen.select_commit(selected_idx)
             }
         } else {
+            if let Some(screen) = self.plugin_screens.get_mut(&new_tab_id) {
+                screen.set_focused(true);
+            }
             Task::none()
         }
     }
@@ -315,7 +398,7 @@ impl TabManager {
             .tabs
             .iter()
             .find(|t| t.id == tab_id)
-            .map(|t| t.repo_path.clone())
+            .and_then(|t| t.repo_path().map(ToOwned::to_owned))
         {
             if let Ok(settings) = SettingsService::new() {
                 let _ = settings.set_most_recent_repo(&repo_path);
@@ -331,6 +414,10 @@ pub fn tab_name_from_path(repo_path: &str) -> String {
         .and_then(|n| n.to_str())
         .unwrap_or(repo_path)
         .to_string()
+}
+
+pub fn plugin_tab_key(plugin_id: &str, screen_id: &str) -> String {
+    format!("plugin://{plugin_id}/{screen_id}")
 }
 
 #[cfg(test)]
@@ -375,8 +462,10 @@ mod tests {
     fn push_tab(m: &mut TabManager, id: u64, path: &str) {
         m.tabs.push(TabEntry {
             id: TabId(id),
-            repo_path: path.to_string(),
             name: path.to_string(),
+            kind: TabKind::Repository {
+                path: path.to_string(),
+            },
         });
     }
 

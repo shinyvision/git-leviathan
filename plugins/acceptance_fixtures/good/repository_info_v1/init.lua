@@ -1,6 +1,6 @@
 local render_count = 0
 
-leviathan.ui.regions.replace_slot(
+leviathan.ui.slot.replace(
   { region = "main_bar", section = "left", id = "builtin.repo_info" },
   {
     region = "main_bar",

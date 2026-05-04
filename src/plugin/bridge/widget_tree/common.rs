@@ -40,6 +40,19 @@ pub(super) fn length_explicit(l: AstLength) -> Option<Length> {
 }
 
 pub(super) fn color_to_iced(color: &AstColor) -> Option<Color> {
+    if let Some(token) = &color.token {
+        return match token.as_str() {
+            "text.primary" => Some(crate::theme::TEXT_PRIMARY),
+            "text.secondary" => Some(crate::theme::TEXT_SECONDARY),
+            "text.dim" => Some(crate::theme::TEXT_DIM),
+            "accent.blue" => Some(crate::theme::ACCENT_BLUE),
+            "accent.green" => Some(crate::theme::ACCENT_GREEN),
+            "accent.orange" => Some(crate::theme::ACCENT_ORANGE),
+            "bg.panel" => Some(crate::theme::BG_PANEL),
+            "bg.sidebar" => Some(crate::theme::BG_SIDEBAR),
+            _ => None,
+        };
+    }
     parse_hex(&color.raw)
 }
 
@@ -189,6 +202,7 @@ mod tests {
     fn parse_color_hex() {
         let c = color_to_iced(&AstColor {
             raw: "#ff8800".into(),
+            token: None,
         })
         .unwrap();
         assert!((c.r - 1.0).abs() < 0.01);
@@ -201,6 +215,7 @@ mod tests {
     fn parse_color_hex_with_alpha() {
         let c = color_to_iced(&AstColor {
             raw: "#00000080".into(),
+            token: None,
         })
         .unwrap();
         assert!((c.r - 0.0).abs() < 0.01);

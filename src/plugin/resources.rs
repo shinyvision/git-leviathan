@@ -105,6 +105,8 @@ pub enum PluginResourceKind {
     GraphDecoration,
     /// extension points: one decoration attached to a diff line / hunk.
     DiffDecoration,
+    AssetHandle,
+    DockPanel,
 }
 
 impl PluginResourceKind {
@@ -128,6 +130,8 @@ impl PluginResourceKind {
             Self::ContextMenuItem => "context_menu_item",
             Self::GraphDecoration => "graph_decoration",
             Self::DiffDecoration => "diff_decoration",
+            Self::AssetHandle => "asset_handle",
+            Self::DockPanel => "dock_panel",
         }
     }
 
@@ -151,6 +155,8 @@ impl PluginResourceKind {
             Self::ContextMenuItem,
             Self::GraphDecoration,
             Self::DiffDecoration,
+            Self::AssetHandle,
+            Self::DockPanel,
         ]
     }
 }
@@ -248,6 +254,14 @@ impl ResourceLedger {
             .borrow_mut()
             .records
             .retain(|record| !(record.kind == kind && record.handle == handle));
+    }
+
+    pub fn contains_kind_handle(&self, kind: PluginResourceKind, handle: &str) -> bool {
+        self.inner
+            .borrow()
+            .records
+            .iter()
+            .any(|record| record.kind == kind && record.handle == handle)
     }
 
     pub fn remove_by_handle_prefix(&self, prefix: &str) {

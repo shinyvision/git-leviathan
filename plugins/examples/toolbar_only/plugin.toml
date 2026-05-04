@@ -1,0 +1,6 @@
+id = "example_toolbar_only"
+name = "Example Toolbar Only"
+version = "0.1.0"
+api_version = "1.0"
+description = "Minimal main toolbar contribution."
+capabilities = ["ui:region:main_bar"]

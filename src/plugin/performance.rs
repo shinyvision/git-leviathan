@@ -24,6 +24,8 @@ pub const DEFAULT_FAILURE_THRESHOLD: u32 = 5;
 /// Number of disabled callbacks a plugin can accumulate (in one
 /// generation) before the plugin itself is marked degraded.
 pub const MAX_DISABLED_CALLBACKS_PER_PLUGIN: usize = 3;
+pub const UI_RENDER_PLUGIN_FRAME_BUDGET_MS: u128 = 16;
+pub const UI_RENDER_REGION_FRAME_BUDGET_MS: u128 = 24;
 
 /// Kinds of plugin callbacks that flow through the budget tracker.
 /// Each kind has its own default `(soft_ms, hard_ms)` budget; tighter
@@ -293,6 +295,14 @@ struct TrackerInner {
     /// recomputed on every state transition. Used to gate the
     /// `plugin.degraded` diagnostic.
     degraded_emitted: HashMap<(String, u64), bool>,
+    render_frame: RenderFrameBudget,
+}
+
+#[derive(Debug, Default)]
+struct RenderFrameBudget {
+    sequence: u64,
+    plugin_ms: HashMap<(String, u64), u128>,
+    region_ms: HashMap<String, u128>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -312,6 +322,25 @@ pub enum Outcome<R, E> {
     Err(E),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderBudgetSkip {
+    PluginFrame { used_ms: u128, budget_ms: u128 },
+    RegionFrame { used_ms: u128, budget_ms: u128 },
+}
+
+impl RenderBudgetSkip {
+    pub fn reason(&self) -> String {
+        match self {
+            Self::PluginFrame { used_ms, budget_ms } => {
+                format!("plugin render frame budget exhausted ({used_ms}ms/{budget_ms}ms)")
+            }
+            Self::RegionFrame { used_ms, budget_ms } => {
+                format!("region render frame budget exhausted ({used_ms}ms/{budget_ms}ms)")
+            }
+        }
+    }
+}
+
 impl BudgetTracker {
     pub fn new(diagnostics: DiagnosticStore) -> Self {
         Self::with_clock(diagnostics, Arc::new(SystemClock))
@@ -323,6 +352,56 @@ impl BudgetTracker {
             diagnostics,
             clock,
         }
+    }
+
+    pub fn begin_render_frame(&self) -> u64 {
+        let mut inner = self.inner.lock().expect("budget tracker poisoned");
+        inner.render_frame.sequence = inner.render_frame.sequence.wrapping_add(1);
+        inner.render_frame.plugin_ms.clear();
+        inner.render_frame.region_ms.clear();
+        inner.render_frame.sequence
+    }
+
+    pub fn render_budget_skip(
+        &self,
+        plugin_id: &PluginId,
+        generation_id: GenerationId,
+        region: &str,
+    ) -> Option<RenderBudgetSkip> {
+        let inner = self.inner.lock().expect("budget tracker poisoned");
+        let plugin_key = (plugin_id.to_string(), generation_id.get());
+        let plugin_used = *inner.render_frame.plugin_ms.get(&plugin_key).unwrap_or(&0);
+        if plugin_used >= UI_RENDER_PLUGIN_FRAME_BUDGET_MS {
+            return Some(RenderBudgetSkip::PluginFrame {
+                used_ms: plugin_used,
+                budget_ms: UI_RENDER_PLUGIN_FRAME_BUDGET_MS,
+            });
+        }
+        let region_used = *inner.render_frame.region_ms.get(region).unwrap_or(&0);
+        if region_used >= UI_RENDER_REGION_FRAME_BUDGET_MS {
+            return Some(RenderBudgetSkip::RegionFrame {
+                used_ms: region_used,
+                budget_ms: UI_RENDER_REGION_FRAME_BUDGET_MS,
+            });
+        }
+        None
+    }
+
+    pub fn record_render_frame_cost(
+        &self,
+        plugin_id: &PluginId,
+        generation_id: GenerationId,
+        region: &str,
+        duration_ms: u128,
+    ) {
+        let mut inner = self.inner.lock().expect("budget tracker poisoned");
+        let plugin_key = (plugin_id.to_string(), generation_id.get());
+        *inner.render_frame.plugin_ms.entry(plugin_key).or_insert(0) += duration_ms;
+        *inner
+            .render_frame
+            .region_ms
+            .entry(region.to_string())
+            .or_insert(0) += duration_ms;
     }
 
     /// Run `body` under this callback's budget + breaker. The body is

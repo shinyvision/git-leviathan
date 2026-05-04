@@ -140,6 +140,18 @@ const PAYLOAD_COMMAND: &[ApiTypeField] = &[
         required: false,
         doc: "Owning plugin id when known.",
     },
+    ApiTypeField {
+        name: "ok",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when command dispatch succeeded.",
+    },
+    ApiTypeField {
+        name: "duration_ms",
+        lua_type: "integer",
+        required: false,
+        doc: "Dispatch duration in milliseconds.",
+    },
 ];
 
 const PAYLOAD_KEYMAP: &[ApiTypeField] = &[
@@ -179,7 +191,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     // ---- Lifecycle ----
     ApiEvent {
         name: "AppStarted",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired once after the host app finishes starting up.",
         payload_type: "table",
         payload_fields: PAYLOAD_EMPTY,
@@ -188,7 +200,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "AppWillQuit",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired immediately before the host app shuts down.",
         payload_type: "table",
         payload_fields: PAYLOAD_EMPTY,
@@ -198,7 +210,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     // ---- Repository ----
     ApiEvent {
         name: "RepositoryOpened",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after a repository is opened.",
         payload_type: "table",
         payload_fields: PAYLOAD_REPOSITORY_REF,
@@ -207,7 +219,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "RepositoryClosed",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after a repository is closed.",
         payload_type: "table",
         payload_fields: PAYLOAD_REPOSITORY_REF,
@@ -216,7 +228,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "RepositoryChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the active repository changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_REPOSITORY_REF,
@@ -225,7 +237,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "RefsChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the repository ref set changes (push/fetch/branch ops).",
         payload_type: "table",
         payload_fields: PAYLOAD_REFS,
@@ -234,7 +246,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "HeadChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the resolved HEAD commit hash changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_HEAD,
@@ -253,7 +265,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     // ---- Commits and diffs ----
     ApiEvent {
         name: "CommitSelected",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the user selects a commit in the history view.",
         payload_type: "table",
         payload_fields: PAYLOAD_COMMIT,
@@ -262,7 +274,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "CommitListChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the visible commit list changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_COMMIT_LIST,
@@ -271,7 +283,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "DiffLoaded",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after a diff finishes loading.",
         payload_type: "table",
         payload_fields: PAYLOAD_DIFF,
@@ -280,7 +292,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "WorktreeChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired when the worktree contents change.",
         payload_type: "table",
         payload_fields: PAYLOAD_WORKTREE,
@@ -290,7 +302,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     // ---- Network ops ----
     ApiEvent {
         name: "FetchStarted",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired when a repository fetch starts.",
         payload_type: "table",
         payload_fields: PAYLOAD_FETCH,
@@ -299,7 +311,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "FetchFinished",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired when a repository fetch finishes (success or failure).",
         payload_type: "table",
         payload_fields: PAYLOAD_FETCH,
@@ -308,7 +320,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "PushStarted",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired when a push starts.",
         payload_type: "table",
         payload_fields: PAYLOAD_PUSH,
@@ -317,7 +329,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "PushFinished",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired when a push finishes (success or failure).",
         payload_type: "table",
         payload_fields: PAYLOAD_PUSH,
@@ -345,7 +357,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "TabSelected",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the active tab changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_TAB,
@@ -354,7 +366,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "TabMoved",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after tabs are reordered.",
         payload_type: "table",
         payload_fields: PAYLOAD_TAB_MOVED,
@@ -364,7 +376,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     // ---- App state ----
     ApiEvent {
         name: "ThemeChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after the active theme changes.",
         payload_type: "table",
         payload_fields: PAYLOAD_THEME,
@@ -373,7 +385,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "SettingsChanged",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after a settings entry is updated.",
         payload_type: "table",
         payload_fields: PAYLOAD_SETTINGS,
@@ -382,7 +394,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "CommandExecuted",
-        since: "1.7",
+        since: "1.0",
         doc: "Fired after a host or plugin command finishes executing.",
         payload_type: "table",
         payload_fields: PAYLOAD_COMMAND,
@@ -391,7 +403,7 @@ pub const API_EVENTS: &[ApiEvent] = &[
     },
     ApiEvent {
         name: "KeymapTriggered",
-        since: "1.9",
+        since: "1.0",
         doc: "Fired after a keymap chord matches and the host dispatches the underlying command.",
         payload_type: "table",
         payload_fields: PAYLOAD_KEYMAP,

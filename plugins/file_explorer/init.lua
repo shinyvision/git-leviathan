@@ -209,13 +209,13 @@ local function confirm_modal(path)
   }
 end
 
-ui.regions.add_slot {
+ui.slot.add {
   region   = "main_bar",
   id       = "plugin.file_explorer.files",
   section  = "right",
   priority = 100,
   on_click = function()
-    return { navigate = "explorer" }
+    return { effects = { { kind = "open_screen", plugin = "file_explorer", screen = "explorer" } } }
   end,
   widget = {
     kind     = "button",
@@ -233,8 +233,9 @@ ui.regions.add_slot {
   },
 }
 
-ui.register_screen({
+ui.screen.register({
   id = "explorer",
+  title = "Files",
   init = function()
     local home = fs.home() or "/"
     return {
@@ -265,7 +266,7 @@ ui.register_screen({
   end,
   update = function(state, event, value)
     if event == "nav_back" then
-      return { navigate = "repository" }
+      return { effects = { { kind = "navigate", target = { kind = "repository" } } } }
 
     elseif event == "nav_up" then
       local parent = fs.parent(state.current_path)

@@ -8,28 +8,35 @@ use mlua::{Lua, RegistryKey};
 
 use crate::plugin::api::git::PendingGitEvents;
 use crate::plugin::api::{
-    async_api::JobCallbacks, DeferredQueue, HealthCheckRegistration, ScreenDef, UserCommands,
+    async_api::JobCallbacks, DeferredQueue, DockPanelDef, HealthCheckRegistration, ScreenDef,
+    SettingsPanelDef, UserCommands,
 };
 use crate::plugin::async_jobs::AsyncJobRegistry;
 use crate::plugin::audit::AuditLog;
 use crate::plugin::capability_grants::{AutoGrantPolicy, GrantStore};
 use crate::plugin::commands::{CommandPluginRegistry, CommandRegistry, PendingCommandEvents};
+use crate::plugin::core_commands::CoreCommandActions;
 use crate::plugin::devtools::ReloadEventSummary;
 use crate::plugin::diagnostic::DiagnosticStore;
+use crate::plugin::dock::DockManager;
 use crate::plugin::events::EventBus;
-use crate::plugin::extensions::{ExtensionRegistry, OverlayCallbacks};
+use crate::plugin::extensions::{DecorationProviderCallbacks, ExtensionRegistry, OverlayCallbacks};
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::git_ops::{ActiveRepositoryGateway, DestructiveConfirmPolicy, PendingGitWrites};
 use crate::plugin::keymap::KeymapRegistry;
 use crate::plugin::lua_loader::LuaLoader;
+use crate::plugin::navigation::PluginNavigationEffect;
 use crate::plugin::performance::BudgetTracker;
 use crate::plugin::resources::ResourceLedger;
 use crate::plugin::runtime_path::RuntimePathRegistry;
 use crate::plugin::services::ServiceRegistry;
+use crate::plugin::slots::SlotAddress;
 use crate::plugin::storage::PluginStorageRoots;
 use crate::plugin::tab_snapshot::{TabRegistryOp, TabsSnapshot};
 use crate::plugin::timers::{PluginTimerCallbacks, TimerRegistry};
-use crate::plugin::ui::main_bar_slots::{DynamicAstCache, PreparedSlotOp};
+use crate::plugin::ui::context::UiContextStore;
+use crate::plugin::ui::contribution_overrides::ContributionOverrides;
+use crate::plugin::ui::main_bar_slots::{DynamicWidgetRegistration, PreparedSlotOp};
 use crate::plugin::ui::widget_ast::WidgetAst;
 use crate::plugin::watchers::{FileWatcherRegistry, PluginWatcherCallbacks};
 use crate::plugin::{activation, dependency, devtools_commands};
@@ -81,11 +88,15 @@ pub(super) struct LoadedPlugin {
     pub(super) generation: PluginGeneration,
     pub(super) root: PathBuf,
     pub(super) manifest: PluginManifest,
-    pub(super) slot_handlers: HashMap<String, RegistryKey>,
+    pub(super) slot_handlers: HashMap<SlotAddress, RegistryKey>,
     pub(super) overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub(super) decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub(super) screens: HashMap<String, ScreenDef>,
+    pub(super) dock_panels: HashMap<String, DockPanelDef>,
+    pub(super) settings_panel: Option<SettingsPanelDef>,
     pub(super) screen_state: HashMap<String, RegistryKey>,
-    pub(super) dynamic_widgets: HashMap<String, (RegistryKey, DynamicAstCache)>,
+    pub(super) dynamic_widgets: HashMap<SlotAddress, DynamicWidgetRegistration>,
+    pub(super) ui_context: UiContextStore,
     pub(super) deferred: Rc<RefCell<DeferredQueue>>,
     pub(super) user_commands: Rc<RefCell<UserCommands>>,
     pub(super) health_checks: Vec<HealthCheckRegistration>,
@@ -144,6 +155,7 @@ pub struct PluginHost {
     pub(super) command_registry: Rc<RefCell<CommandRegistry>>,
     pub(super) command_plugin_registry: CommandPluginRegistry,
     pub(super) pending_command_events: PendingCommandEvents,
+    pub(super) command_active_context: Rc<RefCell<serde_json::Value>>,
     pub(super) keymap_registry: Rc<RefCell<KeymapRegistry>>,
     pub(super) grant_store: GrantStore,
     pub(super) auto_grant_policy: AutoGrantPolicy,
@@ -160,17 +172,24 @@ pub struct PluginHost {
     pub(super) lazy_ledgers: HashMap<String, ResourceLedger>,
     pub(super) last_repository_shape: Option<RepositoryShapeFacts>,
     pub(super) extension_registry: ExtensionRegistry,
+    pub(super) dock_manager: DockManager,
+    pub(super) contribution_overrides: ContributionOverrides,
     pub(super) budget_tracker: BudgetTracker,
     pub(super) disabled_plugins: HashSet<String>,
     pub(super) last_plugin_roots: HashMap<String, PathBuf>,
     pub(super) devtools_action_queue: devtools_commands::DevtoolsActionQueue,
     pub(super) last_devtools_result: Option<serde_json::Value>,
+    pub(super) core_command_actions: CoreCommandActions,
+    pub(super) pending_navigation_effects: Vec<PluginNavigationEffect>,
 }
 
 /// Cached repository facts evaluated against lazy activation predicates.
 #[derive(Debug, Clone)]
 pub(super) struct RepositoryShapeFacts {
+    pub(super) repo_name: String,
     pub(super) current_branch: String,
+    pub(super) head_hash: String,
+    pub(super) default_remote: String,
     pub(super) has_remote: bool,
     pub(super) workdir: PathBuf,
 }

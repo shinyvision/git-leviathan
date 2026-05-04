@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 use git_leviathan_plugin_api::descriptor::api as event_descriptor;
 use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{
@@ -36,11 +35,12 @@ use crate::plugin::devtools::{ReloadEventSummary, ReloadOutcome};
 use crate::plugin::diagnostic::{
     DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
 };
+use crate::plugin::dock::DockManager;
 use crate::plugin::events::{
     self, AutocmdOptions, DispatchOutcome, EventBus, EventPayload, GroupId,
     MAX_CONSECUTIVE_FAILURES,
 };
-use crate::plugin::extensions::OverlayCallbacks;
+use crate::plugin::extensions::{DecorationProviderCallbacks, OverlayCallbacks};
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::git_ops::{
     ActiveRepositoryGateway, DestructiveConfirmPolicy, GitOpsContext, PendingGitWrite,
@@ -54,7 +54,6 @@ use crate::plugin::resources::{
 };
 use crate::plugin::runtime_path::{PluginRuntimePath, RuntimePathRegistry};
 use crate::plugin::services::{dependency_statuses, ServiceRegistry};
-use crate::plugin::slots::{IsSlot, SlotRegistry};
 use crate::plugin::staged_reload::{
     self, snapshot_previous_screens, stage_reload, ReloadStage, StageInputs, StagingArtifacts,
     StagingFailure,
@@ -62,7 +61,8 @@ use crate::plugin::staged_reload::{
 use crate::plugin::storage::{PluginStoragePaths, PluginStorageRoots, StorageSurface};
 use crate::plugin::tab_snapshot::{TabChange, TabRegistryOp, TabsSnapshot};
 use crate::plugin::timers::{PluginTimerCallbacks, TimerRegistry};
-use crate::plugin::ui::main_bar_slots::{PreparedSlot, PreparedSlotOp};
+use crate::plugin::ui::invalidation::UiInvalidationCause;
+use crate::plugin::ui::main_bar_slots::PreparedSlotOp;
 use crate::plugin::ui::split;
 use crate::plugin::ui::widget_ast::{self, WidgetAst};
 use crate::plugin::watchers::{FileWatcherRegistry, PluginWatcherCallbacks};
@@ -71,7 +71,7 @@ use crate::widgets::chrome::main_bar::MainBarRegistry;
 use crate::widgets::chrome::repo_region::RepoRegionRegistry;
 use crate::widgets::chrome::tab_bar_slots::TabBarRegistry;
 
-use super::slots::{op_belongs_to, op_matches_slot_resource, prepare_op};
+use super::slots::{op_belongs_to, op_matches_slot_resource, prepare_op, validate_raw_slot_op};
 use super::types::{
     LoadedPlugin, PluginHost, PluginLoadError, RepositoryShapeFacts, SplitDragInfo,
 };
@@ -80,6 +80,7 @@ struct HostResourceCleaner<'a> {
     slot_ops: &'a mut Vec<PreparedSlotOp>,
     event_bus: &'a mut EventBus,
     service_registry: Rc<RefCell<ServiceRegistry>>,
+    dock_manager: DockManager,
 }
 
 impl ResourceCleaner for HostResourceCleaner<'_> {
@@ -109,6 +110,16 @@ impl ResourceCleaner for HostResourceCleaner<'_> {
                 self.service_registry
                     .borrow_mut()
                     .unregister(&resource.handle, plugin_id);
+            }
+            PluginResourceKind::DockPanel => {
+                self.dock_manager
+                    .drop_registration_key(&crate::plugin::dock::panel_key(
+                        plugin_id,
+                        resource
+                            .handle
+                            .strip_prefix("dock:")
+                            .unwrap_or(resource.handle.as_str()),
+                    ));
             }
             _ => {}
         }
@@ -189,6 +200,15 @@ impl PluginHost {
             command_registry: Rc::new(RefCell::new(CommandRegistry::new())),
             command_plugin_registry: CommandPluginRegistry::new(),
             pending_command_events: PendingCommandEvents::new(),
+            command_active_context: Rc::new(RefCell::new(
+                crate::plugin::ui::context::context_for_surface(
+                    HOST_COMMAND_PLUGIN_ID,
+                    GenerationId::new(0),
+                    crate::plugin::ui::context::UiContextSurface::Screen,
+                    None,
+                    &TabsSnapshot::default(),
+                ),
+            )),
             keymap_registry: Rc::new(RefCell::new(KeymapRegistry::new())),
             grant_store: GrantStore::new_in_memory(),
             auto_grant_policy: AutoGrantPolicy::new(),
@@ -205,12 +225,29 @@ impl PluginHost {
             lazy_ledgers: HashMap::new(),
             last_repository_shape: None,
             extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
+            dock_manager: DockManager::new(),
+            contribution_overrides:
+                crate::plugin::ui::contribution_overrides::ContributionOverrides::new(),
             budget_tracker: BudgetTracker::new(DiagnosticStore::default()),
             disabled_plugins: std::collections::HashSet::new(),
             last_plugin_roots: HashMap::new(),
             devtools_action_queue: Rc::new(RefCell::new(Vec::new())),
             last_devtools_result: None,
+            core_command_actions: crate::plugin::core_commands::CoreCommandActions::new(),
+            pending_navigation_effects: Vec::new(),
         };
+        host.dock_manager.set_persist_path(
+            host.storage_roots
+                .state_root
+                .join("host")
+                .join("dock_layout.json"),
+        );
+        host.contribution_overrides.set_persist_path(
+            host.storage_roots
+                .state_root
+                .join("host")
+                .join("contribution_overrides.json"),
+        );
         let local_plugins = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins");
         if local_plugins.is_dir() {
             host.trust_local_plugin_root(local_plugins);
@@ -437,6 +474,26 @@ impl PluginHost {
                 "plugin_version": plugin_version,
             })),
         );
+        if capability.starts_with("ui:")
+            && self
+                .plugins
+                .get(plugin_id)
+                .is_some_and(|plugin| plugin.manifest.version.to_string() == plugin_version)
+        {
+            let _ = self.unload_plugin(plugin_id);
+            self.diagnostics.record(
+                PluginDiagnostic::new(
+                    PluginId::from(plugin_id),
+                    DiagnosticSeverity::Info,
+                    "capability.revoked_ui_unmounted",
+                    format!("unmounted UI for {plugin_id} after `{capability}` revocation"),
+                )
+                .with_context(serde_json::json!({
+                    "capability": capability,
+                    "plugin_version": plugin_version,
+                })),
+            );
+        }
         Ok(())
     }
 }
@@ -448,6 +505,7 @@ use runtime_introspection::widget_decode_diagnostic;
 mod commands_devtools;
 mod diagnostics_storage;
 mod discovery;
+mod dock;
 mod event_dispatch;
 mod loading_and_slots;
 mod runtime_introspection;

@@ -6,20 +6,26 @@ use std::rc::Rc;
 use mlua::RegistryKey;
 
 use crate::plugin::api::{RawSlotOp, RawSlotSpec, WidgetSource};
+use crate::plugin::diagnostic::{
+    DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
+};
+use crate::plugin::resources::{GenerationId, PluginId};
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
+use crate::plugin::slots::{SlotAddress, BUILTIN_PLUGIN_ID};
+use crate::plugin::ui::invalidation::DynamicWidgetTelemetry;
 use crate::plugin::ui::main_bar_slots::{
-    parse_container, DynamicAstCache, PreparedSlot, PreparedSlotOp, SlotWidget,
+    parse_container, DynamicAstCache, DynamicWidgetRegistration, PreparedSlot, PreparedSlotOp,
+    SlotWidget,
 };
 
-/// True when this slot op was registered by `plugin_id`. Used by
-/// reload to park / restore plugin-owned host state.
 pub(super) fn op_belongs_to(op: &PreparedSlotOp, plugin_id: &str) -> bool {
     match op {
         PreparedSlotOp::Add(p) => p.plugin_id == plugin_id,
         PreparedSlotOp::Replace { spec, .. } => spec.plugin_id == plugin_id,
         PreparedSlotOp::Remove {
-            plugin_id: owner, ..
-        } => owner == plugin_id,
+            requester_plugin_id,
+            ..
+        } => requester_plugin_id == plugin_id,
     }
 }
 
@@ -33,16 +39,106 @@ pub(super) fn op_matches_slot_resource(op: &PreparedSlotOp, plugin_id: &str, han
             p.plugin_id == plugin_id
                 && prepared_slot_handle(&p.region, &p.container.key(), &p.id) == handle
         }
-        PreparedSlotOp::Replace {
+        PreparedSlotOp::Replace { target, spec, .. } => {
+            spec.plugin_id == plugin_id && target.display_handle() == handle
+        }
+        PreparedSlotOp::Remove { .. } => false,
+    }
+}
+
+pub(crate) fn validate_raw_slot_op(
+    diagnostics: &DiagnosticStore,
+    generation_id: GenerationId,
+    live_ops: &[PreparedSlotOp],
+    plugin_id: &str,
+    op: &RawSlotOp,
+) -> bool {
+    match op {
+        RawSlotOp::Add(raw) => {
+            if raw.id.starts_with("builtin.") {
+                slot_diagnostic(
+                    diagnostics,
+                    generation_id,
+                    plugin_id,
+                    "schema.slot_builtin_id_reserved",
+                    format!(
+                        "slot id `{}` is reserved; use leviathan.ui.slot.replace for built-ins",
+                        raw.id
+                    ),
+                    "leviathan.ui.slot.add",
+                );
+                return false;
+            }
+            let address = add_address(plugin_id, raw);
+            let active = effective_slots(live_ops);
+            if active.contains_key(&address) {
+                slot_diagnostic(
+                    diagnostics,
+                    generation_id,
+                    plugin_id,
+                    "schema.slot_duplicate_address",
+                    format!("duplicate slot address `{}`", address.display_handle()),
+                    "leviathan.ui.slot.add",
+                );
+            }
+            for (existing, owner) in &active {
+                if owner == plugin_id
+                    && existing.region().as_str() == raw.region
+                    && existing.slot_id().as_str() == raw.id
+                    && existing.container() != &parse_container(&raw.container)
+                {
+                    slot_diagnostic(
+                        diagnostics,
+                        generation_id,
+                        plugin_id,
+                        "schema.slot_id_reused",
+                        format!(
+                            "slot id `{}` reused in `{}` and `{}`",
+                            raw.id,
+                            existing.container().key(),
+                            raw.container
+                        ),
+                        "leviathan.ui.slot.add",
+                    );
+                    break;
+                }
+            }
+            true
+        }
+        RawSlotOp::Remove {
+            target_plugin_id,
             region,
             container,
             id,
-            spec,
-        } => {
-            spec.plugin_id == plugin_id
-                && prepared_slot_handle(region, &container.key(), id) == handle
-        }
-        PreparedSlotOp::Remove { .. } => false,
+            ..
+        } => validate_mutation_target(
+            diagnostics,
+            generation_id,
+            live_ops,
+            plugin_id,
+            target_plugin_id.as_deref(),
+            region,
+            container,
+            id,
+            "remove",
+        ),
+        RawSlotOp::Replace {
+            target_plugin_id,
+            region,
+            container,
+            id,
+            ..
+        } => validate_mutation_target(
+            diagnostics,
+            generation_id,
+            live_ops,
+            plugin_id,
+            target_plugin_id.as_deref(),
+            region,
+            container,
+            id,
+            "replace",
+        ),
     }
 }
 
@@ -51,8 +147,8 @@ pub(crate) fn prepare_op(
     plugin_root: &Path,
     op: RawSlotOp,
     ledger: &ResourceLedger,
-    handlers: &mut HashMap<String, RegistryKey>,
-    dynamic_widgets: &mut HashMap<String, (RegistryKey, DynamicAstCache)>,
+    handlers: &mut HashMap<SlotAddress, RegistryKey>,
+    dynamic_widgets: &mut HashMap<SlotAddress, DynamicWidgetRegistration>,
 ) -> Result<PreparedSlotOp, String> {
     match op {
         RawSlotOp::Add(raw) => {
@@ -67,21 +163,28 @@ pub(crate) fn prepare_op(
             Ok(PreparedSlotOp::Add(prepared))
         }
         RawSlotOp::Remove {
-            plugin_id,
+            target_plugin_id,
             region,
             container,
             id,
+            ..
         } => Ok(PreparedSlotOp::Remove {
-            plugin_id,
-            region,
-            container: parse_container(&container),
-            id,
+            requester_plugin_id: plugin_id.to_string(),
+            target: target_address(
+                plugin_id,
+                target_plugin_id.as_deref(),
+                &region,
+                &container,
+                &id,
+            ),
         }),
         RawSlotOp::Replace {
+            target_plugin_id,
             region,
             container,
             id,
             spec,
+            ..
         } => {
             let prepared = prepare_slot(
                 plugin_id,
@@ -92,9 +195,14 @@ pub(crate) fn prepare_op(
                 dynamic_widgets,
             )?;
             Ok(PreparedSlotOp::Replace {
-                region,
-                container: parse_container(&container),
-                id,
+                requester_plugin_id: plugin_id.to_string(),
+                target: target_address(
+                    plugin_id,
+                    target_plugin_id.as_deref(),
+                    &region,
+                    &container,
+                    &id,
+                ),
                 spec: prepared,
             })
         }
@@ -106,8 +214,8 @@ fn prepare_slot(
     plugin_root: &Path,
     raw: RawSlotSpec,
     ledger: &ResourceLedger,
-    handlers: &mut HashMap<String, RegistryKey>,
-    dynamic_widgets: &mut HashMap<String, (RegistryKey, DynamicAstCache)>,
+    handlers: &mut HashMap<SlotAddress, RegistryKey>,
+    dynamic_widgets: &mut HashMap<SlotAddress, DynamicWidgetRegistration>,
 ) -> Result<PreparedSlot, String> {
     let RawSlotSpec {
         id,
@@ -115,19 +223,34 @@ fn prepare_slot(
         container,
         priority,
         widget,
+        depends_on,
         on_click,
         source_location,
     } = raw;
     let container_parsed = parse_container(&container);
+    let address = SlotAddress::new(
+        plugin_id,
+        region.clone(),
+        container_parsed.clone(),
+        id.clone(),
+    );
     if let Some(key) = on_click {
-        let handler_key = format!("{region}:{}:{id}", container_parsed.key());
-        handlers.insert(handler_key, key);
+        handlers.insert(address.clone(), key);
     }
     let widget = match widget {
         WidgetSource::Static(ast) => SlotWidget::Static(ast),
-        WidgetSource::Dynamic(key) => {
+        WidgetSource::Dynamic { key, call } => {
             let cache: DynamicAstCache = Rc::new(RefCell::new(None));
-            dynamic_widgets.insert(id.clone(), (key, Rc::clone(&cache)));
+            dynamic_widgets.insert(
+                address.clone(),
+                DynamicWidgetRegistration {
+                    key,
+                    cache: Rc::clone(&cache),
+                    call,
+                    dependencies: depends_on.clone(),
+                    telemetry: Rc::new(RefCell::new(DynamicWidgetTelemetry::default())),
+                },
+            );
             ledger.record(
                 PluginResourceKind::DynamicWidgetCache,
                 format!("{region}:{}:{id}", container_parsed.key()),
@@ -139,10 +262,176 @@ fn prepare_slot(
     Ok(PreparedSlot {
         plugin_id: plugin_id.to_string(),
         id,
+        address: address.clone(),
+        mount_address: address,
         region,
         container: container_parsed,
         priority,
         widget,
         plugin_root: plugin_root.to_path_buf(),
     })
+}
+
+fn add_address(plugin_id: &str, raw: &RawSlotSpec) -> SlotAddress {
+    SlotAddress::new(
+        plugin_id,
+        raw.region.clone(),
+        parse_container(&raw.container),
+        raw.id.clone(),
+    )
+}
+
+fn target_address(
+    requester_plugin_id: &str,
+    target_plugin_id: Option<&str>,
+    region: &str,
+    container: &str,
+    id: &str,
+) -> SlotAddress {
+    let owner = target_plugin_id
+        .map(str::to_string)
+        .unwrap_or_else(|| default_target_plugin_id(requester_plugin_id, id));
+    SlotAddress::new(
+        owner,
+        region.to_string(),
+        parse_container(container),
+        id.to_string(),
+    )
+}
+
+fn default_target_plugin_id(requester_plugin_id: &str, id: &str) -> String {
+    if id.starts_with("builtin.") {
+        BUILTIN_PLUGIN_ID.to_string()
+    } else {
+        requester_plugin_id.to_string()
+    }
+}
+
+fn validate_mutation_target(
+    diagnostics: &DiagnosticStore,
+    generation_id: GenerationId,
+    live_ops: &[PreparedSlotOp],
+    plugin_id: &str,
+    target_plugin_id: Option<&str>,
+    region: &str,
+    container: &str,
+    id: &str,
+    op: &str,
+) -> bool {
+    let target = target_address(plugin_id, target_plugin_id, region, container, id);
+    if target.is_builtin() {
+        if crate::plugin::slots::builtins::get(region, container, id).is_some() {
+            return true;
+        }
+        slot_diagnostic(
+            diagnostics,
+            generation_id,
+            plugin_id,
+            missing_code(op),
+            format!("{op}_slot target missing `{region}:{container}:{id}`"),
+            mutation_api_name(op),
+        );
+        return false;
+    }
+    let active = effective_slots(live_ops);
+    if let Some(owner) = active.get(&target) {
+        if target.plugin_id().as_str() == plugin_id || target_plugin_id.is_some() {
+            return true;
+        }
+        slot_diagnostic(
+            diagnostics,
+            generation_id,
+            plugin_id,
+            "schema.slot_mutation_unauthorized",
+            format!("{op}_slot denied for `{region}:{container}:{id}` owned by `{owner}`"),
+            mutation_api_name(op),
+        );
+        return false;
+    }
+    let same_target_owner = active
+        .iter()
+        .find(|(address, _)| {
+            address.region().as_str() == region
+                && address.container().key() == container
+                && address.slot_id().as_str() == id
+        })
+        .map(|(_, owner)| owner.clone());
+    match same_target_owner {
+        Some(owner) if owner != plugin_id => {
+            slot_diagnostic(
+                diagnostics,
+                generation_id,
+                plugin_id,
+                "schema.slot_mutation_unauthorized",
+                format!("{op}_slot denied for `{region}:{container}:{id}` owned by `{owner}`"),
+                mutation_api_name(op),
+            );
+            false
+        }
+        _ => {
+            slot_diagnostic(
+                diagnostics,
+                generation_id,
+                plugin_id,
+                missing_code(op),
+                format!("{op}_slot target missing `{region}:{container}:{id}`"),
+                mutation_api_name(op),
+            );
+            false
+        }
+    }
+}
+
+fn effective_slots(ops: &[PreparedSlotOp]) -> HashMap<SlotAddress, String> {
+    let mut active = HashMap::new();
+    for op in ops {
+        match op {
+            PreparedSlotOp::Add(p) => {
+                active.insert(p.mount_address.clone(), p.plugin_id.clone());
+            }
+            PreparedSlotOp::Replace { target, spec, .. } => {
+                active.insert(target.clone(), spec.plugin_id.clone());
+            }
+            PreparedSlotOp::Remove { target, .. } => {
+                active.remove(target);
+            }
+        }
+    }
+    active
+}
+
+fn slot_diagnostic(
+    diagnostics: &DiagnosticStore,
+    generation_id: GenerationId,
+    plugin_id: &str,
+    code: &'static str,
+    message: String,
+    api_name: &'static str,
+) {
+    diagnostics.record(
+        PluginDiagnostic::new(
+            PluginId::from(plugin_id.to_string()),
+            DiagnosticSeverity::Warning,
+            code,
+            message,
+        )
+        .with_generation(generation_id)
+        .with_source(PluginSourceSpan::ApiFunction {
+            name: api_name.into(),
+        }),
+    );
+}
+
+fn mutation_api_name(op: &str) -> &'static str {
+    match op {
+        "replace" => "leviathan.ui.slot.replace",
+        _ => "leviathan.ui.slot.remove",
+    }
+}
+
+fn missing_code(op: &str) -> &'static str {
+    match op {
+        "replace" => "schema.slot_replace_missing",
+        _ => "schema.slot_remove_missing",
+    }
 }

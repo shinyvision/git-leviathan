@@ -7,13 +7,13 @@
 use iced::Element;
 
 use crate::message::Message;
-use crate::plugin::slots::{Container, IsSlot, SlotRegistry};
+use crate::plugin::slots::{Container, IsSlot, SlotAddress, SlotRegistry};
 use crate::plugin::tab_snapshot::TabsSnapshot;
 
 /// Where on the tab bar a slot sits. `Left`/`Right` are the chrome edges
 /// (plus button, version label by default); `Center` is the tab list
 /// itself (`builtin.tab_list` by default — replaced via
-/// `leviathan.ui.regions.replace_slot`).
+/// `leviathan.ui.slot.replace`).
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Section {
     Left,
@@ -53,6 +53,7 @@ pub type TabBarBuilder =
 
 pub struct TabBarSlot {
     pub id: String,
+    pub address: SlotAddress,
     pub container: Container,
     pub priority: i32,
     pub builder: TabBarBuilder,
@@ -63,9 +64,12 @@ impl TabBarSlot {
     where
         F: for<'ctx, 'data> Fn(&'ctx TabBarCtx<'data>) -> Element<'data, Message> + 'static,
     {
+        let id = id.into();
+        let container = section.container();
         Self {
-            id: id.into(),
-            container: section.container(),
+            address: SlotAddress::builtin("tab_bar", container.clone(), id.clone()),
+            id,
+            container,
             priority,
             builder: Box::new(builder),
         }
@@ -73,14 +77,17 @@ impl TabBarSlot {
 }
 
 impl IsSlot for TabBarSlot {
-    fn id(&self) -> &str {
-        &self.id
+    fn address(&self) -> &SlotAddress {
+        &self.address
     }
-    fn container(&self) -> &Container {
-        &self.container
+    fn display_id(&self) -> &str {
+        &self.id
     }
     fn priority(&self) -> i32 {
         self.priority
+    }
+    fn set_priority(&mut self, priority: i32) {
+        self.priority = priority;
     }
 }
 

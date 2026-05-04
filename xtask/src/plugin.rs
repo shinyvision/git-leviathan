@@ -1,4 +1,5 @@
 mod lint;
+mod preview;
 mod template;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use lint::{lint_path, print_lint_report, LintReport};
+use preview::{default_context, plugin_preview, run_preview};
 use template::Template;
 
 type DynResult<T> = Result<T, Box<dyn Error>>;
@@ -31,6 +33,8 @@ pub fn run(args: &[String]) -> DynResult<()> {
         Some("new") => plugin_new(&args[1..]),
         Some("test") => plugin_test(&args[1..]),
         Some("lint") => plugin_lint(&args[1..]).map(|_| ()),
+        Some("certify") => plugin_certify(&args[1..]),
+        Some("preview") => plugin_preview(&args[1..]),
         Some("package") => plugin_package(&args[1..]),
         Some("inspect") => plugin_inspect(&args[1..]),
         Some("install") => plugin_install(&args[1..]),
@@ -38,7 +42,7 @@ pub fn run(args: &[String]) -> DynResult<()> {
         Some("upgrade-plan") => plugin_upgrade_plan(&args[1..]),
         _ => {
             eprintln!(
-                "usage: cargo xtask plugin <new|test|lint|package|inspect|install|publish|upgrade-plan> ..."
+                "usage: cargo xtask plugin <new|test|lint|certify|preview|package|inspect|install|publish|upgrade-plan> ..."
             );
             std::process::exit(2);
         }
@@ -131,6 +135,85 @@ fn plugin_lint(args: &[String]) -> DynResult<LintReport> {
     } else {
         Ok(report)
     }
+}
+
+fn plugin_certify(args: &[String]) -> DynResult<()> {
+    let path = single_optional_path(args, "usage: cargo xtask plugin certify [path]")?;
+
+    println!("certify: lint");
+    let report = lint_path(&path);
+    print_lint_report(&report);
+    if report.has_errors() {
+        return Err("plugin certification stopped because lint failed".into());
+    }
+
+    println!("certify: load and smoke tests");
+    run_lua_smoke_tests(&path)?;
+
+    println!("certify: render");
+    let first = run_preview(&path, default_context())?;
+    assert_preview_clean(&first)?;
+
+    println!("certify: reload");
+    let second = run_preview(&path, default_context())?;
+    assert_preview_clean(&second)?;
+
+    println!("certify: unload and capability audit");
+    certify_manifest_audit(&path)?;
+
+    println!("certification ok");
+    Ok(())
+}
+
+fn run_lua_smoke_tests(path: &Path) -> DynResult<()> {
+    let lua_files = lua_files_for_test(path)?;
+    if lua_files.is_empty() {
+        return Err("no Lua files found to test".into());
+    }
+
+    let lua = Lua::new();
+    install_test_stubs(&lua, path)?;
+    set_package_path(&lua, path)?;
+    for file in lua_files {
+        let source = fs::read_to_string(&file)?;
+        lua.load(&source)
+            .set_name(path_label(&file))
+            .exec()
+            .map_err(|e| format!("{} failed: {e}", file.display()))?;
+    }
+    Ok(())
+}
+
+fn assert_preview_clean(snapshot: &serde_json::Value) -> DynResult<()> {
+    let diagnostics = snapshot
+        .get("diagnostics")
+        .and_then(|value| value.as_array())
+        .ok_or("preview snapshot missing diagnostics array")?;
+    if diagnostics.iter().any(|diag| {
+        diag.get("level")
+            .and_then(|level| level.as_str())
+            .is_some_and(|level| level == "error")
+    }) {
+        return Err(format!("preview reported errors: {diagnostics:?}").into());
+    }
+    Ok(())
+}
+
+fn certify_manifest_audit(path: &Path) -> DynResult<()> {
+    let manifest_raw = fs::read_to_string(path.join("plugin.toml"))?;
+    let manifest: PluginManifest = toml::from_str(&manifest_raw)?;
+    if let Some(message) =
+        git_leviathan_plugin_api::api_version::plugin_api_compatibility_error(manifest.api_version)
+    {
+        return Err(message.into());
+    }
+    for capability in &manifest.capabilities {
+        let capability = String::from(capability.clone());
+        if !git_leviathan_plugin_api::capability::is_known_capability(&capability) {
+            return Err(format!("unknown capability `{capability}`").into());
+        }
+    }
+    Ok(())
 }
 
 fn plugin_package(args: &[String]) -> DynResult<()> {
@@ -1638,11 +1721,11 @@ mod tests {
 
     #[test]
     fn upgrade_plan_shows_changed_capabilities() {
-        let old_dir = fixture_plugin("cap_plan", "0.1.0", &["ui:graph_decoration"], &[]);
+        let old_dir = fixture_plugin("cap_plan", "0.1.0", &["ui:decoration:graph"], &[]);
         let new_dir = fixture_plugin(
             "cap_plan",
             "0.2.0",
-            &["ui:graph_decoration", "ui:diff_decoration"],
+            &["ui:decoration:graph", "ui:decoration:diff"],
             &[("helper", "^1")],
         );
         let old = build_package(&old_dir).expect("old package");
@@ -1651,7 +1734,7 @@ mod tests {
         let lines = upgrade_plan_lines(&old, &new);
         assert!(lines
             .iter()
-            .any(|line| line == "capabilities_added: ui:diff_decoration"));
+            .any(|line| line == "capabilities_added: ui:decoration:diff"));
         assert!(lines.iter().any(|line| line == "  + helper ^1"));
         remove_fixture(old_dir);
         remove_fixture(new_dir);
@@ -1680,6 +1763,34 @@ mod tests {
         let err = verify_package_with_context(&package, &context)
             .expect_err("unknown trust root must fail");
         assert!(err.to_string().contains("unknown signature trust root"));
+        remove_fixture(dir);
+    }
+
+    #[test]
+    fn certify_accepts_fixture_plugin() {
+        let dir = fixture_plugin("cert_ok", "0.1.0", &[], &[]);
+        plugin_certify(&[dir.display().to_string()]).expect("certify fixture");
+        remove_fixture(dir);
+    }
+
+    #[test]
+    fn certify_accepts_settings_schema_preview() {
+        let dir = fixture_plugin("cert_settings", "0.1.0", &[], &[]);
+        fs::write(
+            dir.join("init.lua"),
+            r#"
+leviathan.settings.define_schema({
+  enabled = { type = "boolean", default = true },
+})
+leviathan.ui.settings.register({
+  view = function(ctx)
+    return { kind = "text", value = tostring(ctx.values.enabled) }
+  end,
+})
+"#,
+        )
+        .expect("settings init");
+        plugin_certify(&[dir.display().to_string()]).expect("certify settings fixture");
         remove_fixture(dir);
     }
 

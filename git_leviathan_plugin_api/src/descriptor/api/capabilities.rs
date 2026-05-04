@@ -204,7 +204,27 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "ui:region:<region>",
         since: "1.0",
-        doc: "Restrict slot registrations to a specific region (e.g. `ui:region:repository.sidebar`).",
+        doc: "Add controls to a UI region such as the main toolbar (`ui:region:main_bar`) or repository panes (`ui:region:repository`).",
+    },
+    ApiCapability {
+        name: "ui:replace:builtin",
+        since: "1.0",
+        doc: "Replace native host slots such as the repository label in the main toolbar.",
+    },
+    ApiCapability {
+        name: "ui:replace:<region>:<container>:<id>",
+        since: "1.0",
+        doc: "Replace one concrete slot, e.g. `ui:replace:main_bar:left:builtin.repo_info`.",
+    },
+    ApiCapability {
+        name: "ui:remove:builtin",
+        since: "1.0",
+        doc: "Remove native host slots such as built-in toolbar controls.",
+    },
+    ApiCapability {
+        name: "ui:remove:<region>:<container>:<id>",
+        since: "1.0",
+        doc: "Remove one concrete slot owned by another source.",
     },
     ApiCapability {
         name: "services:provide:<service@version>",
@@ -218,22 +238,22 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     },
     ApiCapability {
         name: "async:spawn",
-        since: "1.12",
+        since: "1.0",
         doc: "Spawn a host-managed background worker thread.",
     },
     ApiCapability {
         name: "timer:create",
-        since: "1.12",
+        since: "1.0",
         doc: "Schedule one-shot or repeating timers.",
     },
     ApiCapability {
         name: "fs:watch",
-        since: "1.12",
+        since: "1.0",
         doc: "Watch plugin-scoped paths for filesystem events.",
     },
     ApiCapability {
         name: "fs:watch:scope:<dir>",
-        since: "1.12",
+        since: "1.0",
         doc: "Watch paths under an explicit user-chosen directory.",
     },
     ApiCapability {
@@ -242,18 +262,38 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
         doc: "Register modal overlays that the host renders above the active screen.",
     },
     ApiCapability {
-        name: "ui:context_menu",
+        name: "ui:context_menu:<region>",
         since: "1.0",
-        doc: "Contribute items to host-rendered context menus at extension points.",
+        doc: "Contribute menu items to a target such as `repository.diff.context_menu`.",
     },
     ApiCapability {
-        name: "ui:graph_decoration",
+        name: "ui:decoration:graph",
         since: "1.0",
-        doc: "Attach badges, icons, markers, or lanes to commit rows in the graph.",
+        doc: "Draw decorations in the commit graph view.",
     },
     ApiCapability {
-        name: "ui:diff_decoration",
+        name: "ui:decoration:diff",
         since: "1.0",
-        doc: "Attach line hints, hunk badges, or line gutters to the diff view.",
+        doc: "Draw decorations in the diff view.",
+    },
+    ApiCapability {
+        name: "ui:screen",
+        since: "1.0",
+        doc: "Register full plugin screens.",
+    },
+    ApiCapability {
+        name: "ui:dock",
+        since: "1.0",
+        doc: "Register dockable UI panels when the dock surface is available.",
+    },
+    ApiCapability {
+        name: "ui:status",
+        since: "1.0",
+        doc: "Register status widgets when the status surface is available.",
+    },
+    ApiCapability {
+        name: "ui:style:raw_color",
+        since: "1.0",
+        doc: "Use raw colors in native chrome instead of theme tokens.",
     },
 ];

@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 
@@ -21,13 +20,14 @@ use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::capability_grants::{canonicalize_requested, GrantStore};
 use crate::plugin::commands::{CommandDispatchEnv, RawCommand};
 use crate::plugin::diagnostic::{DiagnosticSeverity, DiagnosticStore, PluginDiagnostic};
-use crate::plugin::extensions::OverlayCallbacks;
+use crate::plugin::extensions::{DecorationProviderCallbacks, OverlayCallbacks};
 use crate::plugin::generation::PluginGeneration;
 use crate::plugin::keymap::{KeymapRegistry, RawKeymap, RawKeymapDel};
 use crate::plugin::lua_loader::{install_runtime_module, LuaLoader};
 use crate::plugin::resources::{GenerationId, PluginId, ResourceLedger};
 use crate::plugin::runtime_path::{PluginRuntimePath, RuntimePathRegistry};
 use crate::plugin::services::{dependency_statuses, ServiceHandle, ServiceRegistry};
+use crate::plugin::slots::SlotAddress;
 use crate::plugin::storage::PluginStorageRoots;
 use crate::plugin::timers::PluginTimerCallbacks;
 use crate::plugin::watchers::PluginWatcherCallbacks;
@@ -129,11 +129,10 @@ pub struct StageInputs<'a> {
     pub watchers: crate::plugin::watchers::FileWatcherRegistry,
     pub storage_roots: PluginStorageRoots,
     pub service_registry: Rc<RefCell<ServiceRegistry>>,
-    /// Shared extension registry. The staged generation's
-    /// new init runs against the live registry — the host clears the
-    /// previous generation's records on commit (see
-    /// `commit_staging`).
+    /// Staging extension registry. The host copies this plugin's
+    /// staged records into the live registry on commit.
     pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
+    pub live_slot_ops: Vec<crate::plugin::ui::main_bar_slots::PreparedSlotOp>,
 }
 
 /// Fully-constructed staging generation, ready for atomic swap.
@@ -148,17 +147,16 @@ pub struct StagingArtifacts {
     pub plugin_root: PathBuf,
     pub manifest: PluginManifest,
     pub generation: PluginGeneration,
-    pub slot_handlers: HashMap<String, RegistryKey>,
+    pub slot_handlers: HashMap<SlotAddress, RegistryKey>,
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub screens: HashMap<String, api::ScreenDef>,
+    pub dock_panels: HashMap<String, api::DockPanelDef>,
+    pub settings_panel: Option<api::SettingsPanelDef>,
     pub screen_state: HashMap<String, RegistryKey>,
-    pub dynamic_widgets: HashMap<
-        String,
-        (
-            RegistryKey,
-            crate::plugin::ui::main_bar_slots::DynamicAstCache,
-        ),
-    >,
+    pub dynamic_widgets:
+        HashMap<SlotAddress, crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration>,
+    pub ui_context: crate::plugin::ui::context::UiContextStore,
     pub deferred: Rc<RefCell<DeferredQueue>>,
     pub user_commands: Rc<RefCell<UserCommands>>,
     pub health_checks: Vec<HealthCheckRegistration>,
@@ -194,6 +192,7 @@ pub struct StagingArtifacts {
     pub job_callbacks: Rc<RefCell<JobCallbacks>>,
     pub timer_callbacks: Rc<RefCell<PluginTimerCallbacks>>,
     pub watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>>,
+    pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
 }
 
 /// Staged autocmd registration ready for `commit_staging` to install
@@ -302,17 +301,13 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             ),
         ));
     }
-    if !manifest.api_version.is_compatible_with(HOST_API_VERSION) {
+    if let Some(msg) =
+        git_leviathan_plugin_api::api_version::plugin_api_compatibility_error(manifest.api_version)
+    {
         return Err(StagingFailure::new(
             ReloadStage::Compatibility,
             "manifest.incompatible_api_version",
-            format!(
-                "api version {}.{} not compatible with host {}.{}",
-                manifest.api_version.major,
-                manifest.api_version.minor,
-                HOST_API_VERSION.major,
-                HOST_API_VERSION.minor
-            ),
+            msg,
         ));
     }
 
@@ -523,6 +518,12 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         Rc::new(RefCell::new(PluginWatcherCallbacks::new()));
     let overlay_callbacks: Rc<RefCell<OverlayCallbacks>> =
         Rc::new(RefCell::new(OverlayCallbacks::new()));
+    let decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>> =
+        Rc::new(RefCell::new(DecorationProviderCallbacks::new()));
+    let ui_context = crate::plugin::ui::context::UiContextStore::new(
+        inputs.plugin_id.as_str(),
+        inputs.generation_id,
+    );
     let async_ctx = AsyncRuntimeContext {
         jobs: inputs.async_jobs.clone(),
         timers: inputs.timers.clone(),
@@ -554,6 +555,8 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             diagnostics: inputs.diagnostics.clone(),
             extension_registry: inputs.extension_registry.clone(),
             overlay_callbacks: Rc::clone(&overlay_callbacks),
+            decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
+            ui_context: ui_context.clone(),
         },
     )
     .map_err(|e| {
@@ -626,6 +629,8 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         raw_commands,
         raw_keymaps,
         raw_keymap_dels,
+        dock_panels,
+        settings_panel,
     ) = {
         let mut b = build.borrow_mut();
         (
@@ -637,19 +642,29 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             std::mem::take(&mut b.commands),
             std::mem::take(&mut b.keymaps),
             std::mem::take(&mut b.keymap_dels),
+            std::mem::take(&mut b.dock_panels),
+            b.settings_panel.take(),
         )
     };
 
-    let mut slot_handlers: HashMap<String, RegistryKey> = HashMap::new();
+    let mut slot_handlers: HashMap<SlotAddress, RegistryKey> = HashMap::new();
     let mut dynamic_widgets: HashMap<
-        String,
-        (
-            RegistryKey,
-            crate::plugin::ui::main_bar_slots::DynamicAstCache,
-        ),
+        SlotAddress,
+        crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration,
     > = HashMap::new();
     let mut slot_ops = Vec::new();
     for op in raw_slot_ops {
+        let mut visible_ops = inputs.live_slot_ops.clone();
+        visible_ops.extend(slot_ops.clone());
+        if !crate::plugin::host::validate_raw_slot_op(
+            &inputs.diagnostics,
+            inputs.generation_id,
+            &visible_ops,
+            inputs.plugin_id.as_str(),
+            &op,
+        ) {
+            continue;
+        }
         let prepared = crate::plugin::host::prepare_op(
             &manifest.id,
             &plugin_root,
@@ -670,31 +685,46 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
 
     // Dynamic widget call/type failures abort staging. AST decode failures
     // stay diagnostics so unrelated widget regressions do not block reload.
-    for (slot_id, (key, cache)) in &dynamic_widgets {
-        let func: Function = lua.registry_value(key).map_err(|e| {
+    for (address, dynamic) in &dynamic_widgets {
+        let func: Function = lua.registry_value(&dynamic.key).map_err(|e| {
             StagingFailure::new(
                 ReloadStage::Validation,
                 "widget.dynamic_lookup_failed",
-                format!("dynamic widget `{slot_id}` lookup failed: {e}"),
+                format!("dynamic widget `{address}` lookup failed: {e}"),
             )
         })?;
-        let value: LuaValue = func.call(()).map_err(|e| {
+        let ctx = crate::plugin::ui::context::context_for_slot(
+            inputs.plugin_id.as_str(),
+            inputs.generation_id,
+            address,
+            None,
+            &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+        );
+        ui_context.set(ctx.clone());
+        let arg = lua.to_value(&ctx).map_err(|e| {
+            StagingFailure::new(
+                ReloadStage::Validation,
+                "widget.dynamic_context_failed",
+                format!("dynamic widget `{address}` context build failed: {e}"),
+            )
+        })?;
+        let value: LuaValue = func.call(arg).map_err(|e| {
             StagingFailure::new(
                 ReloadStage::Validation,
                 "widget.dynamic_call_failed",
-                format!("dynamic widget `{slot_id}` raised: {e}"),
+                format!("dynamic widget `{address}` raised: {e}"),
             )
         })?;
         let json: serde_json::Value = lua.from_value(value).map_err(|e| {
             StagingFailure::new(
                 ReloadStage::Validation,
                 "widget.dynamic_serialise_failed",
-                format!("dynamic widget `{slot_id}` returned non-JSON: {e}"),
+                format!("dynamic widget `{address}` returned non-JSON: {e}"),
             )
         })?;
         match crate::plugin::ui::widget_ast::decode(&json) {
             Ok(ast) => {
-                *cache.borrow_mut() = Some(ast);
+                *dynamic.cache.borrow_mut() = Some(ast);
             }
             Err(e) => {
                 inputs.diagnostics.record(
@@ -703,7 +733,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
                         DiagnosticSeverity::Warning,
                         "widget.invalid_tree",
                         format!(
-                            "staged dynamic widget `{slot_id}` first decode: {} ({})",
+                            "staged dynamic widget `{address}` first decode: {} ({})",
                             e.message, e.path
                         ),
                     )
@@ -854,7 +884,15 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             if let Some(de_key) = &screen_def.deserialize {
                 if let Ok(de_fn) = lua.registry_value::<Function>(de_key) {
                     if let Ok(snap_lua) = lua.to_value(snap_json) {
-                        if let Ok(state_lua) = de_fn.call::<LuaValue>(snap_lua) {
+                        let ctx = crate::plugin::ui::context::context_for_surface(
+                            inputs.plugin_id.as_str(),
+                            inputs.generation_id,
+                            crate::plugin::ui::context::UiContextSurface::Screen,
+                            None,
+                            &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+                        );
+                        let ctx_lua = lua.to_value(&ctx).unwrap_or(LuaValue::Nil);
+                        if let Ok(state_lua) = de_fn.call::<LuaValue>((snap_lua, ctx_lua)) {
                             if let Ok(state_key) = lua.create_registry_value(state_lua) {
                                 record_screen_state_resource(&ledger, screen_id);
                                 screen_state.insert(screen_id.clone(), state_key);
@@ -867,7 +905,15 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         }
         if !seeded {
             if let Ok(init_fn) = lua.registry_value::<Function>(&screen_def.init) {
-                if let Ok(state) = init_fn.call::<LuaValue>(()) {
+                let ctx = crate::plugin::ui::context::context_for_surface(
+                    inputs.plugin_id.as_str(),
+                    inputs.generation_id,
+                    crate::plugin::ui::context::UiContextSurface::Screen,
+                    None,
+                    &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+                );
+                let ctx_lua = lua.to_value(&ctx).unwrap_or(LuaValue::Nil);
+                if let Ok(state) = init_fn.call::<LuaValue>(ctx_lua) {
                     if let Ok(key) = lua.create_registry_value(state) {
                         record_screen_state_resource(&ledger, screen_id);
                         screen_state.insert(screen_id.clone(), key);
@@ -921,9 +967,13 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         generation,
         slot_handlers,
         overlay_callbacks,
+        decoration_provider_callbacks,
         screens,
+        dock_panels,
+        settings_panel,
         screen_state,
         dynamic_widgets,
+        ui_context,
         deferred,
         user_commands,
         health_checks: staged_health,
@@ -941,6 +991,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         job_callbacks,
         timer_callbacks,
         watcher_callbacks,
+        extension_registry: inputs.extension_registry,
     })
 }
 

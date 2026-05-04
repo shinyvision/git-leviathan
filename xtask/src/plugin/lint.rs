@@ -1,9 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use git_leviathan_plugin_api::api_version::plugin_api_compatibility_error;
 use git_leviathan_plugin_api::capability::is_known_capability;
 use git_leviathan_plugin_api::descriptor::api;
+use git_leviathan_plugin_api::descriptor::region::REGIONS;
 use git_leviathan_plugin_api::descriptor::widget::WIDGETS;
 use git_leviathan_plugin_api::manifest::PluginManifest;
 use mlua::Lua;
@@ -85,6 +87,9 @@ pub(super) fn lint_path(path: &Path) -> LintReport {
         Ok(manifest) => {
             if let Err(e) = validate_plugin_id(&manifest.id) {
                 report.push(Level::Error, "plugin.toml", e.to_string());
+            }
+            if let Some(message) = plugin_api_compatibility_error(manifest.api_version) {
+                report.push(Level::Error, "plugin.toml", message);
             }
             Some(manifest)
         }
@@ -170,6 +175,10 @@ pub(super) fn lint_path(path: &Path) -> LintReport {
                 lint_unknown_api_calls(&file, &source, &mut report);
                 lint_undeclared_capabilities(&file, &source, &declared_caps, &mut report);
                 lint_widgets(&file, &source, &mut report);
+                lint_decoration_specs(&file, &source, &mut report);
+                lint_slot_specs(&file, &source, &declared_caps, &mut report);
+                lint_command_ids(&file, &source, &declared_caps, &mut report);
+                lint_context_fields(&file, &source, &mut report);
                 lint_services(&file, &source, &provides, &consumes, &mut report);
             }
             Err(e) => report.push(
@@ -246,7 +255,16 @@ fn lint_undeclared_capabilities(
         if function.capabilities.is_empty() || !source_calls_path(source, function.path) {
             continue;
         }
+        if matches!(function.path, "leviathan.command.invoke" | "leviathan.log") {
+            continue;
+        }
         for required in function.capabilities {
+            if required.contains("<region>")
+                || required.contains("<container>")
+                || required.contains("<id>")
+            {
+                continue;
+            }
             if !capability_declared(required, declared) {
                 report.push(
                     Level::Error,
@@ -293,7 +311,15 @@ fn lint_widgets(path: &Path, source: &str, report: &mut LintReport) {
         let Some(kind) = top_level_string_field(&table.body, "kind") else {
             continue;
         };
+        if is_decoration_table(&table.body, &kind) {
+            continue;
+        }
         let Some(desc) = WIDGETS.get(&kind) else {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("unknown widget kind `{kind}`"),
+            );
             continue;
         };
         let allowed = desc
@@ -301,6 +327,7 @@ fn lint_widgets(path: &Path, source: &str, report: &mut LintReport) {
             .iter()
             .map(|field| field.name)
             .chain(std::iter::once("kind"))
+            .chain(["id", "width", "height"])
             .collect::<BTreeSet<_>>();
         for field in top_level_fields(&table.body) {
             if !allowed.contains(field.as_str()) {
@@ -310,6 +337,244 @@ fn lint_widgets(path: &Path, source: &str, report: &mut LintReport) {
                     format!("widget `{kind}` has invalid field `{field}`"),
                 );
             }
+        }
+    }
+}
+
+fn lint_slot_specs(
+    path: &Path,
+    source: &str,
+    declared: &BTreeSet<String>,
+    report: &mut LintReport,
+) {
+    let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+    for table in find_call_tables(source, "leviathan.ui.slot.add") {
+        let Some(region) = top_level_string_field(&table.body, "region") else {
+            continue;
+        };
+        let pane = top_level_string_field(&table.body, "pane");
+        let section = top_level_string_field(&table.body, "section");
+        let id = top_level_string_field(&table.body, "id").unwrap_or_default();
+        lint_region_address(path, &region, pane.as_deref(), section.as_deref(), report);
+        let required = format!("ui:region:{region}");
+        if !capability_declared(&required, declared) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("slot `{id}` requires undeclared capability `{required}`"),
+            );
+        }
+        if !id.is_empty() {
+            let key = format!(
+                "{}:{}:{}:{}",
+                region,
+                pane.as_deref().unwrap_or(""),
+                section.as_deref().unwrap_or(""),
+                id
+            );
+            let count = seen.entry(key.clone()).or_default();
+            *count += 1;
+            if *count == 2 {
+                report.push(
+                    Level::Error,
+                    path.display().to_string(),
+                    format!("slot id collision at `{key}`"),
+                );
+            }
+        }
+    }
+
+    for table in find_call_tables(source, "leviathan.ui.slot.replace") {
+        let Some(region) = top_level_string_field(&table.body, "region") else {
+            continue;
+        };
+        let pane = top_level_string_field(&table.body, "pane");
+        let section = top_level_string_field(&table.body, "section");
+        lint_region_address(path, &region, pane.as_deref(), section.as_deref(), report);
+        let required = format!("ui:region:{region}");
+        if !capability_declared(&required, declared) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("slot replace requires undeclared capability `{required}`"),
+            );
+        }
+    }
+}
+
+fn lint_region_address(
+    path: &Path,
+    region: &str,
+    pane: Option<&str>,
+    section: Option<&str>,
+    report: &mut LintReport,
+) {
+    match REGIONS.get(region) {
+        Some(desc) => {
+            if let Err(e) = desc.validate_address(pane, section) {
+                report.push(Level::Error, path.display().to_string(), e);
+            }
+        }
+        None => report.push(
+            Level::Error,
+            path.display().to_string(),
+            format!("unknown UI region `{region}`"),
+        ),
+    }
+}
+
+fn lint_command_ids(
+    path: &Path,
+    source: &str,
+    declared: &BTreeSet<String>,
+    report: &mut LintReport,
+) {
+    let mut known = built_in_command_ids();
+    known.extend(detect_string_first_arg(source, "leviathan.command.create"));
+
+    for id in detect_string_first_arg(source, "leviathan.command.invoke") {
+        if !known.contains(&id) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("unknown command id `{id}`"),
+            );
+        }
+        let required = format!("command:invoke:{id}");
+        if !capability_declared(&required, declared) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("command invoke requires undeclared capability `{required}`"),
+            );
+        }
+    }
+    for id in detect_keymap_command_ids(source) {
+        if !known.contains(&id) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("unknown command id `{id}`"),
+            );
+        }
+    }
+    for table in find_call_tables(source, "leviathan.ui.context_menu") {
+        if let Some(command) = top_level_string_field(&table.body, "command") {
+            if !known.contains(&command) {
+                report.push(
+                    Level::Error,
+                    path.display().to_string(),
+                    format!("unknown command id `{command}`"),
+                );
+            }
+        }
+    }
+}
+
+fn lint_context_fields(path: &Path, source: &str, report: &mut LintReport) {
+    let allowed = context_field_map();
+    for access in detect_context_field_accesses(source) {
+        let Some(fields) = allowed.get(access.prefix.as_str()) else {
+            continue;
+        };
+        if !fields.contains(access.field.as_str()) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!(
+                    "invalid context field `{}` on `{}`",
+                    access.field, access.prefix
+                ),
+            );
+        }
+    }
+}
+
+fn is_decoration_table(body: &str, kind: &str) -> bool {
+    let fields = top_level_fields(body).into_iter().collect::<BTreeSet<_>>();
+    match kind {
+        "badge" => ["text", "fg", "bg"]
+            .iter()
+            .any(|field| fields.contains(*field)),
+        "icon" => fields.contains("glyph"),
+        "marker" => fields.contains("shape"),
+        "lane" => fields.contains("index"),
+        "line_hint" => fields.contains("severity") || fields.contains("file"),
+        "hunk_badge" => fields.contains("hunk_id"),
+        "line_gutter" => fields.contains("glyph") || fields.contains("file"),
+        _ => false,
+    }
+}
+
+fn lint_decoration_specs(path: &Path, source: &str, report: &mut LintReport) {
+    for table in find_call_argument_tables(source, "leviathan.ui.graph_decoration") {
+        lint_decoration_fields(path, "graph", &table.body, report);
+    }
+    for table in find_call_argument_tables(source, "leviathan.ui.diff_decoration") {
+        lint_decoration_fields(path, "diff", &table.body, report);
+    }
+}
+
+fn lint_decoration_fields(path: &Path, family: &str, body: &str, report: &mut LintReport) {
+    let Some(kind) = top_level_string_field(body, "kind") else {
+        report.push(
+            Level::Error,
+            path.display().to_string(),
+            format!("{family} decoration is missing string field `kind`"),
+        );
+        return;
+    };
+
+    let (allowed, required): (&[&str], &[&str]) = match (family, kind.as_str()) {
+        ("graph", "badge") => (&["id", "kind", "text", "fg", "bg"], &["kind", "text"]),
+        ("graph", "icon") => (&["id", "kind", "glyph", "color"], &["kind", "glyph"]),
+        ("graph", "marker") => (
+            &["id", "kind", "shape", "color"],
+            &["kind", "shape", "color"],
+        ),
+        ("graph", "lane") => (
+            &["id", "kind", "index", "color"],
+            &["kind", "index", "color"],
+        ),
+        ("diff", "line_hint") => (
+            &["id", "kind", "severity", "text", "file", "line"],
+            &["kind", "severity", "text", "file", "line"],
+        ),
+        ("diff", "hunk_badge") => (
+            &["id", "kind", "hunk_id", "label", "color"],
+            &["kind", "hunk_id", "label"],
+        ),
+        ("diff", "line_gutter") => (
+            &["id", "kind", "file", "line", "glyph", "color"],
+            &["kind", "file", "line", "glyph"],
+        ),
+        _ => {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("unknown {family} decoration kind `{kind}`"),
+            );
+            return;
+        }
+    };
+
+    let fields = top_level_fields(body).into_iter().collect::<BTreeSet<_>>();
+    for field in &fields {
+        if !allowed.contains(&field.as_str()) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("{family} decoration `{kind}` has invalid field `{field}`"),
+            );
+        }
+    }
+    for field in required {
+        if !fields.contains(*field) {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("{family} decoration `{kind}` is missing field `{field}`"),
+            );
         }
     }
 }
@@ -340,6 +605,84 @@ fn find_widget_tables(source: &str) -> Vec<LuaTable> {
     tables
 }
 
+fn find_call_tables(source: &str, path: &str) -> Vec<LuaTable> {
+    let mut tables = Vec::new();
+    let mut offset = 0;
+    while let Some(found) = source[offset..].find(path) {
+        let start = offset + found + path.len();
+        let bytes = source.as_bytes();
+        let mut i = start;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'(' {
+            i += 1;
+            while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+        }
+        if i < bytes.len() && bytes[i] == b'{' {
+            if let Some(end) = matching_brace(source, i) {
+                tables.push(LuaTable {
+                    body: source[i + 1..end].to_string(),
+                });
+                offset = end + 1;
+                continue;
+            }
+        }
+        offset = start;
+    }
+    tables
+}
+
+fn find_call_argument_tables(source: &str, path: &str) -> Vec<LuaTable> {
+    let mut tables = Vec::new();
+    let mut offset = 0;
+    while let Some(found) = source[offset..].find(path) {
+        let start = offset + found + path.len();
+        let bytes = source.as_bytes();
+        let mut i = start;
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let call_end = if i < bytes.len() && bytes[i] == b'(' {
+            matching_paren(source, i).unwrap_or(source.len())
+        } else {
+            source.len()
+        };
+        let mut quote = None;
+        while i < call_end {
+            let b = bytes[i];
+            if let Some(q) = quote {
+                if b == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if b == q {
+                    quote = None;
+                }
+                i += 1;
+                continue;
+            }
+            match b {
+                b'\'' | b'"' => quote = Some(b),
+                b'{' => {
+                    if let Some(end) = matching_brace(source, i) {
+                        tables.push(LuaTable {
+                            body: source[i + 1..end].to_string(),
+                        });
+                        i = end;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        offset = call_end.saturating_add(1);
+    }
+    tables
+}
+
 fn matching_brace(source: &str, start: usize) -> Option<usize> {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
@@ -362,6 +705,40 @@ fn matching_brace(source: &str, start: usize) -> Option<usize> {
             b'\'' | b'"' => quote = Some(b),
             b'{' => depth += 1,
             b'}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn matching_paren(source: &str, start: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth = 0usize;
+    let mut i = start;
+    let mut quote = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if let Some(q) = quote {
+            if b == b'\\' {
+                i += 2;
+                continue;
+            }
+            if b == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match b {
+            b'\'' | b'"' => quote = Some(b),
+            b'(' => depth += 1,
+            b')' => {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     return Some(i);
@@ -548,6 +925,7 @@ fn capability_declared(required: &str, declared: &BTreeSet<String>) -> bool {
         return declared.iter().any(|cap| cap.starts_with(prefix));
     }
     match required {
+        "ui:region:*" => declared.iter().any(|cap| cap.starts_with("ui:region:")),
         "fs:read" => declared.iter().any(|cap| cap.starts_with("fs:read")),
         "fs:write:*" => declared.iter().any(|cap| cap.starts_with("fs:write")),
         "fs:watch" => declared.iter().any(|cap| cap.starts_with("fs:watch")),
@@ -588,6 +966,292 @@ fn detect_service_calls(source: &str, path: &str) -> BTreeSet<String> {
         offset = paren;
     }
     out
+}
+
+fn detect_string_first_arg(source: &str, path: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut offset = 0;
+    while let Some(found) = source[offset..].find(path) {
+        let start = offset + found + path.len();
+        let Some(paren) = source[start..].find('(').map(|p| start + p + 1) else {
+            break;
+        };
+        let rest = source[paren..].trim_start();
+        if let Some((name, _)) = parse_lua_string(rest) {
+            out.insert(name);
+        }
+        offset = paren;
+    }
+    out
+}
+
+fn detect_keymap_command_ids(source: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let mut offset = 0;
+    while let Some(found) = source[offset..].find("leviathan.keymap.set") {
+        let start = offset + found + "leviathan.keymap.set".len();
+        let Some(paren) = source[start..].find('(').map(|p| start + p + 1) else {
+            break;
+        };
+        let mut rest = source[paren..].trim_start();
+        for arg_index in 0..3 {
+            let Some((value, consumed)) = parse_lua_string(rest) else {
+                break;
+            };
+            if arg_index == 2 {
+                out.insert(value);
+                break;
+            }
+            rest = rest[consumed..].trim_start();
+            let Some(tail) = rest.strip_prefix(',') else {
+                break;
+            };
+            rest = tail.trim_start();
+        }
+        offset = paren;
+    }
+    out
+}
+
+fn built_in_command_ids() -> BTreeSet<String> {
+    [
+        "repository.open",
+        "repository.refresh",
+        "repository.fetch",
+        "repository.pull",
+        "repository.push",
+        "repository.open_search",
+        "git.checkout",
+        "git.create_branch",
+        "git.delete_branch",
+        "git.create_tag",
+        "git.delete_tag",
+        "git.commit",
+        "git.stash_push",
+        "git.stash_pop",
+        "git.reset",
+        "git.fetch",
+        "git.push",
+        "git.merge",
+        "git.rebase",
+        "git.stage",
+        "git.blame",
+        "git.discard",
+        "diff.copy_path",
+        "ui.dock.open",
+        "ui.dock.close",
+        "ui.dock.move",
+        "ui.dock.reset_layout",
+        "plugin.reload",
+        "plugin.disable",
+        "plugin.enable",
+        "plugin.open_log",
+        "plugin.inspect_ui_tree",
+        "plugin.inspect_ui_context",
+        "plugin.inspect_dock_layout",
+        "plugin.run_health_check",
+        "plugin.clear_state",
+        "plugin.export_diagnostic_bundle",
+        "plugin.show_capability_audit",
+        "plugin.show_runtime_path",
+        "plugin_ui.toggle_contribution",
+        "plugin_ui.reset_layout",
+        "plugin_ui.inspect_contribution",
+        "command_palette.open",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+#[derive(Debug)]
+struct ContextAccess {
+    prefix: String,
+    field: String,
+}
+
+fn detect_context_field_accesses(source: &str) -> Vec<ContextAccess> {
+    let mut out = Vec::new();
+    let bytes = source.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if !is_ident_start(bytes[i]) {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        i += 1;
+        while i < bytes.len() && is_ident_continue(bytes[i]) {
+            i += 1;
+        }
+        let ident = &source[start..i];
+        if ident != "ctx" && ident != "context" {
+            continue;
+        }
+        let mut parts = vec![ident.to_string()];
+        while i < bytes.len() && bytes[i] == b'.' {
+            i += 1;
+            if i >= bytes.len() || !is_ident_start(bytes[i]) {
+                break;
+            }
+            let field_start = i;
+            i += 1;
+            while i < bytes.len() && is_ident_continue(bytes[i]) {
+                i += 1;
+            }
+            let field = source[field_start..i].to_string();
+            let prefix = parts.join(".");
+            out.push(ContextAccess {
+                prefix,
+                field: field.clone(),
+            });
+            parts.push(field);
+        }
+    }
+    out
+}
+
+fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ctx",
+        [
+            "version",
+            "plugin_id",
+            "generation_id",
+            "type",
+            "surface",
+            "features",
+            "theme",
+            "repository",
+            "tab",
+            "selection",
+            "focus",
+            "viewport",
+            "payload",
+            "schema",
+            "values",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "context",
+        [
+            "version",
+            "plugin_id",
+            "generation_id",
+            "type",
+            "surface",
+            "features",
+            "theme",
+            "repository",
+            "tab",
+            "selection",
+            "focus",
+            "viewport",
+            "payload",
+            "schema",
+            "values",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "ctx.repository",
+        [
+            "is_open",
+            "name",
+            "workdir_path",
+            "current_branch_name",
+            "head_hash",
+            "default_remote_name",
+            "has_remote",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "ctx.tab",
+        ["is_open", "id", "path", "name", "index", "count"]
+            .into_iter()
+            .collect(),
+    );
+    map.insert(
+        "ctx.selection",
+        [
+            "available",
+            "kind",
+            "selected_commit_id",
+            "selected_file_path",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "ctx.focus",
+        ["surface", "region", "pane", "section"]
+            .into_iter()
+            .collect(),
+    );
+    map.insert(
+        "ctx.viewport",
+        ["known", "width", "height"].into_iter().collect(),
+    );
+    map.insert(
+        "ctx.theme",
+        ["name", "colors", "dimensions", "fonts"]
+            .into_iter()
+            .collect(),
+    );
+    map.insert(
+        "context.repository",
+        [
+            "is_open",
+            "name",
+            "workdir_path",
+            "current_branch_name",
+            "head_hash",
+            "default_remote_name",
+            "has_remote",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "context.tab",
+        ["is_open", "id", "path", "name", "index", "count"]
+            .into_iter()
+            .collect(),
+    );
+    map.insert(
+        "context.selection",
+        [
+            "available",
+            "kind",
+            "selected_commit_id",
+            "selected_file_path",
+        ]
+        .into_iter()
+        .collect(),
+    );
+    map.insert(
+        "context.focus",
+        ["surface", "region", "pane", "section"]
+            .into_iter()
+            .collect(),
+    );
+    map.insert(
+        "context.viewport",
+        ["known", "width", "height"].into_iter().collect(),
+    );
+    map.insert(
+        "context.theme",
+        ["name", "colors", "dimensions", "fonts"]
+            .into_iter()
+            .collect(),
+    );
+    map
 }
 
 fn parse_lua_string(source: &str) -> Option<(String, usize)> {
@@ -651,5 +1315,140 @@ mod tests {
             .diagnostics
             .iter()
             .any(|d| d.message.contains("invalid field `padding`")));
+    }
+
+    #[test]
+    fn validates_unknown_widget_kind() {
+        let mut report = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_widgets(
+            Path::new("init.lua"),
+            r#"{ kind = "wat", value = "ok" }"#,
+            &mut report,
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown widget kind `wat`")));
+    }
+
+    #[test]
+    fn validates_decoration_specs_separately_from_widgets() {
+        let mut report = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_widgets(
+            Path::new("init.lua"),
+            r##"leviathan.ui.graph_decoration("HEAD", { kind = "badge", text = "HEAD", fg = "#fff", bg = "#000" })"##,
+            &mut report,
+        );
+        lint_decoration_specs(
+            Path::new("init.lua"),
+            r##"
+            leviathan.ui.graph_decoration("HEAD", { kind = "badge", label = "HEAD", color = "#fff" })
+            leviathan.ui.diff_decoration({ kind = "line_gutter", file = "src/main.rs", line = 3, glyph = "!" })
+            "##,
+            &mut report,
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("missing field `text`")));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("invalid field `label`")));
+        assert!(!report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("widget `badge` has invalid field `fg`")));
+    }
+
+    #[test]
+    fn validates_slot_region_capability_and_collision() {
+        let mut report = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_slot_specs(
+            Path::new("init.lua"),
+            r#"
+            leviathan.ui.slot.add{ region = "missing", section = "left", id = "a", widget = { kind = "text" } }
+            leviathan.ui.slot.add{ region = "main_bar", section = "left", id = "dup", widget = { kind = "text" } }
+            leviathan.ui.slot.add{ region = "main_bar", section = "left", id = "dup", widget = { kind = "text" } }
+            "#,
+            &BTreeSet::new(),
+            &mut report,
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown UI region `missing`")));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("ui:region:main_bar")));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("slot id collision")));
+    }
+
+    #[test]
+    fn lint_rejects_incompatible_manifest_api_version() {
+        let tmp =
+            std::env::temp_dir().join(format!("git-leviathan-xtask-lint-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(
+            tmp.join("plugin.toml"),
+            r#"
+id = "future"
+name = "Future"
+version = "0.1.0"
+api_version = "1.1"
+"#,
+        )
+        .unwrap();
+        std::fs::write(tmp.join("init.lua"), "").unwrap();
+        std::fs::write(tmp.join("README.md"), "# Future\n").unwrap();
+        std::fs::create_dir_all(tmp.join("tests")).unwrap();
+        std::fs::write(tmp.join("tests").join("smoke.lua"), "").unwrap();
+
+        let report = lint_path(&tmp);
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("supported plugin api versions: 1.0")));
+        assert!(report.has_errors());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn validates_unknown_command_ids_and_context_fields() {
+        let mut report = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_command_ids(
+            Path::new("init.lua"),
+            r#"leviathan.command.create("local.ok", { run = function() end })
+               leviathan.command.invoke("missing.cmd")
+               leviathan.keymap.set("global", "x", "local.ok")"#,
+            &BTreeSet::new(),
+            &mut report,
+        );
+        lint_context_fields(
+            Path::new("init.lua"),
+            "return ctx.repository.nope .. ctx.focus.region",
+            &mut report,
+        );
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown command id `missing.cmd`")));
+        assert!(report
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("invalid context field `nope`")));
     }
 }

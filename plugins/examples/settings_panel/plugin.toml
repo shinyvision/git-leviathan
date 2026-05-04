@@ -1,0 +1,5 @@
+id = "example_settings_panel"
+name = "Example Settings Panel"
+version = "0.1.0"
+api_version = "1.0"
+description = "Settings panel example."

@@ -45,6 +45,10 @@ pub enum AppMessage {
         tab_id: TabId,
         result: Result<(), GitError>,
     },
+    InvokeCommand {
+        id: String,
+        args: serde_json::Value,
+    },
     /// User requested window close or OS sent SIGTERM/SIGINT.
     ShutdownRequested,
     GitRecheckRequested,

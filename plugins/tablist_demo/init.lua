@@ -4,11 +4,11 @@ leviathan.autocmd.create({ "TabAdded", "TabRemoved", "TabSelected", "TabMoved" }
 	end,
 })
 
-leviathan.ui.regions.replace_slot(
+leviathan.ui.slot.replace(
 	{ region = "tab_bar", section = "center", id = "builtin.tab_list" },
 	{
 	region = "tab_bar",
-	id = "plugin.tablist_demo.tab_list",
+	id = "builtin.tab_list",
 	section = "center",
 	priority = 10,
 	widget = function()

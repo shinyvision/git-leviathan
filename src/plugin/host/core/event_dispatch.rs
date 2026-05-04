@@ -56,12 +56,56 @@ impl PluginHost {
             }
         };
         let _validated = events::validate_payload(canonical, &payload, &self.diagnostics);
+        self.invalidate_decorations_for_event(canonical.name);
 
         let mut affected: HashSet<String> = HashSet::new();
         self.dispatch_for_name(canonical, None, &payload, &mut affected);
 
-        for pid in affected {
-            self.refresh_dynamic_widgets_for_plugin(&pid);
+        let plugin_state_changed = !affected.is_empty();
+        let event_cause = ui_cause_for_event(canonical.name);
+        let mut causes = Vec::new();
+        if let Some(cause) = event_cause {
+            causes.push(cause);
+        }
+        if plugin_state_changed {
+            let mut targeted = HashSet::new();
+            for pid in &affected {
+                targeted.insert(pid.clone());
+            }
+            if !causes.is_empty() {
+                let other_plugins: HashSet<String> = self
+                    .plugins
+                    .keys()
+                    .filter(|pid| !targeted.contains(*pid))
+                    .cloned()
+                    .collect();
+                self.invalidate_dynamic_widgets(&causes, Some(&other_plugins));
+            }
+            let mut targeted_causes = causes;
+            targeted_causes.push(UiInvalidationCause::PluginStateChanged);
+            self.invalidate_dynamic_widgets(&targeted_causes, Some(&targeted));
+        } else if !causes.is_empty() {
+            self.invalidate_dynamic_widgets(&causes, None);
+        }
+        if plugin_state_changed {
+            self.extension_registry.invalidate_decorations(
+                crate::plugin::extensions::DecorationInvalidationReason::PluginState,
+            );
+        }
+    }
+
+    fn invalidate_decorations_for_event(&self, event: &str) {
+        use crate::plugin::extensions::DecorationInvalidationReason as Reason;
+        let reason = match event {
+            "CommitSelected" => Some(Reason::Selection),
+            "DiffLoaded" => Some(Reason::DiffLoaded),
+            "RefsChanged" | "BranchChanged" | "HeadChanged" | "RepositoryChanged" => {
+                Some(Reason::RefsChanged)
+            }
+            _ => None,
+        };
+        if let Some(reason) = reason {
+            self.extension_registry.invalidate_decorations(reason);
         }
     }
 
@@ -424,6 +468,18 @@ impl PluginHost {
             }
         }
 
+        let has_remote = !default_remote_name.is_empty();
+        let workdir_buf = PathBuf::from(workdir_path);
+        self.last_repository_shape = Some(RepositoryShapeFacts {
+            repo_name: repo_name.to_string(),
+            current_branch: current_branch_name.to_string(),
+            head_hash: head_hash.to_string(),
+            default_remote: default_remote_name.to_string(),
+            has_remote,
+            workdir: workdir_buf,
+        });
+        self.refresh_command_active_context();
+
         // Run BranchChanged callbacks first so any Lua-side state they
         // mutate is fresh before widgets re-read the globals. The
         // payload mirrors the new typed `BranchChanged` schema
@@ -439,21 +495,6 @@ impl PluginHost {
         );
         self.fire_event_typed("BranchChanged", payload);
 
-        let plugin_ids: Vec<String> = self.plugins.keys().cloned().collect();
-        for pid in plugin_ids {
-            self.refresh_dynamic_widgets_for_plugin(&pid);
-        }
-
-        // lazy loading: cache the new shape facts and probe the lazy
-        // registry for repository-shape and file-presence triggers.
-        let has_remote = !default_remote_name.is_empty();
-        let workdir_buf = PathBuf::from(workdir_path);
-        let facts = RepositoryShapeFacts {
-            current_branch: current_branch_name.to_string(),
-            has_remote,
-            workdir: workdir_buf.clone(),
-        };
-        self.last_repository_shape = Some(facts);
         self.probe_lazy_repository_triggers();
     }
 
@@ -524,6 +565,7 @@ impl PluginHost {
         }
         let change = TabChange::diff(&self.last_tab_snapshot, snapshot);
         self.last_tab_snapshot = snapshot.clone();
+        self.refresh_command_active_context();
 
         for plugin in self.plugins.values() {
             let plugin_id = plugin.id().to_string();
@@ -562,15 +604,25 @@ impl PluginHost {
             }
         }
 
-        let plugin_ids: Vec<String> = self.plugins.keys().cloned().collect();
-        for pid in plugin_ids {
-            self.refresh_dynamic_widgets_for_plugin(&pid);
-        }
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::TabChanged], None);
 
         Some(change)
     }
 
     pub fn tab_snapshot(&self) -> &TabsSnapshot {
         &self.last_tab_snapshot
+    }
+}
+
+fn ui_cause_for_event(event: &str) -> Option<UiInvalidationCause> {
+    match event {
+        "ThemeChanged" => Some(UiInvalidationCause::ThemeChanged),
+        "CommitSelected" => Some(UiInvalidationCause::SelectionChanged),
+        "DiffLoaded" => Some(UiInvalidationCause::DiffLoaded),
+        "LayoutChanged" => Some(UiInvalidationCause::LayoutChanged),
+        "RefsChanged" | "BranchChanged" | "HeadChanged" | "RepositoryChanged" => {
+            Some(UiInvalidationCause::RepositoryChanged)
+        }
+        _ => None,
     }
 }

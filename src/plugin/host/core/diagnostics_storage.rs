@@ -75,6 +75,18 @@ impl PluginHost {
 
     pub fn set_plugin_storage_base(&mut self, base: impl AsRef<Path>) {
         self.storage_roots = PluginStorageRoots::under_base(base);
+        self.dock_manager.set_persist_path(
+            self.storage_roots
+                .state_root
+                .join("host")
+                .join("dock_layout.json"),
+        );
+        self.contribution_overrides.set_persist_path(
+            self.storage_roots
+                .state_root
+                .join("host")
+                .join("contribution_overrides.json"),
+        );
     }
 
     /// Test-only accessor that exposes the per-plugin storage paths
@@ -200,6 +212,7 @@ impl PluginHost {
                 slot_ops: &mut self.slot_ops,
                 event_bus: &mut self.event_bus,
                 service_registry: Rc::clone(&self.service_registry),
+                dock_manager: self.dock_manager.clone(),
             };
             ledger.cleanup_all(&mut cleaner)
         };

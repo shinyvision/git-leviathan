@@ -27,7 +27,7 @@ impl PluginError {
 
     /// Build a PluginError from an mlua::Error, extracting the traceback if
     /// present. Use `source` to label the host-side call site that failed
-    /// (e.g. "init.lua exec", "leviathan.ui.regions.add_slot").
+    /// (e.g. "init.lua exec", "leviathan.ui.slot.add").
     pub fn from_mlua(
         plugin_id: impl Into<String>,
         source: impl Into<String>,
@@ -97,13 +97,13 @@ mod tests {
     fn display_includes_plugin_id_and_source() {
         let err = PluginError {
             plugin_id: "buggy".into(),
-            source: "leviathan.ui.regions.add_slot".into(),
+            source: "leviathan.ui.slot.add".into(),
             message: "unknown section 'nope'".into(),
             lua_traceback: Some("[string \"plugins/buggy/init.lua\"]:5: in main chunk".into()),
         };
         let s = err.to_string();
         assert!(s.contains("plugin 'buggy'"), "got: {s}");
-        assert!(s.contains("leviathan.ui.regions.add_slot"), "got: {s}");
+        assert!(s.contains("leviathan.ui.slot.add"), "got: {s}");
         assert!(s.contains("unknown section 'nope'"), "got: {s}");
         assert!(s.contains("init.lua:5"), "got: {s}");
     }

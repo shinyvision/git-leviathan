@@ -8,10 +8,11 @@ id = "p6"
 name = "p6"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar", "ui:screen"]
 "#;
 
 const NOOP_INIT: &str = r#"
-leviathan.ui.regions.add_slot{ region = "main_bar",
+leviathan.ui.slot.add{ region = "main_bar",
     id = "p6.slot",
     section = "left",
     priority = 10,
@@ -46,7 +47,7 @@ fn staged_reload_succeeds_drops_old_generation_resources() {
         "p6",
         BASE_MANIFEST,
         r#"
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "p6.slot",
             section = "left",
             priority = 10,
@@ -185,7 +186,7 @@ id = "p6"
 name = "p6"
 version = "0.1.0"
 api_version = "1.0"
-capabilities = ["fs:read:plugin"]
+capabilities = ["ui:region:main_bar", "ui:screen", "fs:read:plugin"]
 "#,
         NOOP_INIT,
     )
@@ -214,7 +215,7 @@ fn staged_reload_failed_widget_validation_keeps_old_generation() {
         "p6",
         BASE_MANIFEST,
         r#"
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "p6.dyn",
             section = "left",
             priority = 10,
@@ -316,9 +317,10 @@ id = "mig"
 name = "mig"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "main",
     init = function() return { n = 0 } end,
     view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -341,10 +343,11 @@ id = "mig"
 name = "mig"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
 local M = {}
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "main",
     init = function() return { n = 0 } end,
     view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -384,9 +387,10 @@ id = "carry"
 name = "carry"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "s",
     init = function() return { n = 0 } end,
     view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -412,10 +416,11 @@ id = "carry"
 name = "carry"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
 local M = {}
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "s",
     init = function() return { n = 0 } end,
     view = function(s) return { kind = "text", value = tostring(s.n) } end,
@@ -453,6 +458,7 @@ id = "after"
 name = "after"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
 _G.after_marker = 0
@@ -479,7 +485,7 @@ fn staged_reload_history_capped_per_plugin() {
     for i in 0..5 {
         let init = format!(
             r#"
-            leviathan.ui.regions.add_slot{{ region = "main_bar",
+            leviathan.ui.slot.add{{ region = "main_bar",
                 id = "p6.slot",
                 section = "left",
                 priority = 10,
@@ -535,9 +541,10 @@ id = "stable"
 name = "stable"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "main",
     init = function() return { } end,
     view = function() return { kind = "text", value = "v1" } end,
@@ -555,9 +562,10 @@ id = "stable"
 name = "stable"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "main",
     init = function() return { } end,
     view = function() return { kind = "text", value = "updated" } end,
@@ -583,9 +591,10 @@ id = "drop"
 name = "drop"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "main",
     init = function() return { } end,
     view = function() return { kind = "text", value = "v1" } end,
@@ -602,9 +611,10 @@ id = "drop"
 name = "drop"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-leviathan.ui.register_screen{
+leviathan.ui.screen.register{
     id = "different",
     init = function() return { } end,
     view = function() return { kind = "text", value = "updated" } end,

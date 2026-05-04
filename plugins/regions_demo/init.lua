@@ -1,11 +1,11 @@
--- Demonstrates the regions API:
+-- Demonstrates the slot API:
 --  - a tag in the right side of the tab bar
 --  - a banner above the sidebar in the repository view
 --
 -- Style rule: padding is always a standalone `padding` widget — no widget
 -- on its own carries a `padding` field.
 
-leviathan.ui.regions.add_slot({
+leviathan.ui.slot.add({
   region = "tab_bar",
   section = "right",
   id = "plugin.regions_demo.tag",
@@ -16,7 +16,7 @@ leviathan.ui.regions.add_slot({
   },
 })
 
-leviathan.ui.regions.add_slot({
+leviathan.ui.slot.add({
   region = "repository",
   pane = "sidebar",
   section = "top",
@@ -30,7 +30,7 @@ leviathan.ui.regions.add_slot({
     left = 8,
     child = {
       kind = "text",
-      value = "regions_demo plugin",
+      value = "slot demo plugin",
     },
   },
 })

@@ -2,6 +2,7 @@ id = "bad_failed_reload"
 name = "Bad Failed Reload"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 
 [runtime]
 strict_globals = false

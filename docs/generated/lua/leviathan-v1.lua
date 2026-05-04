@@ -7,6 +7,7 @@
 ---@class leviathan
 ---@field api leviathan.api API utility namespace.
 ---@field ui leviathan.ui UI namespace.
+---@field assets leviathan.assets Asset handle namespace.
 ---@field fs leviathan.fs Filesystem namespace.
 ---@field env leviathan.env Environment namespace.
 ---@field repository leviathan.repository Active repository snapshot.
@@ -22,6 +23,30 @@
 
 ---UI namespace.
 ---@class leviathan.ui
+---@field slot leviathan.ui.slot UI slot namespace.
+---@field region leviathan.ui.region UI region namespace.
+---@field context leviathan.ui.context UI context namespace.
+---@field dock leviathan.ui.dock Persistent dock panel namespace.
+---@field screen leviathan.ui.screen Plugin screen namespace.
+---@field settings leviathan.ui.settings Plugin settings panel namespace.
+
+---UI slot namespace.
+---@class leviathan.ui.slot
+
+---UI region namespace.
+---@class leviathan.ui.region
+
+---UI context namespace.
+---@class leviathan.ui.context
+
+---Plugin screen namespace.
+---@class leviathan.ui.screen
+
+---Persistent dock panel namespace.
+---@class leviathan.ui.dock
+
+---Plugin asset namespace.
+---@class leviathan.assets
 
 ---Filesystem namespace.
 ---@class leviathan.fs
@@ -122,6 +147,13 @@
 ---@field plugin_id string Owning plugin id; `<host>` for built-in commands.
 ---@field context string Activation context.
 ---@field destructive boolean Destructive flag.
+---@field capabilities string[] Capabilities checked against the command owner.
+---@field plugin_invocation_capabilities string[] Capabilities checked against a plugin invoking this command.
+---@field enabled boolean Current static enabled status.
+---@field disabled_reason? string|nil Reason shown when disabled.
+---@field keymap_eligible boolean Whether keymaps should dispatch this command.
+---@field palette_visible boolean Whether palettes should list this command.
+---@field hooks table Supported hook metadata: before, after, veto, replace.
 
 ---Context-aware keymap registry namespace.
 ---@class leviathan.keymap
@@ -155,7 +187,7 @@
 ---@field key_events? string[] Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.
 ---@field widget LeviathanWidget Overlay widget tree.
 ---@field on_event? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Overlay callback.
----@field update? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Legacy alias for `on_event`.
+---@field update? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Alias for `on_event`.
 
 ---Payload passed to overlay `on_event` when `event == "key"`.
 ---@class LeviathanOverlayKeyEvent
@@ -169,30 +201,378 @@
 ---Plugin screen.
 ---@class LeviathanScreenSpec
 ---@field id string Screen id.
----@field init fun(): table Initial state callback.
----@field view fun(state: table): LeviathanWidget View callback.
----@field update fun(state: table, event: string, value: LeviathanJson): table Update callback.
----@field serialize? fun(state: table): LeviathanJson Reload state serializer.
----@field deserialize? fun(value: LeviathanJson): table Reload state deserializer.
+---@field title? string Tab title shown by host chrome.
+---@field breadcrumbs? string[] Navigation breadcrumbs for host chrome and diagnostics.
+---@field bind_repository? boolean Bind the screen tab to the active repository when opened.
+---@field init fun(ctx: ScreenContext): table Initial state callback.
+---@field view fun(state: table, ctx: ScreenContext): LeviathanWidget View callback.
+---@field update fun(state: table, event: string, value: LeviathanJson, ctx: ScreenContext): table Update callback.
+---@field serialize? fun(state: table): LeviathanJson Reload and restart state serializer.
+---@field deserialize? fun(value: LeviathanJson, ctx: ScreenContext): table Reload and restart state deserializer.
+---@field can_close? fun(state: table, ctx: ScreenContext): boolean Return false to block tab close.
 
 ---UI slot.
 ---@class LeviathanSlotSpec
----@field region? string Region name; inferred by direct handles.
+---@field region string Region name.
 ---@field pane? string Content region pane.
 ---@field section string Region section.
 ---@field id string Slot id.
 ---@field priority integer Ordering priority.
----@field widget LeviathanWidget|fun(): LeviathanWidget Static or dynamic widget.
+---@field widget LeviathanWidget|fun(ctx: LeviathanUiContext): LeviathanWidget Static widget or dynamic widget with context.
+---@field depends_on? string[] Dynamic refresh dependencies: plugin_state, repository, tab, selection, diff, theme, layout.
 ---@field on_click? fun(slot_id: string, event: string, value: LeviathanJson): table|nil Slot callback.
 
 ---UI slot target.
 ---@class LeviathanSlotTarget
+---@field plugin_id? string Target owner. Omit for the current plugin or builtin slots.
+---@field region string Region name.
 ---@field pane? string Content region pane.
 ---@field section string Region section.
 ---@field id string Slot id.
 
----Tagged widget tree node.
----@class LeviathanWidget
+---Ledger-backed UI slot handle.
+---@class LeviathanSlotHandle
+---@field plugin_id string Target owner.
+---@field region string Region name.
+---@field pane? string Content region pane.
+---@field section string Region section.
+---@field id string Slot id.
+---@field address LeviathanSlotTarget Full slot address.
+
+---Remove this slot if the handle is still live.
+---@return boolean|nil True on success, nil on failure.
+---@return string|nil Error message on failure.
+function LeviathanSlotHandle:remove() end
+
+---Replace this slot if the handle is still live.
+---@param spec LeviathanSlotSpec Replacement spec. Address fields may be omitted.
+---@return LeviathanSlotHandle|nil The same handle on success, nil on failure.
+---@return string|nil Error message on failure.
+function LeviathanSlotHandle:replace(spec) end
+
+---Context-menu contribution spec.
+---@class LeviathanContextMenuItem
+---@field id string Contribution id.
+---@field label string Menu label.
+---@field command string Command id invoked by the item.
+---@field priority? integer Lower values render earlier.
+
+---Static or dynamic graph-row decoration contribution.
+---@class LeviathanGraphDecorationContribution
+---@field id string Contribution id.
+---@field commit_hash? string Static target commit hash.
+---@field decoration? LeviathanGraphDecoration Static graph decoration.
+---@field provider? fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil Dynamic provider called per graph row.
+
+---Static or dynamic diff decoration contribution.
+---@class LeviathanDiffDecorationContribution
+---@field id string Contribution id.
+---@field decoration? LeviathanDiffDecoration Static diff decoration.
+---@field provider? fun(ctx: RepositoryDiffLineContext): LeviathanDiffDecoration|LeviathanDiffDecoration[]|nil Dynamic provider called per diff line.
+
+---Base spec accepted by `leviathan.ui.contribute`.
+---@class LeviathanContributionSpec
+
+---Ledger-backed UI contribution handle.
+---@class LeviathanContributionHandle
+---@field plugin_id string Owner plugin id.
+---@field point_id string Extension point id.
+---@field id string Contribution id.
+
+---Remove this contribution if the handle is still live.
+---@return boolean|nil True on success, nil on failure.
+---@return string|nil Error message on failure.
+function LeviathanContributionHandle:remove() end
+
+---Base UI context.
+---@class LeviathanUiContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to main-bar dynamic widgets.
+---@class MainBarContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to tab-bar dynamic widgets.
+---@class TabBarContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Reserved status-bar context schema.
+---@class StatusBarContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to repository sidebar slot widgets.
+---@class RepositorySidebarContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to repository graph slot widgets.
+---@class RepositoryGraphContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Reserved repository graph row context schema.
+---@class RepositoryGraphRowContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to repository details slot widgets.
+---@class RepositoryDetailsContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Reserved repository diff context schema.
+---@class RepositoryDiffContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Reserved repository diff line context schema.
+---@class RepositoryDiffLineContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Reserved overlay context schema.
+---@class OverlayContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context shape returned outside a mounted slot render.
+---@class ScreenContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Context passed to settings panel render callbacks.
+---@class SettingsContext
+---@field plugin_id string Current plugin id.
+---@field schema LeviathanSettingsSchema Declared settings schema.
+---@field values table Current settings values with defaults applied.
+
+---Context passed to dock panel render callbacks.
+---@class DockPanelContext
+---@field version integer Context schema version.
+---@field plugin_id string Current plugin id.
+---@field generation_id integer Current plugin generation.
+---@field type string Concrete context type name.
+---@field surface string Current coarse UI surface.
+---@field features table<string, boolean> Relevant feature gates.
+---@field theme LeviathanUiThemeTokens Stable host theme tokens.
+---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
+---@field tab LeviathanTabSummary Active tab summary.
+---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
+---@field viewport LeviathanViewportSummary Viewport constraints when known.
+---@field payload table Surface-specific ids and lightweight metadata.
+
+---Stable theme tokens in a UI context.
+---@class LeviathanUiThemeTokens
+---@field name string Theme id.
+---@field colors table<string, string> Hex color tokens.
+---@field dimensions table<string, number> Dimension tokens in pixels.
+---@field fonts table<string, number> Font size tokens in pixels.
+
+---Active repository summary in a UI context.
+---@class LeviathanRepositorySummary
+---@field is_open boolean Whether a repository is active.
+---@field name string Repository display name.
+---@field workdir_path string Active workdir path.
+---@field current_branch_name string Current branch display name.
+---@field head_hash string Current HEAD hash or empty string.
+---@field default_remote_name string Default remote name or empty string.
+---@field has_remote boolean Whether a default remote is available.
+
+---Active tab summary in a UI context.
+---@class LeviathanTabSummary
+---@field is_open boolean Whether a tab is active.
+---@field id integer|nil Active tab id.
+---@field path string Active tab repository path.
+---@field name string Active tab display name.
+---@field index integer|nil Zero-based active tab index.
+---@field count integer Open tab count.
+
+---Selection summary in a UI context.
+---@class LeviathanSelectionSummary
+---@field available boolean Whether selection data is available for this surface.
+---@field kind string Selection kind.
+---@field selected_commit_id string|nil Selected commit id when available.
+---@field selected_file_path string|nil Selected file path when available.
+
+---Focus summary in a UI context.
+---@class LeviathanFocusSummary
+---@field surface string Focused surface.
+---@field region? string Focused region.
+---@field pane? string Focused pane.
+---@field section? string Focused section.
+
+---Viewport summary in a UI context.
+---@class LeviathanViewportSummary
+---@field known boolean Whether concrete viewport dimensions are known.
+---@field width number|nil Viewport width.
+---@field height number|nil Viewport height.
+
+---Plugin settings panel namespace.
+---@class leviathan.ui.settings
+
+---Persistent dock panel registration spec.
+---@class LeviathanDockPanelSpec
+---@field id string Plugin-local panel id.
+---@field title string Panel title shown by host chrome.
+---@field area string Dock area: left, right, bottom, graph, diff, tab, or floating.
+---@field default_open? boolean Initial open state when no user layout exists.
+---@field view fun(ctx: DockPanelContext): LeviathanWidget Render callback.
+---@field update? fun(state: table, event: string, value: LeviathanJson): table|nil Event callback. Return `{ state = next_state }` to persist panel state.
+
+---Custom settings panel registration spec.
+---@class LeviathanSettingsPanelSpec
+---@field view fun(ctx: SettingsContext): LeviathanWidget Render callback for the plugin settings panel.
+
+---Dock panel registration handle.
+---@class LeviathanDockPanelHandle
+---@field plugin_id string Owner plugin id.
+---@field id string Plugin-local panel id.
+---@field key string Stable host panel key.
+---@field title string Panel title.
+---@field area string Current dock area.
+
+---Opaque plugin asset handle.
+---@class LeviathanAssetHandle
+---@field path string Relative asset path.
+---@field kind string Asset kind.
+---@field handle string Opaque host handle.
 
 ---Filesystem entry metadata.
 ---@class LeviathanFsEntry
@@ -293,6 +673,618 @@ function LeviathanHealthContext:error(message) end
 ---@field plugin string Plugin id.
 ---@field modules string[] Module names currently cached for this plugin in this generation.
 
+---Tagged widget tree node.
+---@alias LeviathanWidget LeviathanTextWidget|LeviathanButtonWidget|LeviathanTextInputWidget|LeviathanRowWidget|LeviathanColumnWidget|LeviathanContainerWidget|LeviathanPaddingWidget|LeviathanSpaceWidget|LeviathanIconWidget|LeviathanImageWidget|LeviathanScrollableWidget|LeviathanMouseAreaWidget|LeviathanTablistWidget|LeviathanResizableSplitWidget|LeviathanCommandButtonWidget|LeviathanToolbarButtonWidget|LeviathanStatusItemWidget|LeviathanBadgeWidget|LeviathanTagWidget|LeviathanListWidget|LeviathanTreeWidget|LeviathanTableWidget|LeviathanSectionWidget|LeviathanFormWidget|LeviathanCheckboxWidget|LeviathanToggleWidget|LeviathanSelectWidget|LeviathanRadioGroupWidget|LeviathanDividerWidget|LeviathanTooltipWidget|LeviathanPopoverWidget|LeviathanMenuWidget|LeviathanEmptyStateWidget|LeviathanCodeWidget|LeviathanDiffWidget|LeviathanCommitRefWidget|LeviathanBranchRefWidget|LeviathanRemoteRefWidget|LeviathanProgressWidget|LeviathanStackWidget|LeviathanGridWidget|LeviathanDockWidget|LeviathanSplitWidget|LeviathanTabsWidget|LeviathanVirtualListWidget
+
+---Static text label.
+---@class LeviathanTextWidget
+---@field kind "text"
+---@field value? string Text content.
+---@field size? number Font size in pixels.
+---@field color? string CSS-style color string.
+
+---Clickable button that emits a widget event.
+---@class LeviathanButtonWidget
+---@field kind "button"
+---@field child? LeviathanWidget Nested widget content.
+---@field text? string Fallback text content.
+---@field on_click? string Event name emitted on click.
+---@field value? LeviathanJson Event payload.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field style? table Button style overrides.
+
+---Single-line text input that emits plugin events.
+---@class LeviathanTextInputWidget
+---@field kind "text_input"
+---@field id? string Stable node id used to preserve input focus across re-renders.
+---@field placeholder string Placeholder text shown when the value is empty.
+---@field value string Current input value.
+---@field on_input string Event emitted with the new string value after edits.
+---@field on_submit? string Event emitted with null when Enter is pressed.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field autofocus? boolean Focus this input when its overlay is opened.
+---@field style? table Text input style overrides.
+
+---Horizontal widget layout.
+---@class LeviathanRowWidget
+---@field kind "row"
+---@field children? LeviathanWidget[] Child widgets.
+---@field spacing? number Gap between children.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field align_y? string Vertical alignment.
+
+---Vertical widget layout.
+---@class LeviathanColumnWidget
+---@field kind "column"
+---@field children? LeviathanWidget[] Child widgets.
+---@field spacing? number Gap between children.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field align_x? string Horizontal alignment.
+
+---Single-child layout and background wrapper.
+---@class LeviathanContainerWidget
+---@field kind "container"
+---@field child? LeviathanWidget Nested widget content.
+---@field bg? string Background color.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field max_width? number Maximum width.
+---@field max_height? number Maximum height.
+---@field min_width? number Minimum width.
+---@field min_height? number Minimum height.
+---@field center_x? boolean Center child horizontally.
+---@field center_y? boolean Center child vertically.
+
+---Single-child padding wrapper.
+---@class LeviathanPaddingWidget
+---@field kind "padding"
+---@field top? number Top inset.
+---@field right? number Right inset.
+---@field bottom? number Bottom inset.
+---@field left? number Left inset.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field child? LeviathanWidget Nested widget content.
+
+---Empty spacer.
+---@class LeviathanSpaceWidget
+---@field kind "space"
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+
+---SVG icon loaded from plugin assets.
+---@class LeviathanIconWidget
+---@field kind "icon"
+---@field path? string Asset path.
+---@field size? number Icon size.
+---@field color? string Tint color.
+
+---Raster image loaded from plugin assets.
+---@class LeviathanImageWidget
+---@field kind "image"
+---@field path? string Asset path.
+---@field size? number Rendered square size.
+
+---Scrollable single-child container.
+---@class LeviathanScrollableWidget
+---@field kind "scrollable"
+---@field child? LeviathanWidget Nested widget content.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+
+---Clickable wrapper around a child widget.
+---@class LeviathanMouseAreaWidget
+---@field kind "mouse_area"
+---@field child? LeviathanWidget Nested widget content.
+---@field on_click? string Event name emitted on click.
+---@field value? LeviathanJson Event payload.
+
+---Tab strip widget backed by plugin-supplied tabs.
+---@class LeviathanTablistWidget
+---@field kind "tablist"
+---@field tabs? table[] Tab id/name list.
+---@field active? LeviathanJson Active tab id.
+---@field orderable? boolean Whether drag reorder is enabled.
+---@field on_select? string Selection event name.
+---@field on_close? string Close event name.
+---@field on_reorder? string Reorder event name.
+
+---Resizable split layout.
+---@class LeviathanResizableSplitWidget
+---@field kind "resizable_split"
+---@field id? string Stable split id.
+---@field direction? string Split direction.
+---@field children? LeviathanWidget[] Child panels.
+
+---Button that invokes a command id.
+---@class LeviathanCommandButtonWidget
+---@field kind "command_button"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Compact toolbar action button.
+---@class LeviathanToolbarButtonWidget
+---@field kind "toolbar_button"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Status-line item.
+---@class LeviathanStatusItemWidget
+---@field kind "status_item"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Small status badge.
+---@class LeviathanBadgeWidget
+---@field kind "badge"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Small tag pill.
+---@class LeviathanTagWidget
+---@field kind "tag"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Semantic list.
+---@class LeviathanListWidget
+---@field kind "list"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Semantic tree.
+---@class LeviathanTreeWidget
+---@field kind "tree"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Semantic table.
+---@class LeviathanTableWidget
+---@field kind "table"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Titled content section.
+---@class LeviathanSectionWidget
+---@field kind "section"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Form field group.
+---@class LeviathanFormWidget
+---@field kind "form"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Checkbox control.
+---@class LeviathanCheckboxWidget
+---@field kind "checkbox"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Toggle control.
+---@class LeviathanToggleWidget
+---@field kind "toggle"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Select control.
+---@class LeviathanSelectWidget
+---@field kind "select"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Radio option group.
+---@class LeviathanRadioGroupWidget
+---@field kind "radio_group"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Visual divider.
+---@class LeviathanDividerWidget
+---@field kind "divider"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Tooltip wrapper.
+---@class LeviathanTooltipWidget
+---@field kind "tooltip"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Popover wrapper.
+---@class LeviathanPopoverWidget
+---@field kind "popover"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Menu list.
+---@class LeviathanMenuWidget
+---@field kind "menu"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Empty-state presentation.
+---@class LeviathanEmptyStateWidget
+---@field kind "empty_state"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Code text block.
+---@class LeviathanCodeWidget
+---@field kind "code"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Diff text block.
+---@class LeviathanDiffWidget
+---@field kind "diff"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Commit reference chip.
+---@class LeviathanCommitRefWidget
+---@field kind "commit_ref"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Branch reference chip.
+---@class LeviathanBranchRefWidget
+---@field kind "branch_ref"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Remote reference chip.
+---@class LeviathanRemoteRefWidget
+---@field kind "remote_ref"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Progress indicator.
+---@class LeviathanProgressWidget
+---@field kind "progress"
+---@field label? string Accessible label or visible fallback.
+---@field title? string Section or item title.
+---@field text? string Body text.
+---@field command? string Command id to invoke.
+---@field on_click? string Plugin event emitted on click.
+---@field on_change? string Plugin event emitted when value changes.
+---@field disabled_reason? string Reason shown when disabled.
+---@field shortcut? string Keyboard shortcut hint.
+---@field child? LeviathanWidget Primary nested widget.
+---@field children? LeviathanWidget[] Nested widgets.
+---@field items? table[] List, tree, or menu items.
+---@field options? table[] Select or radio options.
+---@field color? string|{token:string} Theme token or raw color where allowed.
+
+---Stack children vertically.
+---@class LeviathanStackWidget
+---@field kind "stack"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
+---Grid layout.
+---@class LeviathanGridWidget
+---@field kind "grid"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
+---Dock-style layout primitive.
+---@class LeviathanDockWidget
+---@field kind "dock"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
+---Semantic split layout primitive.
+---@class LeviathanSplitWidget
+---@field kind "split"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
+---Tabbed layout primitive.
+---@class LeviathanTabsWidget
+---@field kind "tabs"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
+---Large-list layout primitive.
+---@class LeviathanVirtualListWidget
+---@field kind "virtual_list"
+---@field children? LeviathanWidget[] Child widgets.
+---@field tabs? table[] Tab descriptors with child widgets.
+---@field direction? string horizontal or vertical.
+---@field columns? number Grid column count.
+---@field spacing? number|{token:string} Theme spacing token or pixels.
+---@field focus_order? number Keyboard focus ordering hint.
+
 leviathan = leviathan or {}
 
 leviathan.api = leviathan.api or {}
@@ -305,7 +1297,19 @@ leviathan.autocmd = leviathan.autocmd or {}
 
 leviathan.ui = leviathan.ui or {}
 
-leviathan.ui.regions = leviathan.ui.regions or {}
+leviathan.ui.screen = leviathan.ui.screen or {}
+
+leviathan.ui.slot = leviathan.ui.slot or {}
+
+leviathan.ui.region = leviathan.ui.region or {}
+
+leviathan.ui.context = leviathan.ui.context or {}
+
+leviathan.ui.dock = leviathan.ui.dock or {}
+
+leviathan.ui.settings = leviathan.ui.settings or {}
+
+leviathan.assets = leviathan.assets or {}
 
 leviathan.fs = leviathan.fs or {}
 
@@ -405,14 +1409,6 @@ function leviathan.autocmd.create(event, opts) end
 ---@param group integer Group handle returned by `leviathan.autocmd.group`.
 function leviathan.autocmd.clear(group) end
 
----List names of registered UI regions.
----@return string[] Region names in descriptor order.
-function leviathan.ui.list_regions() end
-
----Register a plugin screen with init/view/update lifecycle callbacks.
----@param spec LeviathanScreenSpec Screen descriptor.
-function leviathan.ui.register_screen(spec) end
-
 ---Register an overlay widget the host renders above the active screen.
 ---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority, key_events).
 function leviathan.ui.overlay(spec) end
@@ -420,6 +1416,13 @@ function leviathan.ui.overlay(spec) end
 ---Remove an overlay owned by the calling plugin.
 ---@param id string Overlay id to remove.
 function leviathan.ui.remove_overlay(id) end
+
+---Contribute to a typed UI extension point and return a ledger-backed handle.
+---@param point_id string Extension point id such as `repository.diff.context_menu`.
+---@param spec LeviathanContributionSpec Contribution spec for the selected point.
+---@return LeviathanContributionHandle|nil Contribution handle on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.contribute(point_id, spec) end
 
 ---Contribute a context-menu item at an extension point.
 ---@param region string Extension point address (e.g. "repository.diff.context_menu").
@@ -435,18 +1438,60 @@ function leviathan.ui.graph_decoration(commit_hash, decoration) end
 ---@param decoration LeviathanDiffDecoration Decoration AST: line_hint / hunk_badge / line_gutter.
 function leviathan.ui.diff_decoration(decoration) end
 
----Add a slot to a UI region.
+---Register a plugin screen with init/view/update lifecycle callbacks.
+---@param spec LeviathanScreenSpec Screen descriptor.
+function leviathan.ui.screen.register(spec) end
+
+---Add a slot and return a ledger-backed handle.
 ---@param spec LeviathanSlotSpec Slot spec including region, section/pane, id, priority, and widget.
-function leviathan.ui.regions.add_slot(spec) end
+---@return LeviathanSlotHandle|nil Slot handle on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.slot.add(spec) end
 
----Remove a slot from a UI region.
+---Remove a slot by full address.
 ---@param target LeviathanSlotTarget Slot address including region, section/pane, and id.
-function leviathan.ui.regions.remove_slot(target) end
+---@return boolean|nil True on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.slot.remove(target) end
 
----Replace a slot in a UI region.
+---Replace a slot by full address and return a handle.
 ---@param target LeviathanSlotTarget Existing slot address including region and id.
 ---@param spec LeviathanSlotSpec Replacement slot spec.
-function leviathan.ui.regions.replace_slot(target, spec) end
+---@return LeviathanSlotHandle|nil Slot handle on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.slot.replace(target, spec) end
+
+---List mounted UI regions.
+---@return string[] Region names in descriptor order.
+---@return string|nil Error message on failure.
+function leviathan.ui.region.list() end
+
+---Describe one mounted UI region.
+---@param name string Region name.
+---@return table|nil Region descriptor on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.region.describe(name) end
+
+---Return the current typed UI context.
+---@return LeviathanUiContext|nil Typed current UI context.
+---@return string|nil Error message on failure.
+function leviathan.ui.context.current() end
+
+---Register a persistent dock panel with host-owned layout state.
+---@param spec LeviathanDockPanelSpec Dock panel descriptor.
+---@return LeviathanDockPanelHandle|nil Dock panel handle on success.
+---@return string|nil Error message on failure.
+function leviathan.ui.dock.register(spec) end
+
+---Register a custom settings panel view for the plugin.
+---@param spec LeviathanSettingsPanelSpec Settings panel descriptor.
+function leviathan.ui.settings.register(spec) end
+
+---Return an SVG asset handle rooted in the plugin assets directory.
+---@param path string Relative asset path.
+---@return LeviathanAssetHandle|nil Asset handle on success.
+---@return string|nil Error string on failure.
+function leviathan.assets.load_svg(path) end
 
 ---Read UTF-8 file contents. Returns content or (nil, err).
 ---@param path string Path string.
@@ -889,4 +1934,3 @@ function leviathan.timer.after(ms, callback) end
 ---@param callback fun() Callback invoked on each fire.
 ---@return LeviathanTimerHandle Handle with `:cancel()`.
 function leviathan.timer.every(ms, callback) end
-

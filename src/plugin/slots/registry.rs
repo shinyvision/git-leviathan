@@ -1,28 +1,16 @@
-//! Generic slot store.
-//!
-//! `SlotRegistry<T>` holds zero-or-more `T` values addressable by
-//! `(container, id)`. `T` must implement `IsSlot` so the registry can
-//! read its addressing fields without owning the builder closure shape.
-//! Each region instantiates with its own concrete slot type whose
-//! builder uses the lifetime gymnastics that region needs.
-//!
-//! Within a container, slots iterate ascending by `priority`, with
-//! insertion-order tiebreak (stable sort) — preserving the rule the
-//! original `MainBarRegistry` documented at
-//! `widgets/chrome/main_bar/registry.rs:6-9`.
+use super::address::{Container, SlotAddress};
 
-use super::address::Container;
-
-/// Addressing fields the registry reads. Mutating slots in-place is not
-/// supported (replacements drop and reinsert), so reads are enough.
 pub trait IsSlot {
-    fn id(&self) -> &str;
-    fn container(&self) -> &Container;
+    fn address(&self) -> &SlotAddress;
+    fn display_id(&self) -> &str;
     fn priority(&self) -> i32;
+    fn set_priority(&mut self, priority: i32);
+
+    fn container(&self) -> &Container {
+        self.address().container()
+    }
 }
 
-/// Ordered collection. Linear scan on lookup; sized for tens of slots
-/// per region, not thousands.
 pub struct SlotRegistry<T: IsSlot> {
     slots: Vec<T>,
 }
@@ -38,26 +26,28 @@ impl<T: IsSlot> SlotRegistry<T> {
         Self::default()
     }
 
-    /// Insert or replace by id. Replacement preserves the original vec
-    /// position (insertion-order tiebreak unchanged).
-    pub fn add(&mut self, slot: T) {
-        if let Some(existing) = self.slots.iter_mut().find(|s| s.id() == slot.id()) {
+    pub fn add(&mut self, slot: T) -> bool {
+        if let Some(existing) = self
+            .slots
+            .iter_mut()
+            .find(|s| s.address() == slot.address())
+        {
             *existing = slot;
+            true
         } else {
             self.slots.push(slot);
+            false
         }
     }
 
-    /// Remove by id. Returns true if a slot was removed.
-    pub fn remove(&mut self, id: &str) -> bool {
+    pub fn remove(&mut self, address: &SlotAddress) -> bool {
         let n = self.slots.len();
-        self.slots.retain(|s| s.id() != id);
+        self.slots.retain(|s| s.address() != address);
         self.slots.len() != n
     }
 
-    /// Replace in place only if present. Returns true if replaced.
-    pub fn replace(&mut self, id: &str, new: T) -> bool {
-        if let Some(existing) = self.slots.iter_mut().find(|s| s.id() == id) {
+    pub fn replace(&mut self, address: &SlotAddress, new: T) -> bool {
+        if let Some(existing) = self.slots.iter_mut().find(|s| s.address() == address) {
             *existing = new;
             true
         } else {
@@ -65,8 +55,25 @@ impl<T: IsSlot> SlotRegistry<T> {
         }
     }
 
-    pub fn contains(&self, id: &str) -> bool {
-        self.slots.iter().any(|s| s.id() == id)
+    pub fn contains(&self, address: &SlotAddress) -> bool {
+        self.slots.iter().any(|s| s.address() == address)
+    }
+
+    pub fn contains_display_id(&self, id: &str) -> bool {
+        self.slots.iter().any(|s| s.display_id() == id)
+    }
+
+    pub fn apply_visibility_and_priority(
+        &mut self,
+        is_hidden: impl Fn(&SlotAddress) -> bool,
+        priority_for: impl Fn(&SlotAddress) -> Option<i32>,
+    ) {
+        self.slots.retain(|slot| !is_hidden(slot.address()));
+        for slot in &mut self.slots {
+            if let Some(priority) = priority_for(slot.address()) {
+                slot.set_priority(priority);
+            }
+        }
     }
 
     pub fn len(&self) -> usize {
@@ -77,7 +84,6 @@ impl<T: IsSlot> SlotRegistry<T> {
         self.slots.is_empty()
     }
 
-    /// Slots in `container`, ordered for rendering.
     pub fn iter_container<'a>(&'a self, container: Container) -> impl Iterator<Item = &'a T> + 'a {
         let mut picked: Vec<(usize, &T)> = self
             .slots
@@ -97,26 +103,29 @@ mod tests {
 
     struct TestSlot {
         id: String,
-        container: Container,
+        address: SlotAddress,
         priority: i32,
     }
 
     impl IsSlot for TestSlot {
-        fn id(&self) -> &str {
-            &self.id
+        fn address(&self) -> &SlotAddress {
+            &self.address
         }
-        fn container(&self) -> &Container {
-            &self.container
+        fn display_id(&self) -> &str {
+            &self.id
         }
         fn priority(&self) -> i32 {
             self.priority
+        }
+        fn set_priority(&mut self, priority: i32) {
+            self.priority = priority;
         }
     }
 
     fn slot(id: &str, container: Container, priority: i32) -> TestSlot {
         TestSlot {
             id: id.into(),
-            container,
+            address: SlotAddress::new("test", "main_bar", container, id),
             priority,
         }
     }
@@ -134,7 +143,7 @@ mod tests {
         reg.add(slot("a", center(), 10));
         let ids: Vec<&str> = reg
             .iter_container(center())
-            .map(|s| s.id.as_str())
+            .map(|s| s.display_id())
             .collect();
         assert_eq!(ids, vec!["a"]);
     }
@@ -146,7 +155,7 @@ mod tests {
         reg.add(slot("b", center(), 10));
         let ids: Vec<&str> = reg
             .iter_container(center())
-            .map(|s| s.id.as_str())
+            .map(|s| s.display_id())
             .collect();
         assert_eq!(ids, vec!["b"]);
     }
@@ -159,7 +168,7 @@ mod tests {
         reg.add(slot("b", center(), 20));
         let ids: Vec<&str> = reg
             .iter_container(center())
-            .map(|s| s.id.as_str())
+            .map(|s| s.display_id())
             .collect();
         assert_eq!(ids, vec!["a", "b", "c"]);
     }
@@ -172,7 +181,7 @@ mod tests {
         reg.add(slot("third", center(), 10));
         let ids: Vec<&str> = reg
             .iter_container(center())
-            .map(|s| s.id.as_str())
+            .map(|s| s.display_id())
             .collect();
         assert_eq!(ids, vec!["first", "second", "third"]);
     }
@@ -181,15 +190,17 @@ mod tests {
     fn remove_returns_true_when_present() {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
         reg.add(slot("a", center(), 10));
-        assert!(reg.remove("a"));
-        assert!(!reg.contains("a"));
+        let address = SlotAddress::new("test", "main_bar", center(), "a");
+        assert!(reg.remove(&address));
+        assert!(!reg.contains(&address));
     }
 
     #[test]
     fn remove_missing_returns_false() {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
         reg.add(slot("a", center(), 10));
-        assert!(!reg.remove("nope"));
+        let address = SlotAddress::new("test", "main_bar", center(), "nope");
+        assert!(!reg.remove(&address));
         assert_eq!(reg.len(), 1);
     }
 
@@ -201,7 +212,7 @@ mod tests {
         reg.add(slot("a", center(), 99));
         let ids: Vec<&str> = reg
             .iter_container(center())
-            .map(|s| s.id.as_str())
+            .map(|s| s.display_id())
             .collect();
         assert_eq!(ids, vec!["b", "a"]);
     }
@@ -210,15 +221,25 @@ mod tests {
     fn replace_existing_returns_true() {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
         reg.add(slot("a", center(), 10));
-        assert!(reg.replace("a", slot("a", left(), 5)));
-        assert_eq!(reg.iter_container(center()).count(), 0);
-        assert_eq!(reg.iter_container(left()).count(), 1);
+        let address = SlotAddress::new("test", "main_bar", center(), "a");
+        assert!(reg.replace(&address, slot("a", center(), 5)));
+        assert_eq!(reg.iter_container(center()).count(), 1);
     }
 
     #[test]
     fn replace_missing_returns_false() {
         let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
-        assert!(!reg.replace("ghost", slot("ghost", center(), 0)));
+        let address = SlotAddress::new("test", "main_bar", center(), "ghost");
+        assert!(!reg.replace(&address, slot("ghost", center(), 0)));
         assert!(reg.is_empty());
+    }
+
+    #[test]
+    fn same_display_id_in_different_containers_does_not_collide() {
+        let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
+        reg.add(slot("same", left(), 10));
+        reg.add(slot("same", center(), 10));
+        assert_eq!(reg.iter_container(left()).count(), 1);
+        assert_eq!(reg.iter_container(center()).count(), 1);
     }
 }

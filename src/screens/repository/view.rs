@@ -177,12 +177,13 @@ pub(in crate::screens::repository) fn toolbar<'a>(
         let idx = screen.data.selection.selected_commit();
         screen.data.selected_commit(idx).and_then(|commit| {
             if commit.kind == CommitKind::Commit {
-                Some(Message::repo(RepositoryMessage::Center(
-                    CenterAction::CreateBranchHereRequested {
-                        commit_idx: idx,
-                        commit_hash: commit.hash.clone(),
-                    },
-                )))
+                Some(Message::App(crate::message::AppMessage::InvokeCommand {
+                    id: "branch.create".to_string(),
+                    args: serde_json::json!({
+                        "commit_idx": idx as i64,
+                        "hash": commit.hash.clone(),
+                    }),
+                }))
             } else {
                 None
             }

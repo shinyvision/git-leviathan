@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn v1_to_v2_migration_runs() {
+    fn initial_persist_migration_runs() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("state.json");
         std::fs::write(&path, r#"{"version":1,"data":{"count":5}}"#).unwrap();

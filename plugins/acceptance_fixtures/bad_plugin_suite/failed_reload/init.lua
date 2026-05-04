@@ -1,4 +1,4 @@
-leviathan.ui.regions.add_slot({
+leviathan.ui.slot.add({
   region = "main_bar",
   section = "left",
   id = "bad.failed_reload",

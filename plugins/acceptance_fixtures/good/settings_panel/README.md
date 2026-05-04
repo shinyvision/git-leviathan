@@ -1,0 +1,1 @@
+Settings panel acceptance fixture.

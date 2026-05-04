@@ -1,9 +1,7 @@
 //! extension points acceptance tests: extension-point expansion.
 //!
 //! Acceptance gates exercised here:
-//! - the region descriptor table validates the new static
-//!   addresses (`status_bar.left`, `repository.diff.toolbar`, …)
-//!   plus dynamic prefixes (`section:`, `row:`, `line:`, `hunk:`);
+//! - the region descriptor table validates mounted slot addresses;
 //! - `leviathan.ui.overlay` records overlays through the resource
 //!   ledger and surfaces them on `InspectorSnapshot`;
 //! - overlay registration is gated by the `ui:overlay` capability;
@@ -18,8 +16,7 @@ use git_leviathan_plugin_api::descriptor::region::REGIONS;
 
 use crate::plugin::tests::harness::MockHost;
 
-const ALL_EXT_CAPS: &str =
-    r#"["ui:overlay", "ui:context_menu", "ui:graph_decoration", "ui:diff_decoration"]"#;
+const ALL_EXT_CAPS: &str = r#"["ui:overlay", "ui:context_menu:repository.diff.context_menu", "ui:context_menu:repository.graph.context_menu", "ui:decoration:graph", "ui:decoration:diff"]"#;
 
 fn manifest_with_caps(id: &str, caps: &str) -> String {
     format!(
@@ -35,79 +32,58 @@ capabilities = {caps}
 
 #[test]
 fn region_table_validates_new_static_addresses() {
-    // status_bar fixed sections.
-    let status_bar = REGIONS.get("status_bar").expect("status_bar present");
-    assert!(status_bar.validate_address(None, Some("left")).is_ok());
-    assert!(status_bar.validate_address(None, Some("center")).is_ok());
-    assert!(status_bar.validate_address(None, Some("right")).is_ok());
-
-    // diff toolbar / context_menu fixed sections.
-    let diff = REGIONS
-        .get("repository.diff")
-        .expect("repository.diff present");
-    assert!(diff.validate_address(Some("diff"), Some("toolbar")).is_ok());
-    assert!(diff
-        .validate_address(Some("diff"), Some("context_menu"))
-        .is_ok());
-
-    // graph fixed sections.
-    let graph = REGIONS
-        .get("repository.graph")
-        .expect("repository.graph present");
-    assert!(graph
-        .validate_address(Some("graph"), Some("decorations"))
-        .is_ok());
-    assert!(graph
-        .validate_address(Some("graph"), Some("context_menu"))
-        .is_ok());
-
-    // details panel.
-    let details = REGIONS
-        .get("repository.details")
-        .expect("repository.details present");
-    assert!(details
-        .validate_address(Some("details"), Some("commit_header"))
-        .is_ok());
-    assert!(details
-        .validate_address(Some("details"), Some("files"))
-        .is_ok());
+    let repo = REGIONS.get("repository").expect("repository present");
+    for pane in ["sidebar", "graph", "details"] {
+        assert!(repo.validate_address(Some(pane), Some("top")).is_ok());
+        assert!(repo.validate_address(Some(pane), Some("bottom")).is_ok());
+    }
 }
 
 #[test]
-fn region_table_validates_dynamic_line_addresses() {
-    let diff = REGIONS.get("repository.diff").unwrap();
-    // Dynamic line / hunk ids accepted with non-empty tail.
-    assert!(diff
-        .validate_address(Some("diff"), Some("line:src/foo.rs:42"))
-        .is_ok());
-    assert!(diff.validate_address(Some("diff"), Some("hunk:7")).is_ok());
-
-    let graph = REGIONS.get("repository.graph").unwrap();
-    assert!(graph
-        .validate_address(Some("graph"), Some("row:abc1234"))
-        .is_ok());
-
-    // Sidebar dynamic section.
+fn region_table_rejects_unmounted_addresses() {
     let repo = REGIONS.get("repository").unwrap();
+    assert!(REGIONS.get("status_bar").is_none());
+    assert!(REGIONS.get("repository.diff").is_none());
+    assert!(REGIONS.get("repository.graph").is_none());
+    assert!(REGIONS.get("repository.details").is_none());
     assert!(repo
         .validate_address(Some("sidebar"), Some("section:my-extra-pane"))
-        .is_ok());
+        .is_err());
+    assert!(repo
+        .validate_address(Some("graph"), Some("row:abc1234"))
+        .is_err());
 }
 
 #[test]
-fn region_table_rejects_unknown_dynamic_prefix() {
-    let diff = REGIONS.get("repository.diff").unwrap();
-    let err = diff
-        .validate_address(Some("diff"), Some("blockchain:1"))
-        .unwrap_err();
-    assert!(err.contains("no section"), "got: {err}");
-
-    // Empty tail after a known prefix is rejected with a helpful
-    // message rather than silently accepted.
-    let err = diff
-        .validate_address(Some("diff"), Some("line:"))
-        .unwrap_err();
-    assert!(err.contains("empty tail"), "got: {err}");
+fn extension_point_descriptors_cover_phase7_surfaces() {
+    use git_leviathan_plugin_api::descriptor::extension_point::{
+        ExtensionPointKind, EXTENSION_POINTS,
+    };
+    let ids: Vec<&str> = EXTENSION_POINTS.iter().map(|point| point.id).collect();
+    for id in [
+        "repository.diff.context_menu",
+        "repository.graph.row_badge",
+        "repository.diff.line_gutter",
+        "overlays",
+        "screens",
+        "commands",
+        "settings.panel",
+        "dock.pane",
+    ] {
+        assert!(ids.contains(&id), "missing extension point {id}");
+    }
+    for kind in [
+        ExtensionPointKind::Slot,
+        ExtensionPointKind::ContextMenu,
+        ExtensionPointKind::Decoration,
+        ExtensionPointKind::Overlay,
+        ExtensionPointKind::Screen,
+        ExtensionPointKind::Command,
+        ExtensionPointKind::SettingsPanel,
+        ExtensionPointKind::DockPane,
+    ] {
+        assert!(EXTENSION_POINTS.iter().any(|point| point.kind == kind));
+    }
 }
 
 #[test]
@@ -264,6 +240,109 @@ fn context_menu_items_sorted_by_priority() {
     assert_eq!(blame.priority, 10);
     assert!(blame.condition_capability.is_none());
     let _ = blame.source_location.as_deref();
+}
+
+#[test]
+fn contribute_registers_static_and_dynamic_decorations() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "uiext",
+        &manifest_with_caps(
+            "uiext",
+            r#"["ui:context_menu:repository.diff.context_menu", "ui:decoration:graph", "ui:decoration:diff"]"#,
+        ),
+        r##"
+        local menu, menu_err = leviathan.ui.contribute("repository.diff.context_menu", {
+            id = "copy-path", label = "Copy Path", command = "diff.copy_path", priority = 5,
+        })
+        assert(menu and not menu_err)
+
+        local static_g, static_g_err = leviathan.ui.contribute("repository.graph.row_badge", {
+            id = "reviewed", commit_hash = "abc1234",
+            decoration = { kind = "badge", text = "OK", fg = "#fff", bg = "#047857" },
+        })
+        assert(static_g and not static_g_err)
+
+        local static_d, static_d_err = leviathan.ui.contribute("repository.diff.line_gutter", {
+            id = "line-pin",
+            decoration = { kind = "line_gutter", file = "src/lib.rs", line = 9, glyph = "!" },
+        })
+        assert(static_d and not static_d_err)
+
+        local graph_provider, graph_err = leviathan.ui.contribute("repository.graph.row_badge", {
+            id = "dynamic-review",
+            provider = function(ctx)
+                return { kind = "badge", text = ctx.payload.graph_row.commit_hash }
+            end,
+        })
+        assert(graph_provider and not graph_err)
+
+        local diff_provider, diff_err = leviathan.ui.contribute("repository.diff.line_gutter", {
+            id = "dynamic-line",
+            provider = function(ctx)
+                return { kind = "line_gutter", glyph = tostring(ctx.payload.diff_line.line) }
+            end,
+        })
+        assert(diff_provider and not diff_err)
+        "##,
+    )
+    .expect("UI extension contributions register");
+
+    let snap = host.introspect();
+    assert!(snap
+        .extension_contributions
+        .iter()
+        .any(|row| row.point_id == "repository.diff.context_menu" && row.id == "copy-path"));
+    assert!(snap
+        .extension_contributions
+        .iter()
+        .any(|row| row.point_id == "repository.graph.row_badge" && row.dynamic));
+    assert!(snap
+        .context_menu_items
+        .iter()
+        .any(|row| row.region == "repository.diff.context_menu" && row.id == "copy-path"));
+
+    let graph_rows = host
+        .host()
+        .extension_graph_decorations_for_commit("cafebabe");
+    assert!(graph_rows.iter().any(|row| {
+        matches!(
+            &row.decoration,
+            git_leviathan_plugin_api::descriptor::decoration::GraphDecoration::Badge { text, .. }
+                if text == "cafebabe"
+        )
+    }));
+    let diff_rows = host
+        .host()
+        .extension_diff_decorations_for_line("src/lib.rs", 9);
+    assert!(diff_rows.iter().any(|row| {
+        matches!(
+            &row.decoration,
+            git_leviathan_plugin_api::descriptor::decoration::DiffDecoration::LineGutter {
+                glyph,
+                ..
+            } if glyph == "9"
+        )
+    }));
+}
+
+#[test]
+fn decoration_invalidation_tracks_required_refresh_events() {
+    let mut host = MockHost::new();
+    let before = host.introspect().decoration_revision;
+    host.dispatch_test_event("CommitSelected", serde_json::json!({ "hash": "a" }));
+    host.dispatch_test_event("DiffLoaded", serde_json::json!({ "hash": "b" }));
+    host.dispatch_test_event("RefsChanged", serde_json::json!({ "count": 2 }));
+    let snap = host.introspect();
+    assert!(snap.decoration_revision >= before + 3);
+    let reasons: Vec<&str> = snap
+        .decoration_invalidations
+        .iter()
+        .map(|row| row.reason.as_str())
+        .collect();
+    assert!(reasons.contains(&"selection"));
+    assert!(reasons.contains(&"diff_load"));
+    assert!(reasons.contains(&"refs_change"));
 }
 
 #[test]

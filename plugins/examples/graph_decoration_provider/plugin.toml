@@ -1,0 +1,6 @@
+id = "example_graph_decoration_provider"
+name = "Example Graph Decoration Provider"
+version = "0.1.0"
+api_version = "1.0"
+description = "Commit graph badge decoration example."
+capabilities = ["ui:decoration:graph"]

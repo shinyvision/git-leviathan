@@ -42,8 +42,8 @@ impl Template {
 
     pub(super) fn manifest(self, id: &str) -> String {
         let capabilities = match self {
-            Self::GraphDecoration => "capabilities = [\"ui:graph_decoration\"]\n",
-            Self::DiffDecoration => "capabilities = [\"ui:diff_decoration\"]\n",
+            Self::GraphDecoration => "capabilities = [\"ui:decoration:graph\"]\n",
+            Self::DiffDecoration => "capabilities = [\"ui:decoration:diff\"]\n",
             _ => "",
         };
         let services = match self {
@@ -67,7 +67,7 @@ impl Template {
             Self::MainBar => format!(
                 r#"local slot_id = "plugin.{id}.main"
 
-leviathan.ui.regions.add_slot({{
+local handle, err = leviathan.ui.slot.add({{
   region = "main_bar",
   section = "right",
   id = slot_id,
@@ -81,6 +81,7 @@ leviathan.ui.regions.add_slot({{
     }},
   }},
 }})
+assert(handle, err)
 
 leviathan.command.create("{id}.hello", {{
   title = "{id}: Hello",
@@ -92,7 +93,7 @@ leviathan.command.create("{id}.hello", {{
 "#
             ),
             Self::SidebarPanel => format!(
-                r#"leviathan.ui.regions.add_slot({{
+                r#"local handle, err = leviathan.ui.slot.add({{
   region = "repository",
   pane = "sidebar",
   section = "top",
@@ -114,6 +115,7 @@ leviathan.command.create("{id}.hello", {{
     }},
   }},
 }})
+assert(handle, err)
 "#
             ),
             Self::CommandKeymap => format!(
@@ -169,7 +171,7 @@ leviathan.keymap.set("repository", "<leader>r", "{id}.refresh", {{
   end,
 }})
 
-leviathan.ui.regions.add_slot({{
+local handle, err = leviathan.ui.slot.add({{
   region = "main_bar",
   section = "right",
   id = "plugin.{id}.lazy",
@@ -180,6 +182,7 @@ leviathan.ui.regions.add_slot({{
     child = {{ kind = "text", value = "{id}" }},
   }},
 }})
+assert(handle, err)
 "#
             ),
         }

@@ -9,10 +9,11 @@ use mlua::{Lua, LuaSerdeExt, RegistryKey};
 
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::diagnostic::DiagnosticStore;
-use crate::plugin::extensions::OverlayCallbacks;
+use crate::plugin::extensions::{DecorationProviderCallbacks, OverlayCallbacks};
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId, ResourceLedger};
 
+pub mod assets;
 #[path = "async.rs"]
 pub mod async_api;
 pub mod async_runtime;
@@ -32,6 +33,8 @@ pub mod settings;
 pub mod tab_registry;
 pub mod timer;
 pub mod ui;
+pub mod ui_core;
+pub mod ui_dock;
 pub mod ui_ext;
 
 pub use async_runtime::{DeferredCallback, DeferredQueue};
@@ -50,11 +53,31 @@ pub struct AsyncRuntimeContext {
 }
 
 pub struct ScreenDef {
+    pub id: String,
+    pub title: String,
+    pub breadcrumbs: Vec<String>,
+    pub bind_repository: bool,
     pub init: RegistryKey,
     pub view: RegistryKey,
     pub update: RegistryKey,
     pub serialize: Option<RegistryKey>,
     pub deserialize: Option<RegistryKey>,
+    pub can_close: Option<RegistryKey>,
+}
+
+pub struct DockPanelDef {
+    pub id: String,
+    pub title: String,
+    pub area: crate::plugin::dock::DockArea,
+    pub default_open: bool,
+    pub view: RegistryKey,
+    pub update: Option<RegistryKey>,
+    pub source_location: Option<String>,
+}
+
+pub struct SettingsPanelDef {
+    pub view: RegistryKey,
+    pub source_location: Option<String>,
 }
 
 pub struct RawSlotSpec {
@@ -63,29 +86,41 @@ pub struct RawSlotSpec {
     pub container: String,
     pub priority: i32,
     pub widget: WidgetSource,
+    pub depends_on: Vec<crate::plugin::ui::invalidation::UiDependency>,
     pub on_click: Option<RegistryKey>,
     pub source_location: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DynamicWidgetCall {
+    Context,
+}
+
 pub enum WidgetSource {
     Static(Box<crate::plugin::ui::widget_ast::WidgetAst>),
-    Dynamic(RegistryKey),
+    Dynamic {
+        key: RegistryKey,
+        call: DynamicWidgetCall,
+    },
 }
 
 /// Kept in source order so remove/replace can target earlier adds.
 pub enum RawSlotOp {
     Add(RawSlotSpec),
     Remove {
-        plugin_id: String,
+        target_plugin_id: Option<String>,
         region: String,
         container: String,
         id: String,
+        source_location: Option<String>,
     },
     Replace {
+        target_plugin_id: Option<String>,
         region: String,
         container: String,
         id: String,
         spec: RawSlotSpec,
+        source_location: Option<String>,
     },
 }
 
@@ -123,6 +158,8 @@ pub struct BuildState {
     pub autocmds: Vec<RawAutocmd>,
     pub autocmd_groups: Vec<RawAutocmdGroup>,
     pub autocmd_clears: Vec<RawAutocmdClear>,
+    pub dock_panels: HashMap<String, DockPanelDef>,
+    pub settings_panel: Option<SettingsPanelDef>,
     pub next_local_group_id: u64,
     pub next_autocmd_sequence: u64,
     pub commands: Vec<crate::plugin::commands::RawCommand>,
@@ -154,6 +191,8 @@ pub struct InstallAllContext {
     pub diagnostics: DiagnosticStore,
     pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
+    pub ui_context: crate::plugin::ui::context::UiContextStore,
 }
 
 pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
@@ -174,9 +213,11 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         async_ctx,
         plugin_id,
         generation_id,
-        diagnostics: _diagnostics,
+        diagnostics,
         extension_registry,
         overlay_callbacks,
+        decoration_provider_callbacks,
+        ui_context,
     } = ctx;
 
     let leviathan = lua.create_table()?;
@@ -199,6 +240,8 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         ledger.clone(),
         &leviathan,
         command_dispatch,
+        Rc::clone(&guard),
+        plugin_id.clone(),
     )?;
     leviathan.set("api", api_tbl)?;
 
@@ -207,9 +250,25 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         lua.create_function(|_, feature: String| Ok(api_descriptor::has_feature(&feature)))?,
     )?;
 
-    ui::install(lua, Rc::clone(&build), ledger.clone(), &leviathan)?;
+    ui::install(
+        lua,
+        Rc::clone(&build),
+        ledger.clone(),
+        Rc::clone(&guard),
+        diagnostics.clone(),
+        ui_context,
+        &leviathan,
+    )?;
+    assets::install(lua, &leviathan, ledger.clone())?;
     {
         let ui_table: mlua::Table = leviathan.get("ui")?;
+        ui_dock::install(
+            lua,
+            Rc::clone(&build),
+            ledger.clone(),
+            Rc::clone(&guard),
+            &ui_table,
+        )?;
         ui_ext::install(
             lua,
             &ui_table,
@@ -217,6 +276,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
             Rc::clone(&guard),
             extension_registry,
             Rc::clone(&overlay_callbacks),
+            Rc::clone(&decoration_provider_callbacks),
         )?;
     }
     keymap::install(lua, Rc::clone(&build), ledger.clone(), &leviathan, keymaps)?;
@@ -382,6 +442,11 @@ mod tests {
             plugin_registry,
             diagnostics: diag_store.clone(),
             pending_events: PendingCommandEvents::new(),
+            active_context: Rc::new(RefCell::new(serde_json::json!({
+                "surface": "screen",
+                "repository": { "is_open": false },
+                "tab": { "count": 0 },
+            }))),
             budget_tracker: crate::plugin::performance::BudgetTracker::new(diag_store),
         };
         let keymaps = Rc::new(RefCell::new(KeymapRegistry::new()));
@@ -427,6 +492,13 @@ mod tests {
                 diagnostics: DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
                 extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
                 overlay_callbacks: Rc::new(RefCell::new(OverlayCallbacks::new())),
+                decoration_provider_callbacks: Rc::new(RefCell::new(
+                    DecorationProviderCallbacks::new(),
+                )),
+                ui_context: crate::plugin::ui::context::UiContextStore::new(
+                    "coverage",
+                    GenerationId::new(1),
+                ),
             },
         )
         .unwrap();
@@ -484,8 +556,12 @@ mod tests {
             .load(r#"return leviathan.has("fs.read_file@1")"#)
             .eval()
             .unwrap();
-        let has_regions_v1: bool = lua
-            .load(r#"return leviathan.has("ui.regions.add_slot@1")"#)
+        let has_ui_slot: bool = lua
+            .load(r#"return leviathan.has("ui.slot@1")"#)
+            .eval()
+            .unwrap();
+        let has_ui_context: bool = lua
+            .load(r#"return leviathan.has("ui.context@1")"#)
             .eval()
             .unwrap();
         let has_unknown: bool = lua
@@ -498,7 +574,8 @@ mod tests {
             .unwrap();
 
         assert!(has_read_file);
-        assert!(has_regions_v1);
+        assert!(has_ui_slot);
+        assert!(has_ui_context);
         assert!(!has_unknown);
         assert_eq!(module_count, api_descriptor::API_MODULES.len());
     }

@@ -4,8 +4,10 @@ use iced::widget::{column, Stack};
 use iced::{Element, Length};
 
 use crate::message::Message;
-use crate::plugin::ui::{overlay as plugin_overlay, screen as plugin_screen};
-use crate::screens::{BlankScreen, NoGitScreen, RepositoryScreen, Screen, ToolbarCtx};
+use crate::plugin::ui::overlay as plugin_overlay;
+use crate::screens::{
+    BlankScreen, NoGitScreen, PluginScreen, RepositoryScreen, Screen, ToolbarCtx,
+};
 use crate::widgets::chrome;
 
 use super::App;
@@ -16,7 +18,7 @@ enum ActiveScreenRef<'a> {
     Blank(&'a BlankScreen),
     NoGit(&'a NoGitScreen),
     Repository(&'a RepositoryScreen),
-    Plugin,
+    Plugin(&'a PluginScreen),
 }
 
 pub fn render(app: &App) -> Element<'_, Message> {
@@ -24,7 +26,7 @@ pub fn render(app: &App) -> Element<'_, Message> {
         ActiveScreenRef::NoGit(screen) => app_screen_view(screen.view(), app),
         ActiveScreenRef::Blank(screen) => app_screen_view(screen.view(), app),
         ActiveScreenRef::Repository(screen) => repository_view(app, screen),
-        ActiveScreenRef::Plugin => plugin_view(app),
+        ActiveScreenRef::Plugin(screen) => plugin_view(app, screen),
     }
 }
 
@@ -40,9 +42,28 @@ fn app_screen_view<'a>(body: Element<'a, Message>, app: &'a App) -> Element<'a, 
         .into()
 }
 
-fn plugin_view(app: &App) -> Element<'_, Message> {
-    let body = plugin_screen::view(&app.plugin_host);
-    let mut layers: Vec<Element<Message>> = vec![body];
+fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Message> {
+    let _screen_nav = (
+        <PluginScreen as Screen>::title(screen),
+        <PluginScreen as Screen>::breadcrumbs(screen),
+        <PluginScreen as Screen>::has_focus(screen),
+    );
+    let mut content_col = column![chrome::tab_bar_view(
+        &app.tab_bar_registry,
+        app.plugin_host.tab_snapshot()
+    ),]
+    .spacing(0);
+    let ctx = ToolbarCtx {
+        now: app.fetch.started_at(),
+        main_bar_registry: &app.main_bar_registry,
+    };
+    if let Some(toolbar) = <PluginScreen as Screen>::toolbar(screen, &ctx) {
+        content_col = content_col.push(toolbar);
+    }
+    content_col = content_col.push(screen.view_with_host(&app.plugin_host));
+    let content: Element<Message> = content_col.into();
+
+    let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(plugin_overlay::layers(&app.plugin_host));
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);
@@ -85,13 +106,12 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
 }
 
 fn active_screen_ref(app: &App) -> ActiveScreenRef<'_> {
-    if app.plugin_host.active_screen().is_some() {
-        return ActiveScreenRef::Plugin;
-    }
     if let Some(no_git) = &app.no_git_screen {
         ActiveScreenRef::NoGit(no_git)
     } else if app.tabs.is_empty() {
         ActiveScreenRef::Blank(&app.blank_screen)
+    } else if let Some(screen) = app.tabs.active_plugin_screen() {
+        ActiveScreenRef::Plugin(screen)
     } else {
         match app.tabs.active_screen() {
             Some(screen) => ActiveScreenRef::Repository(screen),

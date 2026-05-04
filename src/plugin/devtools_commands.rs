@@ -31,8 +31,8 @@ use std::rc::Rc;
 use serde_json::{json, Value};
 
 use crate::plugin::commands::{
-    CommandArg, CommandArgType, CommandBody, CommandContext, CommandDescriptor, CommandRegistry,
-    HOST_COMMAND_PLUGIN_ID,
+    CommandArg, CommandArgType, CommandAvailability, CommandBody, CommandContext,
+    CommandDescriptor, CommandHooks, CommandRegistry, HOST_COMMAND_PLUGIN_ID,
 };
 use crate::plugin::diagnostic::DiagnosticStore;
 
@@ -83,6 +83,56 @@ fn plugin_id_arg() -> CommandArg {
         default: None,
         doc: "Plugin id to operate on.".into(),
     }
+}
+
+fn contribution_arg(name: &'static str, doc: &'static str) -> CommandArg {
+    CommandArg {
+        name: name.into(),
+        ty: CommandArgType::String,
+        required: true,
+        default: None,
+        doc: doc.into(),
+    }
+}
+
+fn optional_priority_arg() -> CommandArg {
+    CommandArg {
+        name: "priority".into(),
+        ty: CommandArgType::Integer,
+        required: false,
+        default: None,
+        doc: "Optional replacement priority for reorderable slot contributions.".into(),
+    }
+}
+
+fn optional_hidden_arg() -> CommandArg {
+    CommandArg {
+        name: "hidden".into(),
+        ty: CommandArgType::Boolean,
+        required: false,
+        default: None,
+        doc: "When present, set visibility instead of toggling it.".into(),
+    }
+}
+
+fn contribution_args(include_priority: bool) -> Vec<CommandArg> {
+    let mut args = vec![
+        contribution_arg(
+            "plugin_id",
+            "Contribution owner plugin id; use `builtin` for built-ins.",
+        ),
+        contribution_arg("region", "Region id such as `main_bar`."),
+        contribution_arg(
+            "container",
+            "Container key such as `left` or `sidebar.top`.",
+        ),
+        contribution_arg("id", "Contribution id."),
+    ];
+    if include_priority {
+        args.push(optional_hidden_arg());
+        args.push(optional_priority_arg());
+    }
+    args
 }
 
 fn optional_plugin_id_arg() -> CommandArg {
@@ -141,6 +191,20 @@ fn devtools_specs() -> Vec<DevtoolsCommandSpec> {
             description: "Return a structured projection of the plugin's widget AST inventory.",
             destructive: false,
             args: vec![plugin_id_arg()],
+        },
+        DevtoolsCommandSpec {
+            name: "plugin.inspect_ui_context",
+            title: "Plugin: Inspect UI Context",
+            description: "Return the current typed UI context snapshot.",
+            destructive: false,
+            args: vec![],
+        },
+        DevtoolsCommandSpec {
+            name: "plugin.inspect_dock_layout",
+            title: "Plugin: Inspect Dock Layout",
+            description: "Return dock panel registrations and persisted layout state.",
+            destructive: false,
+            args: vec![],
         },
         DevtoolsCommandSpec {
             name: "plugin.run_health_check",
@@ -206,6 +270,27 @@ fn devtools_specs() -> Vec<DevtoolsCommandSpec> {
             destructive: false,
             args: vec![plugin_id_arg()],
         },
+        DevtoolsCommandSpec {
+            name: "plugin_ui.toggle_contribution",
+            title: "Plugin UI: Toggle Contribution",
+            description: "Hide or show one built-in or plugin UI contribution.",
+            destructive: false,
+            args: contribution_args(true),
+        },
+        DevtoolsCommandSpec {
+            name: "plugin_ui.reset_layout",
+            title: "Plugin UI: Reset Layout",
+            description: "Clear plugin UI contribution overrides and reset host layout state.",
+            destructive: true,
+            args: vec![],
+        },
+        DevtoolsCommandSpec {
+            name: "plugin_ui.inspect_contribution",
+            title: "Plugin UI: Inspect Contribution",
+            description: "Return effective override state for one UI contribution.",
+            destructive: false,
+            args: contribution_args(false),
+        },
     ]
 }
 
@@ -239,10 +324,12 @@ pub fn register(
             context: CommandContext::GLOBAL.into(),
             args: spec.args,
             destructive: spec.destructive,
-            // Devtools commands are host-provided; the palette / user
-            // is the access guard. See `commands::DispatchEnvRunner`
-            // for the host-vs-plugin distinction.
             capabilities: Vec::new(),
+            plugin_invocation_capabilities: Vec::new(),
+            availability: CommandAvailability::enabled(),
+            keymap_eligible: true,
+            palette_visible: true,
+            hooks: CommandHooks::result_event_only(),
             run: body,
         };
         registry.register(descriptor, diagnostics);
@@ -294,7 +381,7 @@ mod tests {
     #[test]
     fn devtools_command_names_match_specs() {
         let names = devtools_command_names();
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 15);
         // Stable order so palette tests can rely on it.
         let expected = [
             "plugin.reload",
@@ -302,11 +389,16 @@ mod tests {
             "plugin.enable",
             "plugin.open_log",
             "plugin.inspect_ui_tree",
+            "plugin.inspect_ui_context",
+            "plugin.inspect_dock_layout",
             "plugin.run_health_check",
             "plugin.clear_state",
             "plugin.export_diagnostic_bundle",
             "plugin.show_capability_audit",
             "plugin.show_runtime_path",
+            "plugin_ui.toggle_contribution",
+            "plugin_ui.reset_layout",
+            "plugin_ui.inspect_contribution",
         ];
         assert_eq!(names, expected);
     }

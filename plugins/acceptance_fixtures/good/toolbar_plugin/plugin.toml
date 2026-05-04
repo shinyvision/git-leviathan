@@ -1,0 +1,9 @@
+id = "toolbar_plugin"
+name = "Toolbar Plugin"
+version = "0.1.0"
+api_version = "1.0"
+description = "acceptance fixture exercising a public v1 toolbar slot."
+capabilities = ["ui:region:main_bar"]
+
+[runtime]
+strict_globals = false

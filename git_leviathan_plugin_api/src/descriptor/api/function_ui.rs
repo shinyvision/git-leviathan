@@ -35,13 +35,13 @@ pub(super) const ROOT_FUNCTIONS: &[ApiFunction] = &[
             doc: "Message to log to host stderr.",
         }],
         returns: &[],
-        capabilities: &[],
+        capabilities: &["ui:screen"],
         validation: NO_VALIDATION,
     },
     ApiFunction {
         path: "leviathan.schedule",
         name: "schedule",
-        since: "1.12",
+        since: "1.0",
         compatibility: "v1",
         doc: "Defer a callback to the next tick (top-level alias of `leviathan.api.schedule`).",
         params: &[ApiParam {
@@ -51,7 +51,7 @@ pub(super) const ROOT_FUNCTIONS: &[ApiFunction] = &[
             doc: "Function invoked on the next tick.",
         }],
         returns: &[],
-        capabilities: &[],
+        capabilities: &["ui:region:<region>"],
         validation: NO_VALIDATION,
     },
 ];
@@ -88,7 +88,11 @@ pub(super) const API_FUNCTIONS: &[ApiFunction] = &[
             doc: "Callback to enqueue.",
         }],
         returns: &[],
-        capabilities: &[],
+        capabilities: &[
+            "ui:region:<region>",
+            "ui:remove:builtin",
+            "ui:remove:<region>:<container>:<id>",
+        ],
         validation: ApiValidation {
             args: &["callback must be a function"],
             returns: &[],
@@ -116,7 +120,11 @@ pub(super) const API_FUNCTIONS: &[ApiFunction] = &[
             },
         ],
         returns: &[],
-        capabilities: &[],
+        capabilities: &[
+            "ui:region:<region>",
+            "ui:replace:builtin",
+            "ui:replace:<region>:<container>:<id>",
+        ],
         validation: ApiValidation {
             args: &["ms must be an integer", "callback must be a function"],
             returns: &[],
@@ -125,44 +133,31 @@ pub(super) const API_FUNCTIONS: &[ApiFunction] = &[
     },
 ];
 
-pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
-    ApiFunction {
-        path: "leviathan.ui.list_regions",
-        name: "list_regions",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "List names of registered UI regions.",
-        params: &[],
-        returns: &[ApiReturn {
-            lua_type: "string[]",
-            doc: "Region names in descriptor order.",
-        }],
-        capabilities: &[],
-        validation: NO_VALIDATION,
-    },
-    ApiFunction {
-        path: "leviathan.ui.register_screen",
-        name: "register_screen",
-        since: "1.0",
-        compatibility: "v1",
-        doc: "Register a plugin screen with init/view/update lifecycle callbacks.",
-        params: &[ApiParam {
-            name: "spec",
-            lua_type: "LeviathanScreenSpec",
-            required: true,
-            doc: "Screen descriptor.",
-        }],
+pub(super) const UI_SCREEN_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
+    path: "leviathan.ui.screen.register",
+    name: "register",
+    since: "1.0",
+    compatibility: "v1",
+    doc: "Register a plugin screen with init/view/update lifecycle callbacks.",
+    params: &[ApiParam {
+        name: "spec",
+        lua_type: "LeviathanScreenSpec",
+        required: true,
+        doc: "Screen descriptor.",
+    }],
+    returns: &[],
+    capabilities: &["ui:screen"],
+    validation: ApiValidation {
+        args: &[
+            "spec.id must be a string",
+            "spec.init/view/update must be functions",
+        ],
         returns: &[],
-        capabilities: &[],
-        validation: ApiValidation {
-            args: &[
-                "spec.id must be a string",
-                "spec.init/view/update must be functions",
-            ],
-            returns: &[],
-            notes: &["serialize and deserialize are optional functions."],
-        },
+        notes: &["serialize, deserialize, and can_close are optional functions."],
     },
+}];
+
+pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
     // extension-point APIs (overlay / context_menu /
     // graph_decoration / diff_decoration). Same module table.
     ApiFunction {
@@ -207,6 +202,25 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
             args: &["id must be a string"],
             returns: &[],
             notes: &["Only removes an overlay owned by the calling plugin."],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.contribute",
+        name: "contribute",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Contribute to a typed UI extension point and return a ledger-backed handle.",
+        params: UI_CONTRIBUTE_PARAMS,
+        returns: CONTRIBUTION_HANDLE_ERR_RET,
+        capabilities: UI_CONTRIBUTE_CAP,
+        validation: ApiValidation {
+            args: &[
+                "point_id must be a known extension point",
+                "spec.id must be a string",
+                "spec.provider may be a function for dynamic decorations",
+            ],
+            returns: &["LeviathanContributionHandle plus nil error, or nil plus error string"],
+            notes: &["Convenience wrappers call this contribution path."],
         },
     },
     ApiFunction {
@@ -289,59 +303,288 @@ const REGION_REPLACE_SLOT_PARAMS: &[ApiParam] = &[
     },
 ];
 
-const REGION_VALIDATION: ApiValidation = ApiValidation {
+const SLOT_HANDLE_ERR_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "LeviathanSlotHandle|nil",
+        doc: "Slot handle on success, nil on failure.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const BOOL_NIL_ERR_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "boolean|nil",
+        doc: "True on success, nil on failure.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const REGION_LIST_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "string[]",
+        doc: "Region names in descriptor order.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const REGION_DESCRIBE_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "table|nil",
+        doc: "Region descriptor on success, nil on failure.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const CONTEXT_CURRENT_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "LeviathanUiContext|nil",
+        doc: "Typed current UI context.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const CONTRIBUTION_HANDLE_ERR_RET: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "LeviathanContributionHandle|nil",
+        doc: "Contribution handle on success, nil on failure.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message on failure.",
+    },
+];
+
+const SLOT_VALIDATION: ApiValidation = ApiValidation {
     args: &[
+        "region must be a known region",
         "section must match the region descriptor",
         "content regions require pane",
         "widget must validate as a LeviathanWidget or be a function",
+        "depends_on entries must be known UI dependencies when present",
     ],
-    returns: &[],
-    notes: &["Slot ownership is recorded in the resource ledger."],
+    returns: &["success value plus nil error, or nil plus error string"],
+    notes: &["Use handle:remove() and handle:replace(spec) for owned slot resources."],
 };
 
-pub(super) const UI_REGIONS_FUNCTIONS: &[ApiFunction] = &[
+pub(super) const UI_SLOT_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
-        path: "leviathan.ui.regions.add_slot",
-        name: "add_slot",
+        path: "leviathan.ui.slot.add",
+        name: "add",
         since: "1.0",
         compatibility: "v1",
-        doc: "Add a slot to a UI region.",
+        doc: "Add a slot and return a ledger-backed handle.",
         params: REGION_ADD_SLOT_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
+        returns: SLOT_HANDLE_ERR_RET,
+        capabilities: &["ui:region:<region>"],
+        validation: SLOT_VALIDATION,
     },
     ApiFunction {
-        path: "leviathan.ui.regions.remove_slot",
-        name: "remove_slot",
+        path: "leviathan.ui.slot.remove",
+        name: "remove",
         since: "1.0",
         compatibility: "v1",
-        doc: "Remove a slot from a UI region.",
+        doc: "Remove a slot by full address.",
         params: REGION_REMOVE_SLOT_PARAM,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
+        returns: BOOL_NIL_ERR_RET,
+        capabilities: &[
+            "ui:region:<region>",
+            "ui:remove:builtin",
+            "ui:remove:<region>:<container>:<id>",
+        ],
+        validation: SLOT_VALIDATION,
     },
     ApiFunction {
-        path: "leviathan.ui.regions.replace_slot",
-        name: "replace_slot",
+        path: "leviathan.ui.slot.replace",
+        name: "replace",
         since: "1.0",
         compatibility: "v1",
-        doc: "Replace a slot in a UI region.",
+        doc: "Replace a slot by full address and return a handle.",
         params: REGION_REPLACE_SLOT_PARAMS,
-        returns: &[],
-        capabilities: &[],
-        validation: REGION_VALIDATION,
+        returns: SLOT_HANDLE_ERR_RET,
+        capabilities: &[
+            "ui:region:<region>",
+            "ui:replace:builtin",
+            "ui:replace:<region>:<container>:<id>",
+        ],
+        validation: SLOT_VALIDATION,
     },
 ];
+
+pub(super) const UI_REGION_FUNCTIONS: &[ApiFunction] = &[
+    ApiFunction {
+        path: "leviathan.ui.region.list",
+        name: "list",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "List mounted UI regions.",
+        params: &[],
+        returns: REGION_LIST_RET,
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.ui.region.describe",
+        name: "describe",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Describe one mounted UI region.",
+        params: &[ApiParam {
+            name: "name",
+            lua_type: "string",
+            required: true,
+            doc: "Region name.",
+        }],
+        returns: REGION_DESCRIBE_RET,
+        capabilities: &[],
+        validation: NO_VALIDATION,
+    },
+];
+
+pub(super) const UI_CONTEXT_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
+    path: "leviathan.ui.context.current",
+    name: "current",
+    since: "1.0",
+    compatibility: "v1",
+    doc: "Return the current typed UI context.",
+    params: &[],
+    returns: CONTEXT_CURRENT_RET,
+    capabilities: &[],
+    validation: NO_VALIDATION,
+}];
+
+pub(super) const UI_DOCK_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
+    path: "leviathan.ui.dock.register",
+    name: "register",
+    since: "1.0",
+    compatibility: "v1",
+    doc: "Register a persistent dock panel with host-owned layout state.",
+    params: &[ApiParam {
+        name: "spec",
+        lua_type: "LeviathanDockPanelSpec",
+        required: true,
+        doc: "Dock panel descriptor.",
+    }],
+    returns: &[
+        ApiReturn {
+            lua_type: "LeviathanDockPanelHandle|nil",
+            doc: "Dock panel handle on success.",
+        },
+        ApiReturn {
+            lua_type: "string|nil",
+            doc: "Error message on failure.",
+        },
+    ],
+    capabilities: &["ui:dock"],
+    validation: ApiValidation {
+        args: &[
+            "spec.id/title/area must be strings",
+            "spec.view must be a function",
+            "spec.update is optional",
+        ],
+        returns: &["handle plus nil error, or nil plus error string"],
+        notes: &["view(ctx) returns a LeviathanWidget; update(state, event, value) may return { state = new_state }."],
+    },
+}];
+
+pub(super) const UI_SETTINGS_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
+    path: "leviathan.ui.settings.register",
+    name: "register",
+    since: "1.0",
+    compatibility: "v1",
+    doc: "Register a custom settings panel view for the plugin.",
+    params: &[ApiParam {
+        name: "spec",
+        lua_type: "LeviathanSettingsPanelSpec",
+        required: true,
+        doc: "Settings panel descriptor.",
+    }],
+    returns: &[],
+    capabilities: &[],
+    validation: ApiValidation {
+        args: &["spec.view must be a function"],
+        returns: &[],
+        notes: &[
+            "Schema-only plugins get a generated settings form from leviathan.settings.define_schema.",
+        ],
+    },
+}];
+
+pub(super) const ASSETS_FUNCTIONS: &[ApiFunction] = &[ApiFunction {
+    path: "leviathan.assets.load_svg",
+    name: "load_svg",
+    since: "1.0",
+    compatibility: "v1",
+    doc: "Return an SVG asset handle rooted in the plugin assets directory.",
+    params: &[ApiParam {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Relative asset path.",
+    }],
+    returns: &[
+        ApiReturn {
+            lua_type: "LeviathanAssetHandle|nil",
+            doc: "Asset handle on success.",
+        },
+        ApiReturn {
+            lua_type: "string|nil",
+            doc: "Error string on failure.",
+        },
+    ],
+    capabilities: &[],
+    validation: ApiValidation {
+        args: &["path must be a safe relative path under the plugin directory"],
+        returns: &["asset handle plus nil error, or nil plus error string"],
+        notes: &["Use the returned handle in widget asset fields."],
+    },
+}];
 
 // extension points: cross-region extension-point APIs (overlays, context menu
 // items, graph decorations, diff decorations). Each surface is
 // capability-gated: see `UI_EXT_*_CAP`.
 const UI_OVERLAY_CAP: &[&str] = &["ui:overlay"];
-const UI_CONTEXT_MENU_CAP: &[&str] = &["ui:context_menu"];
-const UI_GRAPH_DECORATION_CAP: &[&str] = &["ui:graph_decoration"];
-const UI_DIFF_DECORATION_CAP: &[&str] = &["ui:diff_decoration"];
+const UI_CONTEXT_MENU_CAP: &[&str] = &["ui:context_menu:<region>"];
+const UI_GRAPH_DECORATION_CAP: &[&str] = &["ui:decoration:graph"];
+const UI_DIFF_DECORATION_CAP: &[&str] = &["ui:decoration:diff"];
+const UI_CONTRIBUTE_CAP: &[&str] = &[
+    "ui:region:<region>",
+    "ui:context_menu:<region>",
+    "ui:decoration:graph",
+    "ui:decoration:diff",
+    "ui:overlay",
+    "ui:screen",
+    "ui:dock",
+];
+
+const UI_CONTRIBUTE_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "point_id",
+        lua_type: "string",
+        required: true,
+        doc: "Extension point id such as `repository.diff.context_menu`.",
+    },
+    ApiParam {
+        name: "spec",
+        lua_type: "LeviathanContributionSpec",
+        required: true,
+        doc: "Contribution spec for the selected point.",
+    },
+];
 
 const UI_OVERLAY_PARAM: &[ApiParam] = &[ApiParam {
     name: "spec",

@@ -1,0 +1,6 @@
+id = "example_dock_panel"
+name = "Example Dock Panel"
+version = "0.1.0"
+api_version = "1.0"
+description = "Dock panel example."
+capabilities = ["ui:dock"]

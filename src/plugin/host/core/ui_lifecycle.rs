@@ -15,8 +15,40 @@ impl PluginHost {
             .map(|(a, b)| (a.as_str(), b.as_str()))
     }
 
+    pub fn clear_active_screen(&mut self) {
+        self.active_screen = None;
+        self.widget_tree = None;
+    }
+
     pub fn widget_tree(&self) -> Option<&WidgetAst> {
         self.widget_tree.as_ref()
+    }
+
+    pub fn screen_exists(&self, plugin_id: &str, screen_id: &str) -> bool {
+        self.plugins
+            .get(plugin_id)
+            .is_some_and(|p| p.screens.contains_key(screen_id))
+    }
+
+    pub fn screen_summary(
+        &self,
+        plugin_id: &str,
+        screen_id: &str,
+    ) -> Option<crate::screens::plugin::PluginScreenSummary> {
+        let screen = self.plugins.get(plugin_id)?.screens.get(screen_id)?;
+        Some(crate::screens::plugin::PluginScreenSummary {
+            plugin_id: plugin_id.to_string(),
+            screen_id: screen_id.to_string(),
+            title: screen.title.clone(),
+            breadcrumbs: screen.breadcrumbs.clone(),
+            bind_repository: screen.bind_repository,
+        })
+    }
+
+    pub fn take_pending_navigation_effects(
+        &mut self,
+    ) -> Vec<crate::plugin::navigation::PluginNavigationEffect> {
+        std::mem::take(&mut self.pending_navigation_effects)
     }
 
     pub fn split_sizes(&self) -> &HashMap<String, Vec<f32>> {
@@ -32,7 +64,9 @@ impl PluginHost {
     ) {
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
         let mut pending_diagnostics: Vec<PluginDiagnostic> = Vec::new();
-        let nav: Option<String>;
+        let mut disable_after_failures = false;
+        let mut effects = Vec::new();
+        let tabs = self.last_tab_snapshot.clone();
         {
             let Some(plugin) = self.plugins.get_mut(plugin_id) else {
                 return;
@@ -81,10 +115,34 @@ impl PluginHost {
                     return;
                 }
             };
-            let result: mlua::Result<Table> =
-                update_fn.call((state_val, event.to_string(), value_lua));
+            let ctx_lua = match screen_context_lua(plugin, &tabs) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.value_conversion_failed",
+                            format!("screen context conversion failed: {e}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_source(PluginSourceSpan::ApiFunction {
+                            name: format!("screen:{screen_id}.update"),
+                        }),
+                    );
+                    return;
+                }
+            };
+            let cb_id = format!("screen:{screen_id}.update");
+            let result = self.budget_tracker.track_call::<Table, mlua::Error>(
+                CallbackKind::UiCallback,
+                &PluginId::from(plugin_id),
+                generation_id,
+                &cb_id,
+                || update_fn.call((state_val, event.to_string(), value_lua, ctx_lua)),
+            );
             match result {
-                Ok(action) => {
+                PerfOutcome::Ok(action) => {
                     if let Ok(new_state) = action.get::<LuaValue>("state") {
                         if !matches!(new_state, LuaValue::Nil) {
                             if let Ok(key) = plugin.lua().create_registry_value(new_state) {
@@ -93,9 +151,24 @@ impl PluginHost {
                             }
                         }
                     }
-                    nav = action.get::<String>("navigate").ok();
+                    effects = parse_navigation_effects(
+                        plugin_id,
+                        screen_id,
+                        generation_id,
+                        "screen.update",
+                        &action,
+                        &self.diagnostics,
+                    );
                 }
-                Err(e) => {
+                PerfOutcome::Skipped => {
+                    disable_after_failures = true;
+                }
+                PerfOutcome::Err(e) => {
+                    disable_after_failures = self.budget_tracker.is_tripped(
+                        &PluginId::from(plugin_id),
+                        generation_id,
+                        &cb_id,
+                    );
                     pending_diagnostics.push(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -106,23 +179,18 @@ impl PluginHost {
                         .with_generation(generation_id)
                         .with_mlua_error(&chunk_name, &e),
                     );
-                    nav = None;
                 }
             }
         }
         for diag in pending_diagnostics {
             self.diagnostics.record(diag);
         }
-        if let Some(target) = nav {
-            if target == "repository" || target == "back" {
-                self.active_screen = None;
-                self.widget_tree = None;
-            } else {
-                self.open_screen(plugin_id.to_string(), target);
-                self.drain_lua_command_effects();
-                return;
-            }
+        if disable_after_failures {
+            self.disable_plugin(plugin_id);
+            return;
         }
+        self.apply_navigation_effects(&effects);
+        self.pending_navigation_effects.extend(effects);
         self.refresh_active_widget_tree();
         self.drain_lua_command_effects();
     }
@@ -135,7 +203,8 @@ impl PluginHost {
         value: serde_json::Value,
     ) {
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
-        let nav: Option<String> = {
+        let mut disable_after_failures = false;
+        let effects: Vec<crate::plugin::navigation::PluginNavigationEffect> = {
             let Some(plugin) = self.plugins.get(plugin_id) else {
                 return;
             };
@@ -184,11 +253,35 @@ impl PluginHost {
                     return;
                 }
             };
-            match func.call::<Option<Table>>((overlay_id.to_string(), event.to_string(), value_lua))
-            {
-                Ok(Some(t)) => t.get::<String>("navigate").ok(),
-                Ok(None) => None,
-                Err(e) => {
+            let cb_id = format!("overlay:{overlay_id}.on_event");
+            match self
+                .budget_tracker
+                .track_call::<Option<Table>, mlua::Error>(
+                    CallbackKind::UiCallback,
+                    &PluginId::from(plugin_id),
+                    generation_id,
+                    &cb_id,
+                    || func.call((overlay_id.to_string(), event.to_string(), value_lua)),
+                ) {
+                PerfOutcome::Ok(Some(t)) => parse_navigation_effects(
+                    plugin_id,
+                    overlay_id,
+                    generation_id,
+                    "overlay.on_event",
+                    &t,
+                    &self.diagnostics,
+                ),
+                PerfOutcome::Ok(None) => Vec::new(),
+                PerfOutcome::Skipped => {
+                    disable_after_failures = true;
+                    Vec::new()
+                }
+                PerfOutcome::Err(e) => {
+                    disable_after_failures = self.budget_tracker.is_tripped(
+                        &PluginId::from(plugin_id),
+                        generation_id,
+                        &cb_id,
+                    );
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -199,18 +292,16 @@ impl PluginHost {
                         .with_generation(generation_id)
                         .with_mlua_error(&chunk_name, &e),
                     );
-                    None
+                    Vec::new()
                 }
             }
         };
-        if let Some(target) = nav {
-            if target == "repository" || target == "back" {
-                self.active_screen = None;
-                self.widget_tree = None;
-            } else {
-                self.open_screen(plugin_id.to_string(), target);
-            }
+        if disable_after_failures {
+            self.disable_plugin(plugin_id);
+            return;
         }
+        self.apply_navigation_effects(&effects);
+        self.pending_navigation_effects.extend(effects);
         self.drain_lua_command_effects();
     }
 
@@ -237,6 +328,88 @@ impl PluginHost {
         let key = plugin.screen_state.get(screen_id)?;
         let v: LuaValue = plugin.lua().registry_value(key).ok()?;
         plugin.lua().from_value(v).ok()
+    }
+
+    pub fn serialize_screen_state(
+        &self,
+        plugin_id: &str,
+        screen_id: &str,
+    ) -> Option<serde_json::Value> {
+        let plugin = self.plugins.get(plugin_id)?;
+        let screen = plugin.screens.get(screen_id)?;
+        let key = plugin.screen_state.get(screen_id)?;
+        let state: LuaValue = plugin.lua().registry_value(key).ok()?;
+        let out = if let Some(ser_key) = &screen.serialize {
+            let ser: Function = plugin.lua().registry_value(ser_key).ok()?;
+            ser.call::<LuaValue>(state).ok()?
+        } else {
+            state
+        };
+        plugin.lua().from_value(out).ok()
+    }
+
+    pub fn deserialize_screen_state(
+        &mut self,
+        plugin_id: &str,
+        screen_id: &str,
+        value: serde_json::Value,
+    ) -> bool {
+        let tabs = self.last_tab_snapshot.clone();
+        let Some(plugin) = self.plugins.get_mut(plugin_id) else {
+            return false;
+        };
+        let Some(screen) = plugin.screens.get(screen_id) else {
+            return false;
+        };
+        let input = match plugin.lua().to_value(&value) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        let state = if let Some(de_key) = &screen.deserialize {
+            let Ok(de_fn) = plugin.lua().registry_value::<Function>(de_key) else {
+                return false;
+            };
+            let Ok(ctx_lua) = screen_context_lua(plugin, &tabs) else {
+                return false;
+            };
+            match de_fn.call::<LuaValue>((input, ctx_lua)) {
+                Ok(v) => v,
+                Err(_) => return false,
+            }
+        } else {
+            input
+        };
+        match plugin.lua().create_registry_value(state) {
+            Ok(key) => {
+                record_screen_state_resource(&plugin.ledger(), screen_id, None);
+                plugin.screen_state.insert(screen_id.to_string(), key);
+                true
+            }
+            Err(_) => false,
+        }
+    }
+
+    pub fn can_close_screen(&self, plugin_id: &str, screen_id: &str) -> bool {
+        let Some(plugin) = self.plugins.get(plugin_id) else {
+            return true;
+        };
+        let Some(screen) = plugin.screens.get(screen_id) else {
+            return true;
+        };
+        let Some(can_close_key) = &screen.can_close else {
+            return true;
+        };
+        let Ok(func) = plugin.lua().registry_value::<Function>(can_close_key) else {
+            return true;
+        };
+        let state_val: LuaValue = match plugin.screen_state.get(screen_id) {
+            Some(k) => plugin.lua().registry_value(k).unwrap_or(LuaValue::Nil),
+            None => LuaValue::Nil,
+        };
+        let Ok(ctx_lua) = screen_context_lua(plugin, &self.last_tab_snapshot) else {
+            return true;
+        };
+        func.call::<bool>((state_val, ctx_lua)).unwrap_or(true)
     }
 
     /// Read a top-level Lua global from `plugin_id`'s VM as `i64`. Used
@@ -285,24 +458,19 @@ impl PluginHost {
                 {
                     return true;
                 }
-                PreparedSlotOp::Replace {
-                    region: r,
-                    container: c,
-                    id,
-                    spec,
-                } if spec.plugin_id == plugin_id
-                    && r == region
-                    && c.key() == container
-                    && id == slot_id =>
+                PreparedSlotOp::Replace { target, spec, .. }
+                    if target.region().as_str() == region
+                        && target.container().key() == container
+                        && target.slot_id().as_str() == slot_id =>
                 {
-                    return true;
+                    return spec.plugin_id == plugin_id;
                 }
-                PreparedSlotOp::Remove {
-                    region: r,
-                    container: c,
-                    id,
-                    ..
-                } if r == region && c.key() == container && id == slot_id => {
+                PreparedSlotOp::Remove { target, .. }
+                    if target.region().as_str() == region
+                        && target.container().key() == container
+                        && target.slot_id().as_str() == slot_id
+                        && (target.plugin_id().as_str() == plugin_id || target.is_builtin()) =>
+                {
                     return false;
                 }
                 _ => {}
@@ -381,6 +549,7 @@ impl PluginHost {
         // owned by this plugin. Records came from a non-Slot ledger
         // path so the cleaner above didn't touch the registry.
         self.extension_registry.clear_for_plugin(plugin_id);
+        self.dock_manager.remove_plugin(plugin_id);
         self.budget_tracker.drop_for_plugin(plugin_id);
         if self
             .active_screen
@@ -449,6 +618,12 @@ impl PluginHost {
             &plugin.screens,
             &plugin.screen_state,
         );
+        let live_slot_ops = self
+            .slot_ops
+            .iter()
+            .filter(|op| !op_belongs_to(op, plugin_id))
+            .cloned()
+            .collect();
 
         let plugin_id_typed = PluginId::from(plugin_id);
         let staging_generation_id = self.allocate_generation_id(plugin_id);
@@ -476,7 +651,8 @@ impl PluginHost {
             watchers: self.watchers.clone(),
             storage_roots: self.storage_roots.clone(),
             service_registry: Rc::clone(&self.service_registry),
-            extension_registry: self.extension_registry.clone(),
+            extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
+            live_slot_ops,
         };
 
         match stage_reload(stage_inputs) {
@@ -580,9 +756,13 @@ impl PluginHost {
             generation,
             slot_handlers,
             overlay_callbacks,
+            decoration_provider_callbacks,
             screens,
+            dock_panels,
+            settings_panel,
             screen_state,
             dynamic_widgets,
+            ui_context,
             deferred,
             user_commands,
             health_checks,
@@ -600,6 +780,7 @@ impl PluginHost {
             job_callbacks: staged_job_callbacks,
             timer_callbacks: staged_timer_callbacks,
             watcher_callbacks: staged_watcher_callbacks,
+            extension_registry: staged_extension_registry,
         } = artifacts;
 
         let plugin_id_str = plugin_id.as_str().to_string();
@@ -635,10 +816,8 @@ impl PluginHost {
                 .borrow_mut()
                 .drop_for_plugin(&plugin_id_str);
             self.cleanup_ledger(&previous.generation.ledger);
-            // extension points: drop overlays / context-menu items / decorations
-            // owned by the previous generation. The staged init.lua
-            // re-registers anything the new generation needs.
-            self.extension_registry.clear_for_plugin(&plugin_id_str);
+            self.dock_manager
+                .drop_registrations_for_plugin(&plugin_id_str);
             // Clear breaker state for the previous generation
             // so a fixed plugin starts clean. Earlier generations'
             // traces stay visible in devtools because we key by
@@ -666,6 +845,8 @@ impl PluginHost {
         // of generation; the ledger walk already removed the previous
         // gen's, this catches any residue.
         let _ = self.event_bus.drop_for_plugin(&plugin_id_str);
+        self.extension_registry
+            .replace_plugin_records_from(&plugin_id_str, &staged_extension_registry);
 
         // Splice staged ops into the live host tables.
         let installed_slot_ops = !staged_slot_ops.is_empty();
@@ -789,9 +970,13 @@ impl PluginHost {
             manifest,
             slot_handlers,
             overlay_callbacks,
+            decoration_provider_callbacks,
             screens,
+            dock_panels,
+            settings_panel,
             screen_state,
             dynamic_widgets,
+            ui_context,
             deferred,
             user_commands,
             health_checks,
@@ -801,10 +986,15 @@ impl PluginHost {
             watcher_callbacks: staged_watcher_callbacks,
         };
         self.plugins.insert(plugin_id_str.clone(), plugin);
+        self.register_plugin_dock_panels(&plugin_id_str);
+        self.extension_registry.invalidate_decorations(
+            crate::plugin::extensions::DecorationInvalidationReason::PluginState,
+        );
         let _ = generation_id; // recorded on the inserted plugin's ledger
     }
 
     pub fn open_screen(&mut self, plugin_id: String, screen_id: String) {
+        let tabs = self.last_tab_snapshot.clone();
         let needs_init = self
             .plugins
             .get(&plugin_id)
@@ -817,28 +1007,50 @@ impl PluginHost {
                 if let Some(screen_def) = plugin.screens.get(&screen_id) {
                     let generation_id = plugin.generation.generation_id;
                     match plugin.lua().registry_value::<Function>(&screen_def.init) {
-                        Ok(init_fn) => match init_fn.call::<LuaValue>(()) {
-                            Ok(state) => {
-                                if let Ok(key) = plugin.lua().create_registry_value(state) {
-                                    record_screen_state_resource(
-                                        &plugin.ledger(),
-                                        &screen_id,
-                                        None,
+                        Ok(init_fn) => {
+                            let ctx_lua = match screen_context_lua(plugin, &tabs) {
+                                Ok(ctx) => ctx,
+                                Err(e) => {
+                                    pending.push(
+                                        PluginDiagnostic::new(
+                                            PluginId::from(plugin_id.clone()),
+                                            DiagnosticSeverity::Error,
+                                            "lua.value_conversion_failed",
+                                            format!("screen init context conversion failed: {e}"),
+                                        )
+                                        .with_generation(generation_id)
+                                        .with_source(
+                                            PluginSourceSpan::ApiFunction {
+                                                name: format!("screen:{screen_id}.init"),
+                                            },
+                                        ),
                                     );
-                                    plugin.screen_state.insert(screen_id.clone(), key);
+                                    LuaValue::Nil
                                 }
+                            };
+                            match init_fn.call::<LuaValue>(ctx_lua) {
+                                Ok(state) => {
+                                    if let Ok(key) = plugin.lua().create_registry_value(state) {
+                                        record_screen_state_resource(
+                                            &plugin.ledger(),
+                                            &screen_id,
+                                            None,
+                                        );
+                                        plugin.screen_state.insert(screen_id.clone(), key);
+                                    }
+                                }
+                                Err(e) => pending.push(
+                                    PluginDiagnostic::new(
+                                        PluginId::from(plugin_id.clone()),
+                                        DiagnosticSeverity::Error,
+                                        "lua.callback_error",
+                                        format!("screen init error in {screen_id}"),
+                                    )
+                                    .with_generation(generation_id)
+                                    .with_mlua_error(&chunk_name, &e),
+                                ),
                             }
-                            Err(e) => pending.push(
-                                PluginDiagnostic::new(
-                                    PluginId::from(plugin_id.clone()),
-                                    DiagnosticSeverity::Error,
-                                    "lua.callback_error",
-                                    format!("screen init error in {screen_id}"),
-                                )
-                                .with_generation(generation_id)
-                                .with_mlua_error(&chunk_name, &e),
-                            ),
-                        },
+                        }
                         Err(e) => pending.push(
                             PluginDiagnostic::new(
                                 PluginId::from(plugin_id.clone()),
@@ -872,6 +1084,8 @@ impl PluginHost {
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
         let mut pending: Vec<PluginDiagnostic> = Vec::new();
         let mut ok_tree: Option<WidgetAst> = None;
+        let mut disable_after_failures = false;
+        let tabs = self.last_tab_snapshot.clone();
         {
             let Some(plugin) = self.plugins.get(&plugin_id) else {
                 self.widget_tree = None;
@@ -889,9 +1103,36 @@ impl PluginHost {
                         Some(k) => plugin.lua().registry_value(k).unwrap_or(LuaValue::Nil),
                         None => LuaValue::Nil,
                     };
-                    let result: mlua::Result<LuaValue> = view_fn.call(state_val);
+                    let ctx_lua = match screen_context_lua(plugin, &tabs) {
+                        Ok(ctx) => ctx,
+                        Err(e) => {
+                            pending.push(
+                                PluginDiagnostic::new(
+                                    PluginId::from(plugin_id.clone()),
+                                    DiagnosticSeverity::Error,
+                                    "lua.value_conversion_failed",
+                                    format!("screen view context conversion failed: {e}"),
+                                )
+                                .with_generation(generation_id)
+                                .with_source(
+                                    PluginSourceSpan::ApiFunction {
+                                        name: format!("screen:{screen_id}.view"),
+                                    },
+                                ),
+                            );
+                            LuaValue::Nil
+                        }
+                    };
+                    let cb_id = format!("screen:{screen_id}.view");
+                    let result = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
+                        CallbackKind::UiCallback,
+                        &PluginId::from(plugin_id.clone()),
+                        generation_id,
+                        &cb_id,
+                        || view_fn.call((state_val, ctx_lua)),
+                    );
                     match result {
-                        Ok(v) => {
+                        PerfOutcome::Ok(v) => {
                             let json: Result<serde_json::Value, mlua::Error> =
                                 plugin.lua().from_value(v);
                             match json {
@@ -920,16 +1161,26 @@ impl PluginHost {
                                 ),
                             }
                         }
-                        Err(e) => pending.push(
-                            PluginDiagnostic::new(
-                                PluginId::from(plugin_id.clone()),
-                                DiagnosticSeverity::Error,
-                                "lua.callback_error",
-                                format!("view call failed for screen {screen_id}"),
-                            )
-                            .with_generation(generation_id)
-                            .with_mlua_error(&chunk_name, &e),
-                        ),
+                        PerfOutcome::Skipped => {
+                            disable_after_failures = true;
+                        }
+                        PerfOutcome::Err(e) => {
+                            disable_after_failures = self.budget_tracker.is_tripped(
+                                &PluginId::from(plugin_id.clone()),
+                                generation_id,
+                                &cb_id,
+                            );
+                            pending.push(
+                                PluginDiagnostic::new(
+                                    PluginId::from(plugin_id.clone()),
+                                    DiagnosticSeverity::Error,
+                                    "lua.callback_error",
+                                    format!("view call failed for screen {screen_id}"),
+                                )
+                                .with_generation(generation_id)
+                                .with_mlua_error(&chunk_name, &e),
+                            );
+                        }
                     }
                 }
                 Err(e) => pending.push(
@@ -948,6 +1199,11 @@ impl PluginHost {
         }
         for diag in pending {
             self.diagnostics.record(diag);
+        }
+        if disable_after_failures {
+            self.disable_plugin(&plugin_id);
+            self.widget_tree = None;
+            return;
         }
         match ok_tree {
             Some(tree) => self.widget_tree = Some(tree),
@@ -1046,6 +1302,183 @@ fn autofocus_text_input_node_id(ast: &WidgetAst) -> Option<&str> {
         widget_ast::WidgetNode::ResizableSplit(node) => {
             node.children.iter().find_map(autofocus_text_input_node_id)
         }
+        widget_ast::WidgetNode::Semantic(node) => node
+            .child
+            .as_deref()
+            .and_then(autofocus_text_input_node_id)
+            .or_else(|| node.children.iter().find_map(autofocus_text_input_node_id))
+            .or_else(|| {
+                node.items
+                    .iter()
+                    .filter_map(|item| item.child.as_deref())
+                    .find_map(autofocus_text_input_node_id)
+            }),
+        widget_ast::WidgetNode::Layout(node) => node
+            .child
+            .as_deref()
+            .and_then(autofocus_text_input_node_id)
+            .or_else(|| node.children.iter().find_map(autofocus_text_input_node_id))
+            .or_else(|| {
+                node.tabs
+                    .iter()
+                    .filter_map(|tab| tab.child.as_deref())
+                    .find_map(autofocus_text_input_node_id)
+            }),
         _ => None,
     }
+}
+
+impl PluginHost {
+    fn apply_navigation_effects(
+        &mut self,
+        effects: &[crate::plugin::navigation::PluginNavigationEffect],
+    ) {
+        for effect in effects {
+            match effect {
+                crate::plugin::navigation::PluginNavigationEffect::NavigateRepository => {
+                    self.active_screen = None;
+                    self.widget_tree = None;
+                }
+                crate::plugin::navigation::PluginNavigationEffect::OpenScreen {
+                    plugin_id,
+                    screen_id,
+                } => {
+                    self.open_screen(plugin_id.clone(), screen_id.clone());
+                }
+            }
+        }
+    }
+}
+
+fn screen_context_lua(plugin: &LoadedPlugin, tabs: &TabsSnapshot) -> mlua::Result<LuaValue> {
+    let ctx = crate::plugin::ui::context::context_for_surface(
+        plugin.id(),
+        plugin.generation.generation_id,
+        crate::plugin::ui::context::UiContextSurface::Screen,
+        None,
+        tabs,
+    );
+    plugin.ui_context.set(ctx.clone());
+    plugin.lua().to_value(&ctx)
+}
+
+pub(super) fn parse_navigation_effects(
+    plugin_id: &str,
+    screen_id: &str,
+    generation_id: GenerationId,
+    callback: &str,
+    action: &Table,
+    diagnostics: &DiagnosticStore,
+) -> Vec<crate::plugin::navigation::PluginNavigationEffect> {
+    if matches!(action.get::<LuaValue>("navigate"), Ok(v) if !matches!(v, LuaValue::Nil)) {
+        diagnostics.record(navigation_diagnostic(
+            plugin_id,
+            generation_id,
+            callback,
+            "`navigate` string returns are invalid; return effects = { { kind = ... } }",
+        ));
+    }
+
+    let Ok(effects_value) = action.get::<LuaValue>("effects") else {
+        return Vec::new();
+    };
+    let LuaValue::Table(effects_table) = effects_value else {
+        if !matches!(effects_value, LuaValue::Nil) {
+            diagnostics.record(navigation_diagnostic(
+                plugin_id,
+                generation_id,
+                callback,
+                "`effects` must be an array of navigation effect tables",
+            ));
+        }
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for value in effects_table.sequence_values::<LuaValue>() {
+        let Ok(LuaValue::Table(effect)) = value else {
+            diagnostics.record(navigation_diagnostic(
+                plugin_id,
+                generation_id,
+                callback,
+                "navigation effect must be a table",
+            ));
+            continue;
+        };
+        let Ok(kind) = effect.get::<String>("kind") else {
+            diagnostics.record(navigation_diagnostic(
+                plugin_id,
+                generation_id,
+                callback,
+                "navigation effect requires string field `kind`",
+            ));
+            continue;
+        };
+        match kind.as_str() {
+            "navigate" => match effect.get::<Table>("target") {
+                Ok(target) => match target.get::<String>("kind").ok().as_deref() {
+                    Some("repository") | Some("back") => out.push(
+                        crate::plugin::navigation::PluginNavigationEffect::NavigateRepository,
+                    ),
+                    _ => diagnostics.record(navigation_diagnostic(
+                        plugin_id,
+                        generation_id,
+                        callback,
+                        "navigate target.kind must be `repository`",
+                    )),
+                },
+                Err(_) => diagnostics.record(navigation_diagnostic(
+                    plugin_id,
+                    generation_id,
+                    callback,
+                    "navigate effect requires target table",
+                )),
+            },
+            "open_screen" => {
+                let target_plugin = effect
+                    .get::<String>("plugin")
+                    .unwrap_or_else(|_| plugin_id.to_string());
+                match effect.get::<String>("screen") {
+                    Ok(target_screen) if !target_screen.trim().is_empty() => out.push(
+                        crate::plugin::navigation::PluginNavigationEffect::OpenScreen {
+                            plugin_id: target_plugin,
+                            screen_id: target_screen,
+                        },
+                    ),
+                    _ => diagnostics.record(navigation_diagnostic(
+                        plugin_id,
+                        generation_id,
+                        callback,
+                        "open_screen effect requires non-empty `screen`",
+                    )),
+                }
+            }
+            _ => diagnostics.record(navigation_diagnostic(
+                plugin_id,
+                generation_id,
+                callback,
+                format!("unknown navigation effect kind `{kind}`"),
+            )),
+        }
+    }
+    let _ = screen_id;
+    out
+}
+
+fn navigation_diagnostic(
+    plugin_id: &str,
+    generation_id: GenerationId,
+    callback: &str,
+    message: impl Into<String>,
+) -> PluginDiagnostic {
+    PluginDiagnostic::new(
+        PluginId::from(plugin_id),
+        DiagnosticSeverity::Error,
+        "navigation.invalid_effect",
+        message.into(),
+    )
+    .with_generation(generation_id)
+    .with_source(PluginSourceSpan::ApiFunction {
+        name: callback.to_string(),
+    })
 }

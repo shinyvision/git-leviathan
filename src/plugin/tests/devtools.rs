@@ -1,4 +1,4 @@
-//! devtools tests verify the ten host-provided
+//! devtools tests verify the host-provided
 //! devtools commands are reachable through the unified dispatcher,
 //! the diagnostic-bundle exporter excludes secret values, and the
 //! introspector snapshot exposes every plugin-owned resource kind.
@@ -14,6 +14,7 @@ id = "p"
 name = "p"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#;
 
 fn manifest_with_id(id: &str) -> String {
@@ -53,6 +54,8 @@ fn each_plugin_command_dispatches_through_palette() {
         ("plugin.enable", json!({ "plugin_id": "p" })),
         ("plugin.open_log", json!({ "plugin_id": "p" })),
         ("plugin.inspect_ui_tree", json!({ "plugin_id": "p" })),
+        ("plugin.inspect_ui_context", json!({})),
+        ("plugin.inspect_dock_layout", json!({})),
         ("plugin.run_health_check", json!({ "plugin_id": "p" })),
         ("plugin.clear_state", json!({ "plugin_id": "p" })),
         (
@@ -81,6 +84,20 @@ fn disable_skips_plugin_on_subsequent_load() {
     assert!(host.host().is_plugin_disabled("p"));
     assert_eq!(value.get("unloaded").and_then(|v| v.as_bool()), Some(true));
     assert!(!host.host().has_loaded_plugins());
+}
+
+#[test]
+fn inspect_ui_context_returns_typed_snapshot() {
+    let mut host = MockHost::new();
+    host.load_inline("p", SMOKE_MANIFEST, "").expect("load");
+    let (outcome, value) = host.invoke_devtools_command("plugin.inspect_ui_context", json!({}));
+    assert!(matches!(outcome, InvokeOutcome::Ok));
+    assert_eq!(value["ok"].as_bool(), Some(true));
+    assert_eq!(value["context"]["type"].as_str(), Some("ScreenContext"));
+    assert_eq!(
+        value["context"]["features"]["ui.context.typed@1"].as_bool(),
+        Some(true)
+    );
 }
 
 #[test]
@@ -174,7 +191,7 @@ fn inspect_ui_tree_returns_widget_ast_inventory() {
         "p",
         SMOKE_MANIFEST,
         r#"
-            leviathan.ui.regions.add_slot{ region = "main_bar",
+            leviathan.ui.slot.add{ region = "main_bar",
                 id = "p.slot",
                 section = "left",
                 priority = 5,
@@ -194,6 +211,46 @@ fn inspect_ui_tree_returns_widget_ast_inventory() {
             .iter()
             .any(|s| s.get("id").and_then(|v| v.as_str()) == Some("p.slot")),
         "expected p.slot in inventory: {inv:?}"
+    );
+}
+
+#[test]
+fn inspector_snapshot_includes_authoring_trees_and_current_context() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p",
+        SMOKE_MANIFEST,
+        r#"
+            leviathan.command.create("p.run", { title = "Run", run = function() end })
+            leviathan.autocmd.create("ThemeChanged", { callback = function() end })
+            leviathan.ui.slot.add{
+                region = "main_bar",
+                section = "left",
+                id = "p.slot",
+                priority = 1,
+                widget = { kind = "text", value = "hi" },
+            }
+            "#,
+    )
+    .expect("load");
+
+    let snap = host.host().introspect();
+    assert!(snap.plugin_tree.iter().any(|node| node.id == "p"));
+    assert!(snap
+        .contribution_tree
+        .iter()
+        .any(|node| node.plugin_id == "p" && node.id == "p.slot"));
+    assert!(snap
+        .command_tree
+        .iter()
+        .any(|node| node.plugin_id == "p" && node.id == "p.run"));
+    assert!(snap
+        .autocmd_tree
+        .iter()
+        .any(|node| node.plugin_id == "p" && node.event == "ThemeChanged"));
+    assert_eq!(
+        snap.current_context["features"]["ui.context.typed@1"].as_bool(),
+        Some(true)
     );
 }
 
@@ -411,11 +468,11 @@ name = "kitchen_sink"
 version = "0.1.0"
 api_version = "1.0"
 provides_services = ["thing@1"]
-capabilities = ["async:spawn", "timer:create", "fs:watch:plugin", "ui:overlay", "ui:context_menu", "ui:graph_decoration", "ui:diff_decoration"]
+capabilities = ["async:spawn", "timer:create", "fs:watch:plugin", "ui:region:main_bar", "ui:overlay", "ui:context_menu:repository.diff.context_menu", "ui:decoration:graph", "ui:decoration:diff"]
 "#;
     let init = r#"
         -- Slot
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "ks.slot",
             section = "left",
             priority = 5,

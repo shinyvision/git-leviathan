@@ -14,9 +14,11 @@ use std::rc::Rc;
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
 
 use crate::plugin::commands::{
-    dispatch_command, CommandDispatchEnv, InvokeOutcome, RawCommand, RawCommandArg,
+    dispatch_command_as, CommandDispatchEnv, CommandInvocationCaller, InvokeOutcome, RawCommand,
+    RawCommandArg,
 };
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
+use crate::plugin::{capabilities::CapabilityGuard, resources::PluginId};
 
 use super::BuildState;
 
@@ -35,10 +37,12 @@ pub fn install(
     ledger: ResourceLedger,
     leviathan: &Table,
     dispatch: CommandDispatchEnv,
+    guard: Rc<CapabilityGuard>,
+    plugin_id: PluginId,
 ) -> mlua::Result<()> {
     let command_tbl = lua.create_table()?;
     install_command_create(lua, commands, Rc::clone(&build), ledger, &command_tbl)?;
-    install_command_invoke(lua, dispatch.clone(), &command_tbl)?;
+    install_command_invoke(lua, dispatch.clone(), guard, plugin_id, &command_tbl)?;
     install_command_list(lua, dispatch, &command_tbl)?;
 
     leviathan.set("command", command_tbl)?;
@@ -135,6 +139,8 @@ fn decode_args(lua: &Lua, args: Table) -> mlua::Result<Vec<RawCommandArg>> {
 fn install_command_invoke(
     lua: &Lua,
     dispatch: CommandDispatchEnv,
+    guard: Rc<CapabilityGuard>,
+    plugin_id: PluginId,
     command: &Table,
 ) -> mlua::Result<()> {
     command.set(
@@ -144,7 +150,11 @@ fn install_command_invoke(
                 Some(t) => lua_inner.from_value::<serde_json::Value>(LuaValue::Table(t))?,
                 None => serde_json::Value::Null,
             };
-            let outcome = dispatch_command(&dispatch, &name, json_args);
+            let caller = CommandInvocationCaller {
+                plugin_id: plugin_id.as_str().to_string(),
+                capability_guard: Some(Rc::clone(&guard)),
+            };
+            let outcome = dispatch_command_as(&dispatch, Some(caller), &name, json_args);
             Ok(matches!(outcome, InvokeOutcome::Ok))
         })?,
     )?;
@@ -186,6 +196,17 @@ fn install_command_list(
                         "context": s.context,
                         "destructive": s.destructive,
                         "capabilities": s.capabilities,
+                        "plugin_invocation_capabilities": s.plugin_invocation_capabilities,
+                        "enabled": s.enabled,
+                        "disabled_reason": s.disabled_reason,
+                        "keymap_eligible": s.keymap_eligible,
+                        "palette_visible": s.palette_visible,
+                        "hooks": {
+                            "before": s.hooks.before,
+                            "after": s.hooks.after,
+                            "veto": s.hooks.veto,
+                            "replace": s.hooks.replace,
+                        },
                         "args": args,
                     })
                 })

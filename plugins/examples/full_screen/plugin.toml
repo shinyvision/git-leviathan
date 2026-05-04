@@ -1,0 +1,6 @@
+id = "example_full_screen"
+name = "Example Full Screen"
+version = "0.1.0"
+api_version = "1.0"
+description = "Full plugin screen example."
+capabilities = ["ui:screen"]

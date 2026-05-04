@@ -2,7 +2,7 @@
 //!
 //! Each visual element in the default tab bar is registered as a named
 //! slot — same `builtin.<name>` convention as `main_bar/builtins.rs` —
-//! so plugins can replace any of them via `leviathan.ui.regions.replace_slot`.
+//! so plugins can replace any of them via `leviathan.ui.slot.replace`.
 //!
 //! ## Priority map
 //!
@@ -27,7 +27,6 @@ use crate::{
     assets,
     core::TabId,
     message::{AppMessage, Message},
-    plugin::tab_snapshot::TabRegistryOp,
     style, theme,
     widgets::tab_bar::{TabBar, TabItem},
 };
@@ -67,9 +66,10 @@ fn tab_list_slot() -> TabBarSlot {
                     let close_path = t.path.clone();
                     TabItem::new(t.id, t.name.clone())
                         .leading(folder_icon(is_active))
-                        .trailing(close_button(Message::App(AppMessage::TabRegistryOp(
-                            TabRegistryOp::Remove(close_path),
-                        ))))
+                        .trailing(close_button(Message::App(AppMessage::InvokeCommand {
+                            id: "tab.close".to_string(),
+                            args: serde_json::json!({ "path": close_path }),
+                        })))
                 })
                 .collect();
             let select_paths = path_for.clone();
@@ -77,14 +77,20 @@ fn tab_list_slot() -> TabBarSlot {
             TabBar::new(items, active)
                 .on_select(move |id| {
                     let path = select_paths.get(&id).cloned().unwrap_or_default();
-                    Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Select(path)))
+                    Message::App(AppMessage::InvokeCommand {
+                        id: "tab.select".to_string(),
+                        args: serde_json::json!({ "path": path }),
+                    })
                 })
                 .on_reorder(move |order| {
                     let paths: Vec<String> = order
                         .into_iter()
                         .filter_map(|id| reorder_paths.get(&id).cloned())
                         .collect();
-                    Message::App(AppMessage::TabRegistryOp(TabRegistryOp::Reorder(paths)))
+                    Message::App(AppMessage::InvokeCommand {
+                        id: "tab.reorder".to_string(),
+                        args: serde_json::json!({ "paths": paths.join(",") }),
+                    })
                 })
                 .into()
         },
@@ -115,7 +121,10 @@ fn plus_button<'a>() -> Element<'a, Message> {
     })
     .padding(Padding::from([0, 12]))
     .height(Length::Fixed(theme::TAB_HEIGHT as f32))
-    .on_press(Message::App(AppMessage::OpenRepoDialog))
+    .on_press(Message::App(AppMessage::InvokeCommand {
+        id: "app.open_repository".to_string(),
+        args: serde_json::Value::Null,
+    }))
     .into()
 }
 

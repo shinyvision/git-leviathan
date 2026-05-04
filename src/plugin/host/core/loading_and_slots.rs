@@ -81,14 +81,9 @@ impl PluginHost {
                 .insert(manifest.id.clone(), dir.to_path_buf());
             return Err(PluginLoadError::Disabled(msg));
         }
-        if !manifest.api_version.is_compatible_with(HOST_API_VERSION) {
-            let msg = format!(
-                "api version {}.{} not compatible with host {}.{}",
-                manifest.api_version.major,
-                manifest.api_version.minor,
-                HOST_API_VERSION.major,
-                HOST_API_VERSION.minor
-            );
+        if let Some(msg) = git_leviathan_plugin_api::api_version::plugin_api_compatibility_error(
+            manifest.api_version,
+        ) {
             self.diagnostics.record(
                 PluginDiagnostic::new(
                     PluginId::from(manifest.id.clone()),
@@ -252,6 +247,10 @@ impl PluginHost {
             Rc::new(RefCell::new(PluginWatcherCallbacks::new()));
         let overlay_callbacks: Rc<RefCell<OverlayCallbacks>> =
             Rc::new(RefCell::new(OverlayCallbacks::new()));
+        let decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>> =
+            Rc::new(RefCell::new(DecorationProviderCallbacks::new()));
+        let ui_context =
+            crate::plugin::ui::context::UiContextStore::new(manifest.id.as_str(), generation_id);
         let async_ctx = self.build_async_runtime_context(
             Rc::clone(&job_callbacks),
             Rc::clone(&timer_callbacks),
@@ -280,6 +279,8 @@ impl PluginHost {
                 diagnostics: self.diagnostics.clone(),
                 extension_registry: self.extension_registry.clone(),
                 overlay_callbacks: Rc::clone(&overlay_callbacks),
+                decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
+                ui_context: ui_context.clone(),
             },
         ) {
             self.diagnostics.record(
@@ -390,10 +391,12 @@ impl PluginHost {
             .register(manifest.id.clone(), plugin_root.clone());
         lua_loader.run_after_plugin(&lua, &plugin_root);
 
-        let (screens, slot_ops, autocmds) = {
+        let (screens, dock_panels, settings_panel, slot_ops, autocmds) = {
             let mut b = build.borrow_mut();
             (
                 std::mem::take(&mut b.screens),
+                std::mem::take(&mut b.dock_panels),
+                b.settings_panel.take(),
                 std::mem::take(&mut b.slot_ops),
                 std::mem::take(&mut b.autocmds),
             )
@@ -403,6 +406,15 @@ impl PluginHost {
         let mut dynamic_widgets = HashMap::new();
         let mut installed_slot_ops = false;
         for op in slot_ops {
+            if !validate_raw_slot_op(
+                &self.diagnostics,
+                generation_id,
+                &self.slot_ops,
+                &manifest.id,
+                &op,
+            ) {
+                continue;
+            }
             match prepare_op(
                 &manifest.id,
                 &plugin_root,
@@ -425,7 +437,7 @@ impl PluginHost {
                         )
                         .with_generation(generation_id)
                         .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.ui.regions.add_slot".into(),
+                            name: "leviathan.ui.slot.add".into(),
                         }),
                     );
                 }
@@ -525,9 +537,13 @@ impl PluginHost {
             manifest: manifest.clone(),
             slot_handlers,
             overlay_callbacks,
+            decoration_provider_callbacks,
             screens,
+            dock_panels,
+            settings_panel,
             screen_state: HashMap::new(),
             dynamic_widgets,
+            ui_context,
             deferred,
             user_commands,
             health_checks,
@@ -537,6 +553,10 @@ impl PluginHost {
             watcher_callbacks,
         };
         self.plugins.insert(manifest.id.clone(), plugin);
+        self.register_plugin_dock_panels(&manifest.id);
+        self.extension_registry.invalidate_decorations(
+            crate::plugin::extensions::DecorationInvalidationReason::PluginState,
+        );
         // Remember where this plugin loaded from so a later
         // `Plugin: Enable` (after `Plugin: Disable` unloaded it) can
         // re-load it from the same on-disk path without the user
@@ -597,17 +617,20 @@ impl PluginHost {
 
     /// Apply every collected `main_bar` op to a `MainBarRegistry`.
     pub fn apply_main_bar_slots(&self, registry: &mut MainBarRegistry) {
-        self.apply_region_slots(registry, "main_bar", PreparedSlot::into_main_bar);
+        crate::plugin::host::region_mount::REGION_MOUNT_REGISTRY
+            .apply_main_bar_slots(self, registry);
     }
 
     /// Apply every collected `repository` op to a `RepoRegionRegistry`.
     pub fn apply_repo_region_slots(&self, registry: &mut RepoRegionRegistry) {
-        self.apply_region_slots(registry, "repository", PreparedSlot::into_repo_pane);
+        crate::plugin::host::region_mount::REGION_MOUNT_REGISTRY
+            .apply_repo_region_slots(self, registry);
     }
 
     /// Apply every collected `tab_bar` op to a `TabBarRegistry`.
     pub fn apply_tab_bar_slots(&self, registry: &mut TabBarRegistry) {
-        self.apply_region_slots(registry, "tab_bar", PreparedSlot::into_tab_bar);
+        crate::plugin::host::region_mount::REGION_MOUNT_REGISTRY
+            .apply_tab_bar_slots(self, registry);
     }
 
     pub fn extension_context_menu_items(
@@ -625,74 +648,255 @@ impl PluginHost {
         &self,
         commit_hash: &str,
     ) -> Vec<crate::plugin::extensions::GraphDecorationRecord> {
-        self.extension_registry.graph_decorations_for(commit_hash)
+        let mut rows = self.extension_registry.graph_decorations_for(commit_hash);
+        rows.extend(self.dynamic_graph_decorations_for_commit(commit_hash));
+        rows.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.id.cmp(&b.id)));
+        rows
+    }
+
+    pub fn extension_diff_decorations_for_line(
+        &self,
+        file: &str,
+        line: u32,
+    ) -> Vec<crate::plugin::extensions::DiffDecorationRecord> {
+        let mut rows = self
+            .extension_registry
+            .diff_decorations_for_line(file, line);
+        rows.extend(self.dynamic_diff_decorations_for_line(file, line));
+        rows.sort_by(|a, b| a.plugin_id.cmp(&b.plugin_id).then(a.id.cmp(&b.id)));
+        rows
     }
 
     pub fn discard_extensions_for_plugin(&self, plugin_id: &str) {
         self.extension_registry.clear_for_plugin(plugin_id);
     }
 
-    pub(super) fn apply_region_slots<T: IsSlot>(
+    fn dynamic_graph_decorations_for_commit(
         &self,
-        registry: &mut SlotRegistry<T>,
-        region_name: &str,
-        convert: impl Fn(PreparedSlot) -> T,
-    ) {
-        for op in &self.slot_ops {
-            match op {
-                PreparedSlotOp::Add(p) if p.region == region_name => {
-                    registry.add(convert(p.clone()));
-                }
-                PreparedSlotOp::Replace {
-                    region, id, spec, ..
-                } if region == region_name => {
-                    if !registry.replace(id, convert(spec.clone())) {
-                        self.diagnostics.record(
-                            PluginDiagnostic::new(
-                                PluginId::from(spec.plugin_id.clone()),
-                                DiagnosticSeverity::Warning,
-                                "schema.slot_replace_missing",
-                                format!(
-                                    "regions.replace_slot({region_name}, \"{id}\") \
-                                     — no such slot"
-                                ),
-                            )
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.ui.regions.replace_slot".into(),
-                                },
-                            ),
-                        );
-                    }
-                }
-                PreparedSlotOp::Remove {
-                    plugin_id,
-                    region,
-                    id,
-                    ..
-                } if region == region_name => {
-                    if !registry.remove(id) {
-                        self.diagnostics.record(
-                            PluginDiagnostic::new(
-                                PluginId::from(plugin_id.clone()),
-                                DiagnosticSeverity::Warning,
-                                "schema.slot_remove_missing",
-                                format!(
-                                    "regions.remove_slot({region_name}, \"{id}\") \
-                                     — no such slot"
-                                ),
-                            )
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.ui.regions.remove_slot".into(),
-                                },
-                            ),
-                        );
-                    }
-                }
-                _ => {}
+        commit_hash: &str,
+    ) -> Vec<crate::plugin::extensions::GraphDecorationRecord> {
+        let providers = self.extension_registry.decoration_providers(
+            crate::plugin::extensions::DecorationProviderTarget::GraphRowBadge,
+        );
+        let mut rows = Vec::new();
+        for provider in providers {
+            let Some(plugin) = self.plugins.get(&provider.plugin_id) else {
+                continue;
+            };
+            let Some(func) = self.provider_function(plugin, &provider) else {
+                continue;
+            };
+            let ctx = self.graph_row_context(plugin, commit_hash);
+            plugin.ui_context.set(ctx.clone());
+            let pid = PluginId::from(provider.plugin_id.clone());
+            let cb_id = format!("decoration_provider:{}", provider.handle());
+            let outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
+                CallbackKind::UiCallback,
+                &pid,
+                plugin.generation.generation_id,
+                &cb_id,
+                || {
+                    let arg = plugin.lua().to_value(&ctx)?;
+                    func.call(arg)
+                },
+            );
+            let Ok(value) = provider_value(outcome) else {
+                continue;
+            };
+            rows.extend(self.decode_graph_provider_rows(plugin, &provider, commit_hash, value));
+        }
+        rows
+    }
+
+    fn dynamic_diff_decorations_for_line(
+        &self,
+        file: &str,
+        line: u32,
+    ) -> Vec<crate::plugin::extensions::DiffDecorationRecord> {
+        let providers = self.extension_registry.decoration_providers(
+            crate::plugin::extensions::DecorationProviderTarget::DiffLineGutter,
+        );
+        let mut rows = Vec::new();
+        for provider in providers {
+            let Some(plugin) = self.plugins.get(&provider.plugin_id) else {
+                continue;
+            };
+            let Some(func) = self.provider_function(plugin, &provider) else {
+                continue;
+            };
+            let ctx = self.diff_line_context(plugin, file, line);
+            plugin.ui_context.set(ctx.clone());
+            let pid = PluginId::from(provider.plugin_id.clone());
+            let cb_id = format!("decoration_provider:{}", provider.handle());
+            let outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
+                CallbackKind::UiCallback,
+                &pid,
+                plugin.generation.generation_id,
+                &cb_id,
+                || {
+                    let arg = plugin.lua().to_value(&ctx)?;
+                    func.call(arg)
+                },
+            );
+            let Ok(value) = provider_value(outcome) else {
+                continue;
+            };
+            rows.extend(self.decode_diff_provider_rows(plugin, &provider, file, line, value));
+        }
+        rows
+    }
+
+    fn provider_function(
+        &self,
+        plugin: &LoadedPlugin,
+        provider: &crate::plugin::extensions::DecorationProviderRecord,
+    ) -> Option<Function> {
+        let callbacks = plugin.decoration_provider_callbacks.borrow();
+        let key = callbacks.get(&provider.handle())?;
+        match plugin.lua().registry_value(key) {
+            Ok(func) => Some(func),
+            Err(e) => {
+                self.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(provider.plugin_id.clone()),
+                        DiagnosticSeverity::Error,
+                        "lua.handler_lookup_failed",
+                        format!(
+                            "decoration provider lookup failed for {}: {e}",
+                            provider.handle()
+                        ),
+                    )
+                    .with_generation(plugin.generation.generation_id)
+                    .with_source(PluginSourceSpan::ApiFunction {
+                        name: format!("decoration_provider:{}", provider.handle()),
+                    }),
+                );
+                None
             }
         }
+    }
+
+    fn graph_row_context(&self, plugin: &LoadedPlugin, commit_hash: &str) -> serde_json::Value {
+        let repository = self.repository_context_snapshot();
+        let mut ctx = crate::plugin::ui::context::context_for_surface(
+            plugin.id(),
+            plugin.generation.generation_id,
+            crate::plugin::ui::context::UiContextSurface::RepositoryGraphRow,
+            repository.as_ref(),
+            &self.last_tab_snapshot,
+        );
+        ctx["payload"] = serde_json::json!({ "graph_row": { "commit_hash": commit_hash } });
+        ctx
+    }
+
+    fn diff_line_context(&self, plugin: &LoadedPlugin, file: &str, line: u32) -> serde_json::Value {
+        let repository = self.repository_context_snapshot();
+        let mut ctx = crate::plugin::ui::context::context_for_surface(
+            plugin.id(),
+            plugin.generation.generation_id,
+            crate::plugin::ui::context::UiContextSurface::RepositoryDiffLine,
+            repository.as_ref(),
+            &self.last_tab_snapshot,
+        );
+        ctx["payload"] = serde_json::json!({ "diff_line": { "file": file, "line": line } });
+        ctx
+    }
+
+    fn decode_graph_provider_rows(
+        &self,
+        plugin: &LoadedPlugin,
+        provider: &crate::plugin::extensions::DecorationProviderRecord,
+        commit_hash: &str,
+        value: LuaValue,
+    ) -> Vec<crate::plugin::extensions::GraphDecorationRecord> {
+        let values = match provider_json_values(plugin.lua(), value) {
+            Ok(values) => values,
+            Err(e) => {
+                self.record_provider_decode_error(plugin, provider, e);
+                return Vec::new();
+            }
+        };
+        let mut rows = Vec::new();
+        for (idx, value) in values.into_iter().enumerate() {
+            let id = contribution_id_from_json(&value)
+                .unwrap_or_else(|| format!("{}:{}", provider.id, idx + 1));
+            match serde_json::from_value::<
+                git_leviathan_plugin_api::descriptor::decoration::GraphDecoration,
+            >(value)
+            {
+                Ok(decoration) if decoration.kind() == "badge" => {
+                    rows.push(crate::plugin::extensions::GraphDecorationRecord {
+                        plugin_id: provider.plugin_id.clone(),
+                        id,
+                        commit_hash: commit_hash.to_string(),
+                        decoration,
+                        source_location: provider.source_location.clone(),
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => self.record_provider_decode_error(plugin, provider, e.to_string()),
+            }
+        }
+        rows
+    }
+
+    fn decode_diff_provider_rows(
+        &self,
+        plugin: &LoadedPlugin,
+        provider: &crate::plugin::extensions::DecorationProviderRecord,
+        file: &str,
+        line: u32,
+        value: LuaValue,
+    ) -> Vec<crate::plugin::extensions::DiffDecorationRecord> {
+        let values = match provider_json_values(plugin.lua(), value) {
+            Ok(values) => values,
+            Err(e) => {
+                self.record_provider_decode_error(plugin, provider, e);
+                return Vec::new();
+            }
+        };
+        let mut rows = Vec::new();
+        for (idx, mut value) in values.into_iter().enumerate() {
+            inject_line_target(&mut value, file, line);
+            let id = contribution_id_from_json(&value)
+                .unwrap_or_else(|| format!("{}:{}", provider.id, idx + 1));
+            match serde_json::from_value::<
+                git_leviathan_plugin_api::descriptor::decoration::DiffDecoration,
+            >(value)
+            {
+                Ok(decoration) if decoration.kind() == "line_gutter" => {
+                    rows.push(crate::plugin::extensions::DiffDecorationRecord {
+                        plugin_id: provider.plugin_id.clone(),
+                        id,
+                        decoration,
+                        source_location: provider.source_location.clone(),
+                    });
+                }
+                Ok(_) => {}
+                Err(e) => self.record_provider_decode_error(plugin, provider, e.to_string()),
+            }
+        }
+        rows
+    }
+
+    fn record_provider_decode_error(
+        &self,
+        plugin: &LoadedPlugin,
+        provider: &crate::plugin::extensions::DecorationProviderRecord,
+        error: String,
+    ) {
+        self.diagnostics.record(
+            PluginDiagnostic::new(
+                PluginId::from(provider.plugin_id.clone()),
+                DiagnosticSeverity::Error,
+                "decoration.provider_invalid",
+                error,
+            )
+            .with_generation(plugin.generation.generation_id)
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: format!("decoration_provider:{}", provider.handle()),
+            }),
+        );
     }
 
     /// Invoke a plugin's slot-click handler. Handler is called with
@@ -709,9 +913,15 @@ impl PluginHost {
         event: &str,
         value: serde_json::Value,
     ) {
-        let handler_key = format!("{region}:{container}:{slot_id}");
+        let handler_key = crate::plugin::slots::SlotAddress::new(
+            plugin_id,
+            region.to_string(),
+            crate::plugin::ui::main_bar_slots::parse_container(container),
+            slot_id.to_string(),
+        );
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
-        let nav: Option<String> = {
+        let mut disable_after_failures = false;
+        let effects: Vec<crate::plugin::navigation::PluginNavigationEffect> = {
             let Some(plugin) = self.plugins.get(plugin_id) else {
                 return;
             };
@@ -755,10 +965,31 @@ impl PluginHost {
                     return;
                 }
             };
-            match func.call::<Option<Table>>((slot_id.to_string(), event.to_string(), value_lua)) {
-                Ok(Some(t)) => t.get::<String>("navigate").ok(),
-                Ok(None) => None,
-                Err(e) => {
+            let cb_id = format!("slot:{handler_key}");
+            match self
+                .budget_tracker
+                .track_call::<Option<Table>, mlua::Error>(
+                    CallbackKind::UiCallback,
+                    &PluginId::from(plugin_id),
+                    generation_id,
+                    &cb_id,
+                    || func.call((slot_id.to_string(), event.to_string(), value_lua)),
+                ) {
+                PerfOutcome::Ok(Some(t)) => super::ui_lifecycle::parse_navigation_effects(
+                    plugin_id,
+                    slot_id,
+                    generation_id,
+                    "slot.on_event",
+                    &t,
+                    &self.diagnostics,
+                ),
+                PerfOutcome::Ok(None) | PerfOutcome::Skipped => Vec::new(),
+                PerfOutcome::Err(e) => {
+                    disable_after_failures = self.budget_tracker.is_tripped(
+                        &PluginId::from(plugin_id),
+                        generation_id,
+                        &cb_id,
+                    );
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -769,13 +1000,74 @@ impl PluginHost {
                         .with_generation(generation_id)
                         .with_mlua_error(&chunk_name, &e),
                     );
-                    None
+                    Vec::new()
                 }
             }
         };
-        if let Some(target) = nav {
-            self.open_screen(plugin_id.to_string(), target);
+        if disable_after_failures {
+            self.disable_plugin(plugin_id);
+            return;
         }
+        for effect in &effects {
+            match effect {
+                crate::plugin::navigation::PluginNavigationEffect::NavigateRepository => {
+                    self.active_screen = None;
+                    self.widget_tree = None;
+                }
+                crate::plugin::navigation::PluginNavigationEffect::OpenScreen {
+                    plugin_id,
+                    screen_id,
+                } => self.open_screen(plugin_id.clone(), screen_id.clone()),
+            }
+        }
+        self.pending_navigation_effects.extend(effects);
         self.drain_lua_command_effects();
     }
+}
+
+fn provider_value(value: PerfOutcome<LuaValue, mlua::Error>) -> Result<LuaValue, ()> {
+    match value {
+        PerfOutcome::Ok(value) => Ok(value),
+        PerfOutcome::Skipped | PerfOutcome::Err(_) => Err(()),
+    }
+}
+
+fn provider_json_values(lua: &Lua, value: LuaValue) -> Result<Vec<serde_json::Value>, String> {
+    match value {
+        LuaValue::Nil | LuaValue::Boolean(false) => Ok(Vec::new()),
+        other => {
+            let value: serde_json::Value = lua
+                .from_value(other)
+                .map_err(|e| format!("provider returned non-serialisable value: {e}"))?;
+            Ok(match value {
+                serde_json::Value::Null | serde_json::Value::Bool(false) => Vec::new(),
+                serde_json::Value::Array(values) => values,
+                serde_json::Value::Object(mut object) => {
+                    if let Some(serde_json::Value::Array(values)) = object.remove("decorations") {
+                        values
+                    } else {
+                        vec![serde_json::Value::Object(object)]
+                    }
+                }
+                other => return Err(format!("provider returned unsupported value: {other}")),
+            })
+        }
+    }
+}
+
+fn contribution_id_from_json(value: &serde_json::Value) -> Option<String> {
+    value
+        .get("id")
+        .and_then(|id| id.as_str())
+        .map(ToString::to_string)
+}
+
+fn inject_line_target(value: &mut serde_json::Value, file: &str, line: u32) {
+    let serde_json::Value::Object(map) = value else {
+        return;
+    };
+    map.entry("file")
+        .or_insert_with(|| serde_json::Value::String(file.to_string()));
+    map.entry("line")
+        .or_insert_with(|| serde_json::Value::Number(line.into()));
 }

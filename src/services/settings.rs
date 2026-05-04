@@ -1,10 +1,21 @@
 use rusqlite::{Connection, Result};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::migrations;
 
 const DB_NAME: &str = "git_leviathan.db";
 const MOST_RECENT_REPO_KEY: &str = "most_recent_repo";
+const PLUGIN_TABS_KEY: &str = "plugin_tabs";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PersistedPluginTab {
+    pub plugin_id: String,
+    pub screen_id: String,
+    pub title: String,
+    pub bound_repo_path: Option<String>,
+    pub state: Option<serde_json::Value>,
+}
 
 pub struct SettingsService {
     conn: Connection,
@@ -108,6 +119,30 @@ impl SettingsService {
         self.conn.execute(
             "INSERT OR REPLACE INTO app_state (key, value) VALUES (?1, ?2)",
             [MOST_RECENT_REPO_KEY, path],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_plugin_tabs(&self) -> Result<Vec<PersistedPluginTab>> {
+        let value: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM app_state WHERE key = ?1",
+                [PLUGIN_TABS_KEY],
+                |row| row.get(0),
+            )
+            .ok();
+        let Some(value) = value else {
+            return Ok(Vec::new());
+        };
+        Ok(serde_json::from_str(&value).unwrap_or_default())
+    }
+
+    pub fn save_plugin_tabs(&self, tabs: &[PersistedPluginTab]) -> Result<()> {
+        let value = serde_json::to_string(tabs).unwrap_or_else(|_| "[]".to_string());
+        self.conn.execute(
+            "INSERT OR REPLACE INTO app_state (key, value) VALUES (?1, ?2)",
+            [PLUGIN_TABS_KEY, value.as_str()],
         )?;
         Ok(())
     }
@@ -236,6 +271,20 @@ mod tests {
             .unwrap();
         let a = service.load_sidebar_sections("/repo/a").unwrap().unwrap();
         assert_eq!(a, vec![("local".to_string(), false)]);
+    }
+
+    #[test]
+    fn plugin_tabs_roundtrip() {
+        let (service, _temp) = temp_db();
+        let tabs = vec![PersistedPluginTab {
+            plugin_id: "p".into(),
+            screen_id: "main".into(),
+            title: "Main".into(),
+            bound_repo_path: Some("/repo".into()),
+            state: Some(serde_json::json!({ "n": 2 })),
+        }];
+        service.save_plugin_tabs(&tabs).unwrap();
+        assert_eq!(service.load_plugin_tabs().unwrap(), tabs);
     }
 
     #[test]

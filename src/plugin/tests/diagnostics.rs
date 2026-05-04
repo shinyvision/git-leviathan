@@ -88,6 +88,7 @@ fn invalid_manifest_emits_structured_diagnostic_and_keeps_running() {
         "manifest.incompatible_api_version",
         DiagnosticSeverity::Error,
     );
+    assert!(diag.message.contains("supported plugin api versions: 1.0"));
     assert!(
         matches!(diag.source, Some(PluginSourceSpan::Manifest { ref key, .. }) if key.as_deref() == Some("api_version"))
     );
@@ -106,9 +107,10 @@ id = "wbad"
 name = "Wbad"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-        leviathan.ui.register_screen{
+        leviathan.ui.screen.register{
             id = "screen",
             init = function() return {} end,
             -- view returns a value that can't be serialised into JSON
@@ -151,9 +153,10 @@ id = "wbad2"
 name = "Wbad2"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:screen"]
 "#,
         r#"
-        leviathan.ui.register_screen{
+        leviathan.ui.screen.register{
             id = "screen",
             init = function() return {} end,
             -- `text` field of a button must be a string; a number
@@ -199,6 +202,7 @@ id = "callback_oops"
 name = "callback_oops"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
         r#"
         leviathan.autocmd.create({ "BranchChanged" }, {
@@ -260,6 +264,7 @@ id = "denier"
 name = "denier"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
         r#"
         leviathan.api.schedule(function()
@@ -304,9 +309,10 @@ id = "rel"
 name = "rel"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
         r#"
-        leviathan.ui.regions.add_slot{ region = "main_bar",
+        leviathan.ui.slot.add{ region = "main_bar",
             id = "rel.slot",
             section = "left",
             priority = 10,

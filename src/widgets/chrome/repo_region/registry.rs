@@ -5,7 +5,7 @@
 use iced::Element;
 
 use crate::message::Message;
-use crate::plugin::slots::{Container, IsSlot, SlotRegistry};
+use crate::plugin::slots::{Container, IsSlot, SlotAddress, SlotRegistry};
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Pane {
@@ -69,20 +69,24 @@ pub type RepoPaneBuilder =
 
 pub struct RepoPaneSlot {
     pub id: String,
+    pub address: SlotAddress,
     pub container: Container,
     pub priority: i32,
     pub builder: RepoPaneBuilder,
 }
 
 impl IsSlot for RepoPaneSlot {
-    fn id(&self) -> &str {
-        &self.id
+    fn address(&self) -> &SlotAddress {
+        &self.address
     }
-    fn container(&self) -> &Container {
-        &self.container
+    fn display_id(&self) -> &str {
+        &self.id
     }
     fn priority(&self) -> i32 {
         self.priority
+    }
+    fn set_priority(&mut self, priority: i32) {
+        self.priority = priority;
     }
 }
 

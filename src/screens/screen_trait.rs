@@ -47,6 +47,18 @@ pub trait Screen {
         Vec::new()
     }
 
+    fn title(&self) -> &str {
+        ""
+    }
+
+    fn breadcrumbs(&self) -> &[String] {
+        &[]
+    }
+
+    fn has_focus(&self) -> bool {
+        true
+    }
+
     /// Optional toolbar drawn between the tab bar and the screen body.
     /// `ctx` carries the animation timestamp plus plugin-contributed bar items.
     fn toolbar<'a>(&'a self, _ctx: &ToolbarCtx<'a>) -> Option<Element<'a, Message>> {

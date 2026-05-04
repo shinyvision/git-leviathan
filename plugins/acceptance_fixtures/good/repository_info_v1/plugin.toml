@@ -3,6 +3,7 @@ name = "Repository Info v1"
 version = "0.1.0"
 api_version = "1.0"
 description = "acceptance fixture replacing the built-in repo info slot with a dynamic AST."
+capabilities = ["ui:region:main_bar", "ui:replace:builtin"]
 
 [runtime]
 strict_globals = false

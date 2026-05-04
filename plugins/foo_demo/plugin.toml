@@ -2,3 +2,4 @@ id = "foo_demo"
 name = "Foo Demo"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar", "ui:screen"]

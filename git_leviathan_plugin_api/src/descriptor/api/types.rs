@@ -1,5 +1,13 @@
 use super::schema::*;
 
+mod field_sets;
+
+use field_sets::{
+    TYPE_ASSET_HANDLE_FIELDS, TYPE_DOCK_PANEL_HANDLE_FIELDS, TYPE_DOCK_PANEL_SPEC_FIELDS,
+    TYPE_SCREEN_FIELDS, TYPE_SETTINGS_CONTEXT_FIELDS, TYPE_SETTINGS_PANEL_SPEC_FIELDS,
+    TYPE_SLOT_FIELDS, TYPE_SLOT_HANDLE_FIELDS, TYPE_SLOT_TARGET_FIELDS, TYPE_UI_FIELDS,
+};
+
 const TYPE_LEVIATHAN_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "api",
@@ -12,6 +20,12 @@ const TYPE_LEVIATHAN_FIELDS: &[ApiTypeField] = &[
         lua_type: "leviathan.ui",
         required: true,
         doc: "UI namespace.",
+    },
+    ApiTypeField {
+        name: "assets",
+        lua_type: "leviathan.assets",
+        required: true,
+        doc: "Asset handle namespace.",
     },
     ApiTypeField {
         name: "fs",
@@ -389,7 +403,7 @@ const TYPE_OVERLAY_FIELDS: &[ApiTypeField] = &[
         name: "update",
         lua_type: "fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil",
         required: false,
-        doc: "Legacy alias for `on_event`.",
+        doc: "Alias for `on_event`.",
     },
 ];
 const TYPE_OVERLAY_KEY_EVENT_FIELDS: &[ApiTypeField] = &[
@@ -430,108 +444,423 @@ const TYPE_OVERLAY_KEY_EVENT_FIELDS: &[ApiTypeField] = &[
         doc: "Whether the platform command modifier was held.",
     },
 ];
-const TYPE_SCREEN_FIELDS: &[ApiTypeField] = &[
+const TYPE_CONTEXT_MENU_ITEM_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "id",
         lua_type: "string",
         required: true,
-        doc: "Screen id.",
+        doc: "Contribution id.",
     },
     ApiTypeField {
-        name: "init",
-        lua_type: "fun(): table",
-        required: true,
-        doc: "Initial state callback.",
-    },
-    ApiTypeField {
-        name: "view",
-        lua_type: "fun(state: table): LeviathanWidget",
-        required: true,
-        doc: "View callback.",
-    },
-    ApiTypeField {
-        name: "update",
-        lua_type: "fun(state: table, event: string, value: LeviathanJson): table",
-        required: true,
-        doc: "Update callback.",
-    },
-    ApiTypeField {
-        name: "serialize",
-        lua_type: "fun(state: table): LeviathanJson",
-        required: false,
-        doc: "Reload state serializer.",
-    },
-    ApiTypeField {
-        name: "deserialize",
-        lua_type: "fun(value: LeviathanJson): table",
-        required: false,
-        doc: "Reload state deserializer.",
-    },
-];
-const TYPE_SLOT_FIELDS: &[ApiTypeField] = &[
-    ApiTypeField {
-        name: "region",
-        lua_type: "string",
-        required: false,
-        doc: "Region name; inferred by direct handles.",
-    },
-    ApiTypeField {
-        name: "pane",
-        lua_type: "string",
-        required: false,
-        doc: "Content region pane.",
-    },
-    ApiTypeField {
-        name: "section",
+        name: "label",
         lua_type: "string",
         required: true,
-        doc: "Region section.",
+        doc: "Menu label.",
     },
     ApiTypeField {
-        name: "id",
+        name: "command",
         lua_type: "string",
         required: true,
-        doc: "Slot id.",
+        doc: "Command id invoked by the item.",
     },
     ApiTypeField {
         name: "priority",
         lua_type: "integer",
-        required: true,
-        doc: "Ordering priority.",
-    },
-    ApiTypeField {
-        name: "widget",
-        lua_type: "LeviathanWidget|fun(): LeviathanWidget",
-        required: true,
-        doc: "Static or dynamic widget.",
-    },
-    ApiTypeField {
-        name: "on_click",
-        lua_type: "fun(slot_id: string, event: string, value: LeviathanJson): table|nil",
         required: false,
-        doc: "Slot callback.",
+        doc: "Lower values render earlier.",
     },
 ];
-const TYPE_SLOT_TARGET_FIELDS: &[ApiTypeField] = &[
+
+const TYPE_GRAPH_CONTRIBUTION_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
-        name: "pane",
-        lua_type: "string",
-        required: false,
-        doc: "Content region pane.",
-    },
-    ApiTypeField {
-        name: "section",
+        name: "id",
         lua_type: "string",
         required: true,
-        doc: "Region section.",
+        doc: "Contribution id.",
+    },
+    ApiTypeField {
+        name: "commit_hash",
+        lua_type: "string",
+        required: false,
+        doc: "Static target commit hash.",
+    },
+    ApiTypeField {
+        name: "decoration",
+        lua_type: "LeviathanGraphDecoration",
+        required: false,
+        doc: "Static graph decoration.",
+    },
+    ApiTypeField {
+        name: "provider",
+        lua_type: "fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil",
+        required: false,
+        doc: "Dynamic provider called per graph row.",
+    },
+];
+
+const TYPE_DIFF_CONTRIBUTION_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Contribution id.",
+    },
+    ApiTypeField {
+        name: "decoration",
+        lua_type: "LeviathanDiffDecoration",
+        required: false,
+        doc: "Static diff decoration.",
+    },
+    ApiTypeField {
+        name: "provider",
+        lua_type: "fun(ctx: RepositoryDiffLineContext): LeviathanDiffDecoration|LeviathanDiffDecoration[]|nil",
+        required: false,
+        doc: "Dynamic provider called per diff line.",
+    },
+];
+
+const TYPE_CONTRIBUTION_HANDLE_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string",
+        required: true,
+        doc: "Owner plugin id.",
+    },
+    ApiTypeField {
+        name: "point_id",
+        lua_type: "string",
+        required: true,
+        doc: "Extension point id.",
     },
     ApiTypeField {
         name: "id",
         lua_type: "string",
         required: true,
-        doc: "Slot id.",
+        doc: "Contribution id.",
     },
 ];
+
+const SLOT_HANDLE_METHODS: &[ApiTypeMethod] = &[
+    ApiTypeMethod {
+        name: "remove",
+        doc: "Remove this slot if the handle is still live.",
+        params: &[],
+        returns: &[
+            ApiReturn {
+                lua_type: "boolean|nil",
+                doc: "True on success, nil on failure.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+    },
+    ApiTypeMethod {
+        name: "replace",
+        doc: "Replace this slot if the handle is still live.",
+        params: &[ApiParam {
+            name: "spec",
+            lua_type: "LeviathanSlotSpec",
+            required: true,
+            doc: "Replacement spec. Address fields may be omitted.",
+        }],
+        returns: &[
+            ApiReturn {
+                lua_type: "LeviathanSlotHandle|nil",
+                doc: "The same handle on success, nil on failure.",
+            },
+            ApiReturn {
+                lua_type: "string|nil",
+                doc: "Error message on failure.",
+            },
+        ],
+    },
+];
+
+const CONTRIBUTION_HANDLE_METHODS: &[ApiTypeMethod] = &[ApiTypeMethod {
+    name: "remove",
+    doc: "Remove this contribution if the handle is still live.",
+    params: &[],
+    returns: &[
+        ApiReturn {
+            lua_type: "boolean|nil",
+            doc: "True on success, nil on failure.",
+        },
+        ApiReturn {
+            lua_type: "string|nil",
+            doc: "Error message on failure.",
+        },
+    ],
+}];
+
+const TYPE_UI_CONTEXT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "version",
+        lua_type: "integer",
+        required: true,
+        doc: "Context schema version.",
+    },
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string",
+        required: true,
+        doc: "Current plugin id.",
+    },
+    ApiTypeField {
+        name: "generation_id",
+        lua_type: "integer",
+        required: true,
+        doc: "Current plugin generation.",
+    },
+    ApiTypeField {
+        name: "type",
+        lua_type: "string",
+        required: true,
+        doc: "Concrete context type name.",
+    },
+    ApiTypeField {
+        name: "surface",
+        lua_type: "string",
+        required: true,
+        doc: "Current coarse UI surface.",
+    },
+    ApiTypeField {
+        name: "features",
+        lua_type: "table<string, boolean>",
+        required: true,
+        doc: "Relevant feature gates.",
+    },
+    ApiTypeField {
+        name: "theme",
+        lua_type: "LeviathanUiThemeTokens",
+        required: true,
+        doc: "Stable host theme tokens.",
+    },
+    ApiTypeField {
+        name: "repository",
+        lua_type: "LeviathanRepositorySummary",
+        required: true,
+        doc: "Active repository summary without commit lists or diffs.",
+    },
+    ApiTypeField {
+        name: "tab",
+        lua_type: "LeviathanTabSummary",
+        required: true,
+        doc: "Active tab summary.",
+    },
+    ApiTypeField {
+        name: "selection",
+        lua_type: "LeviathanSelectionSummary",
+        required: true,
+        doc: "Selection summary when the host has one for the surface.",
+    },
+    ApiTypeField {
+        name: "focus",
+        lua_type: "LeviathanFocusSummary",
+        required: true,
+        doc: "Focused surface, region, pane, and section where available.",
+    },
+    ApiTypeField {
+        name: "viewport",
+        lua_type: "LeviathanViewportSummary",
+        required: true,
+        doc: "Viewport constraints when known.",
+    },
+    ApiTypeField {
+        name: "payload",
+        lua_type: "table",
+        required: true,
+        doc: "Surface-specific ids and lightweight metadata.",
+    },
+];
+
+const TYPE_UI_THEME_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "name",
+        lua_type: "string",
+        required: true,
+        doc: "Theme id.",
+    },
+    ApiTypeField {
+        name: "colors",
+        lua_type: "table<string, string>",
+        required: true,
+        doc: "Hex color tokens.",
+    },
+    ApiTypeField {
+        name: "dimensions",
+        lua_type: "table<string, number>",
+        required: true,
+        doc: "Dimension tokens in pixels.",
+    },
+    ApiTypeField {
+        name: "fonts",
+        lua_type: "table<string, number>",
+        required: true,
+        doc: "Font size tokens in pixels.",
+    },
+];
+
+const TYPE_REPOSITORY_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "is_open",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether a repository is active.",
+    },
+    ApiTypeField {
+        name: "name",
+        lua_type: "string",
+        required: true,
+        doc: "Repository display name.",
+    },
+    ApiTypeField {
+        name: "workdir_path",
+        lua_type: "string",
+        required: true,
+        doc: "Active workdir path.",
+    },
+    ApiTypeField {
+        name: "current_branch_name",
+        lua_type: "string",
+        required: true,
+        doc: "Current branch display name.",
+    },
+    ApiTypeField {
+        name: "head_hash",
+        lua_type: "string",
+        required: true,
+        doc: "Current HEAD hash or empty string.",
+    },
+    ApiTypeField {
+        name: "default_remote_name",
+        lua_type: "string",
+        required: true,
+        doc: "Default remote name or empty string.",
+    },
+    ApiTypeField {
+        name: "has_remote",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether a default remote is available.",
+    },
+];
+
+const TYPE_TAB_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "is_open",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether a tab is active.",
+    },
+    ApiTypeField {
+        name: "id",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Active tab id.",
+    },
+    ApiTypeField {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Active tab repository path.",
+    },
+    ApiTypeField {
+        name: "name",
+        lua_type: "string",
+        required: true,
+        doc: "Active tab display name.",
+    },
+    ApiTypeField {
+        name: "index",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Zero-based active tab index.",
+    },
+    ApiTypeField {
+        name: "count",
+        lua_type: "integer",
+        required: true,
+        doc: "Open tab count.",
+    },
+];
+
+const TYPE_SELECTION_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "available",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether selection data is available for this surface.",
+    },
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Selection kind.",
+    },
+    ApiTypeField {
+        name: "selected_commit_id",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Selected commit id when available.",
+    },
+    ApiTypeField {
+        name: "selected_file_path",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Selected file path when available.",
+    },
+];
+
+const TYPE_FOCUS_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "surface",
+        lua_type: "string",
+        required: true,
+        doc: "Focused surface.",
+    },
+    ApiTypeField {
+        name: "region",
+        lua_type: "string",
+        required: false,
+        doc: "Focused region.",
+    },
+    ApiTypeField {
+        name: "pane",
+        lua_type: "string",
+        required: false,
+        doc: "Focused pane.",
+    },
+    ApiTypeField {
+        name: "section",
+        lua_type: "string",
+        required: false,
+        doc: "Focused section.",
+    },
+];
+
+const TYPE_VIEWPORT_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "known",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether concrete viewport dimensions are known.",
+    },
+    ApiTypeField {
+        name: "width",
+        lua_type: "number|nil",
+        required: true,
+        doc: "Viewport width.",
+    },
+    ApiTypeField {
+        name: "height",
+        lua_type: "number|nil",
+        required: true,
+        doc: "Viewport height.",
+    },
+];
+
 const TYPE_PERSIST_OPEN_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "version",
@@ -730,6 +1059,48 @@ const TYPE_COMMAND_SUMMARY_FIELDS: &[ApiTypeField] = &[
         required: true,
         doc: "Destructive flag.",
     },
+    ApiTypeField {
+        name: "capabilities",
+        lua_type: "string[]",
+        required: true,
+        doc: "Capabilities checked against the command owner.",
+    },
+    ApiTypeField {
+        name: "plugin_invocation_capabilities",
+        lua_type: "string[]",
+        required: true,
+        doc: "Capabilities checked against a plugin invoking this command.",
+    },
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: true,
+        doc: "Current static enabled status.",
+    },
+    ApiTypeField {
+        name: "disabled_reason",
+        lua_type: "string|nil",
+        required: false,
+        doc: "Reason shown when disabled.",
+    },
+    ApiTypeField {
+        name: "keymap_eligible",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether keymaps should dispatch this command.",
+    },
+    ApiTypeField {
+        name: "palette_visible",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether palettes should list this command.",
+    },
+    ApiTypeField {
+        name: "hooks",
+        lua_type: "table",
+        required: true,
+        doc: "Supported hook metadata: before, after, veto, replace.",
+    },
 ];
 
 const TYPE_KEYMAP_OPTS_FIELDS: &[ApiTypeField] = &[
@@ -879,6 +1250,48 @@ pub const API_TYPES: &[ApiType] = &[
         name: "leviathan.ui",
         since: "1.0",
         doc: "UI namespace.",
+        fields: TYPE_UI_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.slot",
+        since: "1.0",
+        doc: "UI slot namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.region",
+        since: "1.0",
+        doc: "UI region namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.context",
+        since: "1.0",
+        doc: "UI context namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.screen",
+        since: "1.0",
+        doc: "Plugin screen namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.dock",
+        since: "1.0",
+        doc: "Persistent dock panel namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.assets",
+        since: "1.0",
+        doc: "Plugin asset namespace.",
         fields: &[],
         methods: &[],
     },
@@ -926,21 +1339,21 @@ pub const API_TYPES: &[ApiType] = &[
     },
     ApiType {
         name: "leviathan.settings",
-        since: "1.13",
+        since: "1.0",
         doc: "Settings namespace.",
         fields: &[],
         methods: &[],
     },
     ApiType {
         name: "LeviathanSettingsSchema",
-        since: "1.13",
+        since: "1.0",
         doc: "Settings schema table.",
         fields: &[],
         methods: &[],
     },
     ApiType {
         name: "leviathan.secrets",
-        since: "1.13",
+        since: "1.0",
         doc: "Secrets namespace.",
         fields: &[],
         methods: &[],
@@ -968,77 +1381,77 @@ pub const API_TYPES: &[ApiType] = &[
     },
     ApiType {
         name: "LeviathanAutocmdEvent",
-        since: "1.7",
+        since: "1.0",
         doc: "Typed event payload table handed to autocmd callbacks.",
         fields: TYPE_AUTOCMD_EVENT_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanAutocmdGroupOpts",
-        since: "1.7",
+        since: "1.0",
         doc: "Options accepted by `leviathan.autocmd.group`.",
         fields: TYPE_AUTOCMD_GROUP_OPTS_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "leviathan.autocmd",
-        since: "1.7",
+        since: "1.0",
         doc: "Autocmd group and typed-event namespace.",
         fields: &[],
         methods: &[],
     },
     ApiType {
         name: "leviathan.command",
-        since: "1.8",
+        since: "1.0",
         doc: "Typed command registry namespace.",
         fields: &[],
         methods: &[],
     },
     ApiType {
         name: "LeviathanCommandSpec",
-        since: "1.8",
+        since: "1.0",
         doc: "Descriptor accepted by `leviathan.command.create`.",
         fields: TYPE_COMMAND_SPEC_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanCommandArg",
-        since: "1.8",
+        since: "1.0",
         doc: "One entry in a command's `args` schema.",
         fields: TYPE_COMMAND_ARG_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanCommandSummary",
-        since: "1.8",
+        since: "1.0",
         doc: "Compact view of a registered command, returned by `leviathan.command.list`.",
         fields: TYPE_COMMAND_SUMMARY_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "leviathan.keymap",
-        since: "1.9",
+        since: "1.0",
         doc: "Context-aware keymap registry namespace.",
         fields: &[],
         methods: &[],
     },
     ApiType {
         name: "LeviathanKeymapOpts",
-        since: "1.9",
+        since: "1.0",
         doc: "Options table accepted by `leviathan.keymap.set`.",
         fields: TYPE_KEYMAP_OPTS_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanKeymapSummary",
-        since: "1.9",
+        since: "1.0",
         doc: "Compact view of a registered keymap, returned by `leviathan.keymap.list`.",
         fields: TYPE_KEYMAP_SUMMARY_FIELDS,
         methods: &[],
     },
     ApiType {
         name: "LeviathanKeymapConflictRef",
-        since: "1.9",
+        since: "1.0",
         doc: "Reference to the winning binding for a conflict-lost keymap row.",
         fields: TYPE_KEYMAP_CONFLICT_REF_FIELDS,
         methods: &[],
@@ -1079,10 +1492,227 @@ pub const API_TYPES: &[ApiType] = &[
         methods: &[],
     },
     ApiType {
+        name: "LeviathanSlotHandle",
+        since: "1.0",
+        doc: "Ledger-backed UI slot handle.",
+        fields: TYPE_SLOT_HANDLE_FIELDS,
+        methods: SLOT_HANDLE_METHODS,
+    },
+    ApiType {
+        name: "LeviathanContextMenuItem",
+        since: "1.0",
+        doc: "Context-menu contribution spec.",
+        fields: TYPE_CONTEXT_MENU_ITEM_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanGraphDecorationContribution",
+        since: "1.0",
+        doc: "Static or dynamic graph-row decoration contribution.",
+        fields: TYPE_GRAPH_CONTRIBUTION_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDiffDecorationContribution",
+        since: "1.0",
+        doc: "Static or dynamic diff decoration contribution.",
+        fields: TYPE_DIFF_CONTRIBUTION_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanContributionSpec",
+        since: "1.0",
+        doc: "Base spec accepted by `leviathan.ui.contribute`.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanContributionHandle",
+        since: "1.0",
+        doc: "Ledger-backed UI contribution handle.",
+        fields: TYPE_CONTRIBUTION_HANDLE_FIELDS,
+        methods: CONTRIBUTION_HANDLE_METHODS,
+    },
+    ApiType {
+        name: "LeviathanUiContext",
+        since: "1.0",
+        doc: "Base UI context.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "MainBarContext",
+        since: "1.0",
+        doc: "Context passed to main-bar dynamic widgets.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "TabBarContext",
+        since: "1.0",
+        doc: "Context passed to tab-bar dynamic widgets.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "StatusBarContext",
+        since: "1.0",
+        doc: "Reserved status-bar context schema.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositorySidebarContext",
+        since: "1.0",
+        doc: "Context passed to repository sidebar slot widgets.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositoryGraphContext",
+        since: "1.0",
+        doc: "Context passed to repository graph slot widgets.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositoryGraphRowContext",
+        since: "1.0",
+        doc: "Reserved repository graph row context schema.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositoryDetailsContext",
+        since: "1.0",
+        doc: "Context passed to repository details slot widgets.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositoryDiffContext",
+        since: "1.0",
+        doc: "Reserved repository diff context schema.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "RepositoryDiffLineContext",
+        since: "1.0",
+        doc: "Reserved repository diff line context schema.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "OverlayContext",
+        since: "1.0",
+        doc: "Reserved overlay context schema.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "ScreenContext",
+        since: "1.0",
+        doc: "Context shape returned outside a mounted slot render.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "SettingsContext",
+        since: "1.0",
+        doc: "Context passed to settings panel render callbacks.",
+        fields: TYPE_SETTINGS_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "DockPanelContext",
+        since: "1.0",
+        doc: "Context passed to dock panel render callbacks.",
+        fields: TYPE_UI_CONTEXT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanUiThemeTokens",
+        since: "1.0",
+        doc: "Stable theme tokens in a UI context.",
+        fields: TYPE_UI_THEME_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanRepositorySummary",
+        since: "1.0",
+        doc: "Active repository summary in a UI context.",
+        fields: TYPE_REPOSITORY_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanTabSummary",
+        since: "1.0",
+        doc: "Active tab summary in a UI context.",
+        fields: TYPE_TAB_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanSelectionSummary",
+        since: "1.0",
+        doc: "Selection summary in a UI context.",
+        fields: TYPE_SELECTION_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanFocusSummary",
+        since: "1.0",
+        doc: "Focus summary in a UI context.",
+        fields: TYPE_FOCUS_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanViewportSummary",
+        since: "1.0",
+        doc: "Viewport summary in a UI context.",
+        fields: TYPE_VIEWPORT_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
         name: "LeviathanWidget",
         since: "1.0",
         doc: "Tagged widget tree node.",
         fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.ui.settings",
+        since: "1.0",
+        doc: "Plugin settings panel namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDockPanelSpec",
+        since: "1.0",
+        doc: "Persistent dock panel registration spec.",
+        fields: TYPE_DOCK_PANEL_SPEC_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanSettingsPanelSpec",
+        since: "1.0",
+        doc: "Custom settings panel registration spec.",
+        fields: TYPE_SETTINGS_PANEL_SPEC_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDockPanelHandle",
+        since: "1.0",
+        doc: "Dock panel registration handle.",
+        fields: TYPE_DOCK_PANEL_HANDLE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanAssetHandle",
+        since: "1.0",
+        doc: "Opaque plugin asset handle.",
+        fields: TYPE_ASSET_HANDLE_FIELDS,
         methods: &[],
     },
     ApiType {

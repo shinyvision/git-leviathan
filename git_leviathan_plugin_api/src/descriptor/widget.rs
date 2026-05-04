@@ -47,6 +47,144 @@ impl WidgetDescriptorTable {
     }
 }
 
+const SEMANTIC_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
+    WidgetFieldDescriptor {
+        name: "label",
+        lua_type: "string",
+        required: false,
+        doc: "Accessible label or visible fallback.",
+    },
+    WidgetFieldDescriptor {
+        name: "title",
+        lua_type: "string",
+        required: false,
+        doc: "Section or item title.",
+    },
+    WidgetFieldDescriptor {
+        name: "text",
+        lua_type: "string",
+        required: false,
+        doc: "Body text.",
+    },
+    WidgetFieldDescriptor {
+        name: "command",
+        lua_type: "string",
+        required: false,
+        doc: "Command id to invoke.",
+    },
+    WidgetFieldDescriptor {
+        name: "on_click",
+        lua_type: "string",
+        required: false,
+        doc: "Plugin event emitted on click.",
+    },
+    WidgetFieldDescriptor {
+        name: "on_change",
+        lua_type: "string",
+        required: false,
+        doc: "Plugin event emitted when value changes.",
+    },
+    WidgetFieldDescriptor {
+        name: "disabled_reason",
+        lua_type: "string",
+        required: false,
+        doc: "Reason shown when disabled.",
+    },
+    WidgetFieldDescriptor {
+        name: "shortcut",
+        lua_type: "string",
+        required: false,
+        doc: "Keyboard shortcut hint.",
+    },
+    WidgetFieldDescriptor {
+        name: "child",
+        lua_type: "LeviathanWidget",
+        required: false,
+        doc: "Primary nested widget.",
+    },
+    WidgetFieldDescriptor {
+        name: "children",
+        lua_type: "LeviathanWidget[]",
+        required: false,
+        doc: "Nested widgets.",
+    },
+    WidgetFieldDescriptor {
+        name: "items",
+        lua_type: "table[]",
+        required: false,
+        doc: "List, tree, or menu items.",
+    },
+    WidgetFieldDescriptor {
+        name: "options",
+        lua_type: "table[]",
+        required: false,
+        doc: "Select or radio options.",
+    },
+    WidgetFieldDescriptor {
+        name: "color",
+        lua_type: "string|{token:string}",
+        required: false,
+        doc: "Theme token or raw color where allowed.",
+    },
+];
+
+const LAYOUT_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
+    WidgetFieldDescriptor {
+        name: "children",
+        lua_type: "LeviathanWidget[]",
+        required: false,
+        doc: "Child widgets.",
+    },
+    WidgetFieldDescriptor {
+        name: "tabs",
+        lua_type: "table[]",
+        required: false,
+        doc: "Tab descriptors with child widgets.",
+    },
+    WidgetFieldDescriptor {
+        name: "direction",
+        lua_type: "string",
+        required: false,
+        doc: "horizontal or vertical.",
+    },
+    WidgetFieldDescriptor {
+        name: "columns",
+        lua_type: "number",
+        required: false,
+        doc: "Grid column count.",
+    },
+    WidgetFieldDescriptor {
+        name: "spacing",
+        lua_type: "number|{token:string}",
+        required: false,
+        doc: "Theme spacing token or pixels.",
+    },
+    WidgetFieldDescriptor {
+        name: "focus_order",
+        lua_type: "number",
+        required: false,
+        doc: "Keyboard focus ordering hint.",
+    },
+];
+
+const fn semantic_descriptor(kind: &'static str, doc: &'static str) -> WidgetDescriptor {
+    WidgetDescriptor {
+        kind,
+        since: "1.0",
+        doc,
+        fields: SEMANTIC_WIDGET_FIELDS,
+    }
+}
+
+const fn layout_descriptor(kind: &'static str, doc: &'static str) -> WidgetDescriptor {
+    WidgetDescriptor {
+        kind,
+        since: "1.0",
+        doc,
+        fields: LAYOUT_WIDGET_FIELDS,
+    }
+}
+
 pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
     WidgetDescriptor {
         kind: "text",
@@ -554,6 +692,37 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
             },
         ],
     },
+    semantic_descriptor("command_button", "Button that invokes a command id."),
+    semantic_descriptor("toolbar_button", "Compact toolbar action button."),
+    semantic_descriptor("status_item", "Status-line item."),
+    semantic_descriptor("badge", "Small status badge."),
+    semantic_descriptor("tag", "Small tag pill."),
+    semantic_descriptor("list", "Semantic list."),
+    semantic_descriptor("tree", "Semantic tree."),
+    semantic_descriptor("table", "Semantic table."),
+    semantic_descriptor("section", "Titled content section."),
+    semantic_descriptor("form", "Form field group."),
+    semantic_descriptor("checkbox", "Checkbox control."),
+    semantic_descriptor("toggle", "Toggle control."),
+    semantic_descriptor("select", "Select control."),
+    semantic_descriptor("radio_group", "Radio option group."),
+    semantic_descriptor("divider", "Visual divider."),
+    semantic_descriptor("tooltip", "Tooltip wrapper."),
+    semantic_descriptor("popover", "Popover wrapper."),
+    semantic_descriptor("menu", "Menu list."),
+    semantic_descriptor("empty_state", "Empty-state presentation."),
+    semantic_descriptor("code", "Code text block."),
+    semantic_descriptor("diff", "Diff text block."),
+    semantic_descriptor("commit_ref", "Commit reference chip."),
+    semantic_descriptor("branch_ref", "Branch reference chip."),
+    semantic_descriptor("remote_ref", "Remote reference chip."),
+    semantic_descriptor("progress", "Progress indicator."),
+    layout_descriptor("stack", "Stack children vertically."),
+    layout_descriptor("grid", "Grid layout."),
+    layout_descriptor("dock", "Dock-style layout primitive."),
+    layout_descriptor("split", "Semantic split layout primitive."),
+    layout_descriptor("tabs", "Tabbed layout primitive."),
+    layout_descriptor("virtual_list", "Large-list layout primitive."),
 ]);
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -573,6 +742,37 @@ pub enum WidgetKind {
     MouseArea(MouseAreaWidget),
     Tablist(TablistWidget),
     ResizableSplit(ResizableSplitWidget),
+    CommandButton(SemanticWidget),
+    ToolbarButton(SemanticWidget),
+    StatusItem(SemanticWidget),
+    Badge(SemanticWidget),
+    Tag(SemanticWidget),
+    List(SemanticWidget),
+    Tree(SemanticWidget),
+    Table(SemanticWidget),
+    Section(SemanticWidget),
+    Form(SemanticWidget),
+    Checkbox(SemanticWidget),
+    Toggle(SemanticWidget),
+    Select(SemanticWidget),
+    RadioGroup(SemanticWidget),
+    Divider(SemanticWidget),
+    Tooltip(SemanticWidget),
+    Popover(SemanticWidget),
+    Menu(SemanticWidget),
+    EmptyState(SemanticWidget),
+    Code(SemanticWidget),
+    Diff(SemanticWidget),
+    CommitRef(SemanticWidget),
+    BranchRef(SemanticWidget),
+    RemoteRef(SemanticWidget),
+    Progress(SemanticWidget),
+    Stack(LayoutWidget),
+    Grid(LayoutWidget),
+    Dock(LayoutWidget),
+    Split(LayoutWidget),
+    Tabs(LayoutWidget),
+    VirtualList(LayoutWidget),
 }
 
 /// Length values: numbers are pixel sizes, strings are `"fill"` / `"shrink"`.
@@ -585,23 +785,62 @@ pub enum Length {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum TokenValue {
+    Raw(String),
+    Token { token: String },
+}
+
+pub type ColorValue = TokenValue;
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(untagged)]
+pub enum SpacingValue {
+    Fixed(f32),
+    Token { token: String },
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, JsonSchema)]
+pub struct WidgetMeta {
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub role: Option<String>,
+    #[serde(default)]
+    pub focus_order: Option<i32>,
+    #[serde(default)]
+    pub shortcut: Option<String>,
+    #[serde(default)]
+    pub disabled_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct AssetHandle {
+    pub path: String,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct Border {
     #[serde(default)]
     pub width: Option<f32>,
     #[serde(default)]
     pub radius: Option<f32>,
     #[serde(default)]
-    pub color: Option<String>,
+    pub color: Option<ColorValue>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ButtonStyle {
     #[serde(default)]
-    pub background: Option<String>,
+    pub background: Option<ColorValue>,
     #[serde(default)]
-    pub background_hover: Option<String>,
+    pub background_hover: Option<ColorValue>,
     #[serde(default)]
-    pub text_color: Option<String>,
+    pub text_color: Option<ColorValue>,
     #[serde(default)]
     pub border: Option<Border>,
 }
@@ -609,28 +848,32 @@ pub struct ButtonStyle {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TextInputStyle {
     #[serde(default)]
-    pub background: Option<String>,
+    pub background: Option<ColorValue>,
     #[serde(default)]
-    pub text_color: Option<String>,
+    pub text_color: Option<ColorValue>,
     #[serde(default)]
-    pub placeholder_color: Option<String>,
+    pub placeholder_color: Option<ColorValue>,
     #[serde(default)]
     pub border: Option<Border>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TextWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     // Bridge defaults missing `value` to "" so we keep it optional for parity.
     #[serde(default)]
     pub value: Option<String>,
     #[serde(default)]
     pub size: Option<f32>,
     #[serde(default)]
-    pub color: Option<String>,
+    pub color: Option<ColorValue>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ButtonWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub child: Option<Box<WidgetKind>>,
     #[serde(default)]
@@ -649,6 +892,8 @@ pub struct ButtonWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TextInputWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub id: Option<String>,
     pub placeholder: String,
@@ -668,10 +913,12 @@ pub struct TextInputWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct RowWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub children: Vec<WidgetKind>,
     #[serde(default)]
-    pub spacing: Option<f32>,
+    pub spacing: Option<SpacingValue>,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]
@@ -682,10 +929,12 @@ pub struct RowWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ColumnWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub children: Vec<WidgetKind>,
     #[serde(default)]
-    pub spacing: Option<f32>,
+    pub spacing: Option<SpacingValue>,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]
@@ -696,10 +945,12 @@ pub struct ColumnWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ContainerWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub child: Option<Box<WidgetKind>>,
     #[serde(default)]
-    pub bg: Option<String>,
+    pub bg: Option<ColorValue>,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]
@@ -720,14 +971,16 @@ pub struct ContainerWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct PaddingWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
-    pub top: Option<f32>,
+    pub top: Option<SpacingValue>,
     #[serde(default)]
-    pub right: Option<f32>,
+    pub right: Option<SpacingValue>,
     #[serde(default)]
-    pub bottom: Option<f32>,
+    pub bottom: Option<SpacingValue>,
     #[serde(default)]
-    pub left: Option<f32>,
+    pub left: Option<SpacingValue>,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]
@@ -738,6 +991,8 @@ pub struct PaddingWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct SpaceWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]
@@ -746,24 +1001,34 @@ pub struct SpaceWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct IconWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub path: Option<String>,
     #[serde(default)]
+    pub asset: Option<AssetHandle>,
+    #[serde(default)]
     pub size: Option<f32>,
     #[serde(default)]
-    pub color: Option<String>,
+    pub color: Option<ColorValue>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ImageWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub path: Option<String>,
+    #[serde(default)]
+    pub asset: Option<AssetHandle>,
     #[serde(default)]
     pub size: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ScrollableWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub child: Option<Box<WidgetKind>>,
     #[serde(default)]
@@ -774,6 +1039,8 @@ pub struct ScrollableWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct MouseAreaWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub child: Option<Box<WidgetKind>>,
     #[serde(default)]
@@ -792,6 +1059,8 @@ pub struct TabSpec {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct TablistWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub tabs: Vec<TabSpec>,
     #[serde(default)]
@@ -808,12 +1077,130 @@ pub struct TablistWidget {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ResizableSplitWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
     #[serde(default)]
     pub id: Option<String>,
     #[serde(default)]
     pub direction: Option<String>,
     #[serde(default)]
     pub children: Vec<WidgetKind>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SemanticItem {
+    #[serde(default)]
+    pub id: Option<serde_json::Value>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub child: Option<Box<WidgetKind>>,
+    #[serde(default)]
+    pub children: Vec<SemanticItem>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SemanticColumn {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub width: Option<Length>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SemanticRow {
+    #[serde(default)]
+    pub id: Option<serde_json::Value>,
+    #[serde(default)]
+    pub cells: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SemanticOption {
+    #[serde(default)]
+    pub value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct SemanticWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub text: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub on_click: Option<String>,
+    #[serde(default)]
+    pub on_change: Option<String>,
+    #[serde(default)]
+    pub value: Option<serde_json::Value>,
+    #[serde(default)]
+    pub disabled: Option<bool>,
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub selected: Option<serde_json::Value>,
+    #[serde(default)]
+    pub progress: Option<f32>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub color: Option<ColorValue>,
+    #[serde(default)]
+    pub spacing: Option<SpacingValue>,
+    #[serde(default)]
+    pub child: Option<Box<WidgetKind>>,
+    #[serde(default)]
+    pub children: Vec<WidgetKind>,
+    #[serde(default)]
+    pub items: Vec<SemanticItem>,
+    #[serde(default)]
+    pub columns: Vec<SemanticColumn>,
+    #[serde(default)]
+    pub rows: Vec<SemanticRow>,
+    #[serde(default)]
+    pub options: Vec<SemanticOption>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct LayoutTabWidget {
+    #[serde(default)]
+    pub id: Option<serde_json::Value>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub child: Option<Box<WidgetKind>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct LayoutWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
+    #[serde(default)]
+    pub direction: Option<String>,
+    #[serde(default)]
+    pub columns: Option<usize>,
+    #[serde(default)]
+    pub spacing: Option<SpacingValue>,
+    #[serde(default)]
+    pub active: Option<serde_json::Value>,
+    #[serde(default)]
+    pub child: Option<Box<WidgetKind>>,
+    #[serde(default)]
+    pub children: Vec<WidgetKind>,
+    #[serde(default)]
+    pub tabs: Vec<LayoutTabWidget>,
 }
 
 #[cfg(test)]
@@ -953,5 +1340,40 @@ mod tests {
             "child": { "kind": "image", "path": "assets/dancing_banana.gif", "size": 25 },
         });
         let _: WidgetKind = serde_json::from_value(json).unwrap();
+    }
+
+    #[test]
+    fn semantic_widgets_validate() {
+        let json = serde_json::json!({
+            "kind": "command_button",
+            "label": "Fetch",
+            "command": "repository.fetch",
+            "shortcut": "Ctrl+R",
+            "disabled_reason": "No repository"
+        });
+        let widget: WidgetKind = serde_json::from_value(json).unwrap();
+        assert!(matches!(widget, WidgetKind::CommandButton(_)));
+    }
+
+    #[test]
+    fn theme_tokens_and_asset_handles_validate() {
+        let json = serde_json::json!({
+            "kind": "icon",
+            "asset": { "path": "icons/foo.svg", "kind": "svg", "handle": "asset:svg:icons/foo.svg" },
+            "color": { "token": "text.primary" }
+        });
+        let widget: WidgetKind = serde_json::from_value(json).unwrap();
+        assert!(matches!(widget, WidgetKind::Icon(_)));
+    }
+
+    #[test]
+    fn layout_widgets_validate() {
+        let json = serde_json::json!({
+            "kind": "tabs",
+            "active": "a",
+            "tabs": [{ "id": "a", "title": "A", "child": { "kind": "text", "value": "A" } }]
+        });
+        let widget: WidgetKind = serde_json::from_value(json).unwrap();
+        assert!(matches!(widget, WidgetKind::Tabs(_)));
     }
 }

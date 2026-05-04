@@ -2,9 +2,10 @@ use git_leviathan_plugin_api::descriptor::region::RegionDescriptor;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
 
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
+use crate::plugin::ui::invalidation::{default_dependencies_for_region, UiDependency};
 use crate::plugin::ui::widget_ast;
 
-use super::{RawSlotSpec, WidgetSource};
+use super::{DynamicWidgetCall, RawSlotSpec, WidgetSource};
 
 pub(super) fn read_address_with_id(
     t: &Table,
@@ -34,6 +35,7 @@ pub(super) fn read_spec(
     spec: &Table,
     desc: &RegionDescriptor,
     ledger: &ResourceLedger,
+    dynamic_call: DynamicWidgetCall,
 ) -> mlua::Result<RawSlotSpec> {
     let id: String = spec.get("id")?;
     let pane: Option<String> = spec.get("pane")?;
@@ -44,13 +46,21 @@ pub(super) fn read_spec(
     let container = compose_container(pane.as_deref(), &section);
     let handle = slot_handle(desc.name, &container, &id);
     let source_location = ResourceLedger::source_location(lua);
+    let depends_on = read_dependencies(spec, desc.name)?;
     ledger.remove_by_kind_handle(PluginResourceKind::Slot, &handle);
     ledger.record(
         PluginResourceKind::Slot,
         handle.clone(),
         source_location.clone(),
     );
-    let widget = read_widget(lua, spec, ledger, &handle, source_location.clone())?;
+    let widget = read_widget(
+        lua,
+        spec,
+        ledger,
+        &handle,
+        source_location.clone(),
+        dynamic_call,
+    )?;
     let on_click_fn: Option<Function> = spec.get("on_click")?;
     let on_click = on_click_fn
         .map(|f| {
@@ -69,9 +79,33 @@ pub(super) fn read_spec(
         container,
         priority,
         widget,
+        depends_on,
         on_click,
         source_location,
     })
+}
+
+fn read_dependencies(spec: &Table, region: &str) -> mlua::Result<Vec<UiDependency>> {
+    let raw: Option<Table> = spec.get("depends_on")?;
+    let Some(table) = raw else {
+        return Ok(default_dependencies_for_region(region));
+    };
+    let mut out = Vec::new();
+    for value in table.sequence_values::<String>() {
+        let value = value?;
+        let Some(dep) = UiDependency::parse(&value) else {
+            return Err(mlua::Error::external(format!(
+                "unknown UI dependency `{value}`"
+            )));
+        };
+        if !out.contains(&dep) {
+            out.push(dep);
+        }
+    }
+    if out.is_empty() {
+        return Err(mlua::Error::external("depends_on must not be empty"));
+    }
+    Ok(out)
 }
 
 fn read_widget(
@@ -80,6 +114,7 @@ fn read_widget(
     ledger: &ResourceLedger,
     slot_handle: &str,
     source_location: Option<String>,
+    dynamic_call: DynamicWidgetCall,
 ) -> mlua::Result<WidgetSource> {
     let v: LuaValue = spec.get("widget")?;
     Ok(match v {
@@ -90,7 +125,10 @@ fn read_widget(
                 format!("{slot_handle}:widget"),
                 source_location,
             );
-            WidgetSource::Dynamic(key)
+            WidgetSource::Dynamic {
+                key,
+                call: dynamic_call,
+            }
         }
         other => {
             let json: serde_json::Value = lua
@@ -128,10 +166,13 @@ mod tests {
             .load(r#"return { id = "x", section = "left", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .eval()
             .unwrap();
-        let raw = read_spec(&lua, &spec, desc, &ledger()).unwrap();
+        let raw = read_spec(&lua, &spec, desc, &ledger(), DynamicWidgetCall::Context).unwrap();
         assert_eq!(raw.id, "x");
         assert_eq!(raw.region, "main_bar");
         assert_eq!(raw.container, "left");
+        assert!(raw
+            .depends_on
+            .contains(&crate::plugin::ui::invalidation::UiDependency::Repository));
     }
 
     #[test]
@@ -142,7 +183,7 @@ mod tests {
             .load(r#"return { id = "x", section = "nope", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .eval()
             .unwrap();
-        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+        let err = match read_spec(&lua, &spec, desc, &ledger(), DynamicWidgetCall::Context) {
             Ok(_) => panic!("expected invalid section to fail"),
             Err(err) => err.to_string(),
         };
@@ -157,7 +198,7 @@ mod tests {
             .load(r#"return { id = "x", section = "left", priority = 0, widget = { kind = "rwo", value = "hi" } }"#)
             .eval()
             .unwrap();
-        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+        let err = match read_spec(&lua, &spec, desc, &ledger(), DynamicWidgetCall::Context) {
             Ok(_) => panic!("expected invalid widget to fail"),
             Err(err) => err.to_string(),
         };
@@ -175,7 +216,7 @@ mod tests {
             .load(r#"return { id = "x", section = "top", priority = 0, widget = { kind = "text", text = "hi" } }"#)
             .eval()
             .unwrap();
-        let err = match read_spec(&lua, &spec, desc, &ledger()) {
+        let err = match read_spec(&lua, &spec, desc, &ledger(), DynamicWidgetCall::Context) {
             Ok(_) => panic!("expected missing pane to fail"),
             Err(err) => err.to_string(),
         };

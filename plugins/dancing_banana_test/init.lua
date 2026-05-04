@@ -14,11 +14,11 @@ leviathan.autocmd.create("FetchFinished", {
   end,
 })
 
-leviathan.ui.regions.replace_slot(
+leviathan.ui.slot.replace(
   { region = "main_bar", section = "left", id = "builtin.fetch_indicator" },
   {
   region = "main_bar",
-  id = "plugin.dancing_banana_test.fetch_indicator",
+  id = "builtin.fetch_indicator",
   section = "left",
   priority = 40,
   widget = function()

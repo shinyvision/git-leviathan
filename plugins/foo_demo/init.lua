@@ -2,13 +2,13 @@ local widgets = require("foo_demo.widgets")
 local std_button, panel = widgets.std_button, widgets.panel
 local COLOR_TEXT = widgets.COLOR_TEXT
 
-leviathan.ui.regions.add_slot {
+leviathan.ui.slot.add {
   region   = "main_bar",
   id       = "plugin.foo_demo.foo",
   section  = "right",
   priority = 101,
   on_click = function()
-    return { navigate = "foo_screen" }
+    return { effects = { { kind = "open_screen", plugin = "foo_demo", screen = "foo_screen" } } }
   end,
   widget = {
     kind     = "button",
@@ -30,8 +30,9 @@ leviathan.ui.regions.add_slot {
   },
 }
 
-leviathan.ui.register_screen({
+leviathan.ui.screen.register({
   id = "foo_screen",
+  title = "Foo",
   init = function()
     return { clicks = 0 }
   end,
@@ -71,7 +72,7 @@ leviathan.ui.register_screen({
   end,
   update = function(state, event, value)
     if event == "back" then
-      return { navigate = "repository" }
+      return { effects = { { kind = "navigate", target = { kind = "repository" } } } }
     end
     return { state = state }
   end,

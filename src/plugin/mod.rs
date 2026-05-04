@@ -1,4 +1,4 @@
-//! Lua plugin system (prototype).
+//! Lua plugin system.
 //!
 //! Plugins live in `./plugins/<name>/` alongside the binary's CWD. Each carries
 //! `plugin.toml` (metadata) + `init.lua` (entry point). On startup, `PluginHost`
@@ -18,10 +18,12 @@ pub mod bridge;
 pub mod capabilities;
 pub mod capability_grants;
 pub mod commands;
+pub mod core_commands;
 pub mod dependency;
 pub mod devtools;
 pub mod devtools_commands;
 pub mod diagnostic;
+pub mod dock;
 pub mod events;
 pub mod extensions;
 pub mod generation;
@@ -30,6 +32,7 @@ pub mod host;
 pub mod keymap;
 pub mod lua_loader;
 pub mod message;
+pub mod navigation;
 pub mod performance;
 pub mod persist;
 pub mod reload;

@@ -3,24 +3,25 @@
 use crate::plugin::tests::harness::MockHost;
 
 #[test]
-fn v1_plugin_uses_descriptor_region_api() {
+fn v1_plugin_uses_slot_api() {
     let mut host = MockHost::new();
     host.load_inline(
-        "v1_regions",
+        "v1_slots",
         r#"
-id = "v1_regions"
-name = "v1 regions"
+id = "v1_slots"
+name = "v1 slots"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
         r#"
-assert(leviathan.has("ui.regions.add_slot@1"))
+assert(leviathan.has("ui.slot.add@1"))
 assert(leviathan.has("autocmd.create@1"))
-assert(not leviathan.has("ui.regions.add_slot@2"))
+assert(not leviathan.has("ui.slot.add@2"))
 leviathan.autocmd.create("FetchStarted", { callback = function() end })
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "main_bar",
-    id = "v1_regions.slot",
+    id = "v1_slots.slot",
     section = "right",
     priority = 20,
     widget = { kind = "text", value = "v1" },
@@ -29,7 +30,7 @@ leviathan.ui.regions.add_slot{
     )
     .expect("v1 plugin loads");
 
-    assert!(host.has_slot("v1_regions", "main_bar", "right", "v1_regions.slot"));
+    assert!(host.has_slot("v1_slots", "main_bar", "right", "v1_slots.slot"));
 }
 
 #[test]
@@ -43,9 +44,10 @@ id = "left"
 name = "left"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
             r#"
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "main_bar",
     id = "mixed.left",
     section = "left",
@@ -61,9 +63,10 @@ id = "right"
 name = "right"
 version = "0.1.0"
 api_version = "1.0"
+capabilities = ["ui:region:main_bar"]
 "#,
             r#"
-leviathan.ui.regions.add_slot{
+leviathan.ui.slot.add{
     region = "main_bar",
     id = "mixed.right",
     section = "right",

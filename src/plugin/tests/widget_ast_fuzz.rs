@@ -64,6 +64,16 @@ const KINDS: &[&str] = &[
     "mouse_area",
     "tablist",
     "resizable_split",
+    "command_button",
+    "badge",
+    "list",
+    "table",
+    "checkbox",
+    "select",
+    "progress",
+    "grid",
+    "tabs",
+    "virtual_list",
     // Mix in a couple of typos to exercise the unknown_kind path.
     "rwo",
     "buttn",
@@ -93,6 +103,14 @@ fn random_length(rng: &mut Lcg) -> Value {
     }
 }
 
+fn random_spacing(rng: &mut Lcg) -> Value {
+    if rng.boolean() {
+        json!({ "token": "space.2" })
+    } else {
+        json!(rng.float(24.0))
+    }
+}
+
 /// Produce a random tree node up to `depth_remaining` deep.
 fn random_node(rng: &mut Lcg, depth_remaining: u32) -> Value {
     let kind = rng.pick(KINDS).to_string();
@@ -116,7 +134,14 @@ fn random_node(rng: &mut Lcg, depth_remaining: u32) -> Value {
             obj.insert("value".into(), Value::String(rng.pick(STRINGS).to_string()));
             obj.insert("size".into(), json!(rng.float(40.0)));
             if rng.boolean() {
-                obj.insert("color".into(), Value::String(rng.pick(COLORS).to_string()));
+                obj.insert(
+                    "color".into(),
+                    if rng.boolean() {
+                        json!({ "token": "text.primary" })
+                    } else {
+                        Value::String(rng.pick(COLORS).to_string())
+                    },
+                );
             }
         }
         "button" => {
@@ -142,6 +167,7 @@ fn random_node(rng: &mut Lcg, depth_remaining: u32) -> Value {
                 }
             }
             obj.insert("children".into(), Value::Array(children));
+            obj.insert("spacing".into(), random_spacing(rng));
             if kind == "resizable_split" {
                 obj.insert(
                     "direction".into(),
@@ -177,8 +203,50 @@ fn random_node(rng: &mut Lcg, depth_remaining: u32) -> Value {
             obj.insert("height".into(), random_length(rng));
         }
         "icon" | "image" => {
-            obj.insert("path".into(), Value::String(rng.pick(STRINGS).to_string()));
+            if rng.boolean() {
+                obj.insert("path".into(), Value::String(rng.pick(STRINGS).to_string()));
+            } else {
+                obj.insert(
+                    "asset".into(),
+                    json!({ "kind": "svg", "path": "icons/x.svg", "handle": "asset:svg:icons/x.svg" }),
+                );
+            }
             obj.insert("size".into(), json!(rng.float(64.0)));
+        }
+        "command_button" | "badge" | "checkbox" | "progress" => {
+            obj.insert("label".into(), Value::String(rng.pick(STRINGS).to_string()));
+            obj.insert("command".into(), Value::String("repository.fetch".into()));
+            obj.insert("progress".into(), json!(rng.float(1.0)));
+        }
+        "list" => {
+            obj.insert(
+                "items".into(),
+                json!([{ "label": "one" }, { "label": "two", "children": [{ "label": "child" }] }]),
+            );
+        }
+        "table" => {
+            obj.insert("columns".into(), json!([{ "id": "name", "title": "Name" }]));
+            obj.insert("rows".into(), json!([{ "cells": ["a"] }]));
+        }
+        "select" => {
+            obj.insert(
+                "options".into(),
+                json!([{ "label": "main", "value": "main" }]),
+            );
+            obj.insert("selected".into(), json!("main"));
+        }
+        "grid" | "virtual_list" => {
+            obj.insert(
+                "children".into(),
+                json!([{ "kind": "text", "value": "row" }]),
+            );
+        }
+        "tabs" => {
+            obj.insert(
+                "tabs".into(),
+                json!([{ "id": "a", "title": "A", "child": { "kind": "text", "value": "A" } }]),
+            );
+            obj.insert("active".into(), json!("a"));
         }
         "tablist" => {
             let n = rng.range(4) as usize;
@@ -252,6 +320,7 @@ fn fuzz_random_trees_never_panic_renderer() {
                             | "widget.node_count_exceeded"
                             | "widget.string_too_long"
                             | "widget.image_too_large"
+                            | "widget.asset_limit_exceeded"
                             | "widget.not_a_table"
                     ),
                     "unexpected error code: {} at {}",
@@ -333,4 +402,13 @@ fn fuzz_string_length_limit() {
     let err = decode_with_limits(&tree, WidgetLimits::DEFAULT).unwrap_err();
     assert_eq!(err.code, "widget.string_too_long");
     assert_eq!(err.path, "root.value");
+}
+
+#[test]
+fn fuzz_asset_path_limit() {
+    let huge = "x".repeat(10_000);
+    let tree = json!({ "kind": "icon", "path": huge });
+    let err = decode_with_limits(&tree, WidgetLimits::DEFAULT).unwrap_err();
+    assert_eq!(err.code, "widget.asset_limit_exceeded");
+    assert_eq!(err.path, "root.path");
 }

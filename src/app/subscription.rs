@@ -58,13 +58,14 @@ pub fn build(app: &App) -> Subscription<Message> {
         }
     };
 
-    let screen_sub = app
-        .tabs
-        .active_screen()
-        .map(|s| s.subscription())
-        .unwrap_or(Subscription::none());
-
-    let plugin_sub = crate::plugin::ui::screen::subscription(&app.plugin_host);
+    let screen_sub = if let Some(screen) = app.tabs.active_plugin_screen() {
+        screen.subscription_with_host(&app.plugin_host)
+    } else {
+        app.tabs
+            .active_screen()
+            .map(|s| s.subscription())
+            .unwrap_or(Subscription::none())
+    };
     let plugin_runtime_sub = if app.plugin_host.needs_runtime_tick() {
         iced::time::every(PLUGIN_RUNTIME_TICK_INTERVAL)
             .map(|t| Message::App(AppMessage::PluginRuntimeTick(t)))
@@ -79,7 +80,6 @@ pub fn build(app: &App) -> Subscription<Message> {
         fetch_tick_sub,
         animation_tick_sub,
         screen_sub,
-        plugin_sub,
         plugin_runtime_sub,
         sigterm_sub,
     ];

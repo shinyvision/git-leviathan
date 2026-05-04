@@ -6,7 +6,8 @@ mod functions;
 mod schema;
 mod types;
 
-use crate::api_version::HOST_API_VERSION;
+use crate::api_version::{EXTENSION_POINT_SCHEMA_VERSION, HOST_API_VERSION, WIDGET_SCHEMA_VERSION};
+use crate::descriptor::extension_point::EXTENSION_POINTS;
 use crate::descriptor::region::{RegionKind, REGIONS};
 use crate::descriptor::widget::WIDGETS;
 
@@ -18,6 +19,10 @@ pub use types::API_TYPES;
 
 pub fn describe() -> HostApiDescription {
     HostApiDescription {
+        stability_policy: STABILITY_POLICY,
+        compatibility_matrix: COMPATIBILITY_MATRIX,
+        semver_policy: SEMVER_POLICY,
+        experimental_apis: EXPERIMENTAL_APIS,
         host_api_version: ApiVersionInfo {
             major: HOST_API_VERSION.major,
             minor: HOST_API_VERSION.minor,
@@ -29,9 +34,67 @@ pub fn describe() -> HostApiDescription {
         types: API_TYPES,
         capabilities: API_CAPABILITIES,
         regions: describe_regions(),
+        extension_points: EXTENSION_POINTS,
         widgets: WIDGETS.iter().collect(),
     }
 }
+
+pub const STABILITY_POLICY: StabilityPolicy = StabilityPolicy {
+    public_api_version: "1.0",
+    descriptor_version: 1,
+    widget_schema_version: WIDGET_SCHEMA_VERSION,
+    extension_point_schema_version: EXTENSION_POINT_SCHEMA_VERSION,
+    stability: "stable",
+    migration_promise:
+        "UI v1 descriptors keep source-compatible additions within host 1.x; removals require a later major API.",
+};
+
+pub const COMPATIBILITY_MATRIX: &[CompatibilityMatrixRow] = &[CompatibilityMatrixRow {
+    host_version: "1.0",
+    plugin_api_version: "1.0",
+    widget_schema: WIDGET_SCHEMA_VERSION,
+    extension_points: &[
+        "main_bar.left",
+        "main_bar.center",
+        "main_bar.right",
+        "tab_bar.left",
+        "tab_bar.right",
+        "repository.sidebar.top",
+        "repository.sidebar.bottom",
+        "repository.graph.top",
+        "repository.graph.bottom",
+        "repository.details.top",
+        "repository.details.bottom",
+        "repository.diff.context_menu",
+        "repository.graph.context_menu",
+        "repository.graph.row_badge",
+        "repository.diff.line_gutter",
+        "overlays",
+        "screens",
+        "commands",
+        "settings.panel",
+        "dock.pane",
+    ],
+}];
+
+pub const SEMVER_POLICY: SemverPolicy = SemverPolicy {
+    descriptor_versioning:
+        "Descriptor schema changes increment descriptor_version; plugin api major changes reset the stable descriptor contract.",
+    can_add: &[
+        "new functions, types, optional fields, widgets, capabilities, events, and extension points in host 1.x",
+        "new enum values only when older plugins can ignore them",
+    ],
+    requires_deprecation: &[
+        "renaming public functions, fields, widgets, capabilities, events, or extension points",
+        "tightening validation for an accepted public v1 shape",
+    ],
+    can_remove: &[
+        "nothing from public UI v1 during host 1.x",
+        "experimental entries only after their descriptor marks the replacement promise",
+    ],
+};
+
+pub const EXPERIMENTAL_APIS: &[ExperimentalApi] = &[];
 
 pub fn all_functions() -> impl Iterator<Item = &'static ApiFunction> {
     API_MODULES
@@ -54,6 +117,9 @@ pub fn has_feature(feature: &str) -> bool {
         return false;
     }
     let name = name.strip_prefix("leviathan.").unwrap_or(name);
+    if name == "ui.context.typed" {
+        return true;
+    }
 
     API_MODULES.iter().any(|module| {
         major >= module.version.major
@@ -72,6 +138,9 @@ pub fn has_feature(feature: &str) -> bool {
         || REGIONS
             .iter()
             .any(|region| format!("region.{}", region.name) == name)
+        || EXTENSION_POINTS
+            .iter()
+            .any(|point| format!("extension.{}", point.id) == name)
         || WIDGETS
             .iter()
             .any(|widget| format!("widget.{}", widget.kind) == name)
@@ -136,8 +205,13 @@ mod tests {
         assert!(has_feature("fs.read_file@1"));
         assert!(has_feature("leviathan.fs.read_file@1"));
         assert!(has_feature("api.describe@1"));
-        assert!(has_feature("ui.regions.add_slot@1"));
-        assert!(!has_feature("ui.regions.add_slot@2"));
+        assert!(has_feature("ui.slot@1"));
+        assert!(has_feature("ui.slot.add@1"));
+        assert!(has_feature("ui.context@1"));
+        assert!(has_feature("ui.contribute@1"));
+        assert!(has_feature("extension.repository.graph.row_badge@1"));
+        assert!(has_feature("ui.context.typed@1"));
+        assert!(!has_feature("ui.slot.add@2"));
         assert!(has_feature("log@1"));
     }
 
@@ -184,6 +258,9 @@ mod tests {
     fn description_serializes() {
         let value = serde_json::to_value(describe()).unwrap();
         assert_eq!(value["host_api_version"]["label"], "1.0");
+        assert_eq!(value["stability_policy"]["stability"], "stable");
+        assert_eq!(value["stability_policy"]["descriptor_version"], 1);
+        assert!(value["experimental_apis"].as_array().unwrap().is_empty());
         assert!(value["modules"].as_array().unwrap().len() > 5);
         assert!(value["widgets"].as_array().unwrap().len() > 5);
     }
