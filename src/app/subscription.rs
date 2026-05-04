@@ -17,7 +17,6 @@ use super::App;
 
 const FETCH_TICK_INTERVAL: Duration = Duration::from_secs(30);
 const ANIMATION_TICK_INTERVAL: Duration = Duration::from_millis(16);
-const FETCH_SPINNER_TICK_INTERVAL: Duration = Duration::from_millis(250);
 const PLUGIN_RUNTIME_TICK_INTERVAL: Duration = Duration::from_millis(50);
 
 pub fn build(app: &App) -> Subscription<Message> {
@@ -53,9 +52,6 @@ pub fn build(app: &App) -> Subscription<Message> {
             || app.toasts.is_animating();
         if screen_or_toast_animating {
             iced::time::every(ANIMATION_TICK_INTERVAL)
-                .map(|t| Message::App(AppMessage::AnimationTick(t)))
-        } else if app.fetch.is_fetching() {
-            iced::time::every(FETCH_SPINNER_TICK_INTERVAL)
                 .map(|t| Message::App(AppMessage::AnimationTick(t)))
         } else {
             Subscription::none()
@@ -164,7 +160,7 @@ mod tests {
     fn intervals_positive() {
         assert!(FETCH_TICK_INTERVAL > Duration::ZERO);
         assert!(ANIMATION_TICK_INTERVAL > Duration::ZERO);
-        assert!(FETCH_SPINNER_TICK_INTERVAL > ANIMATION_TICK_INTERVAL);
+        assert!(PLUGIN_RUNTIME_TICK_INTERVAL > Duration::ZERO);
     }
 
     #[test]

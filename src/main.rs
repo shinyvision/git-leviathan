@@ -2,6 +2,7 @@ mod app;
 mod assets;
 mod config;
 mod core;
+mod executor;
 mod message;
 pub mod plugin;
 mod screens;
@@ -27,6 +28,7 @@ fn main() -> iced::Result {
         .title(|_: &App| "Git Leviathan".to_string())
         .subscription(App::subscription)
         .theme(App::theme)
+        .executor::<executor::BoundedTokioExecutor>()
         .antialiasing(true)
         .font(JETBRAINS_MONO_REG)
         .font(JETBRAINS_MONO_BOLD)
