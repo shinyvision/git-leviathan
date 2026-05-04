@@ -204,6 +204,11 @@ impl FileWatcherRegistry {
         inner.watchers.contains_key(&watch_id)
     }
 
+    pub fn has_watchers(&self) -> bool {
+        let inner = self.inner.lock().expect("watcher registry poisoned");
+        !inner.watchers.is_empty()
+    }
+
     pub fn summaries(&self) -> Vec<WatcherSummary> {
         let inner = self.inner.lock().expect("watcher registry poisoned");
         let mut out: Vec<WatcherSummary> = inner

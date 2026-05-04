@@ -303,6 +303,11 @@ impl AsyncJobRegistry {
         let inner = self.inner.lock().expect("async registry poisoned");
         inner.jobs.contains_key(&job_id)
     }
+
+    pub fn has_jobs(&self) -> bool {
+        let inner = self.inner.lock().expect("async registry poisoned");
+        !inner.jobs.is_empty()
+    }
 }
 
 /// Shape exposed in the devtools snapshot. Mirrored by

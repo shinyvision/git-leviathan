@@ -1,6 +1,10 @@
-use super::helpers::{spawn_git_command, wrap_git2_error};
+use std::time::Duration;
+
+use super::helpers::{spawn_git_command_with_timeout, wrap_git2_error};
 use super::GitService;
 use crate::services::git_error::GitError;
+
+const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 pub(super) fn fetch_all_refs(service: &GitService) -> Result<(), GitError> {
     let repo_dir = service
@@ -29,7 +33,12 @@ pub(super) fn fetch_all_refs(service: &GitService) -> Result<(), GitError> {
         .cloned()
         .unwrap_or_else(|| remotes[0].clone());
 
-    let output = spawn_git_command(&repo_dir, &["fetch", &remote_name], "fetch")?;
+    let output = spawn_git_command_with_timeout(
+        &repo_dir,
+        &["fetch", &remote_name],
+        "fetch",
+        FETCH_TIMEOUT,
+    )?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

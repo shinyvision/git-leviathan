@@ -189,6 +189,11 @@ impl TimerRegistry {
             .unwrap_or(false)
     }
 
+    pub fn has_timers(&self) -> bool {
+        let inner = self.inner.lock().expect("timer registry poisoned");
+        inner.timers.values().any(|r| !r.cancelled)
+    }
+
     pub fn summaries(&self) -> Vec<TimerSummary> {
         let inner = self.inner.lock().expect("timer registry poisoned");
         let mut out: Vec<TimerSummary> = inner

@@ -25,6 +25,10 @@ pub struct DeferredQueue {
 }
 
 impl DeferredQueue {
+    pub fn has_pending(&self) -> bool {
+        !self.immediate.is_empty() || !self.delayed.is_empty() || !self.coroutines.is_empty()
+    }
+
     pub fn drain_immediate(&mut self) -> Vec<DeferredCallback> {
         std::mem::take(&mut self.immediate)
     }

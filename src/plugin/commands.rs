@@ -938,6 +938,10 @@ impl PendingCommandEvents {
     pub fn drain(&self) -> Vec<PendingCommandEvent> {
         std::mem::take(&mut *self.inner.borrow_mut())
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner.borrow().is_empty()
+    }
 }
 
 /// All shared state the dispatcher needs. Constructed once on the

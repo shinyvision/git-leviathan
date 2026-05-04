@@ -26,6 +26,13 @@ api_version = "1.0"
 capabilities = ["timer:create"]
 "#;
 
+const IDLE_MANIFEST: &str = r#"
+id = "idlep"
+name = "idlep"
+version = "0.1.0"
+api_version = "1.0"
+"#;
+
 fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F, timeout_ms: u64) {
     let start = Instant::now();
     loop {
@@ -38,6 +45,49 @@ fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F, ti
         }
         std::thread::sleep(Duration::from_millis(10));
     }
+}
+
+#[test]
+fn loaded_plugin_without_async_work_does_not_need_runtime_tick() {
+    let mut host = MockHost::new();
+    host.load_inline("idlep", IDLE_MANIFEST, "").expect("load");
+
+    assert!(host.host().has_loaded_plugins());
+    assert!(!host.host().needs_runtime_tick());
+}
+
+#[test]
+fn scheduled_callback_needs_runtime_tick_until_drained() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "idlep",
+        IDLE_MANIFEST,
+        r#"
+        _G.ran = 0
+        leviathan.api.schedule(function() _G.ran = 1 end)
+        "#,
+    )
+    .expect("load");
+
+    assert!(host.host().needs_runtime_tick());
+    host.tick();
+    assert_eq!(host.read_global_i64("idlep", "ran"), Some(1));
+    assert!(!host.host().needs_runtime_tick());
+}
+
+#[test]
+fn active_timer_keeps_runtime_tick_enabled() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "timerp",
+        TIMER_MANIFEST,
+        r#"
+        _G.t = leviathan.timer.every(1000, function() end)
+        "#,
+    )
+    .expect("load");
+
+    assert!(host.host().needs_runtime_tick());
 }
 
 #[test]

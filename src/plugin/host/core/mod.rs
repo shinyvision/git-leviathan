@@ -235,11 +235,23 @@ impl PluginHost {
         self.watchers.clone()
     }
 
-    /// The app uses this to enable the plugin runtime tick only when
-    /// there is Lua state that can own jobs, timers, watchers, or
-    /// scheduled callbacks.
+    /// True when at least one plugin has loaded into a Lua state.
     pub fn has_loaded_plugins(&self) -> bool {
         !self.plugins.is_empty()
+    }
+
+    /// The app only needs to poll the Lua runtime while there is work that can
+    /// complete independently of normal UI/input events.
+    pub fn needs_runtime_tick(&self) -> bool {
+        !self.pending_command_events.is_empty()
+            || !self.pending_git_events.is_empty()
+            || self.async_jobs.has_jobs()
+            || self.timers.has_timers()
+            || self.watchers.has_watchers()
+            || self
+                .plugins
+                .values()
+                .any(|plugin| plugin.deferred.borrow().has_pending())
     }
 
     /// Build the [`AsyncRuntimeContext`] handed to every plugin's API

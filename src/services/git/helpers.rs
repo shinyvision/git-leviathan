@@ -3,8 +3,10 @@
 //! via `wrap_git2_error`; callers should not re-roll their own boilerplate.
 
 use std::collections::HashSet;
+use std::io::Read;
 use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use git2::{Branch, BranchType, Commit, ErrorClass, ErrorCode, Oid, Reference, Repository};
 
@@ -143,6 +145,24 @@ pub(super) fn spawn_git_command(
     args: &[&str],
     op: &str,
 ) -> Result<Output, GitError> {
+    spawn_git_command_inner(repo_path, args, op, None)
+}
+
+pub(super) fn spawn_git_command_with_timeout(
+    repo_path: &str,
+    args: &[&str],
+    op: &str,
+    timeout: Duration,
+) -> Result<Output, GitError> {
+    spawn_git_command_inner(repo_path, args, op, Some(timeout))
+}
+
+fn spawn_git_command_inner(
+    repo_path: &str,
+    args: &[&str],
+    op: &str,
+    timeout: Option<Duration>,
+) -> Result<Output, GitError> {
     let child = Command::new("git")
         .current_dir(repo_path)
         .args(args)
@@ -153,9 +173,70 @@ pub(super) fn spawn_git_command(
         .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))?;
     let pid = child.id();
     register_pid(pid);
-    let result = child
-        .wait_with_output()
-        .map_err(|e| GitError::Other(format!("{op}: failed to wait on git: {e}")));
+    let result = match timeout {
+        Some(timeout) => wait_with_timeout(child, op, timeout),
+        None => child
+            .wait_with_output()
+            .map_err(|e| GitError::Other(format!("{op}: failed to wait on git: {e}"))),
+    };
     unregister_pid(pid);
     result
+}
+
+fn wait_with_timeout(
+    mut child: std::process::Child,
+    op: &str,
+    timeout: Duration,
+) -> Result<Output, GitError> {
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| GitError::Other(format!("{op}: failed to capture stdout")))?;
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| GitError::Other(format!("{op}: failed to capture stderr")))?;
+    let stdout_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stdout.read_to_end(&mut buf);
+        buf
+    });
+    let stderr_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        buf
+    });
+
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if start.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(GitError::NetworkFailure {
+                    op: op.to_string(),
+                    reason: format!("timed out after {}s", timeout.as_secs()),
+                });
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = stdout_reader.join();
+                let _ = stderr_reader.join();
+                return Err(GitError::Other(format!("{op}: failed to wait on git: {e}")));
+            }
+        }
+    };
+
+    let stdout = stdout_reader.join().unwrap_or_default();
+    let stderr = stderr_reader.join().unwrap_or_default();
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }

@@ -1,6 +1,10 @@
-use super::helpers::{spawn_git_command, wrap_git2_error};
+use std::time::Duration;
+
+use super::helpers::{spawn_git_command, spawn_git_command_with_timeout, wrap_git2_error};
 use super::GitService;
 use crate::services::git_error::GitError;
+
+const LIST_REMOTE_TAGS_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(super) fn create_tag(
     service: &GitService,
@@ -89,10 +93,11 @@ pub(super) fn list_remote_tags(
     remote_name: &str,
 ) -> Result<Vec<String>, GitError> {
     let repo_dir = repo_dir_str(service);
-    let output = spawn_git_command(
+    let output = spawn_git_command_with_timeout(
         &repo_dir,
         &["ls-remote", "--tags", remote_name],
         "ls-remote --tags",
+        LIST_REMOTE_TAGS_TIMEOUT,
     )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

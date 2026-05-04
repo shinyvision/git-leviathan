@@ -50,6 +50,13 @@ impl PendingGitEvents {
             .map(|mut inner| std::mem::take(&mut *inner))
             .unwrap_or_default()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.inner
+            .lock()
+            .map(|inner| inner.is_empty())
+            .unwrap_or(true)
+    }
 }
 
 #[derive(Clone)]

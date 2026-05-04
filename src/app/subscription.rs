@@ -17,6 +17,7 @@ use super::App;
 
 const FETCH_TICK_INTERVAL: Duration = Duration::from_secs(30);
 const ANIMATION_TICK_INTERVAL: Duration = Duration::from_millis(16);
+const FETCH_SPINNER_TICK_INTERVAL: Duration = Duration::from_millis(250);
 const PLUGIN_RUNTIME_TICK_INTERVAL: Duration = Duration::from_millis(50);
 
 pub fn build(app: &App) -> Subscription<Message> {
@@ -44,15 +45,17 @@ pub fn build(app: &App) -> Subscription<Message> {
     let animation_tick_sub = if app.tabs.is_empty() {
         Subscription::none()
     } else {
-        let is_animating = app
+        let screen_or_toast_animating = app
             .tabs
             .active_screen()
             .map(|s| s.is_animating())
             .unwrap_or(false)
-            || app.toasts.is_animating()
-            || app.fetch.is_fetching();
-        if is_animating {
+            || app.toasts.is_animating();
+        if screen_or_toast_animating {
             iced::time::every(ANIMATION_TICK_INTERVAL)
+                .map(|t| Message::App(AppMessage::AnimationTick(t)))
+        } else if app.fetch.is_fetching() {
+            iced::time::every(FETCH_SPINNER_TICK_INTERVAL)
                 .map(|t| Message::App(AppMessage::AnimationTick(t)))
         } else {
             Subscription::none()
@@ -66,7 +69,7 @@ pub fn build(app: &App) -> Subscription<Message> {
         .unwrap_or(Subscription::none());
 
     let plugin_sub = crate::plugin::ui::screen::subscription(&app.plugin_host);
-    let plugin_runtime_sub = if app.plugin_host.has_loaded_plugins() {
+    let plugin_runtime_sub = if app.plugin_host.needs_runtime_tick() {
         iced::time::every(PLUGIN_RUNTIME_TICK_INTERVAL)
             .map(|t| Message::App(AppMessage::PluginRuntimeTick(t)))
     } else {
@@ -161,6 +164,7 @@ mod tests {
     fn intervals_positive() {
         assert!(FETCH_TICK_INTERVAL > Duration::ZERO);
         assert!(ANIMATION_TICK_INTERVAL > Duration::ZERO);
+        assert!(FETCH_SPINNER_TICK_INTERVAL > ANIMATION_TICK_INTERVAL);
     }
 
     #[test]
