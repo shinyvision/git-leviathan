@@ -13,7 +13,7 @@ mod function_ui;
 
 use function_common::V1;
 use function_git::{GIT_FUNCTIONS, REPOSITORY_FUNCTIONS};
-use function_io::{ENV_FUNCTIONS, FS_FUNCTIONS};
+use function_io::{BASH_FUNCTIONS, ENV_FUNCTIONS, FS_FUNCTIONS, SHELL_FUNCTIONS, ZSH_FUNCTIONS};
 use function_platform::{
     ASYNC_FUNCTIONS, AUTOCMD_FUNCTIONS, COMMAND_FUNCTIONS, HEALTH_FUNCTIONS, KEYMAP_FUNCTIONS,
     PERSIST_FUNCTIONS, RUNTIME_FUNCTIONS, SECRETS_FUNCTIONS, SERVICES_FUNCTIONS,
@@ -260,6 +260,54 @@ pub const API_MODULES: &[ApiModule] = &[
         events: &[],
         types: &["leviathan.env"],
         capabilities: &["env"],
+    },
+    ApiModule {
+        name: "shell",
+        table: "leviathan.shell",
+        version: V1,
+        doc: "Host default shell namespace.",
+        functions: SHELL_FUNCTIONS,
+        events: &[],
+        types: &[
+            "leviathan.shell",
+            "LeviathanShellRunSpec",
+            "LeviathanShellOpenSpec",
+            "LeviathanShellRunResult",
+            "LeviathanShellJobHandle",
+        ],
+        capabilities: &["process:spawn"],
+    },
+    ApiModule {
+        name: "bash",
+        table: "leviathan.bash",
+        version: V1,
+        doc: "Bash shell namespace.",
+        functions: BASH_FUNCTIONS,
+        events: &[],
+        types: &[
+            "leviathan.bash",
+            "LeviathanShellRunSpec",
+            "LeviathanShellOpenSpec",
+            "LeviathanShellRunResult",
+            "LeviathanShellJobHandle",
+        ],
+        capabilities: &["process:spawn"],
+    },
+    ApiModule {
+        name: "zsh",
+        table: "leviathan.zsh",
+        version: V1,
+        doc: "Zsh shell namespace.",
+        functions: ZSH_FUNCTIONS,
+        events: &[],
+        types: &[
+            "leviathan.zsh",
+            "LeviathanShellRunSpec",
+            "LeviathanShellOpenSpec",
+            "LeviathanShellRunResult",
+            "LeviathanShellJobHandle",
+        ],
+        capabilities: &["process:spawn"],
     },
     ApiModule {
         name: "repository",

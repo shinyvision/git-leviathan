@@ -1,11 +1,16 @@
 use super::schema::*;
 
 mod field_sets;
+mod shell;
 
 use field_sets::{
     TYPE_ASSET_HANDLE_FIELDS, TYPE_DOCK_PANEL_HANDLE_FIELDS, TYPE_DOCK_PANEL_SPEC_FIELDS,
     TYPE_SCREEN_FIELDS, TYPE_SETTINGS_CONTEXT_FIELDS, TYPE_SETTINGS_PANEL_SPEC_FIELDS,
     TYPE_SLOT_FIELDS, TYPE_SLOT_HANDLE_FIELDS, TYPE_SLOT_TARGET_FIELDS, TYPE_UI_FIELDS,
+};
+use shell::{
+    TYPE_SHELL_JOB_HANDLE_METHODS, TYPE_SHELL_NAMESPACE_FIELDS, TYPE_SHELL_OPEN_SPEC_FIELDS,
+    TYPE_SHELL_RUN_RESULT_FIELDS, TYPE_SHELL_RUN_SPEC_FIELDS,
 };
 
 const TYPE_LEVIATHAN_FIELDS: &[ApiTypeField] = &[
@@ -38,6 +43,24 @@ const TYPE_LEVIATHAN_FIELDS: &[ApiTypeField] = &[
         lua_type: "leviathan.env",
         required: true,
         doc: "Environment namespace.",
+    },
+    ApiTypeField {
+        name: "shell",
+        lua_type: "leviathan.shell",
+        required: true,
+        doc: "Host default shell namespace.",
+    },
+    ApiTypeField {
+        name: "bash",
+        lua_type: "leviathan.bash",
+        required: true,
+        doc: "Bash shell namespace.",
+    },
+    ApiTypeField {
+        name: "zsh",
+        lua_type: "leviathan.zsh",
+        required: true,
+        doc: "Zsh shell namespace.",
     },
     ApiTypeField {
         name: "repository",
@@ -1308,6 +1331,55 @@ pub const API_TYPES: &[ApiType] = &[
         doc: "Environment namespace.",
         fields: &[],
         methods: &[],
+    },
+    ApiType {
+        name: "leviathan.shell",
+        since: "1.0",
+        doc: "Host default shell namespace.",
+        fields: TYPE_SHELL_NAMESPACE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.bash",
+        since: "1.0",
+        doc: "Bash shell namespace.",
+        fields: TYPE_SHELL_NAMESPACE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.zsh",
+        since: "1.0",
+        doc: "Zsh shell namespace.",
+        fields: TYPE_SHELL_NAMESPACE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanShellRunSpec",
+        since: "1.0",
+        doc: "Shell command execution spec.",
+        fields: TYPE_SHELL_RUN_SPEC_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanShellOpenSpec",
+        since: "1.0",
+        doc: "Interactive PTY shell session spec.",
+        fields: TYPE_SHELL_OPEN_SPEC_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanShellRunResult",
+        since: "1.0",
+        doc: "Completed shell command result.",
+        fields: TYPE_SHELL_RUN_RESULT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanShellJobHandle",
+        since: "1.0",
+        doc: "Cancellable shell job handle.",
+        fields: &[],
+        methods: TYPE_SHELL_JOB_HANDLE_METHODS,
     },
     ApiType {
         name: "leviathan.tab_registry",

@@ -715,6 +715,7 @@ api_version = "1.0"
                 "main_bar right builtin.search priority=10 owner=builtin\n",
                 "main_bar right plugin.file_explorer.files priority=100 owner=file_explorer\n",
                 "main_bar right plugin.foo_demo.foo priority=101 owner=foo_demo\n",
+                "repository graph.bottom plugin.terminal.panel priority=100 owner=terminal\n",
                 "repository sidebar.top plugin.regions_demo.banner priority=10 owner=regions_demo\n",
                 "tab_bar center builtin.tab_list priority=10 owner=tablist_demo\n",
                 "tab_bar left builtin.plus_button priority=10 owner=builtin\n",

@@ -48,6 +48,8 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 git_leviathan_plugin_api = { path = "git_leviathan_plugin_api" }
 semver = { workspace = true }
+portable-pty = "0.8"
+vt100 = "0.15"
 
 [package.metadata.deb]
 name = "git-leviathan"

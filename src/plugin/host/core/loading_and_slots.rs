@@ -1021,6 +1021,8 @@ impl PluginHost {
             }
         }
         self.pending_navigation_effects.extend(effects);
+        let only = HashSet::from([plugin_id.to_string()]);
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::PluginStateChanged], Some(&only));
         self.drain_lua_command_effects();
     }
 }

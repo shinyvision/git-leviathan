@@ -294,6 +294,7 @@ impl PluginHost {
             || self.async_jobs.has_jobs()
             || self.timers.has_timers()
             || self.watchers.has_watchers()
+            || crate::plugin::terminal::registry().has_sessions()
             || self
                 .plugins
                 .values()

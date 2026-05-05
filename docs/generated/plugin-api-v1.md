@@ -44,6 +44,9 @@ No experimental APIs are exposed in plugin API 1.0.
 - `assets` (1.0) - Plugin asset handle APIs.
 - `fs` (1.0) - Filesystem and path helper APIs.
 - `env` (1.0) - Process environment access.
+- `shell` (1.0) - Host default shell namespace.
+- `bash` (1.0) - Bash shell namespace.
+- `zsh` (1.0) - Zsh shell namespace.
 - `repository` (1.0) - Active repository snapshot plus typed read APIs.
 - `git` (1.0) - Typed Git write APIs. All routes are capability-checked, audited, and gated by the host's confirmation policy when destructive.
 - `tab_registry` (1.0) - Read-only tab snapshot plus queued tab mutation APIs.
@@ -156,7 +159,7 @@ No experimental APIs are exposed in plugin API 1.0.
 - `fs:write:workdir` - Write paths under the active workdir when configured.
 - `fs:write:any` - Write any host path.
 - `fs:write:scope:<dir>` - Write paths under an explicit user-chosen directory (canonicalised; symlinks escaping the scope are denied).
-- `process:spawn` - Reserved process-spawn capability (any binary).
+- `process:spawn` - Run arbitrary host commands through process or shell APIs.
 - `process:spawn:<binary>` - Spawn a specific binary by basename (e.g. `process:spawn:git`).
 - `net:fetch` - Reserved network-fetch capability (any host).
 - `net:fetch:<domain>` - Fetch from a specific domain (e.g. `net:fetch:github.com`).
@@ -208,6 +211,7 @@ No experimental APIs are exposed in plugin API 1.0.
 - `text` (since 1.0; stable) - Static text label.
 - `button` (since 1.0; stable) - Clickable button that emits a widget event.
 - `text_input` (since 1.0; stable) - Single-line text input that emits plugin events.
+- `terminal` (since 1.0; stable) - Native PTY terminal emulator surface.
 - `row` (since 1.0; stable) - Horizontal widget layout.
 - `column` (since 1.0; stable) - Vertical widget layout.
 - `container` (since 1.0; stable) - Single-child layout and background wrapper.

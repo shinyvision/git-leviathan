@@ -322,6 +322,37 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
         ],
     },
     WidgetDescriptor {
+        kind: "terminal",
+        since: "1.0",
+        doc: "Native PTY terminal emulator surface.",
+        fields: &[
+            WidgetFieldDescriptor {
+                name: "session",
+                lua_type: "integer",
+                required: true,
+                doc: "Terminal session id returned by leviathan.shell.open.",
+            },
+            WidgetFieldDescriptor {
+                name: "width",
+                lua_type: "number|string",
+                required: false,
+                doc: "Fixed pixels, fill, or shrink.",
+            },
+            WidgetFieldDescriptor {
+                name: "height",
+                lua_type: "number|string",
+                required: false,
+                doc: "Fixed pixels, fill, or shrink.",
+            },
+            WidgetFieldDescriptor {
+                name: "font_size",
+                lua_type: "number",
+                required: false,
+                doc: "Monospace font size in pixels.",
+            },
+        ],
+    },
+    WidgetDescriptor {
         kind: "row",
         since: "1.0",
         doc: "Horizontal widget layout.",
@@ -731,6 +762,7 @@ pub enum WidgetKind {
     Text(TextWidget),
     Button(ButtonWidget),
     TextInput(TextInputWidget),
+    Terminal(TerminalWidget),
     Row(RowWidget),
     Column(ColumnWidget),
     Container(ContainerWidget),
@@ -909,6 +941,19 @@ pub struct TextInputWidget {
     pub autofocus: Option<bool>,
     #[serde(default)]
     pub style: Option<TextInputStyle>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct TerminalWidget {
+    #[serde(default, flatten)]
+    pub meta: WidgetMeta,
+    pub session: u64,
+    #[serde(default)]
+    pub width: Option<Length>,
+    #[serde(default)]
+    pub height: Option<Length>,
+    #[serde(default)]
+    pub font_size: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -1267,6 +1312,24 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("on_input"), "got: {err}");
+    }
+
+    #[test]
+    fn terminal_widget_validates_session() {
+        let json = serde_json::json!({
+            "kind": "terminal",
+            "session": 7,
+            "width": "fill",
+            "height": 240,
+            "font_size": 13
+        });
+        let w: WidgetKind = serde_json::from_value(json).unwrap();
+        if let WidgetKind::Terminal(terminal) = w {
+            assert_eq!(terminal.session, 7);
+            assert_eq!(terminal.font_size, Some(13.0));
+        } else {
+            panic!("expected terminal");
+        }
     }
 
     #[test]

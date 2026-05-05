@@ -69,7 +69,7 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "process:spawn",
         since: "1.0",
-        doc: "Reserved process-spawn capability (any binary).",
+        doc: "Run arbitrary host commands through process or shell APIs.",
     },
     ApiCapability {
         name: "process:spawn:<binary>",

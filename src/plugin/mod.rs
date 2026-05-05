@@ -45,6 +45,7 @@ pub mod slots;
 pub mod staged_reload;
 pub mod storage;
 pub mod tab_snapshot;
+pub mod terminal;
 pub mod timers;
 pub mod ui;
 pub mod watchers;

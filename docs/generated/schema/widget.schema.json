@@ -308,6 +308,92 @@
     {
       "type": "object",
       "required": [
+        "kind",
+        "session"
+      ],
+      "properties": {
+        "disabled_reason": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "focus_order": {
+          "default": null,
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int32"
+        },
+        "font_size": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "height": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "terminal"
+          ]
+        },
+        "label": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "role": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "shortcut": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "width": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Length"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
         "kind"
       ],
       "properties": {
@@ -7283,6 +7369,92 @@
             },
             "value": {
               "type": "string"
+            },
+            "width": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "session"
+          ],
+          "properties": {
+            "disabled_reason": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "focus_order": {
+              "default": null,
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32"
+            },
+            "font_size": {
+              "default": null,
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "float"
+            },
+            "height": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "terminal"
+              ]
+            },
+            "label": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "session": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "shortcut": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "width": {
               "default": null,

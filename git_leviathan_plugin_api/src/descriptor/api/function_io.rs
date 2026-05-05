@@ -5,6 +5,87 @@ const FS_READ_CAP: &[&str] = &["fs:read"];
 const FS_WRITE_CAP: &[&str] = &["fs:write:*"];
 const FS_READ_WRITE_CAP: &[&str] = &["fs:read", "fs:write:*"];
 const ENV_CAP: &[&str] = &["env"];
+const PROCESS_SPAWN_CAP: &[&str] = &["process:spawn"];
+const SHELL_RUN_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "spec",
+        lua_type: "string|LeviathanShellRunSpec",
+        required: true,
+        doc: "Command string or shell run spec.",
+    },
+    ApiParam {
+        name: "on_complete",
+        lua_type: "fun(ok:boolean, result:LeviathanShellRunResult|string)|nil",
+        required: false,
+        doc: "Completion callback run on the host Lua thread.",
+    },
+];
+const SHELL_RUN_RETURNS: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "LeviathanShellJobHandle|nil",
+        doc: "Cancellable job handle on success.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message when the command could not be started.",
+    },
+];
+const SHELL_OPEN_PARAMS: &[ApiParam] = &[ApiParam {
+    name: "spec",
+    lua_type: "LeviathanShellOpenSpec|nil",
+    required: false,
+    doc: "Optional PTY session settings.",
+}];
+const SHELL_OPEN_RETURNS: &[ApiReturn] = &[
+    ApiReturn {
+        lua_type: "integer|nil",
+        doc: "Terminal session id on success.",
+    },
+    ApiReturn {
+        lua_type: "string|nil",
+        doc: "Error message when the session could not be opened.",
+    },
+];
+const SHELL_WRITE_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "session",
+        lua_type: "integer",
+        required: true,
+        doc: "Terminal session id.",
+    },
+    ApiParam {
+        name: "data",
+        lua_type: "string",
+        required: true,
+        doc: "Text or control bytes to write to the PTY.",
+    },
+];
+const SHELL_RESIZE_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "session",
+        lua_type: "integer",
+        required: true,
+        doc: "Terminal session id.",
+    },
+    ApiParam {
+        name: "cols",
+        lua_type: "integer",
+        required: true,
+        doc: "Terminal column count.",
+    },
+    ApiParam {
+        name: "rows",
+        lua_type: "integer",
+        required: true,
+        doc: "Terminal row count.",
+    },
+];
+const SHELL_CLOSE_PARAMS: &[ApiParam] = &[ApiParam {
+    name: "session",
+    lua_type: "integer",
+    required: true,
+    doc: "Terminal session id.",
+}];
 
 pub(super) const FS_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
@@ -652,6 +733,213 @@ pub(super) const ENV_FUNCTIONS: &[ApiFunction] = &[
             doc: "Environment map.",
         }],
         capabilities: ENV_CAP,
+        validation: NO_VALIDATION,
+    },
+];
+
+pub(super) const SHELL_FUNCTIONS: &[ApiFunction] = &[
+    ApiFunction {
+        path: "leviathan.shell.run",
+        name: "run",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Run a command through the host default shell on a worker thread.",
+        params: SHELL_RUN_PARAMS,
+        returns: SHELL_RUN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.shell.open",
+        name: "open",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Open an interactive PTY session using the host default shell.",
+        params: SHELL_OPEN_PARAMS,
+        returns: SHELL_OPEN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.shell.write",
+        name: "write",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Write text or control bytes to a PTY session owned by the plugin.",
+        params: SHELL_WRITE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.shell.resize",
+        name: "resize",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Resize a PTY session owned by the plugin.",
+        params: SHELL_RESIZE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.shell.close",
+        name: "close",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Close a PTY session owned by the plugin.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.shell.is_running",
+        name: "is_running",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a PTY session owned by the plugin is still running.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+];
+
+pub(super) const BASH_FUNCTIONS: &[ApiFunction] = &[
+    ApiFunction {
+        path: "leviathan.bash.run",
+        name: "run",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Run a command through bash on a worker thread.",
+        params: SHELL_RUN_PARAMS,
+        returns: SHELL_RUN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.bash.open",
+        name: "open",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Open an interactive PTY session using bash.",
+        params: SHELL_OPEN_PARAMS,
+        returns: SHELL_OPEN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.bash.write",
+        name: "write",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Write text or control bytes to a PTY session owned by the plugin.",
+        params: SHELL_WRITE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.bash.resize",
+        name: "resize",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Resize a PTY session owned by the plugin.",
+        params: SHELL_RESIZE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.bash.close",
+        name: "close",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Close a PTY session owned by the plugin.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.bash.is_running",
+        name: "is_running",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a PTY session owned by the plugin is still running.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+];
+
+pub(super) const ZSH_FUNCTIONS: &[ApiFunction] = &[
+    ApiFunction {
+        path: "leviathan.zsh.run",
+        name: "run",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Run a command through zsh on a worker thread.",
+        params: SHELL_RUN_PARAMS,
+        returns: SHELL_RUN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.zsh.open",
+        name: "open",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Open an interactive PTY session using zsh.",
+        params: SHELL_OPEN_PARAMS,
+        returns: SHELL_OPEN_RETURNS,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.zsh.write",
+        name: "write",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Write text or control bytes to a PTY session owned by the plugin.",
+        params: SHELL_WRITE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.zsh.resize",
+        name: "resize",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Resize a PTY session owned by the plugin.",
+        params: SHELL_RESIZE_PARAMS,
+        returns: OK_ERR_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.zsh.close",
+        name: "close",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Close a PTY session owned by the plugin.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
+        validation: NO_VALIDATION,
+    },
+    ApiFunction {
+        path: "leviathan.zsh.is_running",
+        name: "is_running",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Return whether a PTY session owned by the plugin is still running.",
+        params: SHELL_CLOSE_PARAMS,
+        returns: BOOL_RET,
+        capabilities: PROCESS_SPAWN_CAP,
         validation: NO_VALIDATION,
     },
 ];

@@ -70,6 +70,14 @@ impl PluginHost {
         // `HeadChanged` / `RefsChanged` / etc. fire on the next tick
         // even if the plugin invoked the op via `tick`-deferred Lua.
         self.flush_pending_git_events();
+        let terminal_changed = crate::plugin::terminal::registry().drain();
+        if !terminal_changed.is_empty() {
+            let only = terminal_changed.into_iter().collect::<HashSet<_>>();
+            self.invalidate_dynamic_widgets(
+                &[crate::plugin::ui::invalidation::UiInvalidationCause::PluginStateChanged],
+                Some(&only),
+            );
+        }
         let now = Instant::now();
         let ids: Vec<String> = self.plugins.keys().cloned().collect();
         let mut pending: Vec<PluginDiagnostic> = Vec::new();

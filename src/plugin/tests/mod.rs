@@ -24,6 +24,7 @@ mod reload_transactions;
 mod repository_git_api;
 mod resource_lifecycle;
 mod runtime_path;
+mod shell_api;
 mod widget_ast_core;
 mod widget_ast_fuzz;
 mod widget_ast_snapshot;

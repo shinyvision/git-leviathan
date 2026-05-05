@@ -30,6 +30,7 @@ pub mod repository;
 pub mod secrets;
 pub mod services_api;
 pub mod settings;
+pub mod shell;
 pub mod tab_registry;
 pub mod timer;
 pub mod ui;
@@ -319,6 +320,18 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         },
     )?;
     env::install(lua, &leviathan, Rc::clone(&guard))?;
+    shell::install(
+        lua,
+        &leviathan,
+        shell::ShellInstallContext {
+            guard: Rc::clone(&guard),
+            ledger: ledger.clone(),
+            registry: async_ctx.jobs.clone(),
+            job_callbacks: Rc::clone(&async_ctx.job_callbacks),
+            plugin_id: plugin_id.clone(),
+            generation_id,
+        },
+    )?;
     tab_registry::install(lua, &leviathan, pending_tab_ops)?;
     services_api::install(lua, services_ctx, ledger.clone(), &leviathan)?;
     persist::install(lua, persist_ctx.clone(), &leviathan)?;

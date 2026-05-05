@@ -135,6 +135,37 @@
     ]
   },
   {
+    "kind": "terminal",
+    "since": "1.0",
+    "doc": "Native PTY terminal emulator surface.",
+    "fields": [
+      {
+        "name": "session",
+        "lua_type": "integer",
+        "required": true,
+        "doc": "Terminal session id returned by leviathan.shell.open."
+      },
+      {
+        "name": "width",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "height",
+        "lua_type": "number|string",
+        "required": false,
+        "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "font_size",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Monospace font size in pixels."
+      }
+    ]
+  },
+  {
     "kind": "row",
     "since": "1.0",
     "doc": "Horizontal widget layout.",

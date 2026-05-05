@@ -19,6 +19,9 @@ Root host API table.
 - `assets` (`leviathan.assets`; required) - Asset handle namespace.
 - `fs` (`leviathan.fs`; required) - Filesystem namespace.
 - `env` (`leviathan.env`; required) - Environment namespace.
+- `shell` (`leviathan.shell`; required) - Host default shell namespace.
+- `bash` (`leviathan.bash`; required) - Bash shell namespace.
+- `zsh` (`leviathan.zsh`; required) - Zsh shell namespace.
 - `repository` (`leviathan.repository`; required) - Active repository snapshot.
 - `tab_registry` (`leviathan.tab_registry`; required) - Open tab snapshot.
 - `services` (`leviathan.services`; required) - Service registry namespace.

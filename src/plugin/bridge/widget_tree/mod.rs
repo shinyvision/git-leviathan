@@ -45,6 +45,7 @@ mod scrollable;
 mod semantic;
 mod space;
 mod tablist;
+mod terminal;
 mod text;
 mod text_input;
 
@@ -111,6 +112,7 @@ pub fn build(ast: &WidgetAst, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
         WidgetNode::Scrollable(n) => scrollable::build(n, ctx),
         WidgetNode::MouseArea(n) => mouse_area::build(n, ctx),
         WidgetNode::Tablist(n) => tablist::build(n, ctx),
+        WidgetNode::Terminal(n) => terminal::build(n),
         WidgetNode::ResizableSplit(n) => split::build(n, ctx),
         WidgetNode::Semantic(n) => semantic::build(ast, n, ctx),
         WidgetNode::Layout(n) => semantic::build_layout(n, ctx),
@@ -193,6 +195,10 @@ mod tests {
                 "tabs": [],
                 "active": serde_json::Value::Null,
             })),
+            &ctx,
+        );
+        let _ = build(
+            &ast(json!({ "kind": "terminal", "session": 1, "height": 180 })),
             &ctx,
         );
         let _ = build(

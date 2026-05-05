@@ -60,6 +60,24 @@ fn bad_widgets_return_actionable_paths() {
 }
 
 #[test]
+fn terminal_requires_positive_session_id() {
+    let ast = decode(&json!({
+        "kind": "terminal",
+        "session": 7,
+        "height": "fill",
+    }))
+    .unwrap();
+    let WidgetNode::Terminal(terminal) = ast.node else {
+        panic!("expected terminal");
+    };
+    assert_eq!(terminal.session, 7);
+
+    let err = decode(&json!({ "kind": "terminal", "session": 0 })).unwrap_err();
+    assert_eq!(err.code, codes::FIELD_TYPE_MISMATCH);
+    assert_eq!(err.path, "root.session");
+}
+
+#[test]
 fn limits_and_empty_lua_tables_are_handled() {
     let limits = WidgetLimits {
         max_node_count: 4,

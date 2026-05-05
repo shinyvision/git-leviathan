@@ -204,6 +204,7 @@ pub enum WidgetNode {
     Text(TextNode),
     Button(ButtonNode),
     TextInput(TextInputNode),
+    Terminal(TerminalNode),
     Row(RowNode),
     Column(ColumnNode),
     Container(ContainerNode),
@@ -228,6 +229,7 @@ impl WidgetNode {
             Self::Text(_) => "text",
             Self::Button(_) => "button",
             Self::TextInput(_) => "text_input",
+            Self::Terminal(_) => "terminal",
             Self::Row(_) => "row",
             Self::Column(_) => "column",
             Self::Container(_) => "container",
@@ -273,6 +275,14 @@ pub struct TextInputNode {
     pub height: AstLength,
     pub autofocus: bool,
     pub style: AstTextInputStyle,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TerminalNode {
+    pub session: u64,
+    pub width: AstLength,
+    pub height: AstLength,
+    pub font_size: f32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -476,6 +486,7 @@ fn decode_node(
         "text" => WidgetNode::Text(decode_text(obj, path, ctx)?),
         "button" => WidgetNode::Button(decode_button(obj, path, depth, ctx)?),
         "text_input" => WidgetNode::TextInput(decode_text_input(obj, path, ctx)?),
+        "terminal" => WidgetNode::Terminal(decode_terminal(obj, path)?),
         "row" => WidgetNode::Row(decode_row(obj, path, depth, ctx)?),
         "column" => WidgetNode::Column(decode_column(obj, path, depth, ctx)?),
         "container" => WidgetNode::Container(decode_container(obj, path, depth, ctx)?),
@@ -586,6 +597,25 @@ fn decode_text_input(
         height: opt_length(obj, "height", path)?,
         autofocus: opt_bool(obj, "autofocus", path)?.unwrap_or(false),
         style: decode_text_input_style(obj.get("style"), path, ctx)?,
+    })
+}
+
+fn decode_terminal(obj: &Obj, path: &str) -> Result<TerminalNode, WidgetDecodeError> {
+    let session = opt_usize(obj, "session", path)?.ok_or_else(|| {
+        WidgetDecodeError::new(codes::FIELD_MISSING, path, "missing field 'session'")
+    })? as u64;
+    if session == 0 {
+        return Err(WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{path}.session"),
+            "field 'session' must be a positive integer",
+        ));
+    }
+    Ok(TerminalNode {
+        session,
+        width: opt_length(obj, "width", path)?,
+        height: opt_length(obj, "height", path)?,
+        font_size: opt_f32(obj, "font_size", path)?.unwrap_or(13.0),
     })
 }
 
@@ -1586,6 +1616,7 @@ fn collect_raw_color_paths(ast: &WidgetAst, path: &str, out: &mut Vec<String>) {
                 push_raw_color(out, path, "style.border.color", &border.color);
             }
         }
+        WidgetNode::Terminal(_) => {}
         WidgetNode::Container(node) => {
             push_raw_color(out, path, "bg", &node.bg);
             if let Some(child) = &node.child {
@@ -1718,6 +1749,15 @@ fn snapshot_node(ast: &WidgetAst, indent: usize, out: &mut String) {
                 fmt_length(t.width),
                 fmt_length(t.height),
                 t.autofocus
+            ));
+        }
+        WidgetNode::Terminal(t) => {
+            out.push_str(&format!(
+                " session={} width={} height={} font_size={}\n",
+                t.session,
+                fmt_length(t.width),
+                fmt_length(t.height),
+                t.font_size
             ));
         }
         WidgetNode::Row(r) => {

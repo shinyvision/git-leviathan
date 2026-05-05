@@ -522,6 +522,7 @@ impl PluginHost {
         self.async_jobs.cancel_for_generation(&pid_typed, gen_id);
         self.timers.cancel_for_generation(&pid_typed, gen_id);
         self.watchers.cancel_for_generation(&pid_typed, gen_id);
+        crate::plugin::terminal::registry().close_for_generation(&pid_typed, gen_id);
         // Drop every command this plugin owned (across all
         // generations — defensive, mirroring `EventBus::drop_for_plugin`)
         // and release the Lua callback registry keys back to the
@@ -798,6 +799,7 @@ impl PluginHost {
             self.async_jobs.cancel_for_generation(&prev_pid, prev_gen);
             self.timers.cancel_for_generation(&prev_pid, prev_gen);
             self.watchers.cancel_for_generation(&prev_pid, prev_gen);
+            crate::plugin::terminal::registry().close_for_generation(&prev_pid, prev_gen);
             // Drop every command this plugin owned (across
             // all prior generations) and release the Lua callback
             // keys against the *previous* state — the staged
@@ -1278,6 +1280,7 @@ impl PluginHost {
 fn autofocus_text_input_node_id(ast: &WidgetAst) -> Option<&str> {
     match &ast.node {
         widget_ast::WidgetNode::TextInput(node) if node.autofocus => Some(&ast.node_id.value),
+        widget_ast::WidgetNode::Terminal(_) => None,
         widget_ast::WidgetNode::Button(node) => {
             node.child.as_deref().and_then(autofocus_text_input_node_id)
         }

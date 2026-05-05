@@ -10,6 +10,9 @@
 ---@field assets leviathan.assets Asset handle namespace.
 ---@field fs leviathan.fs Filesystem namespace.
 ---@field env leviathan.env Environment namespace.
+---@field shell leviathan.shell Host default shell namespace.
+---@field bash leviathan.bash Bash shell namespace.
+---@field zsh leviathan.zsh Zsh shell namespace.
 ---@field repository leviathan.repository Active repository snapshot.
 ---@field tab_registry leviathan.tab_registry Open tab snapshot.
 ---@field services leviathan.services Service registry namespace.
@@ -53,6 +56,61 @@
 
 ---Environment namespace.
 ---@class leviathan.env
+
+---Host default shell namespace.
+---@class leviathan.shell
+---@field name string Resolved shell display name.
+---@field is_available boolean Whether the shell executable is available on this host.
+
+---Bash shell namespace.
+---@class leviathan.bash
+---@field name string Resolved shell display name.
+---@field is_available boolean Whether the shell executable is available on this host.
+
+---Zsh shell namespace.
+---@class leviathan.zsh
+---@field name string Resolved shell display name.
+---@field is_available boolean Whether the shell executable is available on this host.
+
+---Shell command execution spec.
+---@class LeviathanShellRunSpec
+---@field command string Command string passed to the shell.
+---@field cwd? string|nil Working directory.
+---@field env? table<string,string>|nil Environment variables to add or override.
+---@field input? string|nil Stdin payload.
+---@field timeout_ms? integer|nil Optional timeout in milliseconds.
+---@field max_output_bytes? integer|nil Per-stream output capture limit.
+---@field ansi? boolean|nil Set color-friendly terminal environment variables.
+
+---Interactive PTY shell session spec.
+---@class LeviathanShellOpenSpec
+---@field cwd? string|nil Working directory for the interactive shell.
+---@field env? table<string,string>|nil Environment variables to add or override.
+---@field rows? integer|nil Initial terminal row count.
+---@field cols? integer|nil Initial terminal column count.
+
+---Completed shell command result.
+---@class LeviathanShellRunResult
+---@field shell string Shell name used for execution.
+---@field command string Command string.
+---@field cwd string Working directory or empty string.
+---@field success boolean Whether the process exited successfully.
+---@field status string success, failed, or timed_out.
+---@field exit_code integer|nil Process exit code when available.
+---@field stdout string Captured stdout.
+---@field stderr string Captured stderr.
+---@field combined string stdout and stderr concatenated for simple terminal rendering.
+---@field timed_out boolean Whether timeout killed the process.
+
+---Cancellable shell job handle.
+---@class LeviathanShellJobHandle
+
+---Request cancellation and kill the running process.
+function LeviathanShellJobHandle:cancel() end
+
+---Return host job id.
+---@return integer Job id.
+function LeviathanShellJobHandle:id() end
 
 ---Tab registry namespace.
 ---@class leviathan.tab_registry
@@ -674,7 +732,7 @@ function LeviathanHealthContext:error(message) end
 ---@field modules string[] Module names currently cached for this plugin in this generation.
 
 ---Tagged widget tree node.
----@alias LeviathanWidget LeviathanTextWidget|LeviathanButtonWidget|LeviathanTextInputWidget|LeviathanRowWidget|LeviathanColumnWidget|LeviathanContainerWidget|LeviathanPaddingWidget|LeviathanSpaceWidget|LeviathanIconWidget|LeviathanImageWidget|LeviathanScrollableWidget|LeviathanMouseAreaWidget|LeviathanTablistWidget|LeviathanResizableSplitWidget|LeviathanCommandButtonWidget|LeviathanToolbarButtonWidget|LeviathanStatusItemWidget|LeviathanBadgeWidget|LeviathanTagWidget|LeviathanListWidget|LeviathanTreeWidget|LeviathanTableWidget|LeviathanSectionWidget|LeviathanFormWidget|LeviathanCheckboxWidget|LeviathanToggleWidget|LeviathanSelectWidget|LeviathanRadioGroupWidget|LeviathanDividerWidget|LeviathanTooltipWidget|LeviathanPopoverWidget|LeviathanMenuWidget|LeviathanEmptyStateWidget|LeviathanCodeWidget|LeviathanDiffWidget|LeviathanCommitRefWidget|LeviathanBranchRefWidget|LeviathanRemoteRefWidget|LeviathanProgressWidget|LeviathanStackWidget|LeviathanGridWidget|LeviathanDockWidget|LeviathanSplitWidget|LeviathanTabsWidget|LeviathanVirtualListWidget
+---@alias LeviathanWidget LeviathanTextWidget|LeviathanButtonWidget|LeviathanTextInputWidget|LeviathanTerminalWidget|LeviathanRowWidget|LeviathanColumnWidget|LeviathanContainerWidget|LeviathanPaddingWidget|LeviathanSpaceWidget|LeviathanIconWidget|LeviathanImageWidget|LeviathanScrollableWidget|LeviathanMouseAreaWidget|LeviathanTablistWidget|LeviathanResizableSplitWidget|LeviathanCommandButtonWidget|LeviathanToolbarButtonWidget|LeviathanStatusItemWidget|LeviathanBadgeWidget|LeviathanTagWidget|LeviathanListWidget|LeviathanTreeWidget|LeviathanTableWidget|LeviathanSectionWidget|LeviathanFormWidget|LeviathanCheckboxWidget|LeviathanToggleWidget|LeviathanSelectWidget|LeviathanRadioGroupWidget|LeviathanDividerWidget|LeviathanTooltipWidget|LeviathanPopoverWidget|LeviathanMenuWidget|LeviathanEmptyStateWidget|LeviathanCodeWidget|LeviathanDiffWidget|LeviathanCommitRefWidget|LeviathanBranchRefWidget|LeviathanRemoteRefWidget|LeviathanProgressWidget|LeviathanStackWidget|LeviathanGridWidget|LeviathanDockWidget|LeviathanSplitWidget|LeviathanTabsWidget|LeviathanVirtualListWidget
 
 ---Static text label.
 ---@class LeviathanTextWidget
@@ -706,6 +764,14 @@ function LeviathanHealthContext:error(message) end
 ---@field height? number|string Fixed pixels, fill, or shrink.
 ---@field autofocus? boolean Focus this input when its overlay is opened.
 ---@field style? table Text input style overrides.
+
+---Native PTY terminal emulator surface.
+---@class LeviathanTerminalWidget
+---@field kind "terminal"
+---@field session integer Terminal session id returned by leviathan.shell.open.
+---@field width? number|string Fixed pixels, fill, or shrink.
+---@field height? number|string Fixed pixels, fill, or shrink.
+---@field font_size? number Monospace font size in pixels.
 
 ---Horizontal widget layout.
 ---@class LeviathanRowWidget
@@ -1315,6 +1381,12 @@ leviathan.fs = leviathan.fs or {}
 
 leviathan.env = leviathan.env or {}
 
+leviathan.shell = leviathan.shell or {}
+
+leviathan.bash = leviathan.bash or {}
+
+leviathan.zsh = leviathan.zsh or {}
+
 leviathan.repository = leviathan.repository or {}
 
 leviathan.git = leviathan.git or {}
@@ -1701,6 +1773,120 @@ function leviathan.env.get(name) end
 ---List UTF-8 environment variables as a name/value table.
 ---@return table<string,string> Environment map.
 function leviathan.env.list() end
+
+---Run a command through the host default shell on a worker thread.
+---@param spec string|LeviathanShellRunSpec Command string or shell run spec.
+---@param on_complete fun(ok:boolean, result:LeviathanShellRunResult|string)|nil Completion callback run on the host Lua thread.
+---@return LeviathanShellJobHandle|nil Cancellable job handle on success.
+---@return string|nil Error message when the command could not be started.
+function leviathan.shell.run(spec, on_complete) end
+
+---Open an interactive PTY session using the host default shell.
+---@param spec LeviathanShellOpenSpec|nil Optional PTY session settings.
+---@return integer|nil Terminal session id on success.
+---@return string|nil Error message when the session could not be opened.
+function leviathan.shell.open(spec) end
+
+---Write text or control bytes to a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param data string Text or control bytes to write to the PTY.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.shell.write(session, data) end
+
+---Resize a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param cols integer Terminal column count.
+---@param rows integer Terminal row count.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.shell.resize(session, cols, rows) end
+
+---Close a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.shell.close(session) end
+
+---Return whether a PTY session owned by the plugin is still running.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.shell.is_running(session) end
+
+---Run a command through bash on a worker thread.
+---@param spec string|LeviathanShellRunSpec Command string or shell run spec.
+---@param on_complete fun(ok:boolean, result:LeviathanShellRunResult|string)|nil Completion callback run on the host Lua thread.
+---@return LeviathanShellJobHandle|nil Cancellable job handle on success.
+---@return string|nil Error message when the command could not be started.
+function leviathan.bash.run(spec, on_complete) end
+
+---Open an interactive PTY session using bash.
+---@param spec LeviathanShellOpenSpec|nil Optional PTY session settings.
+---@return integer|nil Terminal session id on success.
+---@return string|nil Error message when the session could not be opened.
+function leviathan.bash.open(spec) end
+
+---Write text or control bytes to a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param data string Text or control bytes to write to the PTY.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.bash.write(session, data) end
+
+---Resize a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param cols integer Terminal column count.
+---@param rows integer Terminal row count.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.bash.resize(session, cols, rows) end
+
+---Close a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.bash.close(session) end
+
+---Return whether a PTY session owned by the plugin is still running.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.bash.is_running(session) end
+
+---Run a command through zsh on a worker thread.
+---@param spec string|LeviathanShellRunSpec Command string or shell run spec.
+---@param on_complete fun(ok:boolean, result:LeviathanShellRunResult|string)|nil Completion callback run on the host Lua thread.
+---@return LeviathanShellJobHandle|nil Cancellable job handle on success.
+---@return string|nil Error message when the command could not be started.
+function leviathan.zsh.run(spec, on_complete) end
+
+---Open an interactive PTY session using zsh.
+---@param spec LeviathanShellOpenSpec|nil Optional PTY session settings.
+---@return integer|nil Terminal session id on success.
+---@return string|nil Error message when the session could not be opened.
+function leviathan.zsh.open(spec) end
+
+---Write text or control bytes to a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param data string Text or control bytes to write to the PTY.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.zsh.write(session, data) end
+
+---Resize a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@param cols integer Terminal column count.
+---@param rows integer Terminal row count.
+---@return boolean True on success, false on failure.
+---@return string|nil Error message on failure.
+function leviathan.zsh.resize(session, cols, rows) end
+
+---Close a PTY session owned by the plugin.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.zsh.close(session) end
+
+---Return whether a PTY session owned by the plugin is still running.
+---@param session integer Terminal session id.
+---@return boolean Boolean result.
+function leviathan.zsh.is_running(session) end
 
 ---Return the cached `leviathan.repository` snapshot table for the active repo.
 ---@return table Active repository snapshot.
