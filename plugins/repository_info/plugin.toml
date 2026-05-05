@@ -1,5 +1,0 @@
-id = "repository_info"
-name = "Repository Info (Lua)"
-version = "0.1.0"
-api_version = "1.0"
-capabilities = ["ui:region:main_bar", "ui:replace:builtin", "ui:remove:builtin"]

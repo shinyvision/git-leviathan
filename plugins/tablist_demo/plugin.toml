@@ -1,5 +1,0 @@
-id = "tablist_demo"
-name = "Tablist Demo"
-version = "0.0.1"
-api_version = "1.0"
-capabilities = ["ui:region:tab_bar", "ui:replace:builtin"]

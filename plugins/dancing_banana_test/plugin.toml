@@ -1,5 +1,0 @@
-id = "dancing_banana_test"
-name = "Dancing Banana"
-version = "0.1.0"
-api_version = "1.0"
-capabilities = ["ui:region:main_bar", "ui:replace:builtin"]
