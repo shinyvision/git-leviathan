@@ -25,6 +25,21 @@ use super::styles::{detail_text_editor_style, green_button_style, red_button_sty
 const DIRTY_COMMIT_ACTION_BUTTON_HEIGHT: f32 = 40.0;
 
 #[derive(Debug, Clone, Copy)]
+struct DirtyActionBusy {
+    general: bool,
+    fast: bool,
+}
+
+impl DirtyActionBusy {
+    fn for_section(self, section: DirtyFileSection) -> bool {
+        match section {
+            DirtyFileSection::Unstaged | DirtyFileSection::Staged => self.fast,
+            DirtyFileSection::Conflicted => self.general,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub(super) enum DirtyFileSection {
     Conflicted,
     Unstaged,
@@ -91,21 +106,20 @@ pub(super) fn dirty_detail_panel_content<'a>(
     let width = screen.width;
     let dirty_summary = dirty_summary_text(commit);
     let has_any_dirty = dirty_change_count(commit) > 0;
+    let busy = DirtyActionBusy {
+        general: screen.dirty_actions_busy,
+        fast: screen.dirty_fast_actions_busy,
+    };
 
     let hash_bar = dirty_hash_bar(
         commit,
         &dirty_summary,
         screen.current_branch,
         has_any_dirty,
-        screen.dirty_actions_busy,
+        busy.general,
     );
     let stats_row = dirty_stats_row(screen.commit_diff_state, screen.dirty_operation_label);
-    let file_list = dirty_file_list(
-        commit,
-        screen.active_diff_file_path,
-        width,
-        screen.dirty_actions_busy,
-    );
+    let file_list = dirty_file_list(commit, screen.active_diff_file_path, width, busy);
 
     let commit_msg = container(
         text("Uncommitted changes")
@@ -127,7 +141,7 @@ pub(super) fn dirty_detail_panel_content<'a>(
         can_commit,
         commit.is_merge_in_progress,
         width - 20.0,
-        screen.dirty_actions_busy,
+        busy,
         screen.dirty_operation_label,
     );
 
@@ -158,21 +172,20 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
     let width = screen.width;
     let dirty_summary = dirty_summary_text(commit);
     let has_any_dirty = dirty_change_count(commit) > 0;
+    let busy = DirtyActionBusy {
+        general: screen.dirty_actions_busy,
+        fast: screen.dirty_fast_actions_busy,
+    };
 
     let hash_bar = dirty_hash_bar(
         commit,
         &dirty_summary,
         screen.current_branch,
         has_any_dirty,
-        screen.dirty_actions_busy,
+        busy.general,
     );
     let stats_row = dirty_stats_row(screen.commit_diff_state, screen.dirty_operation_label);
-    let file_list = dirty_file_list(
-        commit,
-        screen.active_diff_file_path,
-        width,
-        screen.dirty_actions_busy,
-    );
+    let file_list = dirty_file_list(commit, screen.active_diff_file_path, width, busy);
 
     let can_commit = !commit.staged_files.is_empty()
         && dirty_commit_message_has_summary(screen.dirty_commit_message);
@@ -180,7 +193,7 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
         screen.dirty_commit_message,
         can_commit,
         commit.is_merge_in_progress,
-        screen.dirty_actions_busy,
+        busy,
         screen.dirty_operation_label,
     );
 
@@ -303,7 +316,7 @@ fn dirty_file_list<'a>(
     commit: &'a Commit,
     active_diff_file_path: Option<&'a str>,
     width: f32,
-    actions_busy: bool,
+    busy: DirtyActionBusy,
 ) -> Element<'a, Message> {
     scrollable(
         column![
@@ -314,7 +327,7 @@ fn dirty_file_list<'a>(
                 None,
                 active_diff_file_path,
                 width,
-                actions_busy,
+                busy,
             ),
             dirty_file_section(
                 "Unstaged Files",
@@ -323,7 +336,7 @@ fn dirty_file_list<'a>(
                 None,
                 active_diff_file_path,
                 width,
-                actions_busy,
+                busy,
             ),
             dirty_file_section(
                 "Staged Files",
@@ -332,7 +345,7 @@ fn dirty_file_list<'a>(
                 None,
                 active_diff_file_path,
                 width,
-                actions_busy,
+                busy,
             ),
         ]
         .spacing(0)
@@ -351,7 +364,7 @@ fn dirty_commit_form_inline<'a>(
     can_commit: bool,
     is_merge_in_progress: bool,
     editor_width: f32,
-    actions_busy: bool,
+    busy: DirtyActionBusy,
     operation_label: Option<&'static str>,
 ) -> Element<'a, Message> {
     let editor = text_editor(dirty_commit_message)
@@ -370,12 +383,7 @@ fn dirty_commit_form_inline<'a>(
     column![
         commit_message_label(),
         editor,
-        commit_action_row(
-            can_commit,
-            is_merge_in_progress,
-            actions_busy,
-            operation_label
-        ),
+        commit_action_row(can_commit, is_merge_in_progress, busy, operation_label),
     ]
     .padding(Padding::from([10, 10]))
     .spacing(8)
@@ -386,7 +394,7 @@ fn dirty_commit_form_responsive<'a>(
     dirty_commit_message: &'a text_editor::Content,
     can_commit: bool,
     is_merge_in_progress: bool,
-    actions_busy: bool,
+    busy: DirtyActionBusy,
     operation_label: Option<&'static str>,
 ) -> Element<'a, Message> {
     responsive(move |size| {
@@ -407,12 +415,7 @@ fn dirty_commit_form_responsive<'a>(
         column![
             commit_message_label(),
             editor,
-            commit_action_row(
-                can_commit,
-                is_merge_in_progress,
-                actions_busy,
-                operation_label
-            ),
+            commit_action_row(can_commit, is_merge_in_progress, busy, operation_label),
         ]
         .padding(Padding::from([10, 10]))
         .spacing(8)
@@ -440,15 +443,15 @@ fn commit_message_label<'a>() -> Element<'a, Message> {
 fn commit_action_row<'a>(
     can_commit: bool,
     is_merge_in_progress: bool,
-    actions_busy: bool,
+    busy: DirtyActionBusy,
     operation_label: Option<&'static str>,
 ) -> Element<'a, Message> {
-    let commit_label = if actions_busy {
+    let commit_label = if busy.fast {
         operation_label.unwrap_or("Working...")
     } else {
         "Commit All Changes"
     };
-    let commit_enabled = can_commit && !actions_busy;
+    let commit_enabled = can_commit && !busy.fast;
     let mut commit_button = button(dirty_commit_action_label(commit_label))
         .style(green_button_style(commit_enabled))
         .padding(Padding::from([0, 16]))
@@ -463,11 +466,11 @@ fn commit_action_row<'a>(
 
     if is_merge_in_progress {
         let mut abort_button = button(dirty_commit_action_label("Abort Merge"))
-            .style(red_button_style(!actions_busy))
+            .style(red_button_style(!busy.general))
             .padding(Padding::from([0, 16]))
             .height(Length::Fixed(DIRTY_COMMIT_ACTION_BUTTON_HEIGHT))
             .width(Length::Fill);
-        if !actions_busy {
+        if !busy.general {
             abort_button = abort_button.on_press(Message::repo(RepositoryMessage::Detail(
                 DetailAction::AbortMergeConfirmed,
             )));
@@ -490,8 +493,9 @@ fn dirty_file_section<'a>(
     _hovered_path: Option<&'a str>,
     active_diff_path: Option<&'a str>,
     available_width: f32,
-    actions_busy: bool,
+    busy: DirtyActionBusy,
 ) -> Element<'a, Message> {
+    let action_busy = busy.for_section(section);
     let mut header = row![
         text(format!("{} ({})", title, files.len()))
             .size(theme::FONT_SM)
@@ -507,7 +511,7 @@ fn dirty_file_section<'a>(
             section.all_action_label(),
             section.all_action_message(),
             section.action_tone(),
-            !actions_busy,
+            !action_busy,
         ));
     }
 
@@ -532,7 +536,7 @@ fn dirty_file_section<'a>(
                 false,
                 active_diff_path,
                 available_width,
-                actions_busy,
+                action_busy,
             )
         }));
     }

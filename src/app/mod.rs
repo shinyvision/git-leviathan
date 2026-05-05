@@ -2,6 +2,7 @@ mod animation;
 mod commands;
 mod fetch_ops;
 mod fetch_policy;
+mod git_queue;
 mod input;
 mod subscription;
 mod tabs;
@@ -31,6 +32,7 @@ use crate::{
 };
 
 use fetch_policy::FetchPolicy;
+use git_queue::GitOperationQueue;
 use tabs::TabManager;
 
 /// Delay between Ctrl+Tab settling on a tab and kicking off its auto-fetch.
@@ -46,6 +48,7 @@ pub struct App {
     pub(super) toasts: ToastManager,
     pub(super) last_animation_tick: Option<Instant>,
     pub(super) fetch: FetchPolicy,
+    pub(super) git_queue: GitOperationQueue,
     /// Handle to the most recent file-watcher-driven `reload_refs_task`.
     /// File-watcher events during a git op tend to arrive in bursts (e.g.
     /// every packfile write during `git fetch`); if one reload is already in
@@ -94,6 +97,7 @@ impl App {
             toasts: ToastManager::default(),
             last_animation_tick: None,
             fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
             main_bar_registry,
@@ -259,10 +263,11 @@ impl App {
         self.process_tab_changes();
         let command_actions = self.drain_core_command_actions();
         let drain = self.drain_pending_tab_ops();
+        let git_drain = self.drain_git_operation_queue();
         self.persist_plugin_tabs();
         self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
-        Task::batch(vec![task, command_actions, drain])
+        Task::batch(vec![task, command_actions, drain, git_drain])
     }
 
     fn rebuild_slot_registries(&mut self) {
@@ -717,6 +722,7 @@ capabilities = ["ui:region:main_bar"]
             toasts: ToastManager::default(),
             last_animation_tick: None,
             fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
             main_bar_registry,

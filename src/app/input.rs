@@ -31,17 +31,7 @@ impl App {
             if self.tabs.is_empty() {
                 return Task::none();
             }
-            let was_fetching = self.fetch.is_fetching();
-            let finished_remote = if was_fetching {
-                Some(self.fetch_remote_name_for_tab(self.tabs.active_tab_id()))
-            } else {
-                None
-            };
-            self.fetch.cancel();
-            if let Some(remote_name) = finished_remote {
-                self.plugin_host
-                    .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
-            }
+            let _ = self.cancel_fetch_and_debounce();
             let screen_task = self.tabs.activate_tab(target);
             let debounce_task = self
                 .fetch

@@ -5,7 +5,7 @@ use crate::{
 };
 
 use super::super::super::{
-    state::{RepositoryData, SelectionState},
+    state::{OperationKind, RepositoryData, SelectionState},
     FileView,
 };
 use super::view as detail_view;
@@ -35,6 +35,7 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     /// Whether to show the "Copied" tooltip next to the commit SHA chip.
     pub(in crate::screens::repository) copied_sha_flash: bool,
     pub(in crate::screens::repository) dirty_actions_busy: bool,
+    pub(in crate::screens::repository) dirty_fast_actions_busy: bool,
     pub(in crate::screens::repository) dirty_operation_label: Option<&'static str>,
 }
 
@@ -155,6 +156,10 @@ impl DetailPanel {
             (None, false, 0)
         };
 
+        let operation_kind = data.operations.active_kind();
+        let actions_busy = data.operations.is_writing();
+        let fast_actions_busy = actions_busy && operation_kind != Some(OperationKind::Fetch);
+
         DetailViewModel {
             commit: selected,
             commit_diff_state: data.cache.state(selection.selected_commit()),
@@ -172,7 +177,8 @@ impl DetailPanel {
             reword_allowed,
             reword_descendant_count,
             copied_sha_flash: self.copied_sha_flash,
-            dirty_actions_busy: data.operations.is_writing(),
+            dirty_actions_busy: actions_busy,
+            dirty_fast_actions_busy: fast_actions_busy,
             dirty_operation_label: data.operations.active_label(),
         }
     }

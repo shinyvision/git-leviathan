@@ -6,6 +6,7 @@ pub struct OperationId(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OperationKind {
     GitWrite,
+    Fetch,
     StageFile,
     StageAll,
     UnstageFile,
@@ -20,6 +21,7 @@ impl OperationKind {
     pub(crate) fn label(self) -> &'static str {
         match self {
             Self::GitWrite => "Working...",
+            Self::Fetch => "Fetching...",
             Self::StageFile => "Staging...",
             Self::StageAll => "Staging...",
             Self::UnstageFile => "Unstaging...",
@@ -46,6 +48,10 @@ impl OperationCoordinator {
 
     pub(crate) fn begin_write(&mut self) -> Option<OperationId> {
         self.begin_write_kind(OperationKind::GitWrite)
+    }
+
+    pub(crate) fn begin_fetch(&mut self) -> Option<OperationId> {
+        self.begin_write_kind(OperationKind::Fetch)
     }
 
     pub(crate) fn begin_write_kind(&mut self, kind: OperationKind) -> Option<OperationId> {
@@ -152,6 +158,19 @@ mod tests {
 
         assert!(ops.finish_write(first));
         assert!(ops.begin_write_kind(OperationKind::UnstageAll).is_some());
+    }
+
+    #[test]
+    fn fetch_kind_uses_same_backpressure_slot() {
+        let mut ops = OperationCoordinator::new();
+        let first = ops.begin_fetch().unwrap();
+
+        assert_eq!(ops.active_kind(), Some(OperationKind::Fetch));
+        assert_eq!(ops.active_label(), Some("Fetching..."));
+        assert!(ops.begin_write().is_none());
+
+        assert!(ops.finish_write(first));
+        assert!(ops.begin_write().is_some());
     }
 
     #[test]

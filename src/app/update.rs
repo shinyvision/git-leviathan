@@ -163,9 +163,10 @@ impl App {
                 result,
             } => {
                 let remote_name = self.fetch_remote_name_for_tab(tab_id);
-                self.fetch.on_completed();
-                self.plugin_host
-                    .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
+                if self.fetch.on_completed(tab_id, operation_id) {
+                    self.plugin_host
+                        .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
+                }
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
                     return screen.update(RepositoryMessage::FetchFinished {
                         operation_id,
@@ -189,10 +190,7 @@ impl App {
                     if self.no_git_screen.is_some() || self.tabs.is_empty() {
                         return Task::none();
                     }
-                    match self.tabs.active_screen_mut() {
-                        Some(screen) => screen.update(*rm),
-                        None => Task::none(),
-                    }
+                    self.update_repository_message_for_tab(self.tabs.active_tab_id(), *rm)
                 }
             },
             ScreenRouted::Tab(tab_id, rm) => {
@@ -202,10 +200,7 @@ impl App {
                 if matches!(&*rm, RepositoryMessage::RefsReloaded(_)) {
                     self.reload_refs_abort = None;
                 }
-                if let Some(screen) = self.tabs.screen_mut(tab_id) {
-                    return screen.update(*rm);
-                }
-                Task::none()
+                self.update_repository_message_for_tab(tab_id, *rm)
             }
         }
     }

@@ -34,17 +34,26 @@ impl App {
     }
 
     pub(super) fn try_start_fetch_for_tab(&mut self, tab_id: TabId) -> Task<Message> {
+        if !self.git_queue.is_empty() || self.repository_write_in_flight() {
+            return Task::none();
+        }
+        self.start_fetch_for_tab(tab_id)
+    }
+
+    pub(super) fn start_fetch_for_tab(&mut self, tab_id: TabId) -> Task<Message> {
         if self.fetch.is_fetching() {
             return Task::none();
         }
         let Some(screen) = self.tabs.screen_mut(tab_id) else {
             return Task::none();
         };
-        let Some(operation_id) = screen.begin_git_write() else {
+        let Some(operation_id) = screen.begin_git_fetch() else {
             return Task::none();
         };
         let remote_name = screen.default_remote_name().unwrap_or("origin").to_string();
-        let task = self.fetch.start(screen.fetch_task(operation_id));
+        let task = self
+            .fetch
+            .start(tab_id, operation_id, screen.fetch_task(operation_id));
         self.tabs.persist_most_recent_if_needed(tab_id);
         self.plugin_host
             .fire_event_typed("FetchStarted", Self::fetch_remote_payload(remote_name));

@@ -9,6 +9,7 @@ mod panels;
 pub(crate) mod state;
 mod view;
 
+pub(crate) use messages::GitWriteIntent;
 pub use messages::RepositoryMessage;
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
@@ -305,6 +306,10 @@ impl RepositoryScreen {
 
     pub(crate) fn begin_git_write(&mut self) -> Option<state::OperationId> {
         self.data.operations.begin_write()
+    }
+
+    pub(crate) fn begin_git_fetch(&mut self) -> Option<state::OperationId> {
+        self.data.operations.begin_fetch()
     }
 
     pub(crate) fn finish_git_write(&mut self, operation_id: state::OperationId) -> bool {

@@ -20,6 +20,12 @@ use super::panels::diff::DirtyDiffSyncResult;
 use super::panels::sidebar::SidebarAction;
 use super::state::OperationId;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GitWriteIntent {
+    FastLocal,
+    Normal,
+}
+
 #[derive(Debug, Clone)]
 pub enum RepositoryMessage {
     // Panel actions
@@ -206,4 +212,78 @@ pub enum RepositoryMessage {
     CommitSearch(CommitSearchMessage),
     /// Open commit search overlay (from toolbar search button).
     OpenCommitSearch,
+}
+
+impl RepositoryMessage {
+    pub(crate) fn git_write_intent(&self) -> Option<GitWriteIntent> {
+        match self {
+            Self::Sidebar(SidebarAction::BranchPressed { .. }) => Some(GitWriteIntent::Normal),
+            Self::Center(action) => center_write_intent(action),
+            Self::Detail(action) => detail_write_intent(action),
+            Self::DiffPanel(DiffPanelAction::ConflictResolutionSaveRequested) => {
+                Some(GitWriteIntent::Normal)
+            }
+            Self::OverlayPanel(action) => overlay_write_intent(action),
+            Self::PushRequested | Self::PullRequested => Some(GitWriteIntent::Normal),
+            _ => None,
+        }
+    }
+}
+
+fn center_write_intent(action: &CenterAction) -> Option<GitWriteIntent> {
+    match action {
+        CenterAction::BranchLabelClicked { .. }
+        | CenterAction::BranchLabelPressed(_)
+        | CenterAction::RemoteBranchLabelPressed(_)
+        | CenterAction::BranchMergeRequested { .. }
+        | CenterAction::BranchFastForwardRequested { .. }
+        | CenterAction::BranchRebaseRequested { .. }
+        | CenterAction::ResetToCommitRequested { .. }
+        | CenterAction::StashCreateRequested
+        | CenterAction::StashApplyRequested { .. }
+        | CenterAction::StashPopRequested { .. }
+        | CenterAction::SquashCommitsRequested { .. }
+        | CenterAction::PushTagRequested { .. } => Some(GitWriteIntent::Normal),
+        _ => None,
+    }
+}
+
+fn detail_write_intent(action: &DetailAction) -> Option<GitWriteIntent> {
+    match action {
+        DetailAction::StageFile(_)
+        | DetailAction::StageAll
+        | DetailAction::UnstageFile(_)
+        | DetailAction::UnstageAll
+        | DetailAction::CommitConfirmed => Some(GitWriteIntent::FastLocal),
+        DetailAction::MarkConflictResolved(_)
+        | DetailAction::MarkAllConflictsResolved
+        | DetailAction::DiscardConfirmed
+        | DetailAction::AbortMergeConfirmed
+        | DetailAction::RewordConfirmed => Some(GitWriteIntent::Normal),
+        _ => None,
+    }
+}
+
+fn overlay_write_intent(action: &OverlayPanelAction) -> Option<GitWriteIntent> {
+    match action {
+        OverlayPanelAction::ConflictCreateBranch
+        | OverlayPanelAction::ConflictResetLocal
+        | OverlayPanelAction::BranchDeleteConfirmed
+        | OverlayPanelAction::BranchDeleteAllConfirmed
+        | OverlayPanelAction::StashDeleteConfirmed
+        | OverlayPanelAction::BranchRenameConfirmed
+        | OverlayPanelAction::CreateBranchHereConfirmed
+        | OverlayPanelAction::DiscardConfirmed
+        | OverlayPanelAction::AddRemoteConfirmed
+        | OverlayPanelAction::SetUpstreamConfirmed
+        | OverlayPanelAction::PushBehindPullRequested
+        | OverlayPanelAction::ForcePushConfirmed
+        | OverlayPanelAction::CreateTagHereConfirmed
+        | OverlayPanelAction::DeleteTagConfirmed
+        | OverlayPanelAction::CherryPickImmediateConfirmed
+        | OverlayPanelAction::CherryPickStagedConfirmed
+        | OverlayPanelAction::CreateWorktreeConfirmed
+        | OverlayPanelAction::WorktreeRemoveConfirmed => Some(GitWriteIntent::Normal),
+        _ => None,
+    }
 }

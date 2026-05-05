@@ -8,14 +8,26 @@ use std::time::{Duration, Instant};
 
 use iced::Task;
 
+use crate::core::TabId;
 use crate::message::{AppMessage, Message};
+use crate::screens::repository::state::OperationId;
 use crate::work::timer_work;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct FetchCancellation {
+    pub tab_id: TabId,
+    pub operation_id: OperationId,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ActiveFetch {
+    tab_id: TabId,
+    operation_id: OperationId,
+    started_at: Instant,
+}
+
 pub struct FetchPolicy {
-    /// `Some(_)` iff a remote fetch is currently in flight. Doubles as the
-    /// "spinner start" timestamp that the toolbar reads to render progress.
-    started_at: Option<Instant>,
-    /// Abort handle for the in-flight fetch. `Some(_)` iff `started_at` is.
+    active: Option<ActiveFetch>,
     abort: Option<iced::task::Handle>,
     /// Abort handle for the post-Ctrl+Tab debounce timer. Independent of the
     /// fetch itself — the timer fires a `FetchDebounceElapsed` message that
@@ -24,31 +36,47 @@ pub struct FetchPolicy {
 }
 
 impl FetchPolicy {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            started_at: None,
+            active: None,
             abort: None,
             debounce: None,
         }
     }
 
-    pub fn is_fetching(&self) -> bool {
-        self.started_at.is_some()
+    pub(super) fn is_fetching(&self) -> bool {
+        self.active.is_some()
     }
 
-    pub fn started_at(&self) -> Option<Instant> {
-        self.started_at
+    pub(super) fn started_at(&self) -> Option<Instant> {
+        self.active.map(|active| active.started_at)
+    }
+
+    pub(super) fn active(&self) -> Option<FetchCancellation> {
+        self.active.map(|active| FetchCancellation {
+            tab_id: active.tab_id,
+            operation_id: active.operation_id,
+        })
     }
 
     /// Kick off a fetch. Asserts no fetch is already in flight (caller checks
     /// `is_fetching` first). Wraps the task as abortable so `cancel` can
     /// drop the pending `FetchCompleted` message on Ctrl+Tab away.
-    pub fn start(&mut self, fetch_task: Task<Message>) -> Task<Message> {
+    pub(super) fn start(
+        &mut self,
+        tab_id: TabId,
+        operation_id: OperationId,
+        fetch_task: Task<Message>,
+    ) -> Task<Message> {
         debug_assert!(
-            self.started_at.is_none(),
+            self.active.is_none(),
             "FetchPolicy::start called while fetch already in flight"
         );
-        self.started_at = Some(Instant::now());
+        self.active = Some(ActiveFetch {
+            tab_id,
+            operation_id,
+            started_at: Instant::now(),
+        });
         let (task, handle) = fetch_task.abortable();
         self.abort = Some(handle);
         task
@@ -56,26 +84,42 @@ impl FetchPolicy {
 
     /// Called on `FetchCompleted`: clears the fetch slot so the next tick /
     /// tab switch / window focus can start a new fetch.
-    pub fn on_completed(&mut self) {
-        self.started_at = None;
+    pub(super) fn on_completed(&mut self, tab_id: TabId, operation_id: OperationId) -> bool {
+        if !self
+            .active
+            .is_some_and(|active| active.tab_id == tab_id && active.operation_id == operation_id)
+        {
+            return false;
+        }
+        self.active = None;
         self.abort = None;
+        true
+    }
+
+    pub(super) fn cancel_active_fetch(&mut self) -> Option<FetchCancellation> {
+        let active = self.active.take()?;
+        if let Some(handle) = self.abort.take() {
+            handle.abort();
+        }
+        Some(FetchCancellation {
+            tab_id: active.tab_id,
+            operation_id: active.operation_id,
+        })
     }
 
     /// Abort any in-flight fetch and any pending debounce. Called on Ctrl+Tab
     /// so the single fetch slot is freed for the newly active tab.
-    pub fn cancel(&mut self) {
-        if let Some(handle) = self.abort.take() {
-            handle.abort();
-        }
+    pub(super) fn cancel(&mut self) -> Option<FetchCancellation> {
+        let cancelled = self.cancel_active_fetch();
         if let Some(handle) = self.debounce.take() {
             handle.abort();
         }
-        self.started_at = None;
+        cancelled
     }
 
     /// Schedule a debounced auto-fetch after `delay`. Used post-Ctrl+Tab so
     /// rapid fly-bys don't each trigger a fetch on the transient landing tab.
-    pub fn schedule_debounced(&mut self, delay: Duration) -> Task<Message> {
+    pub(super) fn schedule_debounced(&mut self, delay: Duration) -> Task<Message> {
         let (task, handle) = Task::perform(timer_work(delay), |_| {
             Message::App(AppMessage::FetchDebounceElapsed)
         })
@@ -86,7 +130,7 @@ impl FetchPolicy {
 
     /// Called on `FetchDebounceElapsed`: clears the debounce handle so a
     /// fresh schedule can install a new one.
-    pub fn on_debounce_elapsed(&mut self) {
+    pub(super) fn on_debounce_elapsed(&mut self) {
         self.debounce = None;
     }
 }
@@ -106,17 +150,36 @@ mod tests {
     fn on_completed_clears_fetch_slot() {
         let mut p = FetchPolicy::new();
         // Simulate an active fetch without kicking off a real iced task.
-        p.started_at = Some(Instant::now());
+        let mut ops = crate::screens::repository::state::OperationCoordinator::new();
+        let operation_id = ops.begin_write().unwrap();
+        p.active = Some(ActiveFetch {
+            tab_id: TabId(1),
+            operation_id,
+            started_at: Instant::now(),
+        });
         assert!(p.is_fetching());
-        p.on_completed();
+        assert!(p.on_completed(TabId(1), operation_id));
         assert!(!p.is_fetching());
     }
 
     #[test]
     fn cancel_clears_fetch_slot() {
         let mut p = FetchPolicy::new();
-        p.started_at = Some(Instant::now());
-        p.cancel();
+        let mut ops = crate::screens::repository::state::OperationCoordinator::new();
+        let operation_id = ops.begin_write().unwrap();
+        p.active = Some(ActiveFetch {
+            tab_id: TabId(1),
+            operation_id,
+            started_at: Instant::now(),
+        });
+        let cancelled = p.cancel();
         assert!(!p.is_fetching());
+        assert_eq!(
+            cancelled,
+            Some(FetchCancellation {
+                tab_id: TabId(1),
+                operation_id
+            })
+        );
     }
 }
