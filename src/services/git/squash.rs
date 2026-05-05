@@ -290,7 +290,9 @@ fn format_squash_message(commits: &[git2::Commit]) -> String {
 #[cfg(test)]
 mod tests {
     use super::super::GitService;
-    use crate::services::test_support::{commit_all, init_test_repo, write_file};
+    use crate::services::test_support::{
+        commit_all, configure_test_signature, init_test_repo, write_file,
+    };
     use std::fs;
 
     #[test]
@@ -298,6 +300,7 @@ mod tests {
         // Regression: squashing a range whose commits delete a file used to
         // leave that file on disk as untracked, re-adding it into WIP.
         let (temp, repo) = init_test_repo("squash_delete");
+        configure_test_signature(&repo);
 
         // base commit (from init_test_repo) contains tracked.txt.
         // Commit A: add doomed.txt

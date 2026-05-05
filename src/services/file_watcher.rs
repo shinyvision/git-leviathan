@@ -71,15 +71,16 @@ pub fn watch_repo_files(tab_id: TabId, repo_path: PathBuf) -> Subscription<(TabI
                     let watcher_result = notify::RecommendedWatcher::new(
                         move |res: Result<notify::Event, notify::Error>| {
                             if let Ok(event) = res {
-                                match event.kind {
+                                let relevant_kind = matches!(
+                                    event.kind,
                                     notify::EventKind::Create(_)
-                                    | notify::EventKind::Modify(_)
-                                    | notify::EventKind::Remove(_) => {
-                                        if event.paths.iter().any(|p| is_relevant_event_path(p)) {
-                                            let _ = sender_for_watcher.try_send(());
-                                        }
-                                    }
-                                    _ => {}
+                                        | notify::EventKind::Modify(_)
+                                        | notify::EventKind::Remove(_)
+                                );
+                                let relevant_path =
+                                    event.paths.iter().any(|p| is_relevant_event_path(p));
+                                if relevant_kind && relevant_path {
+                                    let _ = sender_for_watcher.try_send(());
                                 }
                             }
                         },

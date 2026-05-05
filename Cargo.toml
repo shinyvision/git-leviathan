@@ -33,7 +33,6 @@ iced = { version = "0.14", features = ["advanced", "canvas", "image", "lazy", "s
 image = { version = "0.25", default-features = false, features = ["gif"] }
 git2 = { version = "0.19", default-features = false, features = ["vendored-libgit2"] }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-swash = "0.1.19"
 tokio = { version = "1", features = ["time", "sync", "rt", "rt-multi-thread", "macros", "signal"] }
 notify = { workspace = true }
 rfd = "0.15"

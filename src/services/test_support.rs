@@ -62,6 +62,16 @@ pub(crate) fn write_file(repo_path: &Path, relative_path: &str, contents: &str) 
     fs::write(full_path, contents).expect("failed to write test file");
 }
 
+pub(crate) fn configure_test_signature(repo: &Repository) {
+    let mut config = repo.config().expect("failed to open repo config");
+    config
+        .set_str("user.name", "Git Leviathan Test")
+        .expect("failed to set user.name");
+    config
+        .set_str("user.email", "test@example.invalid")
+        .expect("failed to set user.email");
+}
+
 pub(crate) fn commit_all(repo: &Repository, message: &str) -> git2::Oid {
     let mut index = repo.index().expect("failed to open index");
     index

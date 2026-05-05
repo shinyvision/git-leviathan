@@ -450,21 +450,11 @@ impl GitService {
 mod tests {
     use super::*;
     use crate::services::test_support::{
-        add_remote, checkout_branch_for_setup, commit_all, create_branch,
+        add_remote, checkout_branch_for_setup, commit_all, configure_test_signature, create_branch,
         create_remote_tracking_branch, fetch_remote, init_bare_test_repo, init_test_repo,
         push_refspec, stash_names, write_file,
     };
     use std::{fs, path::Path};
-
-    fn configure_signature(repo: &Repository) {
-        let mut config = repo.config().expect("failed to open repo config");
-        config
-            .set_str("user.name", "Git Leviathan Test")
-            .expect("failed to set user.name");
-        config
-            .set_str("user.email", "test@example.invalid")
-            .expect("failed to set user.email");
-    }
 
     #[test]
     fn delete_branch_removes_local_branch_ref() {
@@ -759,7 +749,7 @@ mod tests {
     #[test]
     fn merge_branch_into_checks_out_target_and_creates_merge_commit() {
         let (temp_repo, repo) = init_test_repo("merge_branch_clean");
-        configure_signature(&repo);
+        configure_test_signature(&repo);
 
         create_branch(&repo, "develop");
         create_branch(&repo, "feature/add-foo");
@@ -801,7 +791,7 @@ mod tests {
     #[test]
     fn merge_branch_into_leaves_conflicts_on_checked_out_branch() {
         let (temp_repo, repo) = init_test_repo("merge_branch_conflict");
-        configure_signature(&repo);
+        configure_test_signature(&repo);
 
         create_branch(&repo, "develop");
         create_branch(&repo, "feature/add-foo");
@@ -885,7 +875,7 @@ mod tests {
     #[test]
     fn abort_merge_cleans_conflicted_merge_state() {
         let (temp_repo, repo) = init_test_repo("abort_merge_conflict");
-        configure_signature(&repo);
+        configure_test_signature(&repo);
 
         create_branch(&repo, "develop");
         create_branch(&repo, "feature/add-foo");
@@ -1088,7 +1078,7 @@ mod tests {
     #[test]
     fn commit_dirty_changes_requires_staged_files() {
         let (temp_repo, repo) = init_test_repo("commit_dirty_requires_staged");
-        configure_signature(&repo);
+        configure_test_signature(&repo);
         write_file(&temp_repo.path, "tracked.txt", "modified\n");
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
@@ -1105,7 +1095,7 @@ mod tests {
     #[test]
     fn commit_dirty_changes_commits_only_staged_changes() {
         let (temp_repo, repo) = init_test_repo("commit_dirty");
-        configure_signature(&repo);
+        configure_test_signature(&repo);
         write_file(&temp_repo.path, "staged.txt", "staged\n");
         write_file(&temp_repo.path, "untracked.txt", "untracked\n");
         write_file(&temp_repo.path, "tracked.txt", "modified\n");

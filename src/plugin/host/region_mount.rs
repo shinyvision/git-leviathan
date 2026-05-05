@@ -201,43 +201,45 @@ fn apply_region_slots<T: IsSlot>(
             PreparedSlotOp::Replace { target, spec, .. }
                 if target.region().as_str() == region_name =>
             {
-                if !registry.replace(target, convert(spec.clone().mounted_at(target.clone()))) {
-                    host.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(spec.plugin_id.clone()),
-                            DiagnosticSeverity::Warning,
-                            "schema.slot_replace_missing",
-                            format!(
-                                "leviathan.ui.slot.replace({region_name}, \"{}\") — no such slot",
-                                target.slot_id()
-                            ),
-                        )
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.ui.slot.replace".into(),
-                        }),
-                    );
+                if registry.replace(target, convert(spec.clone().mounted_at(target.clone()))) {
+                    continue;
                 }
+                host.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(spec.plugin_id.clone()),
+                        DiagnosticSeverity::Warning,
+                        "schema.slot_replace_missing",
+                        format!(
+                            "leviathan.ui.slot.replace({region_name}, \"{}\") — no such slot",
+                            target.slot_id()
+                        ),
+                    )
+                    .with_source(PluginSourceSpan::ApiFunction {
+                        name: "leviathan.ui.slot.replace".into(),
+                    }),
+                );
             }
             PreparedSlotOp::Remove {
                 requester_plugin_id,
                 target,
             } if target.region().as_str() == region_name => {
-                if !registry.remove(target) {
-                    host.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(requester_plugin_id.clone()),
-                            DiagnosticSeverity::Warning,
-                            "schema.slot_remove_missing",
-                            format!(
-                                "leviathan.ui.slot.remove({region_name}, \"{}\") — no such slot",
-                                target.slot_id()
-                            ),
-                        )
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.ui.slot.remove".into(),
-                        }),
-                    );
+                if registry.remove(target) {
+                    continue;
                 }
+                host.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(requester_plugin_id.clone()),
+                        DiagnosticSeverity::Warning,
+                        "schema.slot_remove_missing",
+                        format!(
+                            "leviathan.ui.slot.remove({region_name}, \"{}\") — no such slot",
+                            target.slot_id()
+                        ),
+                    )
+                    .with_source(PluginSourceSpan::ApiFunction {
+                        name: "leviathan.ui.slot.remove".into(),
+                    }),
+                );
             }
             _ => {}
         }

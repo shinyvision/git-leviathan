@@ -286,27 +286,25 @@ pub fn validate_payload(
     let mut ok = true;
     for field in descriptor.payload_fields {
         match payload.get(field.name) {
-            Some(value) => {
-                if !lua_type_matches(field.lua_type, value) {
-                    ok = false;
-                    diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from("<host>"),
-                            DiagnosticSeverity::Warning,
-                            "autocmd.payload_mismatch",
-                            format!(
-                                "event {} payload field `{}` should be {}, got {}",
-                                descriptor.name,
-                                field.name,
-                                field.lua_type,
-                                value_kind(value)
-                            ),
-                        )
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: format!("event:{}", descriptor.name),
-                        }),
-                    );
-                }
+            Some(value) if !lua_type_matches(field.lua_type, value) => {
+                ok = false;
+                diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from("<host>"),
+                        DiagnosticSeverity::Warning,
+                        "autocmd.payload_mismatch",
+                        format!(
+                            "event {} payload field `{}` should be {}, got {}",
+                            descriptor.name,
+                            field.name,
+                            field.lua_type,
+                            value_kind(value)
+                        ),
+                    )
+                    .with_source(PluginSourceSpan::ApiFunction {
+                        name: format!("event:{}", descriptor.name),
+                    }),
+                );
             }
             None if field.required => {
                 ok = false;
@@ -325,7 +323,7 @@ pub fn validate_payload(
                     }),
                 );
             }
-            None => {}
+            _ => {}
         }
     }
     ok
