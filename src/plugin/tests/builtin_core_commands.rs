@@ -76,9 +76,8 @@ fn plugin_can_invoke_allowed_built_in_command() {
     let actions = host.host_mut().take_core_command_actions();
     assert!(matches!(
         actions.as_slice(),
-        [CoreCommandAction::Repository(
-            RepositoryMessage::OpenCommitSearch
-        )]
+        [CoreCommandAction::Repository(message)]
+            if matches!(message.as_ref(), RepositoryMessage::OpenCommitSearch)
     ));
 }
 
@@ -143,9 +142,8 @@ fn toolbar_command_queues_same_pull_message() {
     let actions = host.host_mut().take_core_command_actions();
     assert!(matches!(
         actions.as_slice(),
-        [CoreCommandAction::Repository(
-            RepositoryMessage::PullRequested
-        )]
+        [CoreCommandAction::Repository(message)]
+            if matches!(message.as_ref(), RepositoryMessage::PullRequested)
     ));
 }
 

@@ -288,13 +288,10 @@ impl TerminalRegistry {
                 changed = true;
             }
             if !session.exited {
-                match session.child.try_wait() {
-                    Ok(Some(_)) => {
-                        session.exited = true;
-                        changed = true;
-                        exited.push(*id);
-                    }
-                    Ok(None) | Err(_) => {}
+                if let Ok(Some(_)) = session.child.try_wait() {
+                    session.exited = true;
+                    changed = true;
+                    exited.push(*id);
                 }
             }
             if changed {

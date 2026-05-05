@@ -588,8 +588,7 @@ impl PluginHost {
             ServiceCallTraceSummary, ServiceGraphEdge, ServiceSummary, SettingsSummary,
             SlotSummary, StorageSurfaceSummary, UiRenderDiagnosticSummary,
         };
-        let mut snap = InspectorSnapshot::default();
-        snap.extension_points =
+        let extension_points =
             git_leviathan_plugin_api::descriptor::extension_point::EXTENSION_POINTS
                 .iter()
                 .map(|point| ExtensionPointSummary {
@@ -607,7 +606,7 @@ impl PluginHost {
                     render_mount_handler: point.render_mount_handler.to_string(),
                 })
                 .collect();
-        snap.dock_panels = self
+        let dock_panels = self
             .dock_panels()
             .into_iter()
             .map(|panel| DockPanelSummary {
@@ -624,7 +623,13 @@ impl PluginHost {
                 source_location: panel.source_location,
             })
             .collect();
-        snap.dock_layout = self.dock_layout_json();
+        let dock_layout = self.dock_layout_json();
+        let mut snap = InspectorSnapshot {
+            extension_points,
+            dock_panels,
+            dock_layout,
+            ..Default::default()
+        };
 
         for (id, plugin) in &self.plugins {
             let m = &plugin.manifest;

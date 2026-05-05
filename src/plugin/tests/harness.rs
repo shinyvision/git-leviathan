@@ -476,33 +476,49 @@ api_version = "1.0"
     }
 
     #[test]
-    fn sample_plugins_load_unchanged() {
+    fn example_plugins_load_unchanged() {
         // Regression guard for widget schema validation: every static widget
-        // shape used by the local sample plugins must round-trip through
+        // shape used by the example plugins must round-trip through
         // `WidgetKind`. If a plugin breaks here, the schema is too strict.
         let mut host = MockHost::new();
-        for plugin in [
-            "dancing_banana_test",
-            "repository_info",
-            "tablist_demo",
-            "regions_demo",
-        ] {
-            let dir = std::path::PathBuf::from("plugins").join(plugin);
+        let dirs = example_plugin_dirs();
+        assert!(!dirs.is_empty(), "expected example plugins");
+        for dir in dirs {
+            let plugin = dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("<unknown>")
+                .to_string();
             host.host_mut()
                 .load_plugin(&dir)
                 .unwrap_or_else(|e| panic!("plugin {plugin} broke: {e}"));
         }
     }
 
-    fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
-        let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir("plugins")
-            .expect("plugins dir")
+    fn plugin_dirs_under(root: std::path::PathBuf) -> Vec<std::path::PathBuf> {
+        if !root.is_dir() {
+            return Vec::new();
+        }
+        let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir(root)
+            .expect("plugin dir")
             .filter_map(Result::ok)
             .map(|entry| entry.path())
             .filter(|path| path.join("plugin.toml").is_file() && path.join("init.lua").is_file())
             .collect();
         dirs.sort();
         dirs
+    }
+
+    fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
+        plugin_dirs_under(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins"))
+    }
+
+    fn example_plugin_dirs() -> Vec<std::path::PathBuf> {
+        plugin_dirs_under(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("plugins")
+                .join("examples"),
+        )
     }
 
     fn load_all_local_plugins() -> MockHost {
@@ -572,7 +588,7 @@ api_version = "1.0"
             "command_palette",
             "command_palette",
             "query",
-            serde_json::json!("plugin.disable dancing_banana_test"),
+            serde_json::json!("plugin.disable terminal"),
         );
         host.host_mut().dispatch_overlay_event(
             "command_palette",
@@ -581,12 +597,12 @@ api_version = "1.0"
             serde_json::Value::Null,
         );
 
-        assert!(host.host().is_plugin_disabled("dancing_banana_test"));
+        assert!(host.host().is_plugin_disabled("terminal"));
         assert!(host
             .introspect()
             .plugins
             .iter()
-            .all(|plugin| plugin.id != "dancing_banana_test"));
+            .all(|plugin| plugin.id != "terminal"));
     }
 
     #[test]
@@ -600,20 +616,19 @@ api_version = "1.0"
         )
         .expect("load local command palette");
 
-        for capability in ["ui:overlay"] {
-            let row = host
-                .grant_store()
-                .lookup("command_palette", "0.1.0", capability)
-                .unwrap_or_else(|| panic!("missing grant row for {capability}"));
-            assert_eq!(
-                row.decision,
-                crate::plugin::capability_grants::Decision::Allow
-            );
-            assert_eq!(
-                row.decided_by,
-                crate::plugin::capability_grants::DecidedBy::Default
-            );
-        }
+        let capability = "ui:overlay";
+        let row = host
+            .grant_store()
+            .lookup("command_palette", "0.1.0", capability)
+            .unwrap_or_else(|| panic!("missing grant row for {capability}"));
+        assert_eq!(
+            row.decision,
+            crate::plugin::capability_grants::Decision::Allow
+        );
+        assert_eq!(
+            row.decided_by,
+            crate::plugin::capability_grants::DecidedBy::Default
+        );
     }
 
     #[test]
@@ -628,19 +643,7 @@ api_version = "1.0"
             .iter()
             .map(|plugin| plugin.id.as_str())
             .collect();
-        assert_eq!(
-            ids,
-            vec![
-                "command_palette",
-                "dancing_banana_test",
-                "file_explorer",
-                "foo_demo",
-                "regions_demo",
-                "repository_info",
-                "tablist_demo",
-                "terminal",
-            ]
-        );
+        assert_eq!(ids, vec!["command_palette", "terminal"]);
         assert!(
             snap.plugins
                 .iter()
@@ -677,12 +680,6 @@ api_version = "1.0"
             concat!(
                 "api_version = \"1.0\"\n",
                 "command_palette: api_version=1.0\n",
-                "dancing_banana_test: api_version=1.0\n",
-                "file_explorer: api_version=1.0\n",
-                "foo_demo: api_version=1.0\n",
-                "regions_demo: api_version=1.0\n",
-                "repository_info: api_version=1.0\n",
-                "tablist_demo: api_version=1.0\n",
                 "terminal: api_version=1.0\n",
             )
         );
@@ -710,17 +707,15 @@ api_version = "1.0"
                 "main_bar center builtin.push priority=20 owner=builtin\n",
                 "main_bar center builtin.stash priority=40 owner=builtin\n",
                 "main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
-                "main_bar left builtin.fetch_indicator priority=40 owner=dancing_banana_test\n",
-                "main_bar left builtin.repo_info priority=10 owner=repository_info\n",
+                "main_bar left builtin.branch_info priority=30 owner=builtin\n",
+                "main_bar left builtin.fetch_indicator priority=40 owner=builtin\n",
+                "main_bar left builtin.repo_info priority=10 owner=builtin\n",
+                "main_bar left builtin.separator_chevron priority=20 owner=builtin\n",
                 "main_bar right builtin.search priority=10 owner=builtin\n",
-                "main_bar right plugin.file_explorer.files priority=100 owner=file_explorer\n",
-                "main_bar right plugin.foo_demo.foo priority=101 owner=foo_demo\n",
                 "repository graph.bottom plugin.terminal.panel priority=100 owner=terminal\n",
-                "repository sidebar.top plugin.regions_demo.banner priority=10 owner=regions_demo\n",
-                "tab_bar center builtin.tab_list priority=10 owner=tablist_demo\n",
+                "tab_bar center builtin.tab_list priority=10 owner=builtin\n",
                 "tab_bar left builtin.plus_button priority=10 owner=builtin\n",
                 "tab_bar right builtin.version_label priority=10 owner=builtin\n",
-                "tab_bar right plugin.regions_demo.tag priority=10 owner=regions_demo\n",
             )
         );
     }
@@ -1429,21 +1424,34 @@ api_version = "1.0"
 
     #[test]
     fn regions_demo_does_not_break_existing_layout() {
-        // After regions_demo registers its sidebar.top banner, the slot
-        // shows up in the host's introspection — proves the slot
-        // registration succeeded. The actual layout fix is a visual concern;
-        // this test guards the data path.
         let mut host = MockHost::new();
-        let dir = std::path::PathBuf::from("plugins/regions_demo");
-        host.host_mut()
-            .load_plugin(&dir)
-            .expect("regions_demo loads");
+        host.load_inline(
+            "repo_banner",
+            r#"
+            id = "repo_banner"
+            name = "Repo Banner"
+            version = "0.1.0"
+            api_version = "1.0"
+            capabilities = ["ui:region:repository"]
+            "#,
+            r#"
+            leviathan.ui.slot.add({
+                region = "repository",
+                pane = "sidebar",
+                section = "top",
+                id = "plugin.repo_banner.banner",
+                priority = 10,
+                widget = { kind = "text", value = "banner" },
+            })
+            "#,
+        )
+        .expect("repo banner loads");
         let snap = host.introspect();
         assert!(
             snap.slots.iter().any(|s| s.region == "repository"
                 && s.container == "sidebar.top"
-                && s.id == "plugin.regions_demo.banner"),
-            "regions_demo sidebar banner slot must register"
+                && s.id == "plugin.repo_banner.banner"),
+            "repository sidebar banner slot must register"
         );
     }
 }

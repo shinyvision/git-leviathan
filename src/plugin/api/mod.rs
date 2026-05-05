@@ -236,13 +236,15 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
     async_runtime::install(lua, Rc::clone(&deferred), ledger.clone(), &api_tbl)?;
     command::install(
         lua,
-        Rc::clone(&user_commands),
-        Rc::clone(&build),
-        ledger.clone(),
         &leviathan,
-        command_dispatch,
-        Rc::clone(&guard),
-        plugin_id.clone(),
+        command::InstallCtx {
+            commands: Rc::clone(&user_commands),
+            build: Rc::clone(&build),
+            ledger: ledger.clone(),
+            dispatch: command_dispatch,
+            guard: Rc::clone(&guard),
+            plugin_id: plugin_id.clone(),
+        },
     )?;
     leviathan.set("api", api_tbl)?;
 

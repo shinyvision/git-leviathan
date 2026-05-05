@@ -97,7 +97,7 @@ impl App {
     fn apply_core_command_action(&mut self, action: CoreCommandAction) -> Task<Message> {
         match action {
             CoreCommandAction::App(message) => self.update_app(message),
-            CoreCommandAction::Repository(message) => Task::done(Message::repo(message)),
+            CoreCommandAction::Repository(message) => Task::done(Message::repo(*message)),
             CoreCommandAction::OpenRepositoryPath(path) => {
                 self.open_repo_from_path(std::path::PathBuf::from(path))
             }
@@ -152,7 +152,7 @@ impl App {
         };
         let Some((idx, commit_hash)) = commit_idx
             .zip(hash)
-            .or_else(|| screen.selected_commit_hash().map(|(idx, hash)| (idx, hash)))
+            .or_else(|| screen.selected_commit_hash())
         else {
             return Task::none();
         };

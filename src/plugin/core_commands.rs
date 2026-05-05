@@ -15,7 +15,7 @@ use crate::screens::repository::RepositoryMessage;
 #[derive(Debug, Clone)]
 pub enum CoreCommandAction {
     App(AppMessage),
-    Repository(RepositoryMessage),
+    Repository(Box<RepositoryMessage>),
     OpenRepositoryPath(String),
     CloseTab {
         path: Option<String>,
@@ -37,6 +37,10 @@ pub enum CoreCommandAction {
     },
     OpenSelectedDiff,
     StartRewordSelected,
+}
+
+fn repository(message: RepositoryMessage) -> CoreCommandAction {
+    CoreCommandAction::Repository(Box::new(message))
 }
 
 #[derive(Clone, Default)]
@@ -199,11 +203,7 @@ fn specs() -> Vec<CoreCommandSpec> {
         )
         .cap("git:write:fetch")
         .cap("git:write:merge")
-        .action(|_| {
-            Ok(CoreCommandAction::Repository(
-                RepositoryMessage::PullRequested,
-            ))
-        }),
+        .action(|_| Ok(repository(RepositoryMessage::PullRequested))),
         spec(
             "repository.push",
             "Repository: Push",
@@ -211,11 +211,7 @@ fn specs() -> Vec<CoreCommandSpec> {
             "repository",
         )
         .cap("git:write:push")
-        .action(|_| {
-            Ok(CoreCommandAction::Repository(
-                RepositoryMessage::PushRequested,
-            ))
-        }),
+        .action(|_| Ok(repository(RepositoryMessage::PushRequested))),
         spec(
             "branch.create",
             "Branch: Create",
@@ -331,11 +327,7 @@ fn specs() -> Vec<CoreCommandSpec> {
             "repository",
         )
         .cap("command:invoke:repository.open_search")
-        .action(|_| {
-            Ok(CoreCommandAction::Repository(
-                RepositoryMessage::OpenCommitSearch,
-            ))
-        }),
+        .action(|_| Ok(repository(RepositoryMessage::OpenCommitSearch))),
         spec(
             "repository.open_diff",
             "Repository: Open Diff",
@@ -503,7 +495,7 @@ fn create_branch(args: &Value) -> Result<CoreCommandAction, String> {
 
 fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
     let remote_name = string_arg(args, "remote_name");
-    Ok(CoreCommandAction::Repository(RepositoryMessage::Center(
+    Ok(repository(RepositoryMessage::Center(
         CenterAction::BranchDeleteRequested {
             branch_name: required_string_arg(args, "name")?,
             is_remote: bool_arg(args, "is_remote"),
@@ -514,7 +506,7 @@ fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
 }
 
 fn rename_branch(args: &Value) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::Repository(RepositoryMessage::Center(
+    Ok(repository(RepositoryMessage::Center(
         CenterAction::BranchRenameRequested {
             branch_name: required_string_arg(args, "name")?,
             is_remote: bool_arg(args, "is_remote"),
@@ -534,9 +526,7 @@ fn checkout_branch(args: &Value) -> Result<CoreCommandAction, String> {
 }
 
 fn stash(action: CenterAction) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::Repository(RepositoryMessage::Center(
-        action,
-    )))
+    Ok(repository(RepositoryMessage::Center(action)))
 }
 
 fn stash_pop(args: &Value) -> Result<CoreCommandAction, String> {
@@ -550,15 +540,11 @@ fn stash_pop(args: &Value) -> Result<CoreCommandAction, String> {
 }
 
 fn detail(action: DetailAction) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::Repository(RepositoryMessage::Detail(
-        action,
-    )))
+    Ok(repository(RepositoryMessage::Detail(action)))
 }
 
 fn diff(action: DiffPanelAction) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::Repository(RepositoryMessage::DiffPanel(
-        action,
-    )))
+    Ok(repository(RepositoryMessage::DiffPanel(action)))
 }
 
 fn copy_hash(args: &Value) -> Result<CoreCommandAction, String> {
@@ -633,9 +619,8 @@ mod tests {
         let queued = actions.drain();
         assert!(matches!(
             queued.as_slice(),
-            [CoreCommandAction::Repository(
-                RepositoryMessage::PullRequested
-            )]
+            [CoreCommandAction::Repository(message)]
+                if matches!(message.as_ref(), RepositoryMessage::PullRequested)
         ));
     }
 }

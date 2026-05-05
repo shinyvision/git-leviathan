@@ -239,14 +239,16 @@ fn remove_slot(
     )?;
     check_slot_mutation_capability(
         &state.guard,
-        "remove",
-        Some(&data.plugin_id),
-        desc.name,
-        &container,
-        &data.id,
-        &target,
-        "leviathan.ui.slot.remove",
-        source.as_deref(),
+        SlotMutationCapability {
+            op: "remove",
+            target_plugin_id: Some(&data.plugin_id),
+            region: desc.name,
+            container: &container,
+            id: &data.id,
+            target: &target,
+            api_name: "leviathan.ui.slot.remove",
+            source_location: source.as_deref(),
+        },
     )?;
     state
         .ledger
@@ -291,14 +293,16 @@ fn replace_slot(
     )?;
     check_slot_mutation_capability(
         &state.guard,
-        "replace",
-        Some(&data.plugin_id),
-        desc.name,
-        &container,
-        &data.id,
-        &target,
-        "leviathan.ui.slot.replace",
-        source.as_deref(),
+        SlotMutationCapability {
+            op: "replace",
+            target_plugin_id: Some(&data.plugin_id),
+            region: desc.name,
+            container: &container,
+            id: &data.id,
+            target: &target,
+            api_name: "leviathan.ui.slot.replace",
+            source_location: source.as_deref(),
+        },
     )?;
     let had_live = state
         .ledger
@@ -495,20 +499,25 @@ fn check_region_capability(
         .map_err(|e| e.to_string())
 }
 
+struct SlotMutationCapability<'a> {
+    op: &'a str,
+    target_plugin_id: Option<&'a str>,
+    region: &'a str,
+    container: &'a str,
+    id: &'a str,
+    target: &'a str,
+    api_name: &'a str,
+    source_location: Option<&'a str>,
+}
+
 fn check_slot_mutation_capability(
     guard: &CapabilityGuard,
-    op: &str,
-    target_plugin_id: Option<&str>,
-    region: &str,
-    container: &str,
-    id: &str,
-    target: &str,
-    api_name: &str,
-    source_location: Option<&str>,
+    request: SlotMutationCapability<'_>,
 ) -> Result<(), String> {
-    let is_builtin = target_plugin_id == Some(crate::plugin::slots::BUILTIN_PLUGIN_ID)
-        || (target_plugin_id.is_none() && id.starts_with("builtin."));
-    let is_other_plugin = target_plugin_id
+    let is_builtin = request.target_plugin_id == Some(crate::plugin::slots::BUILTIN_PLUGIN_ID)
+        || (request.target_plugin_id.is_none() && request.id.starts_with("builtin."));
+    let is_other_plugin = request
+        .target_plugin_id
         .map(|owner| owner != guard.plugin_id() && owner != crate::plugin::slots::BUILTIN_PLUGIN_ID)
         .unwrap_or(false);
     if !is_builtin && !is_other_plugin {
@@ -516,15 +525,18 @@ fn check_slot_mutation_capability(
     }
     let mut caps = Vec::new();
     if is_builtin {
-        caps.push(format!("ui:{op}:builtin"));
+        caps.push(format!("ui:{}:builtin", request.op));
     }
-    caps.push(format!("ui:{op}:{region}:{container}:{id}"));
+    caps.push(format!(
+        "ui:{}:{}:{}:{}",
+        request.op, request.region, request.container, request.id
+    ));
     guard
         .check_any_named_for_target(
             &caps,
-            target,
-            api_name,
-            source_location,
+            request.target,
+            request.api_name,
+            request.source_location,
             &format!("Declare and grant `{}`.", caps.join("` or `")),
         )
         .map_err(|e| e.to_string())

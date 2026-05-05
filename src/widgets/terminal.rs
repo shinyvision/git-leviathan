@@ -406,8 +406,7 @@ fn cursor_visible(epoch: Instant, now: Instant) -> bool {
         .unwrap_or_default()
         .as_millis()
         / u128::from(CURSOR_BLINK_MS))
-        % 2
-        == 0
+    .is_multiple_of(2)
 }
 
 fn cell_width(font_size: f32) -> f32 {

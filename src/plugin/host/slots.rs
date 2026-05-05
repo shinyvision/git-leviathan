@@ -115,12 +115,14 @@ pub(crate) fn validate_raw_slot_op(
             diagnostics,
             generation_id,
             live_ops,
-            plugin_id,
-            target_plugin_id.as_deref(),
-            region,
-            container,
-            id,
-            "remove",
+            MutationTarget {
+                plugin_id,
+                target_plugin_id: target_plugin_id.as_deref(),
+                region,
+                container,
+                id,
+                op: "remove",
+            },
         ),
         RawSlotOp::Replace {
             target_plugin_id,
@@ -132,12 +134,14 @@ pub(crate) fn validate_raw_slot_op(
             diagnostics,
             generation_id,
             live_ops,
-            plugin_id,
-            target_plugin_id.as_deref(),
-            region,
-            container,
-            id,
-            "replace",
+            MutationTarget {
+                plugin_id,
+                target_plugin_id: target_plugin_id.as_deref(),
+                region,
+                container,
+                id,
+                op: "replace",
+            },
         ),
     }
 }
@@ -307,64 +311,85 @@ fn default_target_plugin_id(requester_plugin_id: &str, id: &str) -> String {
     }
 }
 
+struct MutationTarget<'a> {
+    plugin_id: &'a str,
+    target_plugin_id: Option<&'a str>,
+    region: &'a str,
+    container: &'a str,
+    id: &'a str,
+    op: &'a str,
+}
+
 fn validate_mutation_target(
     diagnostics: &DiagnosticStore,
     generation_id: GenerationId,
     live_ops: &[PreparedSlotOp],
-    plugin_id: &str,
-    target_plugin_id: Option<&str>,
-    region: &str,
-    container: &str,
-    id: &str,
-    op: &str,
+    request: MutationTarget<'_>,
 ) -> bool {
-    let target = target_address(plugin_id, target_plugin_id, region, container, id);
+    let target = target_address(
+        request.plugin_id,
+        request.target_plugin_id,
+        request.region,
+        request.container,
+        request.id,
+    );
     if target.is_builtin() {
-        if crate::plugin::slots::builtins::get(region, container, id).is_some() {
+        if crate::plugin::slots::builtins::get(request.region, request.container, request.id)
+            .is_some()
+        {
             return true;
         }
         slot_diagnostic(
             diagnostics,
             generation_id,
-            plugin_id,
-            missing_code(op),
-            format!("{op}_slot target missing `{region}:{container}:{id}`"),
-            mutation_api_name(op),
+            request.plugin_id,
+            missing_code(request.op),
+            format!(
+                "{}_slot target missing `{}:{}:{}`",
+                request.op, request.region, request.container, request.id
+            ),
+            mutation_api_name(request.op),
         );
         return false;
     }
     let active = effective_slots(live_ops);
     if let Some(owner) = active.get(&target) {
-        if target.plugin_id().as_str() == plugin_id || target_plugin_id.is_some() {
+        if target.plugin_id().as_str() == request.plugin_id || request.target_plugin_id.is_some() {
             return true;
         }
         slot_diagnostic(
             diagnostics,
             generation_id,
-            plugin_id,
+            request.plugin_id,
             "schema.slot_mutation_unauthorized",
-            format!("{op}_slot denied for `{region}:{container}:{id}` owned by `{owner}`"),
-            mutation_api_name(op),
+            format!(
+                "{}_slot denied for `{}:{}:{}` owned by `{owner}`",
+                request.op, request.region, request.container, request.id
+            ),
+            mutation_api_name(request.op),
         );
         return false;
     }
     let same_target_owner = active
         .iter()
         .find(|(address, _)| {
-            address.region().as_str() == region
-                && address.container().key() == container
-                && address.slot_id().as_str() == id
+            address.region().as_str() == request.region
+                && address.container().key() == request.container
+                && address.slot_id().as_str() == request.id
         })
         .map(|(_, owner)| owner.clone());
     match same_target_owner {
-        Some(owner) if owner != plugin_id => {
+        Some(owner) if owner != request.plugin_id => {
             slot_diagnostic(
                 diagnostics,
                 generation_id,
-                plugin_id,
+                request.plugin_id,
                 "schema.slot_mutation_unauthorized",
-                format!("{op}_slot denied for `{region}:{container}:{id}` owned by `{owner}`"),
-                mutation_api_name(op),
+                format!(
+                    "{}_slot denied for `{}:{}:{}` owned by `{owner}`",
+                    request.op, request.region, request.container, request.id
+                ),
+                mutation_api_name(request.op),
             );
             false
         }
@@ -372,10 +397,13 @@ fn validate_mutation_target(
             slot_diagnostic(
                 diagnostics,
                 generation_id,
-                plugin_id,
-                missing_code(op),
-                format!("{op}_slot target missing `{region}:{container}:{id}`"),
-                mutation_api_name(op),
+                request.plugin_id,
+                missing_code(request.op),
+                format!(
+                    "{}_slot target missing `{}:{}:{}`",
+                    request.op, request.region, request.container, request.id
+                ),
+                mutation_api_name(request.op),
             );
             false
         }

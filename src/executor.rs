@@ -67,8 +67,7 @@ impl iced::executor::Executor for BoundedTokioExecutor {
 fn default_worker_threads(available_parallelism: Option<usize>) -> usize {
     available_parallelism
         .unwrap_or(1)
-        .max(1)
-        .min(DEFAULT_WORKER_THREAD_CAP)
+        .clamp(1, DEFAULT_WORKER_THREAD_CAP)
 }
 
 fn parse_thread_override(value: Option<&str>) -> Option<usize> {

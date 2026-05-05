@@ -51,6 +51,16 @@ pub struct CapabilityGuard {
     grant_store: GrantStore,
 }
 
+struct TargetDiagnostic<'a> {
+    code: &'a str,
+    capability: &'a str,
+    target: &'a str,
+    api_name: &'a str,
+    source_location: Option<&'a str>,
+    remediation: &'a str,
+    message: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct CapabilityPaths {
     pub plugin_root: PathBuf,
@@ -265,15 +275,15 @@ impl CapabilityGuard {
             )
         };
         self.record_audit(primary, target, AuditOutcome::Denied);
-        self.record_target_diagnostic(
-            "capability.denied",
-            &capability_label,
+        self.record_target_diagnostic(TargetDiagnostic {
+            code: "capability.denied",
+            capability: &capability_label,
             target,
             api_name,
             source_location,
             remediation,
-            message.clone(),
-        );
+            message: message.clone(),
+        });
         Err(message)
     }
 
@@ -320,33 +330,29 @@ impl CapabilityGuard {
         }
     }
 
-    fn record_target_diagnostic(
-        &self,
-        code: &str,
-        capability: &str,
-        target: &str,
-        api_name: &str,
-        source_location: Option<&str>,
-        remediation: &str,
-        message: String,
-    ) {
+    fn record_target_diagnostic(&self, diagnostic: TargetDiagnostic<'_>) {
         if let Some((store, plugin_id, generation_id)) = &self.diagnostics {
             let context = serde_json::json!({
                 "plugin_id": self.plugin_id,
                 "plugin_version": self.plugin_version,
-                "capability": capability,
-                "target": target,
-                "api": api_name,
-                "source_location": source_location,
-                "remediation": remediation,
+                "capability": diagnostic.capability,
+                "target": diagnostic.target,
+                "api": diagnostic.api_name,
+                "source_location": diagnostic.source_location,
+                "remediation": diagnostic.remediation,
             });
             store.record(
-                PluginDiagnostic::new(plugin_id.clone(), DiagnosticSeverity::Error, code, message)
-                    .with_generation(*generation_id)
-                    .with_source(PluginSourceSpan::ApiFunction {
-                        name: api_name.to_string(),
-                    })
-                    .with_context(context),
+                PluginDiagnostic::new(
+                    plugin_id.clone(),
+                    DiagnosticSeverity::Error,
+                    diagnostic.code,
+                    diagnostic.message,
+                )
+                .with_generation(*generation_id)
+                .with_source(PluginSourceSpan::ApiFunction {
+                    name: diagnostic.api_name.to_string(),
+                })
+                .with_context(context),
             );
         }
     }

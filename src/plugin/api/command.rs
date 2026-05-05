@@ -30,20 +30,32 @@ pub struct UserCommands {
     pub commands: HashMap<String, RegistryKey>,
 }
 
-pub fn install(
-    lua: &Lua,
-    commands: Rc<RefCell<UserCommands>>,
-    build: Rc<RefCell<BuildState>>,
-    ledger: ResourceLedger,
-    leviathan: &Table,
-    dispatch: CommandDispatchEnv,
-    guard: Rc<CapabilityGuard>,
-    plugin_id: PluginId,
-) -> mlua::Result<()> {
+pub struct InstallCtx {
+    pub commands: Rc<RefCell<UserCommands>>,
+    pub build: Rc<RefCell<BuildState>>,
+    pub ledger: ResourceLedger,
+    pub dispatch: CommandDispatchEnv,
+    pub guard: Rc<CapabilityGuard>,
+    pub plugin_id: PluginId,
+}
+
+pub fn install(lua: &Lua, leviathan: &Table, ctx: InstallCtx) -> mlua::Result<()> {
     let command_tbl = lua.create_table()?;
-    install_command_create(lua, commands, Rc::clone(&build), ledger, &command_tbl)?;
-    install_command_invoke(lua, dispatch.clone(), guard, plugin_id, &command_tbl)?;
-    install_command_list(lua, dispatch, &command_tbl)?;
+    install_command_create(
+        lua,
+        ctx.commands,
+        Rc::clone(&ctx.build),
+        ctx.ledger,
+        &command_tbl,
+    )?;
+    install_command_invoke(
+        lua,
+        ctx.dispatch.clone(),
+        ctx.guard,
+        ctx.plugin_id,
+        &command_tbl,
+    )?;
+    install_command_list(lua, ctx.dispatch, &command_tbl)?;
 
     leviathan.set("command", command_tbl)?;
     Ok(())

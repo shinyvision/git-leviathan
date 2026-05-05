@@ -392,24 +392,34 @@ fn devtools_autocmds_reflects_state() {
 }
 
 #[test]
-fn local_dancing_banana_listens_to_canonical_fetch_events() {
+fn inline_fixture_listens_to_canonical_fetch_events() {
     let mut host = MockHost::new();
-    host.host_mut()
-        .load_plugin(&std::path::PathBuf::from("plugins/dancing_banana_test"))
-        .expect("dancing_banana_test loads");
+    host.load_inline(
+        "fetch_pair",
+        &manifest("fetch_pair"),
+        r#"
+        leviathan.autocmd.create("FetchStarted", {
+            callback = function() end,
+        })
+        leviathan.autocmd.create("FetchFinished", {
+            callback = function() end,
+        })
+        "#,
+    )
+    .expect("fetch_pair loads");
     let snap = host.introspect();
     let rows: Vec<_> = snap
         .autocmds
         .iter()
-        .filter(|a| a.plugin_id == "dancing_banana_test")
+        .filter(|a| a.plugin_id == "fetch_pair")
         .collect();
     assert!(
         rows.iter().any(|r| r.event == "FetchStarted"),
-        "dancing_banana_test must register against canonical FetchStarted: {rows:#?}"
+        "fixture must register against canonical FetchStarted: {rows:#?}"
     );
     assert!(
         rows.iter().any(|r| r.event == "FetchFinished"),
-        "dancing_banana_test must register against canonical FetchFinished: {rows:#?}"
+        "fixture must register against canonical FetchFinished: {rows:#?}"
     );
 }
 
