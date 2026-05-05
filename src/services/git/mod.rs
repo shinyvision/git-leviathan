@@ -21,7 +21,10 @@ mod worktrees;
 use git2::Repository;
 
 use crate::services::git::working_tree_diff::WorkingTreeDiffResult;
-use crate::{core::ChangedFile, services::git_error::GitError, services::RepoSnapshot};
+use crate::{
+    core::ChangedFile,
+    services::{git_error::GitError, DirtySnapshot, RepoSnapshot},
+};
 
 pub use checkout::ResetMode;
 pub use conflict_resolution::{ConflictBlock, ConflictResolutionResult};
@@ -144,6 +147,10 @@ impl GitService {
 
     pub fn load_repo(&self, commit_limit: usize) -> RepoSnapshot {
         loader::load_repo(self, commit_limit)
+    }
+
+    pub fn load_dirty_snapshot(&self) -> Option<DirtySnapshot> {
+        working_tree::load_dirty_snapshot(self)
     }
 
     pub fn list_worktrees(&self) -> Result<Vec<crate::core::WorktreeInfo>, GitError> {

@@ -3,10 +3,10 @@ use std::sync::{Arc, Mutex};
 
 use crate::services::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,
-    CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature, GitError,
-    GitService, MergedCommitDiffResult, PushOutcome, RefsSnapshot, RemoteCheckoutOutcome,
-    RepoSnapshot, ResetMode, StashApplyOutcome, WorkingTreeDiffResult, WorktreeInfo,
-    COMMIT_LOAD_LIMIT,
+    CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature,
+    DirtySnapshot, GitError, GitService, MergedCommitDiffResult, PushOutcome, RefsSnapshot,
+    RemoteCheckoutOutcome, RepoSnapshot, ResetMode, StashApplyOutcome, WorkingTreeDiffResult,
+    WorktreeInfo, COMMIT_LOAD_LIMIT,
 };
 
 use super::branch_ops::BranchOps;
@@ -130,6 +130,14 @@ impl GitRepositoryGateway {
         let mut service =
             GitService::open(&self.repo_path).map_err(|e| GitError::Other(e.to_string()))?;
         f(&mut service)
+    }
+
+    fn write_then_load_dirty(
+        &self,
+        write: impl FnOnce(&mut GitService) -> Result<(), GitError>,
+    ) -> Result<Option<DirtySnapshot>, GitError> {
+        self.with_service(write)?;
+        self.with_service_unlocked(|service| Ok(service.load_dirty_snapshot()))
     }
 }
 
@@ -334,6 +342,22 @@ impl WorkingTreeOps for GitRepositoryGateway {
             service.unstage_all_dirty_changes()?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
+    }
+
+    fn stage_file_and_load_dirty(&self, path: &str) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.stage_file(path))
+    }
+
+    fn stage_all_dirty_changes_and_load_dirty(&self) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.stage_all_dirty_changes())
+    }
+
+    fn unstage_file_and_load_dirty(&self, path: &str) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.unstage_file(path))
+    }
+
+    fn unstage_all_dirty_changes_and_load_dirty(&self) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.unstage_all_dirty_changes())
     }
 
     fn mark_conflict_resolved(&self, path: &str) -> Result<RepoSnapshot, GitError> {

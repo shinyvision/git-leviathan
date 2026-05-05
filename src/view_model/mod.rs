@@ -14,7 +14,8 @@ pub use commit_presentation::{BranchDisplayRow, BranchLabel, BranchLabelKind, Co
 pub use diff_view::CommitDiffState;
 pub use graph_view::{GraphRow, GraphSegment, ProjectionSignature, RepositoryProjection};
 pub use loaded::{
-    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedPushOutcome, LoadedRefs,
-    LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedDirtyRow,
+    LoadedPushOutcome, LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo,
+    LoadedStashApplyOutcome,
 };
 pub use sidebar_view::{Branch, SidebarSection, SidebarSectionKind, SidebarStash};

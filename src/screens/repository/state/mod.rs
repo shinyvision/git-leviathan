@@ -19,6 +19,7 @@ mod context_menu;
 mod diff_cache;
 pub(crate) mod gateway_fleet;
 mod merged_diff;
+mod operation;
 mod pending_focus;
 mod popout;
 mod resize;
@@ -32,7 +33,7 @@ use iced::widget::scrollable;
 use crate::{
     core::{Commit, CommitKind},
     services::CommitDiffResult,
-    view_model::{LoadedRefs, LoadedRepo},
+    view_model::{LoadedDirtyIndex, LoadedRefs, LoadedRepo},
     widgets::ROW_H,
 };
 
@@ -47,6 +48,7 @@ pub(in crate::screens::repository) use context_menu::{
 pub(in crate::screens::repository) use diff_cache::DiffCache;
 pub(crate) use gateway_fleet::GatewayFleet;
 pub(in crate::screens::repository) use merged_diff::MergedDiffCache;
+pub(crate) use operation::{OperationCoordinator, OperationId, OperationKind};
 pub(in crate::screens::repository) use pending_focus::PendingFocus;
 pub(in crate::screens::repository) use popout::{
     BranchPopoutController, BranchPopoutState, BranchPressOutcome, SidebarContextMenuRequest,
@@ -163,6 +165,7 @@ pub(in crate::screens::repository) struct RepositoryData {
     /// Commit-list search filter state. Lives here (not on the screen) so
     /// the center-panel view can reach it via `data` with no extra ctx field.
     pub(in crate::screens::repository) commit_search: Option<CommitSearch>,
+    pub(in crate::screens::repository) operations: OperationCoordinator,
 }
 
 impl RepositoryData {
@@ -177,6 +180,7 @@ impl RepositoryData {
             pending_focus: None,
             branch_popout: BranchPopoutController::default(),
             commit_search: None,
+            operations: OperationCoordinator::new(),
         }
     }
 
@@ -193,6 +197,7 @@ impl RepositoryData {
         self.pending_focus = None;
         self.branch_popout = BranchPopoutController::default();
         self.commit_search = None;
+        self.operations = OperationCoordinator::new();
     }
 
     /// Full-reload coordination. Preserves diff cache entries across the
@@ -211,6 +216,42 @@ impl RepositoryData {
         let new_states = self.snapshot.apply_refs_update(refs);
         self.cache
             .replace(&prev_commits, self.snapshot.commits(), new_states);
+    }
+
+    pub(in crate::screens::repository) fn apply_dirty_index_update(
+        &mut self,
+        loaded: LoadedDirtyIndex,
+    ) -> bool {
+        match loaded.dirty {
+            Some(row) => {
+                if !self
+                    .snapshot
+                    .commits()
+                    .first()
+                    .is_some_and(|c| c.kind == CommitKind::Dirty)
+                {
+                    return false;
+                }
+                let diff_state = row.diff_state.clone();
+                self.snapshot.replace_dirty_row(row);
+                self.cache.replace_dirty(diff_state);
+            }
+            None => {
+                let had_dirty = self
+                    .snapshot
+                    .commits()
+                    .first()
+                    .is_some_and(|c| c.kind == CommitKind::Dirty);
+                if had_dirty {
+                    self.snapshot.remove_dirty_row();
+                    self.cache.remove_dirty();
+                    if self.selection.selected_commit() >= self.snapshot.commits().len() {
+                        self.selection.replace_with_single(0);
+                    }
+                }
+            }
+        }
+        true
     }
 
     /// Applies a `load_commit_diff` result to the cache. Kept as a thin
@@ -272,5 +313,78 @@ impl RepositoryData {
         selected_commit: usize,
     ) -> Option<&Commit> {
         self.snapshot.commits().get(selected_commit)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        core::{ChangeKind, ChangedFile},
+        services::{presenter::projection, CommitSnapshot, DirtySnapshot, RepoRef, RepoSnapshot},
+    };
+
+    fn commit_snapshot(hash: &str) -> CommitSnapshot {
+        CommitSnapshot {
+            hash: hash.to_string(),
+            message: "initial".to_string(),
+            author_name: "Ada".to_string(),
+            authored_at: 1_700_000_000,
+            authored_offset_minutes: 0,
+            parent_hashes: vec![],
+        }
+    }
+
+    fn dirty(staged: Vec<&str>, unstaged: Vec<&str>) -> DirtySnapshot {
+        DirtySnapshot {
+            conflicted_files: vec![],
+            staged_files: staged
+                .into_iter()
+                .map(|path| ChangedFile {
+                    path: path.to_string(),
+                    kind: ChangeKind::Modified,
+                })
+                .collect(),
+            unstaged_files: unstaged
+                .into_iter()
+                .map(|path| ChangedFile {
+                    path: path.to_string(),
+                    kind: ChangeKind::Modified,
+                })
+                .collect(),
+            parent_hashes: vec!["aaaaaaaa".to_string()],
+        }
+    }
+
+    fn loaded_repo(dirty: DirtySnapshot) -> crate::view_model::LoadedRepo {
+        projection::project_loaded(RepoSnapshot {
+            commits: vec![commit_snapshot("aaaaaaaa")],
+            refs: Vec::<RepoRef>::new(),
+            dirty: Some(dirty),
+            stashes: vec![],
+            repo_name: "repo".to_string(),
+            current_branch: Some("main".to_string()),
+            head_hash: Some("aaaaaaaa".to_string()),
+            has_more_commits: false,
+            default_remote_name: None,
+            fast_forward_candidates: Default::default(),
+            worktrees: vec![],
+            active_worktree_path: Default::default(),
+        })
+    }
+
+    #[test]
+    fn dirty_index_update_replaces_dirty_buckets_without_reloading_history() {
+        let mut data = RepositoryData::loading_with_repo_name("repo".to_string());
+        data.replace_loaded(loaded_repo(dirty(vec![], vec!["file.txt"])));
+
+        let before_history_hash = data.snapshot.commits()[1].hash.clone();
+        let loaded = projection::project_dirty_index(Some(dirty(vec!["file.txt"], vec![])));
+
+        assert!(data.apply_dirty_index_update(loaded));
+        assert_eq!(data.snapshot.commits()[1].hash, before_history_hash);
+        assert_eq!(data.snapshot.commits()[0].staged_files.len(), 1);
+        assert!(data.snapshot.commits()[0].unstaged_files.is_empty());
+        assert_eq!(data.cache.state(0).unwrap().files[0].path, "file.txt");
     }
 }

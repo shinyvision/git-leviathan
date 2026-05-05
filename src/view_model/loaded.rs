@@ -7,6 +7,18 @@ use crate::view_model::{
     sidebar_view::SidebarSection,
 };
 
+#[derive(Debug, Clone)]
+pub struct LoadedDirtyRow {
+    pub commit: crate::core::Commit,
+    pub presentation: CommitPresentation,
+    pub diff_state: CommitDiffState,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedDirtyIndex {
+    pub dirty: Option<LoadedDirtyRow>,
+}
+
 /// Result of taking a raw `RepoSnapshot` through the presenter off the main
 /// thread. Carries the UI-ready projection plus the signature used to decide
 /// whether the graph canvas tile cache needs invalidation.

@@ -5,6 +5,12 @@ use crate::services::git_error::GitError;
 use super::helpers::{find_commit_or, wrap_git2_error};
 use super::GitService;
 
+pub const MAX_HIGHLIGHT_FILE_BYTES: usize = 512 * 1024;
+pub const MAX_HIGHLIGHT_LINES: usize = 10_000;
+pub const MAX_DIFF_LINES_RENDERED_FULLY: usize = 5_000;
+pub const MAX_INTRA_LINE_DIFF_LINE_CHARS: usize = 2_000;
+pub const MAX_INTRA_LINE_DIFF_PAIRS: usize = 1_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SegmentKind {
     Context,
@@ -48,6 +54,58 @@ pub struct WorkingTreeDiffResult {
     pub old_file_content: Option<String>,
     pub new_file_content: Option<String>,
     pub dirty_signature: Option<DirtyDiffSignature>,
+    pub fallbacks: DiffFallbacks,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DiffFallbacks {
+    pub highlight_skips: Vec<DiffContentSkip>,
+    pub intra_line_skip: Option<IntraLineSkip>,
+    pub truncation: Option<DiffTruncation>,
+}
+
+impl DiffFallbacks {
+    pub fn has_binary_or_non_utf8(&self) -> bool {
+        self.highlight_skips.iter().any(|skip| {
+            matches!(
+                skip.reason,
+                DiffContentSkipReason::Binary | DiffContentSkipReason::NonUtf8
+            )
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffSide {
+    Old,
+    New,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiffContentSkip {
+    pub side: DiffSide,
+    pub reason: DiffContentSkipReason,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiffContentSkipReason {
+    Binary,
+    NonUtf8,
+    TooManyBytes { bytes: usize, max: usize },
+    TooManyLines { lines: usize, max: usize },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntraLineSkip {
+    pub skipped_pairs: usize,
+    pub max_line_chars: usize,
+    pub max_pairs: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiffTruncation {
+    pub shown_lines: usize,
+    pub omitted_lines: usize,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -215,11 +273,13 @@ pub(super) fn process_git_diff<G, H>(
     new_content_getter: H,
 ) -> Result<WorkingTreeDiffResult, GitError>
 where
-    G: FnOnce() -> Option<String>,
-    H: FnOnce() -> Option<String>,
+    G: FnOnce() -> FileContent,
+    H: FnOnce() -> FileContent,
 {
     let in_target_file = RefCell::new(false);
     let lines: RefCell<Vec<WorkingTreeDiffLine>> = RefCell::new(Vec::new());
+    let omitted_lines = RefCell::new(0usize);
+    let non_utf8_diff_line = RefCell::new(false);
 
     diff.foreach(
         &mut |delta: git2::DiffDelta<'_>, _progress| {
@@ -236,6 +296,10 @@ where
         Some(
             &mut |_delta: git2::DiffDelta<'_>, hunk: git2::DiffHunk<'_>| {
                 if *in_target_file.borrow() {
+                    if lines.borrow().len() >= MAX_DIFF_LINES_RENDERED_FULLY {
+                        *omitted_lines.borrow_mut() += 1;
+                        return true;
+                    }
                     let header_str = format!(
                         "@@ -{},{} +{},{} @@",
                         hunk.old_start(),
@@ -258,6 +322,10 @@ where
                    _hunk: Option<git2::DiffHunk<'_>>,
                    line: git2::DiffLine<'_>| {
             if *in_target_file.borrow() {
+                if lines.borrow().len() >= MAX_DIFF_LINES_RENDERED_FULLY {
+                    *omitted_lines.borrow_mut() += 1;
+                    return true;
+                }
                 let origin = line.origin();
                 let line_type = match origin {
                     '+' => DiffLineType::Addition,
@@ -267,7 +335,13 @@ where
                     '<' => DiffLineType::DeleteEofnl,
                     _ => DiffLineType::Context,
                 };
-                let raw_content = String::from_utf8_lossy(line.content()).into_owned();
+                let raw_content = match std::str::from_utf8(line.content()) {
+                    Ok(content) => content,
+                    Err(_) => {
+                        *non_utf8_diff_line.borrow_mut() = true;
+                        "<non-UTF-8 diff line>\n"
+                    }
+                };
                 let content = raw_content.trim_end_matches('\n').replace('\t', "    ");
                 let segments = vec![DiffSegment {
                     kind: match line_type {
@@ -292,27 +366,100 @@ where
 
     let result_lines = lines.into_inner();
     let result_lines = normalize_eof_newline_changes(result_lines);
-    let result_lines = compute_intra_line_diffs(result_lines);
+    let (result_lines, intra_line_skip) = compute_intra_line_diffs(result_lines);
 
     let old_file_content = old_content_getter();
     let new_file_content = new_content_getter();
+    let mut fallbacks = DiffFallbacks {
+        intra_line_skip,
+        truncation: None,
+        highlight_skips: Vec::new(),
+    };
+    if let Some(skip) = old_file_content.skip {
+        fallbacks.highlight_skips.push(DiffContentSkip {
+            side: DiffSide::Old,
+            reason: skip,
+        });
+    }
+    if let Some(skip) = new_file_content.skip {
+        fallbacks.highlight_skips.push(DiffContentSkip {
+            side: DiffSide::New,
+            reason: skip,
+        });
+    }
+    if *non_utf8_diff_line.borrow() {
+        fallbacks.highlight_skips.push(DiffContentSkip {
+            side: DiffSide::New,
+            reason: DiffContentSkipReason::NonUtf8,
+        });
+    }
+    let omitted_lines = omitted_lines.into_inner();
+    if omitted_lines > 0 {
+        fallbacks.truncation = Some(DiffTruncation {
+            shown_lines: result_lines.len(),
+            omitted_lines,
+        });
+    }
 
     Ok(WorkingTreeDiffResult {
         file_path: file_path.to_string(),
         lines: result_lines,
-        old_file_content,
-        new_file_content,
+        old_file_content: old_file_content.text,
+        new_file_content: new_file_content.text,
         dirty_signature: None,
+        fallbacks,
     })
 }
 
-fn content_from_workdir(repo: &git2::Repository, file_path: &str) -> Option<String> {
-    repo.workdir()
-        .map(|wd| wd.join(file_path))
-        .and_then(|path| std::fs::read_to_string(path).ok())
+#[derive(Debug, Clone)]
+pub(super) struct FileContent {
+    text: Option<String>,
+    skip: Option<DiffContentSkipReason>,
 }
 
-fn content_from_head(repo: &git2::Repository, file_path: &str) -> Option<String> {
+impl FileContent {
+    pub(super) fn missing() -> Self {
+        Self {
+            text: None,
+            skip: None,
+        }
+    }
+
+    fn skipped(reason: DiffContentSkipReason) -> Self {
+        Self {
+            text: None,
+            skip: Some(reason),
+        }
+    }
+
+    fn text(text: String) -> Self {
+        Self {
+            text: Some(text),
+            skip: None,
+        }
+    }
+}
+
+fn content_from_workdir(repo: &git2::Repository, file_path: &str) -> FileContent {
+    let Some(path) = repo.workdir().map(|wd| wd.join(file_path)) else {
+        return FileContent::missing();
+    };
+    let Ok(meta) = std::fs::metadata(&path) else {
+        return FileContent::missing();
+    };
+    if meta.len() as usize > MAX_HIGHLIGHT_FILE_BYTES {
+        return FileContent::skipped(DiffContentSkipReason::TooManyBytes {
+            bytes: meta.len() as usize,
+            max: MAX_HIGHLIGHT_FILE_BYTES,
+        });
+    }
+    let Ok(bytes) = std::fs::read(path) else {
+        return FileContent::missing();
+    };
+    content_from_bytes(&bytes)
+}
+
+fn content_from_head(repo: &git2::Repository, file_path: &str) -> FileContent {
     let head_tree = repo
         .head()
         .ok()
@@ -322,23 +469,59 @@ fn content_from_head(repo: &git2::Repository, file_path: &str) -> Option<String>
     content_from_tree(repo, head_tree.as_ref(), file_path)
 }
 
-fn content_from_index(repo: &git2::Repository, file_path: &str) -> Option<String> {
-    let index = repo.index().ok()?;
-    let entry = index.get_path(Path::new(file_path), 0)?;
-    repo.find_blob(entry.id)
+fn content_from_index(repo: &git2::Repository, file_path: &str) -> FileContent {
+    let Some(entry) = repo
+        .index()
         .ok()
-        .map(|blob| String::from_utf8_lossy(blob.content()).into_owned())
+        .and_then(|index| index.get_path(Path::new(file_path), 0))
+    else {
+        return FileContent::missing();
+    };
+    let Ok(blob) = repo.find_blob(entry.id) else {
+        return FileContent::missing();
+    };
+    content_from_blob(&blob)
 }
 
 fn content_from_tree(
     repo: &git2::Repository,
     tree: Option<&git2::Tree<'_>>,
     file_path: &str,
-) -> Option<String> {
-    let entry = tree?.get_path(Path::new(file_path)).ok()?;
-    repo.find_blob(entry.id())
-        .ok()
-        .map(|blob| String::from_utf8_lossy(blob.content()).into_owned())
+) -> FileContent {
+    let Some(entry) = tree.and_then(|tree| tree.get_path(Path::new(file_path)).ok()) else {
+        return FileContent::missing();
+    };
+    let Ok(blob) = repo.find_blob(entry.id()) else {
+        return FileContent::missing();
+    };
+    content_from_blob(&blob)
+}
+
+pub(super) fn content_from_blob(blob: &git2::Blob<'_>) -> FileContent {
+    if blob.is_binary() {
+        return FileContent::skipped(DiffContentSkipReason::Binary);
+    }
+    content_from_bytes(blob.content())
+}
+
+fn content_from_bytes(bytes: &[u8]) -> FileContent {
+    if bytes.len() > MAX_HIGHLIGHT_FILE_BYTES {
+        return FileContent::skipped(DiffContentSkipReason::TooManyBytes {
+            bytes: bytes.len(),
+            max: MAX_HIGHLIGHT_FILE_BYTES,
+        });
+    }
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return FileContent::skipped(DiffContentSkipReason::NonUtf8);
+    };
+    let line_count = text.lines().take(MAX_HIGHLIGHT_LINES + 1).count();
+    if line_count > MAX_HIGHLIGHT_LINES {
+        return FileContent::skipped(DiffContentSkipReason::TooManyLines {
+            lines: line_count,
+            max: MAX_HIGHLIGHT_LINES,
+        });
+    }
+    FileContent::text(text.to_string())
 }
 
 fn normalize_eof_newline_changes(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeDiffLine> {
@@ -445,9 +628,14 @@ fn is_hunk_boundary(lines: &[WorkingTreeDiffLine], index: usize) -> bool {
 
 /// Compute intra-line diffs for hunks with matching deletion/addition pairs.
 /// Uses longest common substring to find changed portions.
-fn compute_intra_line_diffs(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeDiffLine> {
+fn compute_intra_line_diffs(
+    lines: Vec<WorkingTreeDiffLine>,
+) -> (Vec<WorkingTreeDiffLine>, Option<IntraLineSkip>) {
+    let span = crate::perf::Span::new("cpu.intra_line_diff").field("input_lines", lines.len());
     let mut result = Vec::with_capacity(lines.len());
     let mut i = 0;
+    let mut pairs = 0usize;
+    let mut skipped_pairs = 0usize;
 
     while i < lines.len() {
         let line = &lines[i];
@@ -459,18 +647,29 @@ fn compute_intra_line_diffs(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeD
         {
             let deletion = &lines[i];
             let addition = &lines[i + 1];
+            let deletion_chars = deletion.content.chars().count();
+            let addition_chars = addition.content.chars().count();
+            if pairs >= MAX_INTRA_LINE_DIFF_PAIRS
+                || deletion_chars > MAX_INTRA_LINE_DIFF_LINE_CHARS
+                || addition_chars > MAX_INTRA_LINE_DIFF_LINE_CHARS
+            {
+                skipped_pairs += 1;
+                result.push(deletion.clone());
+                result.push(addition.clone());
+            } else {
+                pairs += 1;
+                let (del_segments, add_segments) =
+                    compute_line_diff(&deletion.content, &addition.content);
 
-            let (del_segments, add_segments) =
-                compute_line_diff(&deletion.content, &addition.content);
+                let mut del_line = deletion.clone();
+                del_line.segments = del_segments;
 
-            let mut del_line = deletion.clone();
-            del_line.segments = del_segments;
+                let mut add_line = addition.clone();
+                add_line.segments = add_segments;
 
-            let mut add_line = addition.clone();
-            add_line.segments = add_segments;
-
-            result.push(del_line);
-            result.push(add_line);
+                result.push(del_line);
+                result.push(add_line);
+            }
             i += 2;
         } else {
             // For lines without segments (headers, context, EOF markers), ensure empty segments vec
@@ -495,38 +694,40 @@ fn compute_intra_line_diffs(lines: Vec<WorkingTreeDiffLine>) -> Vec<WorkingTreeD
         }
     }
 
-    result
+    span.field("skipped_pairs", skipped_pairs)
+        .finish_with("pairs", pairs);
+    let skip = (skipped_pairs > 0).then_some(IntraLineSkip {
+        skipped_pairs,
+        max_line_chars: MAX_INTRA_LINE_DIFF_LINE_CHARS,
+        max_pairs: MAX_INTRA_LINE_DIFF_PAIRS,
+    });
+    (result, skip)
 }
 
-/// Find longest common substring between two strings.
-/// Returns (start_a, start_b, length)
 fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
     if a.is_empty() || b.is_empty() {
         return (0, 0, 0);
     }
 
-    let a_bytes = a.as_bytes();
-    let b_bytes = b.as_bytes();
-    let n = a_bytes.len();
-    let m = b_bytes.len();
+    let a_chars: Vec<(usize, char)> = a.char_indices().collect();
+    let b_chars: Vec<(usize, char)> = b.char_indices().collect();
+    let m = b_chars.len();
 
-    // Use rolling hash for O(n log n) LCS or dynamic programming for small strings
-    // For typical line lengths (<200 chars), DP is fine
     let mut dp = vec![vec![0u16; m + 1]; 2];
     let mut best_len = 0usize;
-    let mut best_a = 0usize;
-    let mut best_b = 0usize;
+    let mut best_a_char = 0usize;
+    let mut best_b_char = 0usize;
 
-    for (i, a_byte) in a_bytes.iter().enumerate().take(n) {
+    for (i, (_, a_char)) in a_chars.iter().enumerate() {
         let cur = (i + 1) % 2;
         let prev = i % 2;
-        for (j, b_byte) in b_bytes.iter().enumerate().take(m) {
-            if a_byte == b_byte {
+        for (j, (_, b_char)) in b_chars.iter().enumerate() {
+            if a_char == b_char {
                 dp[cur][j + 1] = dp[prev][j] + 1;
                 if dp[cur][j + 1] as usize > best_len {
                     best_len = dp[cur][j + 1] as usize;
-                    best_a = (i + 1).saturating_sub(best_len);
-                    best_b = (j + 1).saturating_sub(best_len);
+                    best_a_char = (i + 1).saturating_sub(best_len);
+                    best_b_char = (j + 1).saturating_sub(best_len);
                 }
             } else {
                 dp[cur][j + 1] = 0;
@@ -534,17 +735,18 @@ fn longest_common_substring(a: &str, b: &str) -> (usize, usize, usize) {
         }
     }
 
-    (best_a, best_b, best_len)
+    let best_a = a_chars.get(best_a_char).map_or(a.len(), |(idx, _)| *idx);
+    let best_b = b_chars.get(best_b_char).map_or(b.len(), |(idx, _)| *idx);
+    let end_a_char = best_a_char + best_len;
+    let end_a = a_chars.get(end_a_char).map_or(a.len(), |(idx, _)| *idx);
+
+    (best_a, best_b, end_a.saturating_sub(best_a))
 }
 
-/// Compute intra-line diff segments for a deletion/addition pair.
-/// Returns (deletion_segments, addition_segments) with highlight for changed portions.
 fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<DiffSegment>) {
-    // Find longest common substring
     let (lcs_a, lcs_b, lcs_len) = longest_common_substring(deletion, addition);
 
     if lcs_len == 0 {
-        // No common substring - entire lines are changes
         return (
             vec![DiffSegment {
                 kind: SegmentKind::DeletionHighlight,
@@ -560,7 +762,6 @@ fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<D
     let mut del_segments = Vec::new();
     let mut add_segments = Vec::new();
 
-    // Build deletion segments
     if lcs_a > 0 {
         del_segments.push(DiffSegment {
             kind: SegmentKind::DeletionHighlight,
@@ -578,7 +779,6 @@ fn compute_line_diff(deletion: &str, addition: &str) -> (Vec<DiffSegment>, Vec<D
         });
     }
 
-    // Build addition segments
     if lcs_b > 0 {
         add_segments.push(DiffSegment {
             kind: SegmentKind::AdditionHighlight,
@@ -604,7 +804,8 @@ mod tests {
     use super::{
         compute_dirty_signature, compute_intra_line_diffs, compute_line_diff,
         load_commit_file_diff, load_working_tree_diff, longest_common_substring, DiffLineType,
-        SegmentKind, WorkingTreeDiffLine,
+        SegmentKind, WorkingTreeDiffLine, MAX_INTRA_LINE_DIFF_LINE_CHARS,
+        MAX_INTRA_LINE_DIFF_PAIRS,
     };
     use crate::services::{
         test_support::{commit_all, init_test_repo, write_file},
@@ -675,12 +876,20 @@ mod tests {
     }
 
     #[test]
+    fn compute_line_diff_handles_unicode_boundaries() {
+        let (del, add) = compute_line_diff("alpha é beta", "alpha ø beta");
+        assert!(del.iter().any(|s| s.text.contains('é')));
+        assert!(add.iter().any(|s| s.text.contains('ø')));
+    }
+
+    #[test]
     fn compute_intra_line_diffs_pairs_consecutive_deletion_addition() {
         let lines = vec![
             plain_line(DiffLineType::Deletion, "foo"),
             plain_line(DiffLineType::Addition, "bar"),
         ];
-        let out = compute_intra_line_diffs(lines);
+        let (out, skip) = compute_intra_line_diffs(lines);
+        assert!(skip.is_none());
         assert_eq!(out.len(), 2);
         // Paired lines get segments computed.
         assert!(!out[0].segments.is_empty());
@@ -693,7 +902,8 @@ mod tests {
             plain_line(DiffLineType::Deletion, "orphan"),
             plain_line(DiffLineType::Context, "ctx"),
         ];
-        let out = compute_intra_line_diffs(lines);
+        let (out, skip) = compute_intra_line_diffs(lines);
+        assert!(skip.is_none());
         assert_eq!(out.len(), 2);
         // Unpaired deletion keeps empty segments — no downstream highlight.
         assert!(out[0].segments.is_empty());
@@ -709,7 +919,8 @@ mod tests {
             plain_line(DiffLineType::Addition, "aaa"),
             plain_line(DiffLineType::Deletion, "bbb"),
         ];
-        let out = compute_intra_line_diffs(lines);
+        let (out, skip) = compute_intra_line_diffs(lines);
+        assert!(skip.is_none());
         // Addition line: skipped in the synth path (it's an addition with empty segments), stays empty.
         // Deletion line: also skipped, stays empty.
         assert_eq!(out.len(), 2);
@@ -717,6 +928,31 @@ mod tests {
             out[0].segments.is_empty() || out[0].segments[0].kind != SegmentKind::AdditionHighlight,
             "addition was not cross-paired"
         );
+    }
+
+    #[test]
+    fn compute_intra_line_diffs_skips_overlong_pairs() {
+        let long = "x".repeat(MAX_INTRA_LINE_DIFF_LINE_CHARS + 1);
+        let lines = vec![
+            plain_line(DiffLineType::Deletion, &long),
+            plain_line(DiffLineType::Addition, &long),
+        ];
+        let (out, skip) = compute_intra_line_diffs(lines);
+        assert_eq!(out.len(), 2);
+        assert_eq!(skip.unwrap().skipped_pairs, 1);
+        assert!(out[0].segments.is_empty());
+        assert!(out[1].segments.is_empty());
+    }
+
+    #[test]
+    fn compute_intra_line_diffs_caps_total_pairs() {
+        let mut lines = Vec::new();
+        for idx in 0..=MAX_INTRA_LINE_DIFF_PAIRS {
+            lines.push(plain_line(DiffLineType::Deletion, &format!("old {idx}")));
+            lines.push(plain_line(DiffLineType::Addition, &format!("new {idx}")));
+        }
+        let (_out, skip) = compute_intra_line_diffs(lines);
+        assert_eq!(skip.unwrap().skipped_pairs, 1);
     }
 
     #[test]

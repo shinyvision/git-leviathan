@@ -12,9 +12,10 @@ use crate::{
     message::Message,
     services::{presenter::Presenter, SharedRepositoryGateway},
     theme,
+    work::git_write_work,
 };
 
-use super::state::RepositoryData;
+use super::state::{OperationCoordinator, OperationKind, RepositoryData};
 use super::{panel_messages::OverlayPanelAction, RepositoryMessage};
 
 pub(crate) mod add_remote;
@@ -76,12 +77,13 @@ impl ActiveDialog {
 }
 
 /// Dependencies needed to spawn git tasks from dialog confirmations.
-pub(crate) struct DialogCtx {
+pub(crate) struct DialogCtx<'a> {
     pub repository: SharedRepositoryGateway,
     pub primary_repository: SharedRepositoryGateway,
     pub presenter: Arc<dyn Presenter>,
     pub tab_id: TabId,
     pub active_path: std::path::PathBuf,
+    pub operations: &'a mut OperationCoordinator,
 }
 
 /// Outcome of dispatching an [`OverlayPanelAction`]. The screen applies any
@@ -239,7 +241,7 @@ impl OverlayManager {
     /// Confirm the discard dialog (called from the DetailAction path). Returns
     /// the task spawned for the git discard, or `Task::none()` if no discard
     /// dialog is currently active.
-    pub(crate) fn confirm_discard(&mut self, ctx: DialogCtx) -> Task<Message> {
+    pub(crate) fn confirm_discard(&mut self, ctx: DialogCtx<'_>) -> Task<Message> {
         let Some(ActiveDialog::Discard(state)) = &self.active else {
             return Task::none();
         };
@@ -315,7 +317,7 @@ impl OverlayManager {
     pub(crate) fn dispatch(
         &mut self,
         action: OverlayPanelAction,
-        ctx: DialogCtx,
+        ctx: DialogCtx<'_>,
     ) -> DialogDispatch {
         match action {
             OverlayPanelAction::ConflictNewBranchInput(value) => {
@@ -333,6 +335,9 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 }
                 let remote_ref = state.remote_ref.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -340,12 +345,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .create_branch_from_remote(&new_name, &remote_ref)
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::WriteRepoLoaded {
+                                operation_id,
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -355,6 +368,9 @@ impl OverlayManager {
                 };
                 let branch_name = state.branch_name.clone();
                 let remote_ref = state.remote_ref.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -362,12 +378,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .reset_branch_to_remote(&branch_name, &remote_ref)
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::WriteRepoLoaded {
+                                operation_id,
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -381,6 +405,9 @@ impl OverlayManager {
                 };
                 let branch_name = state.branch_name.clone();
                 let is_remote = state.is_remote;
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -389,7 +416,7 @@ impl OverlayManager {
                 } = ctx;
                 let delete_branch_name = branch_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .delete_branch(&delete_branch_name, is_remote)
                             .map(|s| presenter.project_loaded(s))
@@ -398,6 +425,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::BranchDeleted {
+                                operation_id: Some(operation_id),
                                 branch_name: branch_name.clone(),
                                 is_remote,
                                 result,
@@ -412,6 +440,9 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 };
                 let branch_name = state.branch_name.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -420,7 +451,7 @@ impl OverlayManager {
                 } = ctx;
                 let delete_branch_name = branch_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .delete_branch_all(&delete_branch_name)
                             .map(|s| presenter.project_loaded(s))
@@ -429,6 +460,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::BranchDeleted {
+                                operation_id: Some(operation_id),
                                 branch_name: branch_name.clone(),
                                 is_remote: false,
                                 result,
@@ -447,6 +479,9 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 };
                 let stash_index = state.stash_index;
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 self.close();
                 let DialogCtx {
                     repository,
@@ -455,13 +490,19 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .drop_stash(stash_index)
                             .map(|s| presenter.project_loaded(s))
                     }),
                     move |result| {
-                        Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result))
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::DirtyIndexChanged {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
                     },
                 );
                 DialogDispatch::Task(task)
@@ -481,6 +522,9 @@ impl OverlayManager {
                     self.close();
                     return DialogDispatch::Task(Task::none());
                 }
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -490,7 +534,7 @@ impl OverlayManager {
                 let old_name_clone = old_name.clone();
                 let new_name_clone = new_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .rename_branch(&old_name_clone, &new_name_clone, is_remote)
                             .map(|s| presenter.project_loaded(s))
@@ -499,6 +543,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::BranchRenamed {
+                                operation_id: Some(operation_id),
                                 old_name: old_name.clone(),
                                 new_name: new_name.clone(),
                                 is_remote,
@@ -529,6 +574,9 @@ impl OverlayManager {
                     self.close();
                     return DialogDispatch::Task(Task::none());
                 }
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -537,7 +585,7 @@ impl OverlayManager {
                 } = ctx;
                 let branch_name_clone = branch_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .create_branch_at_commit(&branch_name_clone, &commit_hash)
                             .map(|s| presenter.project_loaded(s))
@@ -546,6 +594,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::BranchCreated {
+                                operation_id: Some(operation_id),
                                 branch_name: branch_name.clone(),
                                 result,
                             },
@@ -613,6 +662,9 @@ impl OverlayManager {
                 if name.is_empty() || pull_url.is_empty() {
                     return DialogDispatch::Task(Task::none());
                 }
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
                     state.submitting = true;
                 }
@@ -623,12 +675,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .add_remote(&name, &pull_url, &push_url)
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::RemoteAdded(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::RemoteAdded {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -647,6 +707,9 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 }
                 let remote_name = state.remote_name.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
                     state.submitting = true;
                 }
@@ -657,13 +720,19 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .push_and_set_upstream(&remote_name, &remote_branch)
                             .map(|s| presenter.project_loaded(s))
                     }),
                     move |result| {
-                        Message::tab(tab_id, RepositoryMessage::SetUpstreamPushCompleted(result))
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::SetUpstreamPushCompleted {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
                     },
                 );
                 DialogDispatch::Task(task)
@@ -673,6 +742,9 @@ impl OverlayManager {
                 DialogDispatch::CancelCloseFocus
             }
             OverlayPanelAction::PushBehindPullRequested => {
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 self.close();
                 let DialogCtx {
                     repository,
@@ -681,12 +753,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .pull_current_branch()
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::PullCompleted(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::PullCompleted {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -715,6 +795,9 @@ impl OverlayManager {
                 let Some(ActiveDialog::ForcePush(_)) = self.active.as_ref() else {
                     return DialogDispatch::Task(Task::none());
                 };
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 self.close();
                 let DialogCtx {
                     repository,
@@ -723,13 +806,19 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .force_push_current_branch()
                             .map(|o| presenter.project_push(o))
                     }),
                     move |result| {
-                        Message::tab(tab_id, RepositoryMessage::ForcePushCompleted(result))
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::ForcePushCompleted {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
                     },
                 );
                 DialogDispatch::Task(task)
@@ -754,6 +843,9 @@ impl OverlayManager {
                     self.close();
                     return DialogDispatch::Task(Task::none());
                 }
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -762,7 +854,7 @@ impl OverlayManager {
                 } = ctx;
                 let tag_clone = tag_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .create_tag(&tag_clone, &commit_hash)
                             .map(|s| presenter.project_loaded(s))
@@ -771,6 +863,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::TagCreated {
+                                operation_id: Some(operation_id),
                                 tag_name: tag_name.clone(),
                                 result,
                             },
@@ -788,6 +881,9 @@ impl OverlayManager {
                     return DialogDispatch::Task(Task::none());
                 };
                 let tag_name = state.tag_name.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 let DialogCtx {
                     repository,
                     presenter,
@@ -796,7 +892,7 @@ impl OverlayManager {
                 } = ctx;
                 let tag_clone = tag_name.clone();
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         repository
                             .delete_tag(&tag_clone)
                             .map(|s| presenter.project_loaded(s))
@@ -805,6 +901,7 @@ impl OverlayManager {
                         Message::tab(
                             tab_id,
                             RepositoryMessage::TagDeleted {
+                                operation_id: Some(operation_id),
                                 tag_name: tag_name.clone(),
                                 result,
                             },
@@ -915,6 +1012,9 @@ impl OverlayManager {
                     .unwrap_or_default();
                 let branch_name = state.branch_name.trim().to_string();
                 let working_dir = std::path::PathBuf::from(state.working_dir.trim());
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 state.submitting = true;
                 state.error = None;
 
@@ -925,12 +1025,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         primary_repository
                             .add_worktree(working_dir, Some(branch_name), ref_git)
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::WorktreeCreated(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::WorktreeCreated {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -964,6 +1072,9 @@ impl OverlayManager {
                     )));
                 }
                 let path = state.path.clone();
+                let Some(operation_id) = ctx.operations.begin_write() else {
+                    return DialogDispatch::Task(Task::none());
+                };
                 self.close();
                 let DialogCtx {
                     primary_repository,
@@ -972,12 +1083,20 @@ impl OverlayManager {
                     ..
                 } = ctx;
                 let task = Task::perform(
-                    super::gateway_work(move || {
+                    git_write_work(move || {
                         primary_repository
                             .remove_worktree(path)
                             .map(|s| presenter.project_loaded(s))
                     }),
-                    move |result| Message::tab(tab_id, RepositoryMessage::WorktreeRemoved(result)),
+                    move |result| {
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::WorktreeRemoved {
+                                operation_id: Some(operation_id),
+                                result,
+                            },
+                        )
+                    },
                 );
                 DialogDispatch::Task(task)
             }
@@ -990,7 +1109,10 @@ impl OverlayManager {
     }
 }
 
-fn spawn_discard_task(target: discard::Target, ctx: DialogCtx) -> Task<Message> {
+fn spawn_discard_task(target: discard::Target, ctx: DialogCtx<'_>) -> Task<Message> {
+    let Some(operation_id) = ctx.operations.begin_write_kind(OperationKind::Discard) else {
+        return Task::none();
+    };
     let DialogCtx {
         repository,
         presenter,
@@ -998,18 +1120,33 @@ fn spawn_discard_task(target: discard::Target, ctx: DialogCtx) -> Task<Message> 
         ..
     } = ctx;
     Task::perform(
-        super::gateway_work(move || {
+        git_write_work(move || {
             let snapshot = match target {
                 discard::Target::All => repository.discard_all_dirty_changes(),
                 discard::Target::File(path) => repository.discard_file(&path),
             }?;
             Ok(presenter.project_loaded(snapshot))
         }),
-        move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::DirtyIndexChanged {
+                    operation_id: Some(operation_id),
+                    result,
+                },
+            )
+        },
     )
 }
 
-fn spawn_cherry_pick_task(commit_hash: String, commit_now: bool, ctx: DialogCtx) -> Task<Message> {
+fn spawn_cherry_pick_task(
+    commit_hash: String,
+    commit_now: bool,
+    ctx: DialogCtx<'_>,
+) -> Task<Message> {
+    let Some(operation_id) = ctx.operations.begin_write() else {
+        return Task::none();
+    };
     let DialogCtx {
         repository,
         presenter,
@@ -1017,12 +1154,20 @@ fn spawn_cherry_pick_task(commit_hash: String, commit_now: bool, ctx: DialogCtx)
         ..
     } = ctx;
     Task::perform(
-        super::gateway_work(move || {
+        git_write_work(move || {
             repository
                 .cherry_pick_commit(commit_hash, commit_now)
                 .map(|o| presenter.project_cherry_pick(o))
         }),
-        move |result| Message::tab(tab_id, RepositoryMessage::CherryPickCompleted(result)),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::CherryPickCompleted {
+                    operation_id: Some(operation_id),
+                    result,
+                },
+            )
+        },
     )
 }
 

@@ -103,51 +103,19 @@ impl DiffPanel {
     fn build_canvas_data_for(&self, canvas_id: DiffCanvasId) -> Option<Arc<TextCanvasData>> {
         use crate::widgets::diff::canvas as dc;
         if canvas_id == dc::CANVAS_ID {
-            let char_w = dc::diff_char_width();
-            let lines = self
-                .dirty_file_diff
+            self.dirty_file_diff
                 .as_ref()
-                .and_then(|s| s.diff_lines.as_deref())
+                .and_then(|s| s.render_data.clone())
                 .or_else(|| {
                     self.commit_file_diff
                         .as_ref()
-                        .and_then(|s| s.diff_lines.as_deref())
+                        .and_then(|s| s.render_data.clone())
                 })
                 .or_else(|| {
                     self.merged_file_diff
                         .as_ref()
-                        .and_then(|s| s.diff_lines.as_deref())
-                })?;
-            let old_hl = self
-                .dirty_file_diff
-                .as_ref()
-                .and_then(|s| s.old_highlighted.as_deref())
-                .or_else(|| {
-                    self.commit_file_diff
-                        .as_ref()
-                        .and_then(|s| s.old_highlighted.as_deref())
+                        .and_then(|s| s.render_data.clone())
                 })
-                .or_else(|| {
-                    self.merged_file_diff
-                        .as_ref()
-                        .and_then(|s| s.old_highlighted.as_deref())
-                });
-            let new_hl = self
-                .dirty_file_diff
-                .as_ref()
-                .and_then(|s| s.new_highlighted.as_deref())
-                .or_else(|| {
-                    self.commit_file_diff
-                        .as_ref()
-                        .and_then(|s| s.new_highlighted.as_deref())
-                })
-                .or_else(|| {
-                    self.merged_file_diff
-                        .as_ref()
-                        .and_then(|s| s.new_highlighted.as_deref())
-                });
-            let rows = super::view::build_diff_rows_public(lines, old_hl, new_hl);
-            Some(dc::build_canvas_data(rows, char_w))
         } else {
             let state = self.conflict_file_resolution.as_ref()?;
             let result = state.result.as_ref()?;

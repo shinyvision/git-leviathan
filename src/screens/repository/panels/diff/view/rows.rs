@@ -4,8 +4,9 @@
 
 use crate::{
     services::{
-        ConflictBlock, ConflictResolutionResult, DiffLineType, HighlightedFile, SegmentKind,
-        SyntaxHighlightedSpan, SyntaxStyle, WorkingTreeDiffLine,
+        ConflictBlock, ConflictResolutionResult, DiffContentSkipReason, DiffFallbacks,
+        DiffLineType, DiffSide, HighlightedFile, SegmentKind, SyntaxHighlightedSpan, SyntaxStyle,
+        WorkingTreeDiffLine,
     },
     widgets::{
         conflict_canvas::{
@@ -30,16 +31,23 @@ pub(in crate::screens::repository) fn build_diff_rows_public(
     lines: &[WorkingTreeDiffLine],
     old_hl: Option<&HighlightedFile>,
     new_hl: Option<&HighlightedFile>,
+    fallbacks: &DiffFallbacks,
 ) -> Vec<DiffRow> {
-    build_diff_rows(lines, old_hl, new_hl)
+    build_diff_rows(lines, old_hl, new_hl, fallbacks)
 }
 
 pub(super) fn build_diff_rows(
     lines: &[WorkingTreeDiffLine],
     old_hl: Option<&HighlightedFile>,
     new_hl: Option<&HighlightedFile>,
+    fallbacks: &DiffFallbacks,
 ) -> Vec<DiffRow> {
-    let mut rows: Vec<DiffRow> = Vec::with_capacity(lines.len());
+    let span = crate::perf::Span::new("cpu.diff_row_building").field("input_lines", lines.len());
+    let notices = fallback_notices(fallbacks);
+    let mut rows: Vec<DiffRow> = Vec::with_capacity(lines.len() + notices.len());
+    for notice in notices {
+        rows.push(DiffRow::FileHeader(notice));
+    }
     for line in lines {
         match line.line_type {
             DiffLineType::HunkHeader => {
@@ -77,7 +85,60 @@ pub(super) fn build_diff_rows(
             DiffLineType::ContextEofnl => rows.push(DiffRow::Eofnl(CanvasLineKind::Context)),
         }
     }
+    span.finish_with("output_rows", rows.len());
     rows
+}
+
+fn fallback_notices(fallbacks: &DiffFallbacks) -> Vec<String> {
+    let mut notices = Vec::new();
+    if let Some(truncation) = fallbacks.truncation {
+        notices.push(format!(
+            "Large diff truncated: showing {} lines, {} lines omitted.",
+            truncation.shown_lines, truncation.omitted_lines
+        ));
+    }
+    if !fallbacks.highlight_skips.is_empty() {
+        notices.push(format!(
+            "Syntax highlighting skipped: {}.",
+            highlight_skip_summary(fallbacks)
+        ));
+    }
+    if fallbacks.has_binary_or_non_utf8() {
+        notices
+            .push("Binary or non-UTF-8 content shown without full-file highlighting.".to_string());
+    }
+    if let Some(skip) = fallbacks.intra_line_skip {
+        notices.push(format!(
+            "Intra-line highlighting skipped for {} changed line pairs over caps ({} chars per line, {} pairs per file).",
+            skip.skipped_pairs, skip.max_line_chars, skip.max_pairs
+        ));
+    }
+    notices
+}
+
+fn highlight_skip_summary(fallbacks: &DiffFallbacks) -> String {
+    fallbacks
+        .highlight_skips
+        .iter()
+        .map(|skip| {
+            let side = match skip.side {
+                DiffSide::Old => "old file",
+                DiffSide::New => "new file",
+            };
+            let reason = match skip.reason {
+                DiffContentSkipReason::Binary => "binary content".to_string(),
+                DiffContentSkipReason::NonUtf8 => "non-UTF-8 content".to_string(),
+                DiffContentSkipReason::TooManyBytes { bytes, max } => {
+                    format!("{bytes} bytes exceeds {max}")
+                }
+                DiffContentSkipReason::TooManyLines { lines, max } => {
+                    format!("{lines} lines exceeds {max}")
+                }
+            };
+            format!("{side} {reason}")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 pub(super) fn build_conflict_side_rows(
@@ -185,8 +246,9 @@ pub(in crate::screens::repository) fn build_conflict_rows_for_canvas(
     ours_hl: Option<&HighlightedFile>,
     theirs_hl: Option<&HighlightedFile>,
 ) -> Option<Arc<TextCanvasData>> {
+    let span = crate::perf::Span::new("cpu.diff_row_building").field("kind", "conflict");
     let char_w = diff_char_width();
-    if canvas_id == CANVAS_ID_OURS {
+    let result = if canvas_id == CANVAS_ID_OURS {
         let rows = build_conflict_side_rows(result, selections, ConflictSide::Ours, ours_hl);
         Some(conflict_canvas::build_side_canvas_data(rows, char_w))
     } else if canvas_id == CANVAS_ID_THEIRS {
@@ -197,7 +259,9 @@ pub(in crate::screens::repository) fn build_conflict_rows_for_canvas(
         Some(conflict_canvas::build_output_canvas_data(rows, char_w))
     } else {
         None
-    }
+    };
+    span.finish_with("canvas", canvas_id.0);
+    result
 }
 
 pub(super) fn resolve_spans(

@@ -129,46 +129,21 @@ impl DiffPanel {
         if canvas_id != dc::CANVAS_ID {
             return self.copy_conflict_selection_text(canvas_id, selection);
         }
-        let lines: &[crate::services::WorkingTreeDiffLine] = if let Some(s) = &self.dirty_file_diff
-        {
-            s.diff_lines.as_deref().unwrap_or(&[])
-        } else if let Some(s) = &self.commit_file_diff {
-            s.diff_lines.as_deref().unwrap_or(&[])
-        } else if let Some(s) = &self.merged_file_diff {
-            s.diff_lines.as_deref().unwrap_or(&[])
-        } else {
-            return None;
-        };
-        let old_hl = self
+        let data = self
             .dirty_file_diff
             .as_ref()
-            .and_then(|s| s.old_highlighted.as_deref())
+            .and_then(|s| s.render_data.as_deref())
             .or_else(|| {
                 self.commit_file_diff
                     .as_ref()
-                    .and_then(|s| s.old_highlighted.as_deref())
+                    .and_then(|s| s.render_data.as_deref())
             })
             .or_else(|| {
                 self.merged_file_diff
                     .as_ref()
-                    .and_then(|s| s.old_highlighted.as_deref())
-            });
-        let new_hl = self
-            .dirty_file_diff
-            .as_ref()
-            .and_then(|s| s.new_highlighted.as_deref())
-            .or_else(|| {
-                self.commit_file_diff
-                    .as_ref()
-                    .and_then(|s| s.new_highlighted.as_deref())
-            })
-            .or_else(|| {
-                self.merged_file_diff
-                    .as_ref()
-                    .and_then(|s| s.new_highlighted.as_deref())
-            });
-        let rows = super::view::build_diff_rows_public(lines, old_hl, new_hl);
-        Some(dc::selection_text_for_rows(&rows, &selection))
+                    .and_then(|s| s.render_data.as_deref())
+            })?;
+        Some(crate::widgets::text::selection_to_text(data, &selection))
     }
 
     fn copy_conflict_selection_text(

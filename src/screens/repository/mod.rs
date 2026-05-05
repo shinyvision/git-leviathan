@@ -18,8 +18,9 @@ use crate::{
     core::TabId,
     message::{AppMessage, Message},
     screens::screen_trait::{Screen, ToolbarCtx},
-    services::{presenter::Presenter, GitError, SettingsService, COMMIT_LOAD_LIMIT},
+    services::{presenter::Presenter, SettingsService, COMMIT_LOAD_LIMIT},
     view_model::SidebarSectionKind,
+    work::{git_read_work, git_write_work},
 };
 
 use self::{
@@ -63,12 +64,6 @@ pub struct RepositoryScreen {
     pub(in crate::screens::repository) merged_diff: MergedDiffCache,
 }
 
-/// Runs a blocking gateway call (libgit2 / `git` subprocess) on tokio's
-/// blocking pool and returns a future suitable for `Task::perform`. Use this
-/// for every `SharedRepositoryGateway` call so iced/tokio runtime worker
-/// threads do not get pinned by synchronous I/O. Also the right place to
-/// chain the presenter (`project_loaded`) so projection runs off the main
-/// thread before the message reaches `update`.
 /// Reads persisted sidebar section expanded/collapsed state for `repo_path`
 /// from the sqlite settings store. Falls back to `SidebarPanel::default_expanded`
 /// when no rows exist yet, or when the settings layer fails to open.
@@ -94,17 +89,6 @@ fn load_sidebar_expanded(
         }
         _ => panels::sidebar::SidebarPanel::default_expanded(),
     }
-}
-
-pub(super) async fn gateway_work<T>(
-    f: impl FnOnce() -> Result<T, GitError> + Send + 'static,
-) -> Result<T, GitError>
-where
-    T: Send + 'static,
-{
-    tokio::task::spawn_blocking(f)
-        .await
-        .unwrap_or_else(|e| Err(GitError::Other(format!("gateway task panicked: {e}"))))
 }
 
 impl RepositoryScreen {
@@ -158,8 +142,13 @@ impl RepositoryScreen {
     pub fn initial_load_task(&self, tab_id: TabId) -> Task<Message> {
         let repo = self.fleet.active().clone();
         let presenter = self.presenter.clone();
+        let repo_path = self.fleet.active_path().display().to_string();
         Task::perform(
-            gateway_work(move || {
+            git_read_work(move || {
+                let _span = crate::perf::Span::new("git.full_repo_load")
+                    .field("tab", tab_id)
+                    .field("repo", &repo_path)
+                    .field("limit", COMMIT_LOAD_LIMIT);
                 repo.load_repo(COMMIT_LOAD_LIMIT)
                     .map(|s| Box::new(presenter.project_loaded(s)))
             }),
@@ -186,8 +175,13 @@ impl RepositoryScreen {
         let repo = self.fleet.active().clone();
         let presenter = self.presenter.clone();
         let tab_id = self.tab_id;
+        let repo_path = self.fleet.active_path().display().to_string();
         Task::perform(
-            gateway_work(move || {
+            git_read_work(move || {
+                let _span = crate::perf::Span::new("git.full_repo_load")
+                    .field("tab", tab_id)
+                    .field("repo", &repo_path)
+                    .field("limit", COMMIT_LOAD_LIMIT);
                 repo.load_repo(COMMIT_LOAD_LIMIT)
                     .map(|s| presenter.project_loaded(s))
             }),
@@ -206,8 +200,13 @@ impl RepositoryScreen {
         let presenter = self.presenter.clone();
         let tab_id = self.tab_id;
         let commit_limit = self.data.snapshot.commits().len().max(COMMIT_LOAD_LIMIT);
+        let repo_path = self.fleet.active_path().display().to_string();
         Task::perform(
-            gateway_work(move || {
+            git_read_work(move || {
+                let _span = crate::perf::Span::new("git.refs_reload")
+                    .field("tab", tab_id)
+                    .field("repo", &repo_path)
+                    .field("limit", commit_limit);
                 repo.load_repo(commit_limit)
                     .map(|s| presenter.project_loaded(s))
             }),
@@ -289,12 +288,35 @@ impl RepositoryScreen {
         self.handle_center_action(action)
     }
 
-    pub fn fetch_task(&self) -> Task<Message> {
+    pub fn fetch_task(&self, operation_id: state::OperationId) -> Task<Message> {
         let repo = self.fleet.active().clone();
         let tab_id = self.tab_id;
-        Task::perform(gateway_work(move || repo.fetch_remotes()), move |result| {
-            Message::App(AppMessage::FetchCompleted { tab_id, result })
-        })
+        Task::perform(
+            git_write_work(move || repo.fetch_remotes()),
+            move |result| {
+                Message::App(AppMessage::FetchCompleted {
+                    tab_id,
+                    operation_id,
+                    result,
+                })
+            },
+        )
+    }
+
+    pub(crate) fn begin_git_write(&mut self) -> Option<state::OperationId> {
+        self.data.operations.begin_write()
+    }
+
+    pub(crate) fn finish_git_write(&mut self, operation_id: state::OperationId) -> bool {
+        self.data.operations.finish_write(operation_id)
+    }
+
+    pub(crate) fn is_git_write_in_flight(&self) -> bool {
+        self.data.operations.is_writing()
+    }
+
+    pub(crate) fn mark_watcher_reload_pending(&mut self, path: impl Into<std::path::PathBuf>) {
+        self.data.operations.mark_watcher_reload_pending(path);
     }
 
     /// Read-only task that turns local ref state into a graph + sidebar
@@ -306,21 +328,18 @@ impl RepositoryScreen {
         let presenter = self.presenter.clone();
         let tab_id = self.tab_id;
         let commit_limit = self.data.snapshot.commits().len().max(COMMIT_LOAD_LIMIT);
+        let repo_path = self.fleet.active_path().display().to_string();
         Task::perform(
-            gateway_work(move || {
+            git_read_work(move || {
+                let _span = crate::perf::Span::new("git.refs_reload")
+                    .field("tab", tab_id)
+                    .field("repo", &repo_path)
+                    .field("limit", commit_limit);
                 repo.load_refs_snapshot(commit_limit)
                     .map(|s| presenter.project_refs(s))
             }),
             move |result| Message::tab(tab_id, RepositoryMessage::GraphAndRefsReloaded(result)),
         )
-    }
-
-    /// True while a user-initiated network op (push/pull) is in flight on this
-    /// screen. The app-level file-watcher cascade uses this to skip spawning
-    /// `reload_refs_task`s that would only queue behind the writer lock —
-    /// the in-flight op already publishes a post-op snapshot on completion.
-    pub fn is_network_op_in_flight(&self) -> bool {
-        self.data.animation.network_op_in_flight()
     }
 
     /// Path of the worktree currently focused in this tab (primary workdir
@@ -392,6 +411,9 @@ impl RepositoryScreen {
     }
 
     pub fn update(&mut self, msg: RepositoryMessage) -> Task<Message> {
+        let _span = crate::perf::Span::new("ui.repository_update")
+            .field("tab", self.tab_id)
+            .field("repo", self.fleet.active_path().display());
         match msg {
             RepositoryMessage::Sidebar(action) => {
                 let (mut ctx, panels) = self.ctx_and_panels();
@@ -442,6 +464,7 @@ impl RepositoryScreen {
             presenter: self.presenter.clone(),
             tab_id: self.tab_id,
             active_path: self.fleet.active_path().to_path_buf(),
+            operations: &mut self.data.operations,
         };
         match self.overlay_manager.dispatch(action, ctx) {
             overlays::DialogDispatch::Task(task) => task,

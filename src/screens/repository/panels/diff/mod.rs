@@ -19,7 +19,7 @@ use iced::Element;
 
 use crate::{
     message::Message,
-    services::{HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult},
+    services::{DiffFallbacks, WorkingTreeDiffLine, WorkingTreeDiffResult},
     widgets::{
         diff_canvas::{DiffCanvasData, DiffCanvasId, DiffPosition},
         search_widget::{SearchWidget, TextMatch},
@@ -46,13 +46,20 @@ pub(in crate::screens::repository) use conflict::{
     conflict_resolution_output_text, ConflictFileResolutionState, ConflictScrollTarget,
     ConflictSide,
 };
-pub(in crate::screens::repository) use dirty::DirtyFileDiffState;
+pub(in crate::screens::repository) use dirty::{DirtyDiffSyncResult, DirtyFileDiffState};
 pub(in crate::screens::repository) use merged::MergedFileDiffState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CenterViewMode {
     Graph,
     DiffView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SingleFileDiffKind {
+    Dirty { is_staged: bool },
+    Commit { commit_hash: String },
+    Merged,
 }
 
 pub(in crate::screens::repository) struct DiffPanel {
@@ -97,6 +104,7 @@ pub(in crate::screens::repository) struct DiffPanel {
     /// search bar renders and which buffer's content matches are computed
     /// against. `None` before the first `on_enter` fires on any buffer.
     pub hovered_canvas: Option<DiffCanvasId>,
+    next_generation: u64,
 }
 
 impl DiffPanel {
@@ -116,7 +124,14 @@ impl DiffPanel {
             shift_held: false,
             text_search: None,
             hovered_canvas: None,
+            next_generation: 1,
         }
+    }
+
+    fn next_diff_generation(&mut self) -> u64 {
+        let generation = self.next_generation;
+        self.next_generation = self.next_generation.wrapping_add(1).max(1);
+        generation
     }
 
     pub(in crate::screens::repository) fn is_active(&self) -> bool {
@@ -262,6 +277,7 @@ impl DiffPanel {
     pub(in crate::screens::repository) fn view_or_passthrough<'a>(
         &'a self,
         graph_view: Element<'a, Message>,
+        git_write_busy: bool,
     ) -> Element<'a, Message> {
         match self.center_view_mode {
             CenterViewMode::Graph => graph_view,
@@ -284,6 +300,7 @@ impl DiffPanel {
                         output_selection: self.selection_for(CANVAS_ID_OUTPUT),
                         shift_held: self.shift_held,
                         search_overlay: self.conflict_view_search_overlay(),
+                        save_busy: git_write_busy,
                     };
                     view::conflict_center_view(model)
                 } else if let Some(state) = self.active_single_file_diff() {
@@ -314,13 +331,49 @@ impl DiffPanel {
     ) -> view::DiffViewModel<'a> {
         view::DiffViewModel {
             file_path: state.file_path(),
-            diff_lines: state.diff_lines(),
-            old_highlighted: state.old_highlighted(),
-            new_highlighted: state.new_highlighted(),
+            render_data: state.render_data(),
             selection: self.selection_for(crate::widgets::diff_canvas::CANVAS_ID),
             scroll_y: self.diff_scroll_y,
             shift_held: self.shift_held,
             search_bar: self.diff_view_search_bar(),
+        }
+    }
+
+    pub(in crate::screens::repository) fn on_single_file_render_ready(
+        &mut self,
+        kind: SingleFileDiffKind,
+        generation: u64,
+        file_path: String,
+        data: Arc<DiffCanvasData>,
+    ) {
+        match kind {
+            SingleFileDiffKind::Dirty { is_staged } => {
+                if let Some(state) = self.dirty_file_diff.as_mut() {
+                    if state.file_path == file_path
+                        && state.is_staged == is_staged
+                        && state.render_generation == generation
+                    {
+                        state.render_data = Some(data);
+                    }
+                }
+            }
+            SingleFileDiffKind::Commit { commit_hash } => {
+                if let Some(state) = self.commit_file_diff.as_mut() {
+                    if state.file_path == file_path
+                        && state.commit_hash == commit_hash
+                        && state.render_generation == generation
+                    {
+                        state.render_data = Some(data);
+                    }
+                }
+            }
+            SingleFileDiffKind::Merged => {
+                if let Some(state) = self.merged_file_diff.as_mut() {
+                    if state.file_path == file_path && state.render_generation == generation {
+                        state.render_data = Some(data);
+                    }
+                }
+            }
         }
     }
 }
@@ -332,9 +385,7 @@ impl DiffPanel {
 /// each mode file.
 pub(super) trait SingleFileDiffView {
     fn file_path(&self) -> &str;
-    fn diff_lines(&self) -> &[WorkingTreeDiffLine];
-    fn old_highlighted(&self) -> Option<&HighlightedFile>;
-    fn new_highlighted(&self) -> Option<&HighlightedFile>;
+    fn render_data(&self) -> Option<Arc<DiffCanvasData>>;
 }
 
 /// Per-mode hook into the generic diff-load handler. Each of the three
@@ -344,14 +395,21 @@ pub(super) trait SingleFileDiffView {
 /// syntax-highlight task without the caller caring which mode is active.
 pub(in crate::screens::repository) trait DiffLoadMode {
     fn file_path(&self) -> &str;
-    fn set_lines(&mut self, lines: Vec<WorkingTreeDiffLine>);
+    fn set_lines(&mut self, lines: Arc<Vec<WorkingTreeDiffLine>>);
+    fn lines(&self) -> Option<Arc<Vec<WorkingTreeDiffLine>>>;
+    fn generation(&self) -> u64;
+    fn set_generation(&mut self, generation: u64);
+    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks);
+    fn fallbacks(&self) -> DiffFallbacks;
     fn clear_highlights(&mut self);
     fn highlight_action(
         &self,
+        generation: u64,
         file_path: String,
         old_content: Option<String>,
         new_content: Option<String>,
     ) -> DiffPanelAction;
+    fn render_kind(&self) -> SingleFileDiffKind;
 }
 
 /// Generic "diff loaded for a single file" handler. Validates that the
@@ -361,23 +419,55 @@ pub(in crate::screens::repository) trait DiffLoadMode {
 /// and returns the per-mode highlight action the caller should dispatch.
 pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     slot: &mut Option<S>,
+    next_generation: &mut u64,
+    generation: u64,
     result: Result<WorkingTreeDiffResult, crate::services::GitError>,
-) -> Option<DiffPanelAction> {
+) -> Vec<DiffPanelAction> {
     let Ok(diff_result) = result else {
-        return None;
+        return Vec::new();
     };
-    let state = slot.as_mut()?;
-    if state.file_path() != diff_result.file_path {
-        return None;
+    let Some(state) = slot.as_mut() else {
+        return Vec::new();
+    };
+    let span = crate::perf::Span::new("ui.diff_result_apply")
+        .field("active_path", state.file_path())
+        .field("result_path", &diff_result.file_path)
+        .field("lines", diff_result.lines.len());
+    if state.file_path() != diff_result.file_path || state.generation() != generation {
+        span.finish_with("applied", false);
+        return Vec::new();
     }
     let WorkingTreeDiffResult {
         file_path,
         lines,
         old_file_content,
         new_file_content,
+        fallbacks,
         ..
     } = diff_result;
-    state.set_lines(lines);
+    let lines = Arc::new(lines);
+    state.set_lines(lines.clone());
+    state.set_fallbacks(fallbacks.clone());
     state.clear_highlights();
-    Some(state.highlight_action(file_path, old_file_content, new_file_content))
+    let presentation_generation = *next_generation;
+    *next_generation = next_generation.wrapping_add(1).max(1);
+    state.set_generation(presentation_generation);
+    span.finish_with("applied", true);
+    vec![
+        DiffPanelAction::RunSingleFileRenderBuild {
+            generation: presentation_generation,
+            kind: state.render_kind(),
+            file_path: file_path.clone(),
+            lines,
+            fallbacks: fallbacks.clone(),
+            old_highlighted: None,
+            new_highlighted: None,
+        },
+        state.highlight_action(
+            presentation_generation,
+            file_path,
+            old_file_content,
+            new_file_content,
+        ),
+    ]
 }

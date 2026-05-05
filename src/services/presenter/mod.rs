@@ -13,8 +13,8 @@ use crate::services::{
     RepoSnapshot, StashApplyOutcome,
 };
 use crate::view_model::{
-    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedPushOutcome, LoadedRefs,
-    LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
+    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
 };
 
 pub use default::DefaultPresenter;
@@ -22,6 +22,8 @@ pub use default::DefaultPresenter;
 pub trait Presenter: Send + Sync + 'static {
     fn project_loaded(&self, snap: RepoSnapshot) -> LoadedRepo;
     fn project_refs(&self, snap: RefsSnapshot) -> LoadedRefs;
+    fn project_dirty_index(&self, snap: Option<crate::services::DirtySnapshot>)
+        -> LoadedDirtyIndex;
     fn project_remote_checkout(
         &self,
         outcome: RemoteCheckoutOutcome,

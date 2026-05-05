@@ -4,13 +4,18 @@ use crate::{
     message::Message, services::GitError, toast::ToastData, view_model::LoadedStashApplyOutcome,
 };
 
+use super::super::state::OperationId;
 use super::super::RepositoryScreen;
 
 pub(super) fn on_stash_apply_completed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedStashApplyOutcome, GitError>,
 ) -> Task<Message> {
-    match result {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
+    let task = match result {
         Ok(LoadedStashApplyOutcome::Applied(loaded)) => {
             super::helpers::handle_repo_loaded(screen, loaded)
         }
@@ -29,14 +34,19 @@ pub(super) fn on_stash_apply_completed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }
 
 pub(super) fn on_stash_pop_completed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedStashApplyOutcome, GitError>,
 ) -> Task<Message> {
-    match result {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
+    let task = match result {
         Ok(LoadedStashApplyOutcome::Applied(loaded)) => {
             super::helpers::handle_repo_loaded(screen, loaded)
         }
@@ -55,5 +65,6 @@ pub(super) fn on_stash_pop_completed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }

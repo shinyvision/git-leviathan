@@ -39,7 +39,10 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
             None,
             None,
         );
-        let center = screen.panels.diff.view_or_passthrough(center_graph);
+        let center = screen
+            .panels
+            .diff
+            .view_or_passthrough(center_graph, screen.is_git_write_in_flight());
         return container(center)
             .style(|_: &Theme| container::Style {
                 background: Some(theme::BG_BASE.into()),
@@ -106,7 +109,10 @@ fn build_body_with_region<'a>(
         None,
         None,
     );
-    let center_body = screen.panels.diff.view_or_passthrough(center_graph);
+    let center_body = screen
+        .panels
+        .diff
+        .view_or_passthrough(center_graph, screen.is_git_write_in_flight());
     let center = panels::center::wrap_with_slots(
         center_body,
         rr::render_top(registry, rr::Pane::Graph),

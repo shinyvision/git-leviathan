@@ -11,13 +11,15 @@ use crate::{
     message::Message,
     services::COMMIT_LOAD_LIMIT,
     view_model::{LoadedBranchMergeOutcome, LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo},
+    work::git_read_work,
 };
 
 use super::super::commit_search;
 use super::super::overlays::{conflict_checkout, ActiveDialog};
 use super::super::panels::center::CenterPanel;
+use super::super::panels::diff::DirtyDiffSyncResult;
 use super::super::state::{PendingFocus, RepositoryData};
-use super::super::{gateway_work, RepositoryMessage, RepositoryScreen};
+use super::super::{RepositoryMessage, RepositoryScreen};
 
 pub(in crate::screens::repository) fn load_more_commits(
     screen: &mut RepositoryScreen,
@@ -27,8 +29,13 @@ pub(in crate::screens::repository) fn load_more_commits(
     let repo = screen.fleet.active().clone();
     let presenter = screen.presenter.clone();
     let tab_id = screen.tab_id;
+    let repo_path = screen.fleet.active_path().display().to_string();
     Task::perform(
-        gateway_work(move || {
+        git_read_work(move || {
+            let _span = crate::perf::Span::new("git.full_repo_load")
+                .field("tab", tab_id)
+                .field("repo", &repo_path)
+                .field("limit", next_commit_limit);
             repo.load_repo(next_commit_limit)
                 .map(|s| presenter.project_loaded(s))
         }),
@@ -111,11 +118,22 @@ pub(in crate::screens::repository) fn handle_repo_loaded(
     Task::batch(vec![primary, load_selected, reload_dirty_diff])
 }
 
+pub(in crate::screens::repository) fn pending_reload_task_after_write(
+    screen: &mut RepositoryScreen,
+    task: Task<Message>,
+) -> Task<Message> {
+    screen.data.operations.take_pending_watcher_reload();
+    task
+}
+
 pub(in crate::screens::repository) fn sync_dirty_diff_after_reload(
     screen: &mut RepositoryScreen,
 ) -> Task<Message> {
-    let repo = screen.fleet.active().clone();
-    let action = {
+    let tab_id = screen.tab_id;
+    let span = crate::perf::Span::new("git.dirty_index_reload")
+        .field("tab", tab_id)
+        .field("repo", screen.fleet.active_path().display());
+    let request = {
         let dirty_commit = screen
             .data
             .snapshot
@@ -125,14 +143,29 @@ pub(in crate::screens::repository) fn sync_dirty_diff_after_reload(
         screen
             .panels
             .diff
-            .sync_and_reload_dirty_diff_action(dirty_commit, |path, is_staged| {
-                repo.compute_dirty_file_signature(path, is_staged)
-            })
+            .dirty_diff_sync_request_after_reload(dirty_commit)
     };
-    let Some(action) = action else {
+    let Some(request) = request else {
+        span.finish_with("task_created", false);
         return Task::none();
     };
-    screen.handle_diff_panel_action(action)
+    span.finish_with("task_created", true);
+    let repo = screen.fleet.active().clone();
+    Task::perform(
+        git_read_work(move || {
+            let _span = crate::perf::Span::new("git.dirty_signature")
+                .field("tab", tab_id)
+                .field("path", &request.path)
+                .field("staged", request.is_staged);
+            Ok(DirtyDiffSyncResult {
+                path: request.path.clone(),
+                is_staged: request.is_staged,
+                force_reload: request.force_reload,
+                signature: repo.compute_dirty_file_signature(&request.path, request.is_staged),
+            })
+        }),
+        move |result| Message::tab(tab_id, RepositoryMessage::DirtyDiffSyncChecked(result)),
+    )
 }
 
 /// If the currently selected commit needs its diff loaded, produce a task
@@ -151,8 +184,17 @@ pub(in crate::screens::repository) fn load_selected_commit_diff_task(
     };
     let repo = screen.fleet.active().clone();
     let tab_id = screen.tab_id;
+    let repo_path = screen.fleet.active_path().display().to_string();
+    let hash_for_log = hash.clone();
     Task::perform(
-        gateway_work(move || repo.load_commit_diff(idx, &hash)),
+        git_read_work(move || {
+            let _span = crate::perf::Span::new("git.commit_diff_stats_load")
+                .field("tab", tab_id)
+                .field("repo", &repo_path)
+                .field("commit_idx", idx)
+                .field("hash", &hash_for_log);
+            repo.load_commit_diff(idx, &hash)
+        }),
         move |result| Message::tab(tab_id, RepositoryMessage::CommitDiffLoaded(result)),
     )
 }

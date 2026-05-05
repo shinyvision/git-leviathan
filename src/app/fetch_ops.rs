@@ -4,6 +4,7 @@
 //! Extracted from `update.rs` in keymaps.
 
 use iced::Task;
+use std::path::PathBuf;
 
 use crate::core::TabId;
 use crate::message::Message;
@@ -36,11 +37,14 @@ impl App {
         if self.fetch.is_fetching() {
             return Task::none();
         }
-        let Some(screen) = self.tabs.screen(tab_id) else {
+        let Some(screen) = self.tabs.screen_mut(tab_id) else {
+            return Task::none();
+        };
+        let Some(operation_id) = screen.begin_git_write() else {
             return Task::none();
         };
         let remote_name = screen.default_remote_name().unwrap_or("origin").to_string();
-        let task = self.fetch.start(screen.fetch_task());
+        let task = self.fetch.start(screen.fetch_task(operation_id));
         self.tabs.persist_most_recent_if_needed(tab_id);
         self.plugin_host
             .fire_event_typed("FetchStarted", Self::fetch_remote_payload(remote_name));
@@ -56,23 +60,31 @@ impl App {
     ///     and piles up tasks blocked on the gateway's write-lock.
     ///   • Otherwise, abort any already-queued `reload_refs_task`. Bursts of
     ///     `.git` events then collapse to the single most-recent reload.
-    pub(super) fn reload_refs_for_tab(&mut self, tab_id: TabId) -> Task<Message> {
-        let network_op_active = tab_id == self.tabs.active_tab_id() && self.fetch.is_fetching();
-        let screen_busy = self
-            .tabs
-            .screen(tab_id)
-            .is_some_and(|screen| screen.is_network_op_in_flight());
-        if network_op_active || screen_busy {
-            return Task::none();
-        }
+    pub(super) fn reload_refs_for_tab(&mut self, tab_id: TabId, path: PathBuf) -> Task<Message> {
+        let span = crate::perf::Span::new("ui.file_watcher_reload_task").field("tab", tab_id);
         let Some(screen) = self.tabs.screen(tab_id) else {
+            span.finish_with("outcome", "missing_tab");
             return Task::none();
         };
+        if screen.active_worktree_path() != path {
+            span.finish_with("outcome", "stale_path");
+            return Task::none();
+        }
+        let network_op_active = tab_id == self.tabs.active_tab_id() && self.fetch.is_fetching();
+        let screen_busy = screen.is_git_write_in_flight();
+        if network_op_active || screen_busy {
+            if let Some(screen) = self.tabs.screen_mut(tab_id) {
+                screen.mark_watcher_reload_pending(path);
+            }
+            span.finish_with("outcome", "suppressed");
+            return Task::none();
+        }
         if let Some(handle) = self.reload_refs_abort.take() {
             handle.abort();
         }
         let (task, handle) = screen.reload_refs_task().abortable();
         self.reload_refs_abort = Some(handle);
+        span.finish_with("outcome", "created");
         task
     }
 }

@@ -8,8 +8,8 @@ use crate::services::{
 use crate::utils::initials;
 use crate::view_model::{
     Branch, BranchLabel, BranchLabelKind, CommitDiffState, CommitPresentation, GraphRow,
-    GraphSegment, LoadedRefs, LoadedRepo, ProjectionSignature, RepositoryProjection,
-    SidebarSection, SidebarSectionKind, SidebarStash,
+    GraphSegment, LoadedDirtyIndex, LoadedDirtyRow, LoadedRefs, LoadedRepo, ProjectionSignature,
+    RepositoryProjection, SidebarSection, SidebarSectionKind, SidebarStash,
 };
 use crate::widgets::branch_label::branch_display_rows;
 
@@ -152,6 +152,19 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         signature,
         has_more_commits,
         branch_refs,
+    }
+}
+
+pub fn project_dirty_index(snapshot: Option<DirtySnapshot>) -> LoadedDirtyIndex {
+    LoadedDirtyIndex {
+        dirty: snapshot.map(|dirty| {
+            let (commit, diff_state) = project_dirty_commit(dirty);
+            LoadedDirtyRow {
+                commit,
+                presentation: empty_commit_presentation(),
+                diff_state,
+            }
+        }),
     }
 }
 

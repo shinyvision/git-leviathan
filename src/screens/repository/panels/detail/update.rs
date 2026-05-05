@@ -3,13 +3,16 @@
 
 use iced::{clipboard, Point, Task};
 
-use crate::{core::CommitKind, message::Message};
+use crate::{
+    core::CommitKind,
+    message::Message,
+    work::{git_write_work, timer_work},
+};
 
 use super::super::super::{
-    gateway_work,
     overlays::{discard, ActiveDialog, DialogCtx},
     panel_messages::DetailAction,
-    state::{FocusedPanel, PendingFocus},
+    state::{FocusedPanel, OperationKind, PendingFocus},
     RepositoryMessage,
 };
 use super::super::center::CenterPanel;
@@ -92,75 +95,193 @@ pub(in crate::screens::repository) fn update(
             Task::none()
         }
         DetailAction::StageFile(path) => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::StageFile)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let path_for_log = path.clone();
             Task::perform(
-                gateway_work(move || repo.stage_file(&path).map(|s| presenter.project_loaded(s))),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.stage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path", &path_for_log);
+                    repo.stage_file_and_load_dirty(&path)
+                        .map(|s| presenter.project_dirty_index(s))
+                }),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::StageAll => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::StageAll)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
             Task::perform(
-                gateway_work(move || {
-                    repo.stage_all_dirty_changes()
-                        .map(|s| presenter.project_loaded(s))
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.stage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path", "*");
+                    repo.stage_all_dirty_changes_and_load_dirty()
+                        .map(|s| presenter.project_dirty_index(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::UnstageFile(path) => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::UnstageFile)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let path_for_log = path.clone();
             Task::perform(
-                gateway_work(move || {
-                    repo.unstage_file(&path)
-                        .map(|s| presenter.project_loaded(s))
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.unstage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path", &path_for_log);
+                    repo.unstage_file_and_load_dirty(&path)
+                        .map(|s| presenter.project_dirty_index(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::UnstageAll => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::UnstageAll)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
             Task::perform(
-                gateway_work(move || {
-                    repo.unstage_all_dirty_changes()
-                        .map(|s| presenter.project_loaded(s))
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.unstage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path", "*");
+                    repo.unstage_all_dirty_changes_and_load_dirty()
+                        .map(|s| presenter.project_dirty_index(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::MarkConflictResolved(path) => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::ResolveConflict)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.mark_conflict_resolved(&path)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexChanged {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::MarkAllConflictsResolved => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::ResolveConflict)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.mark_all_conflicts_resolved()
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexChanged {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::DiscardAllRequested => {
+            if ctx.data.operations.is_writing() {
+                return Task::none();
+            }
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
                 .open(ActiveDialog::Discard(discard::State {
@@ -169,6 +290,9 @@ pub(in crate::screens::repository) fn update(
             Task::none()
         }
         DetailAction::DiscardFileRequested(path) => {
+            if ctx.data.operations.is_writing() {
+                return Task::none();
+            }
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
                 .open(ActiveDialog::Discard(discard::State {
@@ -183,6 +307,7 @@ pub(in crate::screens::repository) fn update(
                 presenter: ctx.presenter.clone(),
                 tab_id: ctx.tab_id,
                 active_path: ctx.fleet.active_path().to_path_buf(),
+                operations: &mut ctx.data.operations,
             };
             ctx.overlay_manager.confirm_discard(dctx)
         }
@@ -201,24 +326,57 @@ pub(in crate::screens::repository) fn update(
             if summary.is_empty() {
                 return Task::none();
             }
+            let Some(operation_id) = ctx.data.operations.begin_write_kind(OperationKind::Commit)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.commit")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("summary_len", summary.len())
+                        .field("description_len", description.len());
                     repo.commit_dirty_changes(&summary, &description)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyCommitCreated(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyCommitCreated {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::AbortMergeConfirmed => {
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::AbortMerge)
+            else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || repo.abort_merge().map(|s| presenter.project_loaded(s))),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyMergeAborted(result)),
+                git_write_work(move || repo.abort_merge().map(|s| presenter.project_loaded(s))),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyMergeAborted {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::CommitFileClicked { commit_idx, path } => {
@@ -312,33 +470,40 @@ pub(in crate::screens::repository) fn update(
             if message.is_empty() {
                 return Task::none();
             }
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let hash = hash.to_string();
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.reword_commit(hash, message)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::RewordCompleted(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::RewordCompleted {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         DetailAction::CopyCommitShaRequested(hash) => {
             panel.set_copied_sha_flash();
             let tab_id = ctx.tab_id;
             let clipboard_task = clipboard::write::<Message>(hash);
-            let clear_task = Task::perform(
-                async {
-                    tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-                },
-                move |_| {
-                    Message::tab(
-                        tab_id,
-                        RepositoryMessage::Detail(DetailAction::ClearCopyShaFlash),
-                    )
-                },
-            );
+            let delay = std::time::Duration::from_millis(1000);
+            let clear_task = Task::perform(timer_work(delay), move |_| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::Detail(DetailAction::ClearCopyShaFlash),
+                )
+            });
             Task::batch(vec![clipboard_task, clear_task])
         }
         DetailAction::ClearCopyShaFlash => {

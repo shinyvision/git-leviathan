@@ -69,7 +69,7 @@ pub(super) fn reword_message_view<'a>(
         )
         .padding(Padding::from([10, 16]))
         .width(Length::Fill)
-        .style(red_button_style())
+        .style(red_button_style(true))
         .on_press(Message::repo(RepositoryMessage::Detail(
             DetailAction::RewordCanceled,
         )));

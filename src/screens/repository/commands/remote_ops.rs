@@ -5,16 +5,21 @@ use crate::{
     services::GitError,
     toast::ToastData,
     view_model::{LoadedPushOutcome, LoadedRepo},
+    work::git_write_work,
 };
 
-use super::super::gateway_work;
 use super::super::overlays::{push_behind, set_upstream, ActiveDialog};
+use super::super::state::OperationId;
 use super::super::{RepositoryMessage, RepositoryScreen};
 
 pub(super) fn on_remote_added(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             if matches!(
@@ -23,17 +28,21 @@ pub(super) fn on_remote_added(
             ) {
                 screen.overlay_manager.close();
             }
-            super::helpers::handle_repo_loaded(screen, loaded)
+            let task = super::helpers::handle_repo_loaded(screen, loaded);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
             eprintln!("git_leviathan: add remote failed: {}", e);
             if let Some(state) = screen.overlay_manager.as_add_remote_mut() {
                 state.submitting = false;
             }
-            Task::done(Message::show_toast(ToastData::error(
-                "Add Remote Failed",
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    "Add Remote Failed",
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
@@ -42,25 +51,40 @@ pub(super) fn on_push_requested(screen: &mut RepositoryScreen) -> Task<Message> 
     if screen.data.animation.network_op_in_flight() {
         return Task::none();
     }
+    let Some(operation_id) = screen.begin_git_write() else {
+        return Task::none();
+    };
     screen.data.animation.mark_push_started();
     let repo = screen.fleet.active().clone();
     let presenter = screen.presenter.clone();
     let tab_id = screen.tab_id;
     Task::perform(
-        gateway_work(move || {
+        git_write_work(move || {
             repo.push_current_branch()
                 .map(|o| presenter.project_push(o))
         }),
-        move |result| Message::tab(tab_id, RepositoryMessage::PushCompleted(result)),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::PushCompleted {
+                    operation_id,
+                    result,
+                },
+            )
+        },
     )
 }
 
 pub(super) fn on_push_completed(
     screen: &mut RepositoryScreen,
+    operation_id: OperationId,
     result: Result<LoadedPushOutcome, GitError>,
 ) -> Task<Message> {
+    if !screen.finish_git_write(operation_id) {
+        return Task::none();
+    }
     screen.data.animation.clear_push();
-    match result {
+    let task = match result {
         Ok(LoadedPushOutcome::Pushed(loaded)) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
             let task = super::helpers::handle_repo_loaded(screen, *loaded);
@@ -103,13 +127,18 @@ pub(super) fn on_push_completed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }
 
 pub(super) fn on_set_upstream_push_completed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
@@ -120,29 +149,37 @@ pub(super) fn on_set_upstream_push_completed(
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
-            Task::batch(vec![
+            let task = Task::batch(vec![
                 task,
                 Task::done(Message::show_toast(ToastData::push_succeeded(&branch_name))),
-            ])
+            ]);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
             eprintln!("git_leviathan: push failed: {}", e);
             if let Some(state) = screen.overlay_manager.as_set_upstream_mut() {
                 state.submitting = false;
             }
-            Task::done(Message::show_toast(ToastData::error(
-                "Push Failed",
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    "Push Failed",
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
 
 pub(super) fn on_force_push_completed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedPushOutcome, GitError>,
 ) -> Task<Message> {
-    match result {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
+    let task = match result {
         Ok(LoadedPushOutcome::Pushed(loaded)) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
             let task = super::helpers::handle_repo_loaded(screen, *loaded);
@@ -179,32 +216,48 @@ pub(super) fn on_force_push_completed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }
 
 pub(super) fn on_pull_requested(screen: &mut RepositoryScreen) -> Task<Message> {
     if screen.data.animation.network_op_in_flight() {
         return Task::none();
     }
+    let Some(operation_id) = screen.begin_git_write() else {
+        return Task::none();
+    };
     screen.data.animation.mark_pull_started();
     let repo = screen.fleet.active().clone();
     let presenter = screen.presenter.clone();
     let tab_id = screen.tab_id;
     Task::perform(
-        gateway_work(move || {
+        git_write_work(move || {
             repo.pull_current_branch()
                 .map(|s| presenter.project_loaded(s))
         }),
-        move |result| Message::tab(tab_id, RepositoryMessage::PullCompleted(result)),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::PullCompleted {
+                    operation_id: Some(operation_id),
+                    result,
+                },
+            )
+        },
     )
 }
 
 pub(super) fn on_pull_completed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     screen.data.animation.clear_pull();
-    match result {
+    let task = match result {
         Ok(loaded) => super::helpers::handle_repo_loaded(screen, loaded),
         Err(e) => {
             eprintln!("git_leviathan: pull failed: {}", e);
@@ -213,5 +266,6 @@ pub(super) fn on_pull_completed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }

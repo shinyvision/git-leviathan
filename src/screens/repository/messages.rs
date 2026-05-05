@@ -9,14 +9,16 @@ use crate::{
         WorkingTreeDiffResult,
     },
     view_model::{
-        LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedPushOutcome, LoadedRefs,
-        LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+        LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
+        LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
     },
 };
 
 use super::commit_search::CommitSearchMessage;
 use super::panel_messages::{CenterAction, DetailAction, DiffPanelAction, OverlayPanelAction};
+use super::panels::diff::DirtyDiffSyncResult;
 use super::panels::sidebar::SidebarAction;
+use super::state::OperationId;
 
 #[derive(Debug, Clone)]
 pub enum RepositoryMessage {
@@ -31,10 +33,17 @@ pub enum RepositoryMessage {
     // thread (see `project_loaded`) so the UI can swap without running the
     // presenter under the winit event loop.
     RepoLoaded(Result<LoadedRepo, GitError>),
+    WriteRepoLoaded {
+        operation_id: OperationId,
+        result: Result<LoadedRepo, GitError>,
+    },
     RefsReloaded(Result<LoadedRepo, GitError>),
     /// Network fetch finished. Carries no repository data; the handler decides
     /// which components need fresh data and dispatches scoped reload tasks.
-    FetchFinished(Result<(), GitError>),
+    FetchFinished {
+        operation_id: OperationId,
+        result: Result<(), GitError>,
+    },
     /// Narrow refs-only payload destined for the graph + sidebar components.
     /// Addressed to those components by construction — the message name and
     /// payload type intentionally exclude everything else.
@@ -48,69 +57,146 @@ pub enum RepositoryMessage {
         version: RepoVersion,
         result: Result<MergedCommitDiffResult, GitError>,
     },
-    MergedCommitFileDiffLoaded(Result<WorkingTreeDiffResult, GitError>),
-    RemoteCheckoutCompleted(Result<LoadedRemoteCheckoutOutcome, GitError>),
+    MergedCommitFileDiffLoaded {
+        generation: u64,
+        result: Result<WorkingTreeDiffResult, GitError>,
+    },
+    RemoteCheckoutCompleted {
+        operation_id: OperationId,
+        result: Result<LoadedRemoteCheckoutOutcome, GitError>,
+    },
     BranchDeleted {
+        operation_id: Option<OperationId>,
         branch_name: String,
         is_remote: bool,
         result: Result<LoadedRepo, GitError>,
     },
     BranchRenamed {
+        operation_id: Option<OperationId>,
         old_name: String,
         new_name: String,
         is_remote: bool,
         result: Result<LoadedRepo, GitError>,
     },
     BranchCreated {
+        operation_id: Option<OperationId>,
         branch_name: String,
         result: Result<LoadedRepo, GitError>,
     },
     BranchMerged {
+        operation_id: Option<OperationId>,
         source_branch: String,
         target_branch: String,
         result: Result<LoadedBranchMergeOutcome, GitError>,
     },
     BranchRebased {
+        operation_id: Option<OperationId>,
         source_branch: String,
         target_display: String,
         result: Result<LoadedRepo, GitError>,
     },
-    DirtyCommitCreated(Result<LoadedRepo, GitError>),
-    DirtyMergeAborted(Result<LoadedRepo, GitError>),
-    DirtyIndexChanged(Result<LoadedRepo, GitError>),
-    CherryPickCompleted(Result<LoadedCherryPickOutcome, GitError>),
-    StashApplyCompleted(Result<LoadedStashApplyOutcome, GitError>),
-    StashPopCompleted(Result<LoadedStashApplyOutcome, GitError>),
-    ConflictResolutionSaved(Result<LoadedRepo, GitError>),
-    CommitFileDiffLoaded(Result<WorkingTreeDiffResult, GitError>),
-    DirtyFileDiffLoaded(Result<WorkingTreeDiffResult, GitError>),
-    ConflictResolutionLoaded(Result<ConflictResolutionResult, GitError>),
-    RemoteAdded(Result<LoadedRepo, GitError>),
-    WorktreeCreated(Result<LoadedRepo, GitError>),
+    DirtyCommitCreated {
+        operation_id: OperationId,
+        result: Result<LoadedRepo, GitError>,
+    },
+    DirtyMergeAborted {
+        operation_id: OperationId,
+        result: Result<LoadedRepo, GitError>,
+    },
+    DirtyIndexChanged {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
+    DirtyIndexReloaded {
+        operation_id: OperationId,
+        result: Result<LoadedDirtyIndex, GitError>,
+    },
+    CherryPickCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedCherryPickOutcome, GitError>,
+    },
+    StashApplyCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedStashApplyOutcome, GitError>,
+    },
+    StashPopCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedStashApplyOutcome, GitError>,
+    },
+    ConflictResolutionSaved {
+        operation_id: OperationId,
+        result: Result<LoadedRepo, GitError>,
+    },
+    CommitFileDiffLoaded {
+        generation: u64,
+        result: Result<WorkingTreeDiffResult, GitError>,
+    },
+    DirtyFileDiffLoaded {
+        generation: u64,
+        result: Result<WorkingTreeDiffResult, GitError>,
+    },
+    DirtyDiffSyncChecked(Result<DirtyDiffSyncResult, GitError>),
+    ConflictResolutionLoaded {
+        generation: u64,
+        result: Result<ConflictResolutionResult, GitError>,
+    },
+    RemoteAdded {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
+    WorktreeCreated {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
     WorktreeFocusSwapped(Result<LoadedRepo, GitError>),
-    WorktreeRemoved(Result<LoadedRepo, GitError>),
+    WorktreeRemoved {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
     PushRequested,
-    PushCompleted(Result<LoadedPushOutcome, GitError>),
-    SetUpstreamPushCompleted(Result<LoadedRepo, GitError>),
-    ForcePushCompleted(Result<LoadedPushOutcome, GitError>),
+    PushCompleted {
+        operation_id: OperationId,
+        result: Result<LoadedPushOutcome, GitError>,
+    },
+    SetUpstreamPushCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
+    ForcePushCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedPushOutcome, GitError>,
+    },
     PullRequested,
-    PullCompleted(Result<LoadedRepo, GitError>),
-    SquashCompleted(Result<LoadedRepo, GitError>),
-    RewordCompleted(Result<LoadedRepo, GitError>),
+    PullCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
+    SquashCompleted {
+        operation_id: OperationId,
+        result: Result<LoadedRepo, GitError>,
+    },
+    RewordCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRepo, GitError>,
+    },
     TagCreated {
+        operation_id: Option<OperationId>,
         tag_name: String,
         result: Result<LoadedRepo, GitError>,
     },
     TagDeleted {
+        operation_id: Option<OperationId>,
         tag_name: String,
         result: Result<LoadedRepo, GitError>,
     },
     TagPushed {
+        operation_id: OperationId,
         tag_name: String,
         remote_name: String,
         result: Result<LoadedRepo, GitError>,
     },
     TagDeletedFromRemote {
+        operation_id: Option<OperationId>,
         tag_name: String,
         remote_name: String,
         result: Result<LoadedRepo, GitError>,

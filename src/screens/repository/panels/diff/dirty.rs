@@ -4,18 +4,21 @@
 use std::sync::Arc;
 
 use crate::services::{
-    DirtyDiffSignature, HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult,
+    DiffFallbacks, DirtyDiffSignature, HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult,
 };
 
-use super::{DiffLoadMode, DiffPanel, DiffPanelAction, SingleFileDiffView};
+use super::{DiffLoadMode, DiffPanel, DiffPanelAction, SingleFileDiffKind, SingleFileDiffView};
 
 #[derive(Debug, Clone)]
 pub struct DirtyFileDiffState {
     pub file_path: String,
     pub is_staged: bool,
-    pub diff_lines: Option<Vec<WorkingTreeDiffLine>>,
+    pub diff_lines: Option<Arc<Vec<WorkingTreeDiffLine>>>,
     pub old_highlighted: Option<Arc<HighlightedFile>>,
     pub new_highlighted: Option<Arc<HighlightedFile>>,
+    pub render_data: Option<Arc<crate::widgets::diff_canvas::DiffCanvasData>>,
+    pub render_generation: u64,
+    pub fallbacks: DiffFallbacks,
     pub selected_file_idx: usize,
     pub last_signature: Option<DirtyDiffSignature>,
 }
@@ -24,14 +27,8 @@ impl SingleFileDiffView for DirtyFileDiffState {
     fn file_path(&self) -> &str {
         &self.file_path
     }
-    fn diff_lines(&self) -> &[WorkingTreeDiffLine] {
-        self.diff_lines.as_deref().unwrap_or(&[])
-    }
-    fn old_highlighted(&self) -> Option<&HighlightedFile> {
-        self.old_highlighted.as_deref()
-    }
-    fn new_highlighted(&self) -> Option<&HighlightedFile> {
-        self.new_highlighted.as_deref()
+    fn render_data(&self) -> Option<Arc<crate::widgets::diff_canvas::DiffCanvasData>> {
+        self.render_data.clone()
     }
 }
 
@@ -40,8 +37,29 @@ impl DiffLoadMode for DirtyFileDiffState {
         &self.file_path
     }
 
-    fn set_lines(&mut self, lines: Vec<WorkingTreeDiffLine>) {
+    fn set_lines(&mut self, lines: Arc<Vec<WorkingTreeDiffLine>>) {
         self.diff_lines = Some(lines);
+        self.render_data = None;
+    }
+
+    fn lines(&self) -> Option<Arc<Vec<WorkingTreeDiffLine>>> {
+        self.diff_lines.clone()
+    }
+
+    fn generation(&self) -> u64 {
+        self.render_generation
+    }
+
+    fn set_generation(&mut self, generation: u64) {
+        self.render_generation = generation;
+    }
+
+    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks) {
+        self.fallbacks = fallbacks;
+    }
+
+    fn fallbacks(&self) -> DiffFallbacks {
+        self.fallbacks.clone()
     }
 
     fn clear_highlights(&mut self) {
@@ -51,17 +69,40 @@ impl DiffLoadMode for DirtyFileDiffState {
 
     fn highlight_action(
         &self,
+        generation: u64,
         file_path: String,
         old_content: Option<String>,
         new_content: Option<String>,
     ) -> DiffPanelAction {
         DiffPanelAction::RunDirtyHighlight {
+            generation,
             file_path,
             is_staged: self.is_staged,
             old_content,
             new_content,
         }
     }
+
+    fn render_kind(&self) -> SingleFileDiffKind {
+        SingleFileDiffKind::Dirty {
+            is_staged: self.is_staged,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(in crate::screens::repository) struct DirtyDiffSyncRequest {
+    pub path: String,
+    pub is_staged: bool,
+    pub force_reload: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DirtyDiffSyncResult {
+    pub path: String,
+    pub is_staged: bool,
+    pub force_reload: bool,
+    pub signature: DirtyDiffSignature,
 }
 
 impl DiffPanel {
@@ -79,6 +120,7 @@ impl DiffPanel {
         self.text_search = None;
 
         if is_conflicted {
+            let generation = self.next_diff_generation();
             self.dirty_file_diff = None;
             self.conflict_file_resolution = Some(super::conflict::ConflictFileResolutionState {
                 file_path: path.clone(),
@@ -92,6 +134,7 @@ impl DiffPanel {
                 ignore_next_theirs_scroll: false,
                 ours_highlighted: None,
                 theirs_highlighted: None,
+                render_generation: generation,
                 ours_scroll_offset_y: 0.0,
                 theirs_scroll_offset_y: 0.0,
                 output_scroll_offset_y: 0.0,
@@ -99,27 +142,34 @@ impl DiffPanel {
                 theirs_scroll_offset_x: 0.0,
                 output_scroll_offset_x: 0.0,
             });
-            return DiffPanelAction::LoadConflictResolution { path };
+            return DiffPanelAction::LoadConflictResolution { generation, path };
         }
 
         self.conflict_file_resolution = None;
+        let generation = self.next_diff_generation();
         self.dirty_file_diff = Some(DirtyFileDiffState {
             file_path: path.clone(),
             is_staged,
             diff_lines: None,
             old_highlighted: None,
             new_highlighted: None,
+            render_data: None,
+            render_generation: generation,
+            fallbacks: DiffFallbacks::default(),
             selected_file_idx,
             last_signature: None,
         });
-        DiffPanelAction::LoadDirtyFileDiff { path, is_staged }
+        DiffPanelAction::LoadDirtyFileDiff {
+            generation,
+            path,
+            is_staged,
+        }
     }
 
-    pub(in crate::screens::repository) fn sync_and_reload_dirty_diff_action(
+    pub(in crate::screens::repository) fn dirty_diff_sync_request_after_reload(
         &mut self,
         dirty_commit: Option<&crate::core::Commit>,
-        compute_signature: impl FnOnce(&str, bool) -> DirtyDiffSignature,
-    ) -> Option<DiffPanelAction> {
+    ) -> Option<DirtyDiffSyncRequest> {
         let state = self.dirty_file_diff.as_ref()?;
         let path = state.file_path.clone();
 
@@ -149,26 +199,51 @@ impl DiffPanel {
         let state = self.dirty_file_diff.as_ref()?;
         let path = state.file_path.clone();
         let is_staged = state.is_staged;
-        let new_sig = compute_signature(&path, is_staged);
+        Some(DirtyDiffSyncRequest {
+            path,
+            is_staged,
+            force_reload: prior_is_staged != is_staged,
+        })
+    }
 
-        let bucket_flipped = prior_is_staged != is_staged;
-        if !bucket_flipped {
-            if let Some(prev) = state.last_signature.as_ref() {
-                if prev == &new_sig {
-                    return None;
-                }
-            }
+    pub(in crate::screens::repository) fn on_dirty_diff_sync_result(
+        &mut self,
+        result: Result<DirtyDiffSyncResult, crate::services::GitError>,
+    ) -> Option<DiffPanelAction> {
+        let Ok(result) = result else {
+            return None;
+        };
+        let state = self.dirty_file_diff.as_mut()?;
+        if state.file_path != result.path || state.is_staged != result.is_staged {
+            return None;
         }
-
-        Some(DiffPanelAction::LoadDirtyFileDiff { path, is_staged })
+        if !result.force_reload && state.last_signature.as_ref() == Some(&result.signature) {
+            return None;
+        }
+        let generation = self.next_diff_generation();
+        if let Some(state) = self.dirty_file_diff.as_mut() {
+            state.render_generation = generation;
+            state.render_data = None;
+        }
+        Some(DiffPanelAction::LoadDirtyFileDiff {
+            generation,
+            path: result.path,
+            is_staged: result.is_staged,
+        })
     }
 
     pub(in crate::screens::repository) fn on_dirty_diff_loaded(
         &mut self,
+        generation: u64,
         result: Result<WorkingTreeDiffResult, crate::services::GitError>,
-    ) -> Option<DiffPanelAction> {
+    ) -> Vec<DiffPanelAction> {
         let signature = result.as_ref().ok().and_then(|r| r.dirty_signature.clone());
-        let action = super::on_diff_loaded(&mut self.dirty_file_diff, result);
+        let action = super::on_diff_loaded(
+            &mut self.dirty_file_diff,
+            &mut self.next_generation,
+            generation,
+            result,
+        );
         if let Some(state) = self.dirty_file_diff.as_mut() {
             state.last_signature = signature;
         }
@@ -177,16 +252,36 @@ impl DiffPanel {
 
     pub(in crate::screens::repository) fn on_dirty_highlight_ready(
         &mut self,
+        generation: u64,
         file_path: String,
         is_staged: bool,
         old: Option<Arc<HighlightedFile>>,
         new: Option<Arc<HighlightedFile>>,
-    ) {
+    ) -> Option<DiffPanelAction> {
         if let Some(state) = self.dirty_file_diff.as_mut() {
-            if state.file_path == file_path && state.is_staged == is_staged {
-                state.old_highlighted = old;
-                state.new_highlighted = new;
+            if state.file_path == file_path
+                && state.is_staged == is_staged
+                && state.render_generation == generation
+            {
+                state.old_highlighted = old.clone();
+                state.new_highlighted = new.clone();
+                let lines = state.lines();
+                let fallbacks = state.fallbacks();
+                let generation = self.next_diff_generation();
+                if let Some(state) = self.dirty_file_diff.as_mut() {
+                    state.render_generation = generation;
+                }
+                return lines.map(|lines| DiffPanelAction::RunSingleFileRenderBuild {
+                    generation,
+                    kind: SingleFileDiffKind::Dirty { is_staged },
+                    file_path,
+                    lines,
+                    fallbacks,
+                    old_highlighted: old,
+                    new_highlighted: new,
+                });
             }
         }
+        None
     }
 }

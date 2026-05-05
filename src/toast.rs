@@ -11,6 +11,7 @@ use iced::{
 use std::cell::RefCell;
 
 use crate::message::Message;
+use crate::work::timer_work;
 
 const TOAST_WIDTH: f32 = 420.0;
 const TOAST_STACK_GAP: f32 = 10.0;
@@ -438,12 +439,10 @@ impl ToastManager {
 }
 
 pub fn auto_dismiss_task(id: u64) -> Task<Message> {
+    let delay = std::time::Duration::from_millis((ENTER_MS + HOLD_MS).round() as u64);
     Task::perform(
         async move {
-            tokio::time::sleep(std::time::Duration::from_millis(
-                (ENTER_MS + HOLD_MS).round() as u64,
-            ))
-            .await;
+            timer_work(delay).await;
             id
         },
         Message::dismiss_toast,

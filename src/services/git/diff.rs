@@ -58,12 +58,17 @@ fn content_from_tree(
     repo: &Repository,
     tree: Option<&git2::Tree>,
     file_path: &str,
-) -> Option<String> {
-    let tree = tree?;
-    let entry = tree.get_path(std::path::Path::new(file_path)).ok()?;
-    let blob = repo.find_blob(entry.id()).ok()?;
-    let content = blob.content();
-    Some(String::from_utf8_lossy(content).into_owned())
+) -> super::working_tree_diff::FileContent {
+    let Some(tree) = tree else {
+        return super::working_tree_diff::FileContent::missing();
+    };
+    let Ok(entry) = tree.get_path(std::path::Path::new(file_path)) else {
+        return super::working_tree_diff::FileContent::missing();
+    };
+    let Ok(blob) = repo.find_blob(entry.id()) else {
+        return super::working_tree_diff::FileContent::missing();
+    };
+    super::working_tree_diff::content_from_blob(&blob)
 }
 
 pub(super) fn load_merged_commit_diff(
@@ -139,10 +144,15 @@ pub(super) fn load_commit_diff(
     commit_idx: usize,
     hash: &str,
 ) -> Result<CommitDiffResult, GitError> {
+    let span = crate::perf::Span::new("git.commit_diff_stats_load")
+        .field("repo", repo_path)
+        .field("commit_idx", commit_idx)
+        .field("hash", hash);
     let repo = Repository::open(repo_path).map_err(|e| wrap_git2_error("open repo", e))?;
     let oid = parse_oid(hash)?;
     let commit = find_commit_or(&repo, oid)?;
     let (modified_count, added_count, deleted_count, files) = diff_stats(&repo, &commit);
+    span.finish_with("files", files.len());
     Ok(CommitDiffResult {
         commit_idx,
         hash: hash.to_string(),

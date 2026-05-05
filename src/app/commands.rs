@@ -15,6 +15,7 @@ use crate::screens::repository::RepositoryMessage;
 use crate::services::GitError;
 use crate::toast::{auto_dismiss_task, ToastData};
 use crate::view_model::LoadedRepo;
+use crate::work::ui_message;
 
 use super::{tabs, App};
 
@@ -155,7 +156,7 @@ impl App {
         else {
             return Task::none();
         };
-        Task::done(Message::repo(RepositoryMessage::Center(
+        ui_message(Message::repo(RepositoryMessage::Center(
             CenterAction::CreateBranchHereRequested {
                 commit_idx: idx,
                 commit_hash,
@@ -170,7 +171,7 @@ impl App {
                 .and_then(|screen| screen.selected_commit_hash().map(|(_, hash)| hash))
         });
         match hash {
-            Some(hash) => Task::done(Message::repo(RepositoryMessage::Detail(
+            Some(hash) => ui_message(Message::repo(RepositoryMessage::Detail(
                 DetailAction::CopyCommitShaRequested(hash),
             ))),
             None => Task::none(),

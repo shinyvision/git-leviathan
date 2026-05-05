@@ -83,7 +83,16 @@ pub(super) fn conflict_scrollbar_style(
 }
 
 pub(super) fn save_button_style(_: &Theme, status: button::Status) -> button::Style {
-    let background = if matches!(status, button::Status::Hovered | button::Status::Pressed) {
+    let disabled = matches!(status, button::Status::Disabled);
+    let dim = |c: Color| Color { a: 0.5, ..c };
+    let background = if disabled {
+        dim(Color {
+            r: 0.247,
+            g: 0.369,
+            b: 0.288,
+            a: 1.0,
+        })
+    } else if matches!(status, button::Status::Hovered | button::Status::Pressed) {
         Color {
             r: 0.361,
             g: 0.722,
@@ -98,15 +107,22 @@ pub(super) fn save_button_style(_: &Theme, status: button::Status) -> button::St
             a: 1.0,
         }
     };
-    let border = Color {
+    let mut border = Color {
         r: 0.361,
         g: 0.722,
         b: 0.361,
         a: 1.0,
     };
+    if disabled {
+        border = dim(border);
+    }
     button::Style {
         background: Some(background.into()),
-        text_color: Color::WHITE,
+        text_color: if disabled {
+            dim(Color::WHITE)
+        } else {
+            Color::WHITE
+        },
         border: Border {
             color: border,
             width: 1.0,

@@ -12,10 +12,6 @@ use syntect::parsing::{Scope, SyntaxSet, SyntaxSetBuilder};
 static SYNTAX_SERVICE: LazyLock<RwLock<Option<Arc<SyntaxHighlightService>>>> =
     LazyLock::new(|| RwLock::new(None));
 
-/// Skip real highlighting above this size; fall back to plain spans.
-/// Syntect's Oniguruma regexes blow up on very large or pathological files.
-const MAX_HIGHLIGHT_BYTES: usize = 512 * 1024;
-const MAX_HIGHLIGHT_LINES: usize = 10_000;
 const HIGHLIGHT_CACHE_CAPACITY: usize = 16;
 
 struct HighlightCache {
@@ -130,7 +126,7 @@ impl SyntaxHighlightService {
     }
 
     pub fn highlight(&self, code: &str, file_extension: &str) -> HighlightedFile {
-        if code.len() > MAX_HIGHLIGHT_BYTES {
+        if code.len() > crate::services::git::working_tree_diff::MAX_HIGHLIGHT_FILE_BYTES {
             return empty_highlighted_file();
         }
 
@@ -141,7 +137,7 @@ impl SyntaxHighlightService {
         let mut line_ranges = Vec::new();
 
         for (line_count, line) in code.lines().enumerate() {
-            if line_count >= MAX_HIGHLIGHT_LINES {
+            if line_count >= crate::services::git::working_tree_diff::MAX_HIGHLIGHT_LINES {
                 return empty_highlighted_file();
             }
 
@@ -424,7 +420,8 @@ mod tests {
 
     #[test]
     fn oversized_file_returns_empty_highlight() {
-        let huge = "x".repeat(MAX_HIGHLIGHT_BYTES + 1);
+        let huge =
+            "x".repeat(crate::services::git::working_tree_diff::MAX_HIGHLIGHT_FILE_BYTES + 1);
         let file = highlight_file(&huge, "rs");
         assert!(file.line(1).is_empty());
         assert_eq!(file.line_count(), 0);

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use iced::Task;
 
 use crate::message::{AppMessage, Message};
+use crate::work::timer_work;
 
 pub struct FetchPolicy {
     /// `Some(_)` iff a remote fetch is currently in flight. Doubles as the
@@ -75,12 +76,9 @@ impl FetchPolicy {
     /// Schedule a debounced auto-fetch after `delay`. Used post-Ctrl+Tab so
     /// rapid fly-bys don't each trigger a fetch on the transient landing tab.
     pub fn schedule_debounced(&mut self, delay: Duration) -> Task<Message> {
-        let (task, handle) = Task::perform(
-            async move {
-                tokio::time::sleep(delay).await;
-            },
-            |_| Message::App(AppMessage::FetchDebounceElapsed),
-        )
+        let (task, handle) = Task::perform(timer_work(delay), |_| {
+            Message::App(AppMessage::FetchDebounceElapsed)
+        })
         .abortable();
         self.debounce = Some(handle);
         task

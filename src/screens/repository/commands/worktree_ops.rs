@@ -6,12 +6,17 @@ use iced::Task;
 use crate::{message::Message, services::GitError, toast::ToastData, view_model::LoadedRepo};
 
 use super::super::overlays::ActiveDialog;
+use super::super::state::OperationId;
 use super::super::RepositoryScreen;
 
 pub(super) fn on_worktree_created(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             if matches!(
@@ -25,7 +30,10 @@ pub(super) fn on_worktree_created(
                 "Worktree created",
                 String::new(),
             )));
-            Task::batch(vec![apply_task, toast_task])
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::batch(vec![apply_task, toast_task]),
+            )
         }
         Err(e) => {
             eprintln!("git_leviathan: create worktree failed: {}", e);
@@ -33,18 +41,25 @@ pub(super) fn on_worktree_created(
                 state.submitting = false;
                 state.error = Some(format!("{e}"));
             }
-            Task::done(Message::show_toast(ToastData::error(
-                "Failed to create worktree",
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    "Failed to create worktree",
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
 
 pub(super) fn on_worktree_removed(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             let current_paths: HashSet<PathBuf> = loaded
@@ -68,14 +83,20 @@ pub(super) fn on_worktree_removed(
                 "Worktree removed",
                 String::new(),
             )));
-            Task::batch(vec![apply_task, toast_task])
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::batch(vec![apply_task, toast_task]),
+            )
         }
         Err(e) => {
             eprintln!("git_leviathan: remove worktree failed: {e}");
-            Task::done(Message::show_toast(ToastData::error(
-                "Failed to remove worktree",
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    "Failed to remove worktree",
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }

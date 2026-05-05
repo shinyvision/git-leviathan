@@ -34,6 +34,7 @@ pub struct ConflictFileResolutionState {
     pub ignore_next_theirs_scroll: bool,
     pub ours_highlighted: Option<Arc<HighlightedFile>>,
     pub theirs_highlighted: Option<Arc<HighlightedFile>>,
+    pub render_generation: u64,
     pub ours_scroll_offset_y: f32,
     pub theirs_scroll_offset_y: f32,
     pub output_scroll_offset_y: f32,
@@ -84,6 +85,7 @@ pub(in crate::screens::repository) struct ConflictResolverViewModel<'a> {
     pub(in crate::screens::repository) output_selection:
         Option<crate::widgets::diff_canvas::DiffSelection>,
     pub(in crate::screens::repository) shift_held: bool,
+    pub(in crate::screens::repository) save_busy: bool,
     /// Single search overlay for the whole conflict view. Rendered at a
     /// stable tree position (top of the conflict body's Stack) so the
     /// text_input's internal state — including caret position — survives
@@ -100,13 +102,15 @@ impl DiffPanel {
 
     pub(in crate::screens::repository) fn on_conflict_resolution_loaded(
         &mut self,
+        generation: u64,
         result: Result<ConflictResolutionResult, crate::services::GitError>,
     ) -> Option<DiffPanelAction> {
         let Ok(conflict_result) = result else {
             return None;
         };
         if let Some(state) = &mut self.conflict_file_resolution {
-            if state.file_path == conflict_result.file_path {
+            if state.file_path == conflict_result.file_path && state.render_generation == generation
+            {
                 let hunk_count = conflict_hunk_count(&conflict_result);
                 let first_load = state.result.is_none();
                 state.result = Some(conflict_result);
@@ -124,12 +128,13 @@ impl DiffPanel {
                 let ours_content = state
                     .result
                     .as_ref()
-                    .map(|r| conflict_side_lines(r, ConflictSide::Ours).join("\n"));
+                    .and_then(|r| conflict_side_highlight_content(r, ConflictSide::Ours));
                 let theirs_content = state
                     .result
                     .as_ref()
-                    .map(|r| conflict_side_lines(r, ConflictSide::Theirs).join("\n"));
+                    .and_then(|r| conflict_side_highlight_content(r, ConflictSide::Theirs));
                 return Some(DiffPanelAction::RunConflictHighlight {
+                    generation,
                     file_path,
                     ours_content,
                     theirs_content,
@@ -141,12 +146,15 @@ impl DiffPanel {
 
     pub(in crate::screens::repository) fn on_conflict_highlight_ready(
         &mut self,
+        generation: u64,
         ours: Option<Arc<HighlightedFile>>,
         theirs: Option<Arc<HighlightedFile>>,
     ) {
         if let Some(state) = &mut self.conflict_file_resolution {
-            state.ours_highlighted = ours;
-            state.theirs_highlighted = theirs;
+            if state.render_generation == generation {
+                state.ours_highlighted = ours;
+                state.theirs_highlighted = theirs;
+            }
         }
     }
 
@@ -348,6 +356,21 @@ pub(in crate::screens::repository) fn conflict_side_lines(
         }
     }
     out
+}
+
+fn conflict_side_highlight_content(
+    result: &ConflictResolutionResult,
+    side: ConflictSide,
+) -> Option<String> {
+    let lines = conflict_side_lines(result, side);
+    if lines.len() > crate::services::git::working_tree_diff::MAX_HIGHLIGHT_LINES {
+        return None;
+    }
+    let byte_count = lines.iter().map(|line| line.len() + 1).sum::<usize>();
+    if byte_count > crate::services::git::working_tree_diff::MAX_HIGHLIGHT_FILE_BYTES {
+        return None;
+    }
+    Some(lines.join("\n"))
 }
 
 pub fn conflict_resolution_output_lines(

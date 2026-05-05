@@ -15,8 +15,8 @@ pub mod text_measurement;
 pub use crate::core::WorktreeInfo;
 pub use gateway::{GitRepositoryGateway, PushGatewayOutcome, SharedRepositoryGateway};
 pub use git::working_tree_diff::{
-    DiffLineType, DiffSegment, DirtyDiffSignature, SegmentKind, WorkingTreeDiffLine,
-    WorkingTreeDiffResult,
+    DiffContentSkipReason, DiffFallbacks, DiffLineType, DiffSegment, DiffSide, DirtyDiffSignature,
+    SegmentKind, WorkingTreeDiffLine, WorkingTreeDiffResult,
 };
 pub use git::{
     kill_running_git_processes, load_commit_diff, load_merged_commit_diff,

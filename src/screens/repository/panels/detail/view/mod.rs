@@ -391,6 +391,7 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
                     false,
                     screen.active_diff_file_path,
                     width,
+                    false,
                 )
             })
             .collect()
@@ -605,6 +606,7 @@ fn file_row_view<'a>(
     is_merged: bool,
     active_diff_path: Option<&'a str>,
     available_width: f32,
+    dirty_actions_busy: bool,
 ) -> Element<'a, Message> {
     fn make_indicator(kind: &ChangeKind) -> Element<'static, Message> {
         match kind {
@@ -643,6 +645,7 @@ fn file_row_view<'a>(
             section.file_action_label(),
             section.file_action_message(file.path.clone()),
             section.action_tone(),
+            !dirty_actions_busy,
         );
 
         let path_row = row![

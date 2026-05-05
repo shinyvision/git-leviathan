@@ -32,8 +32,9 @@ pub fn build(app: &App) -> Subscription<Message> {
         .map(|screen| {
             let watch_path = screen.active_worktree_path().to_path_buf();
             vec![
-                crate::services::file_watcher::watch_repo_files(active_id, watch_path)
-                    .map(|tab_id| Message::App(AppMessage::RepoFilesChanged(tab_id))),
+                crate::services::file_watcher::watch_repo_files(active_id, watch_path).map(
+                    |(tab_id, path)| Message::App(AppMessage::RepoFilesChanged { tab_id, path }),
+                ),
             ]
         })
         .unwrap_or_default();

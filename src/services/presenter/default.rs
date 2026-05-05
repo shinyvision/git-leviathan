@@ -3,8 +3,8 @@ use crate::services::{
     RepoSnapshot, StashApplyOutcome,
 };
 use crate::view_model::{
-    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedPushOutcome, LoadedRefs,
-    LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+    LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
+    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
 };
 
 use super::projection;
@@ -25,11 +25,24 @@ impl DefaultPresenter {
 
 impl Presenter for DefaultPresenter {
     fn project_loaded(&self, snapshot: RepoSnapshot) -> LoadedRepo {
-        projection::project_loaded(snapshot)
+        let span = crate::perf::Span::new("cpu.presenter_projection").field("kind", "loaded");
+        let loaded = projection::project_loaded(snapshot);
+        span.finish_with("commits", loaded.projection.commits.len());
+        loaded
     }
 
     fn project_refs(&self, snapshot: RefsSnapshot) -> LoadedRefs {
-        projection::project_refs(snapshot)
+        let span = crate::perf::Span::new("cpu.presenter_projection").field("kind", "refs");
+        let loaded = projection::project_refs(snapshot);
+        span.finish_with("commits", loaded.commits.len());
+        loaded
+    }
+
+    fn project_dirty_index(
+        &self,
+        snapshot: Option<crate::services::DirtySnapshot>,
+    ) -> LoadedDirtyIndex {
+        projection::project_dirty_index(snapshot)
     }
 
     fn project_remote_checkout(

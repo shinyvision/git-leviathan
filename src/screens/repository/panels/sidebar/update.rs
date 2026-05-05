@@ -1,14 +1,15 @@
 use iced::{Point, Task};
 
-use crate::message::Message;
+use crate::{
+    message::Message,
+    work::{git_read_work, git_write_work},
+};
 
 use super::super::super::state::{FocusedPanel, PendingFocus, SidebarContextMenuRequest};
 use super::super::super::RepositoryMessage;
 use super::super::center::CenterPanel;
 use super::super::ScreenCtx;
 use super::{SidebarAction, SidebarPanel};
-
-use super::super::super::gateway_work;
 
 /// Resolves a pending focus request. Mirrors the screen-level helper but
 /// operates on the panels directly — returns the `Task` to run plus a flag
@@ -67,7 +68,7 @@ pub(in crate::screens::repository) fn load_more_commits(
     let presenter = ctx.presenter.clone();
     let tab_id = ctx.tab_id;
     Task::perform(
-        gateway_work(move || {
+        git_read_work(move || {
             repo.load_repo(next_commit_limit)
                 .map(|s| presenter.project_loaded(s))
         }),
@@ -102,7 +103,7 @@ pub(in crate::screens::repository) fn commit_selection_changed_task(
         let repo = ctx.repository.clone();
         let tab_id = ctx.tab_id;
         return Task::perform(
-            gateway_work(move || repo.load_merged_commit_diff(hashes)),
+            git_read_work(move || repo.load_merged_commit_diff(hashes)),
             move |result| {
                 Message::tab(
                     tab_id,
@@ -123,8 +124,17 @@ pub(in crate::screens::repository) fn commit_selection_changed_task(
     };
     let repo = ctx.repository.clone();
     let tab_id = ctx.tab_id;
+    let repo_path = ctx.fleet.active_path().display().to_string();
+    let hash_for_log = hash.clone();
     Task::perform(
-        gateway_work(move || repo.load_commit_diff(idx, &hash)),
+        git_read_work(move || {
+            let _span = crate::perf::Span::new("git.commit_diff_stats_load")
+                .field("tab", tab_id)
+                .field("repo", &repo_path)
+                .field("commit_idx", idx)
+                .field("hash", &hash_for_log);
+            repo.load_commit_diff(idx, &hash)
+        }),
         move |result| Message::tab(tab_id, RepositoryMessage::CommitDiffLoaded(result)),
     )
 }
@@ -285,24 +295,43 @@ pub(super) fn update(
 }
 
 fn checkout_task(ctx: &mut ScreenCtx<'_>, branch_name: String, is_remote: bool) -> Task<Message> {
+    let Some(operation_id) = ctx.data.operations.begin_write() else {
+        return Task::none();
+    };
     let repo = ctx.repository.clone();
     let presenter = ctx.presenter.clone();
     let tab_id = ctx.tab_id;
     if is_remote {
         Task::perform(
-            gateway_work(move || {
+            git_write_work(move || {
                 repo.checkout_remote_branch(&branch_name)
                     .map(|o| presenter.project_remote_checkout(o))
             }),
-            move |result| Message::tab(tab_id, RepositoryMessage::RemoteCheckoutCompleted(result)),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::RemoteCheckoutCompleted {
+                        operation_id,
+                        result,
+                    },
+                )
+            },
         )
     } else {
         Task::perform(
-            gateway_work(move || {
+            git_write_work(move || {
                 repo.checkout_branch(&branch_name)
                     .map(|s| presenter.project_loaded(s))
             }),
-            move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::WriteRepoLoaded {
+                        operation_id,
+                        result,
+                    },
+                )
+            },
         )
     }
 }

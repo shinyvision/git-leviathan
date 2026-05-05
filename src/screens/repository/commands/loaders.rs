@@ -12,8 +12,20 @@ use crate::{
 };
 
 use super::super::overlays::ActiveDialog;
-use super::super::RepositoryScreen;
+use super::super::{panels::diff::DirtyDiffSyncResult, RepositoryScreen};
 use super::helpers::apply_fetched_refs;
+
+pub(super) fn on_write_repo_loaded(
+    screen: &mut RepositoryScreen,
+    operation_id: super::super::state::OperationId,
+    result: Result<LoadedRepo, GitError>,
+) -> Task<Message> {
+    if !screen.finish_git_write(operation_id) {
+        return Task::none();
+    }
+    let task = on_repo_loaded(screen, result);
+    super::helpers::pending_reload_task_after_write(screen, task)
+}
 
 pub(super) fn on_repo_loaded(
     screen: &mut RepositoryScreen,
@@ -91,16 +103,26 @@ pub(super) fn on_refs_reloaded(
 
 pub(super) fn on_fetch_finished(
     screen: &mut RepositoryScreen,
+    operation_id: super::super::state::OperationId,
     result: Result<(), GitError>,
 ) -> Task<Message> {
+    if !screen.finish_git_write(operation_id) {
+        return Task::none();
+    }
     match result {
-        Ok(()) => screen.reload_graph_and_refs_task(),
+        Ok(()) => super::helpers::pending_reload_task_after_write(
+            screen,
+            screen.reload_graph_and_refs_task(),
+        ),
         Err(e) => {
             eprintln!("git_leviathan: fetch failed: {}", e);
-            Task::done(Message::show_toast(ToastData::error(
-                "Fetch Failed",
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    "Fetch Failed",
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
@@ -126,6 +148,11 @@ pub(super) fn on_more_commits_loaded(
     repo_version: RepoVersion,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    let span = crate::perf::Span::new("ui.repo_result_apply")
+        .field("tab", screen.tab_id)
+        .field("kind", "more_commits")
+        .field("result_version", repo_version)
+        .field("active_version", screen.panels.center.repo_version);
     match result {
         Ok(loaded) => {
             let has_more_commits = loaded.has_more_commits;
@@ -137,8 +164,10 @@ pub(super) fn on_more_commits_loaded(
                 &mut screen.data.branch_popout,
             );
             if !accepted {
+                span.finish_with("applied", false);
                 return Task::none();
             }
+            span.finish_with("applied", true);
             super::super::commit_search::refresh_matches(screen);
 
             super::helpers::try_resolve_pending_focus(screen).unwrap_or(Task::none())
@@ -171,12 +200,19 @@ pub(super) fn on_merged_commit_diff_loaded(
     version: RepoVersion,
     result: Result<MergedCommitDiffResult, GitError>,
 ) -> Task<Message> {
+    let span = crate::perf::Span::new("ui.repo_result_apply")
+        .field("tab", screen.tab_id)
+        .field("kind", "merged_diff")
+        .field("result_version", version)
+        .field("active_version", screen.merged_diff.version());
     if version != screen.merged_diff.version() {
+        span.finish_with("applied", false);
         return Task::none();
     }
     match result {
         Ok(r) => {
             screen.merged_diff.set(r);
+            span.finish_with("applied", true);
             Task::none()
         }
         Err(e) => {
@@ -188,42 +224,63 @@ pub(super) fn on_merged_commit_diff_loaded(
 
 pub(super) fn on_merged_commit_file_diff_loaded(
     screen: &mut RepositoryScreen,
+    generation: u64,
     result: Result<WorkingTreeDiffResult, GitError>,
 ) -> Task<Message> {
-    if let Some(action) = screen.panels.diff.on_merged_diff_loaded(result) {
-        screen.handle_diff_panel_action(action)
-    } else {
-        Task::none()
-    }
+    let actions = screen.panels.diff.on_merged_diff_loaded(generation, result);
+    run_diff_actions(screen, actions)
 }
 
 pub(super) fn on_commit_file_diff_loaded(
     screen: &mut RepositoryScreen,
+    generation: u64,
     result: Result<WorkingTreeDiffResult, GitError>,
 ) -> Task<Message> {
-    if let Some(action) = screen.panels.diff.on_commit_diff_loaded(result) {
-        screen.handle_diff_panel_action(action)
-    } else {
-        Task::none()
-    }
+    let actions = screen.panels.diff.on_commit_diff_loaded(generation, result);
+    run_diff_actions(screen, actions)
 }
 
 pub(super) fn on_dirty_file_diff_loaded(
     screen: &mut RepositoryScreen,
+    generation: u64,
     result: Result<WorkingTreeDiffResult, GitError>,
 ) -> Task<Message> {
-    if let Some(action) = screen.panels.diff.on_dirty_diff_loaded(result) {
+    let actions = screen.panels.diff.on_dirty_diff_loaded(generation, result);
+    run_diff_actions(screen, actions)
+}
+
+pub(super) fn on_dirty_diff_sync_checked(
+    screen: &mut RepositoryScreen,
+    result: Result<DirtyDiffSyncResult, GitError>,
+) -> Task<Message> {
+    if let Some(action) = screen.panels.diff.on_dirty_diff_sync_result(result) {
         screen.handle_diff_panel_action(action)
     } else {
         Task::none()
     }
 }
 
+fn run_diff_actions(
+    screen: &mut RepositoryScreen,
+    actions: Vec<super::super::panel_messages::DiffPanelAction>,
+) -> Task<Message> {
+    Task::batch(
+        actions
+            .into_iter()
+            .map(|action| screen.handle_diff_panel_action(action)),
+    )
+}
+
 pub(super) fn on_conflict_resolution_loaded(
     screen: &mut RepositoryScreen,
+    generation: u64,
     result: Result<ConflictResolutionResult, GitError>,
 ) -> Task<Message> {
-    if let Some(action) = screen.panels.diff.on_conflict_resolution_loaded(result) {
+    if let Some(action) = screen
+        .panels
+        .diff
+        .on_conflict_resolution_loaded(generation, result)
+    {
         screen.handle_diff_panel_action(action)
     } else {
         Task::none()

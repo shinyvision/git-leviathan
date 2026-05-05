@@ -308,17 +308,22 @@ fn build_canvas_data(
     char_width: f32,
     gutter_width: f32,
 ) -> Arc<TextCanvasData> {
+    let span = crate::perf::Span::new("cpu.canvas_data_building")
+        .field("kind", "conflict")
+        .field("rows", rows.len());
     let content_width = compute_content_width(&rows, char_width);
     let rows_dyn: Vec<Arc<dyn CanvasRow>> = rows
         .into_iter()
         .map(|r| Arc::new(r) as Arc<dyn CanvasRow>)
         .collect();
-    Arc::new(TextCanvasData::from_rows(
+    let data = Arc::new(TextCanvasData::from_rows(
         rows_dyn,
         content_width,
         char_width,
         gutter_width,
-    ))
+    ));
+    span.finish_with("content_width", content_width);
+    data
 }
 
 fn compute_content_width(rows: &[ConflictRow], char_w: f32) -> f32 {

@@ -49,19 +49,19 @@ fn is_relevant_event_path(path: &std::path::Path) -> bool {
     !NOISE_PREFIXES.iter().any(|prefix| p_str.contains(prefix))
 }
 
-pub fn watch_repo_files(tab_id: TabId, repo_path: PathBuf) -> Subscription<TabId> {
+pub fn watch_repo_files(tab_id: TabId, repo_path: PathBuf) -> Subscription<(TabId, PathBuf)> {
     #[derive(Hash)]
     struct Id {
         tag: &'static str,
         tab_id: TabId,
         path: PathBuf,
     }
-    fn build(id: &Id) -> impl iced::futures::Stream<Item = TabId> {
+    fn build(id: &Id) -> impl iced::futures::Stream<Item = (TabId, PathBuf)> {
         let repo_path = id.path.clone();
         let tab_id = id.tab_id;
         iced::stream::channel(
             1,
-            move |mut sender: iced::futures::channel::mpsc::Sender<TabId>| {
+            move |mut sender: iced::futures::channel::mpsc::Sender<(TabId, PathBuf)>| {
                 let repo = repo_path.clone();
                 async move {
                     let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<()>(16);
@@ -122,7 +122,7 @@ pub fn watch_repo_files(tab_id: TabId, repo_path: PathBuf) -> Subscription<TabId
                                     }
                                     _ = &mut sleep, if pending => {
                                         pending = false;
-                                        let _ = sender.try_send(tab_id);
+                                        let _ = sender.try_send((tab_id, repo.clone()));
                                     }
                                 }
                             }

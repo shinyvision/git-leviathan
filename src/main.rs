@@ -4,6 +4,7 @@ mod config;
 mod core;
 mod executor;
 mod message;
+mod perf;
 pub mod plugin;
 mod screens;
 mod services;
@@ -13,6 +14,7 @@ mod toast;
 mod utils;
 mod view_model;
 mod widgets;
+mod work;
 
 const JETBRAINS_MONO_REG: &[u8] = include_bytes!("assets/fonts/JetBrainsMono-Regular.ttf");
 const JETBRAINS_MONO_BOLD: &[u8] = include_bytes!("assets/fonts/JetBrainsMono-Bold.ttf");

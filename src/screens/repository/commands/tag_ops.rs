@@ -1,16 +1,23 @@
 use iced::Task;
 
-use crate::{message::Message, services::GitError, toast::ToastData, view_model::LoadedRepo};
+use crate::{
+    message::Message, services::GitError, toast::ToastData, view_model::LoadedRepo,
+    work::git_write_work,
+};
 
-use super::super::gateway_work;
 use super::super::overlays::ActiveDialog;
+use super::super::state::OperationId;
 use super::super::{RepositoryMessage, RepositoryScreen};
 
 pub(super) fn on_tag_created(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     tag_name: String,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             if matches!(
@@ -19,23 +26,31 @@ pub(super) fn on_tag_created(
             ) {
                 screen.overlay_manager.close();
             }
-            super::helpers::handle_repo_loaded(screen, loaded)
+            let task = super::helpers::handle_repo_loaded(screen, loaded);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
             eprintln!("git_leviathan: create tag failed: {}", e);
-            Task::done(Message::show_toast(ToastData::error(
-                format!("Create Tag Failed: {}", tag_name),
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    format!("Create Tag Failed: {}", tag_name),
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
 
 pub(super) fn on_tag_deleted(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     tag_name: String,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             let remote_names = match screen.overlay_manager.active() {
@@ -59,7 +74,7 @@ pub(super) fn on_tag_deleted(
                 let tag_for_msg = tag_name.clone();
                 let remote_for_msg = remote.clone();
                 tasks.push(Task::perform(
-                    gateway_work(move || {
+                    git_write_work(move || {
                         repo.delete_remote_tag(&remote_clone, &tag_clone)
                             .map(|s| presenter.project_loaded(s))
                     }),
@@ -67,6 +82,7 @@ pub(super) fn on_tag_deleted(
                         Message::tab(
                             tab_id,
                             RepositoryMessage::TagDeletedFromRemote {
+                                operation_id: None,
                                 tag_name: tag_for_msg.clone(),
                                 remote_name: remote_for_msg.clone(),
                                 result,
@@ -75,25 +91,32 @@ pub(super) fn on_tag_deleted(
                     },
                 ));
             }
-            Task::batch(tasks)
+            super::helpers::pending_reload_task_after_write(screen, Task::batch(tasks))
         }
         Err(e) => {
             eprintln!("git_leviathan: delete tag failed: {}", e);
-            Task::done(Message::show_toast(ToastData::error(
-                format!("Delete Tag Failed: {}", tag_name),
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    format!("Delete Tag Failed: {}", tag_name),
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }
 
 pub(super) fn on_tag_pushed(
     screen: &mut RepositoryScreen,
+    operation_id: OperationId,
     tag_name: String,
     remote_name: String,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
-    match result {
+    if !screen.finish_git_write(operation_id) {
+        return Task::none();
+    }
+    let task = match result {
         Ok(loaded) => {
             let toast = Task::done(Message::show_toast(ToastData::success(
                 format!("Tag pushed: {}", tag_name),
@@ -109,15 +132,20 @@ pub(super) fn on_tag_pushed(
                 e.to_string(),
             )))
         }
-    }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
 }
 
 pub(super) fn on_tag_deleted_from_remote(
     screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
     tag_name: String,
     remote_name: String,
     result: Result<LoadedRepo, GitError>,
 ) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
     match result {
         Ok(loaded) => {
             let toast = Task::done(Message::show_toast(ToastData::success(
@@ -125,14 +153,20 @@ pub(super) fn on_tag_deleted_from_remote(
                 format!("deleted from {}", remote_name),
             )));
             let reload = super::helpers::handle_repo_loaded(screen, loaded);
-            Task::batch(vec![reload, toast])
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::batch(vec![reload, toast]),
+            )
         }
         Err(e) => {
             eprintln!("git_leviathan: delete remote tag failed: {}", e);
-            Task::done(Message::show_toast(ToastData::error(
-                format!("Delete Remote Tag Failed: {}", tag_name),
-                e.to_string(),
-            )))
+            super::helpers::pending_reload_task_after_write(
+                screen,
+                Task::done(Message::show_toast(ToastData::error(
+                    format!("Delete Remote Tag Failed: {}", tag_name),
+                    e.to_string(),
+                ))),
+            )
         }
     }
 }

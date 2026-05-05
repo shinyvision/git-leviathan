@@ -34,6 +34,8 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     pub(in crate::screens::repository) reword_descendant_count: usize,
     /// Whether to show the "Copied" tooltip next to the commit SHA chip.
     pub(in crate::screens::repository) copied_sha_flash: bool,
+    pub(in crate::screens::repository) dirty_actions_busy: bool,
+    pub(in crate::screens::repository) dirty_operation_label: Option<&'static str>,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +172,8 @@ impl DetailPanel {
             reword_allowed,
             reword_descendant_count,
             copied_sha_flash: self.copied_sha_flash,
+            dirty_actions_busy: data.operations.is_writing(),
+            dirty_operation_label: data.operations.active_label(),
         }
     }
 

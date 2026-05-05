@@ -139,7 +139,7 @@ impl App {
                 self.plugin_host.tick();
                 Task::none()
             }
-            AppMessage::RepoFilesChanged(tab_id) => self.reload_refs_for_tab(tab_id),
+            AppMessage::RepoFilesChanged { tab_id, path } => self.reload_refs_for_tab(tab_id, path),
             AppMessage::WindowFocused => self.on_window_focused(),
             AppMessage::WindowUnfocused => Task::none(),
             AppMessage::FetchTick(_) => {
@@ -157,13 +157,20 @@ impl App {
                     Task::none()
                 }
             }
-            AppMessage::FetchCompleted { tab_id, result } => {
+            AppMessage::FetchCompleted {
+                tab_id,
+                operation_id,
+                result,
+            } => {
                 let remote_name = self.fetch_remote_name_for_tab(tab_id);
                 self.fetch.on_completed();
                 self.plugin_host
                     .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
                 if let Some(screen) = self.tabs.screen_mut(tab_id) {
-                    return screen.update(RepositoryMessage::FetchFinished(result));
+                    return screen.update(RepositoryMessage::FetchFinished {
+                        operation_id,
+                        result,
+                    });
                 }
                 Task::none()
             }

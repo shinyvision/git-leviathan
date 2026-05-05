@@ -6,10 +6,13 @@ use std::time::Duration;
 
 use iced::{clipboard, Point, Task};
 
-use crate::{message::Message, toast::ToastData};
+use crate::{
+    message::Message,
+    toast::ToastData,
+    work::{git_write_work, timer_work},
+};
 
 use super::super::super::{
-    gateway_work,
     overlays::{
         cherry_pick_confirm, create_branch, create_tag, delete_branch, delete_tag, rename_branch,
         stash_delete, ActiveDialog,
@@ -101,28 +104,48 @@ pub(in crate::screens::repository) fn update(
                     );
                 }
             }
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.checkout_branch(&branch_name)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::WriteRepoLoaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::RemoteBranchLabelPressed(branch_name) => {
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.checkout_remote_branch(&branch_name)
                         .map(|o| presenter.project_remote_checkout(o))
                 }),
                 move |result| {
-                    Message::tab(tab_id, RepositoryMessage::RemoteCheckoutCompleted(result))
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::RemoteCheckoutCompleted {
+                            operation_id,
+                            result,
+                        },
+                    )
                 },
             )
         }
@@ -173,13 +196,16 @@ pub(in crate::screens::repository) fn update(
             target_branch,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             let source_for_task = source_branch.clone();
             let target_for_task = target_branch.clone();
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.merge_branch_into(&source_for_task, &target_for_task)
                         .map(|o| presenter.project_branch_merge(o))
                 }),
@@ -187,6 +213,7 @@ pub(in crate::screens::repository) fn update(
                     Message::tab(
                         tab_id,
                         RepositoryMessage::BranchMerged {
+                            operation_id: Some(operation_id),
                             source_branch: source_branch.clone(),
                             target_branch: target_branch.clone(),
                             result,
@@ -200,17 +227,28 @@ pub(in crate::screens::repository) fn update(
             target_branch,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             let src = source_branch.clone();
             let tgt = target_branch.clone();
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.fast_forward_branch_to_branch(&src, &tgt)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::WriteRepoLoaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::BranchRebaseRequested {
@@ -219,13 +257,16 @@ pub(in crate::screens::repository) fn update(
             target_display,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             let src_for_task = source_branch.clone();
             let target_for_task = target_ref.clone();
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.rebase_current_onto(&src_for_task, &target_for_task)
                         .map(|s| presenter.project_loaded(s))
                 }),
@@ -233,6 +274,7 @@ pub(in crate::screens::repository) fn update(
                     Message::tab(
                         tab_id,
                         RepositoryMessage::BranchRebased {
+                            operation_id: Some(operation_id),
                             source_branch: source_branch.clone(),
                             target_display: target_display.clone(),
                             result,
@@ -265,31 +307,21 @@ pub(in crate::screens::repository) fn update(
             if hovered {
                 tracker.open_gen = tracker.open_gen.wrapping_add(1);
                 let gen = tracker.open_gen;
-                Task::perform(
-                    async move {
-                        tokio::time::sleep(Duration::from_millis(750)).await;
-                    },
-                    move |_| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::Center(CenterAction::ResetOpenTimer(gen)),
-                        )
-                    },
-                )
+                Task::perform(timer_work(Duration::from_millis(750)), move |_| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::Center(CenterAction::ResetOpenTimer(gen)),
+                    )
+                })
             } else if !tracker.submenu_hovered {
                 tracker.close_gen = tracker.close_gen.wrapping_add(1);
                 let gen = tracker.close_gen;
-                Task::perform(
-                    async move {
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                    },
-                    move |_| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::Center(CenterAction::ResetCloseTimer(gen)),
-                        )
-                    },
-                )
+                Task::perform(timer_work(Duration::from_millis(500)), move |_| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::Center(CenterAction::ResetCloseTimer(gen)),
+                    )
+                })
             } else {
                 Task::none()
             }
@@ -301,17 +333,12 @@ pub(in crate::screens::repository) fn update(
             if !hovered && !tracker.parent_hovered {
                 tracker.close_gen = tracker.close_gen.wrapping_add(1);
                 let gen = tracker.close_gen;
-                Task::perform(
-                    async move {
-                        tokio::time::sleep(Duration::from_millis(500)).await;
-                    },
-                    move |_| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::Center(CenterAction::ResetCloseTimer(gen)),
-                        )
-                    },
-                )
+                Task::perform(timer_work(Duration::from_millis(500)), move |_| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::Center(CenterAction::ResetCloseTimer(gen)),
+                    )
+                })
             } else {
                 Task::none()
             }
@@ -338,15 +365,26 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::ResetToCommitRequested { commit_hash, mode } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.reset_current_branch_to_commit(&commit_hash, mode)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::RepoLoaded(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::WriteRepoLoaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::BranchDeleteRequested {
@@ -438,38 +476,71 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::StashCreateRequested => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || repo.create_stash().map(|s| presenter.project_loaded(s))),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyIndexChanged(result)),
+                git_write_work(move || repo.create_stash().map(|s| presenter.project_loaded(s))),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexChanged {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::StashApplyRequested { stash_index } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.apply_stash(stash_index)
                         .map(|o| presenter.project_stash_apply(o))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::StashApplyCompleted(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::StashApplyCompleted {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::StashPopRequested { stash_index } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.pop_stash(stash_index)
                         .map(|o| presenter.project_stash_apply(o))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::StashPopCompleted(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::StashPopCompleted {
+                            operation_id: Some(operation_id),
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::StashDeleteRequested {
@@ -499,15 +570,26 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::SquashCommitsRequested { indices: _, hashes } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.squash_commits(hashes)
                         .map(|s| presenter.project_loaded(s))
                 }),
-                move |result| Message::tab(tab_id, RepositoryMessage::SquashCompleted(result)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::SquashCompleted {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
             )
         }
         CenterAction::CenterListScrolled(viewport) => {
@@ -637,13 +719,16 @@ pub(in crate::screens::repository) fn update(
             remote_name,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             let tag_clone = tag_name.clone();
             let remote_clone = remote_name.clone();
             Task::perform(
-                gateway_work(move || {
+                git_write_work(move || {
                     repo.push_tag(&remote_clone, &tag_clone)
                         .map(|s| presenter.project_loaded(s))
                 }),
@@ -651,6 +736,7 @@ pub(in crate::screens::repository) fn update(
                     Message::tab(
                         tab_id,
                         RepositoryMessage::TagPushed {
+                            operation_id,
                             tag_name: tag_name.clone(),
                             remote_name: remote_name.clone(),
                             result,

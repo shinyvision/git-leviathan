@@ -235,7 +235,7 @@ fn merged_stats_and_files<'a>(
         merged
             .files
             .iter()
-            .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width))
+            .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width, false))
             .collect()
     };
 

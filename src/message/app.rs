@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use crate::core::TabId;
 use crate::plugin::tab_snapshot::TabRegistryOp;
+use crate::screens::repository::state::OperationId;
 use crate::services::GitError;
 use crate::view_model::LoadedRepo;
 
@@ -31,8 +32,11 @@ pub enum AppMessage {
     TabRegistryOp(TabRegistryOp),
     AnimationTick(Instant),
     PluginRuntimeTick(Instant),
-    /// A repository's files changed on disk; carries the owning tab id.
-    RepoFilesChanged(TabId),
+    /// A repository's files changed on disk; carries the owning tab id and watched path.
+    RepoFilesChanged {
+        tab_id: TabId,
+        path: PathBuf,
+    },
     WindowFocused,
     WindowUnfocused,
     FetchTick(Instant),
@@ -43,6 +47,7 @@ pub enum AppMessage {
     /// handler dispatches its own scoped refs-reload on success.
     FetchCompleted {
         tab_id: TabId,
+        operation_id: OperationId,
         result: Result<(), GitError>,
     },
     InvokeCommand {

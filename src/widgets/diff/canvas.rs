@@ -277,17 +277,20 @@ fn segment_bg_color(seg: SegmentKind, line: LineKind) -> Color {
 /// Build a `TextCanvasData` from `DiffRow`s, ready to hand to the generic
 /// canvas builders.
 pub fn build_canvas_data(rows: Vec<DiffRow>, char_width: f32) -> Arc<TextCanvasData> {
+    let span = crate::perf::Span::new("cpu.canvas_data_building").field("rows", rows.len());
     let content_width = compute_content_width(&rows, char_width);
     let rows_dyn: Vec<Arc<dyn CanvasRow>> = rows
         .into_iter()
         .map(|r| Arc::new(r) as Arc<dyn CanvasRow>)
         .collect();
-    Arc::new(TextCanvasData::from_rows(
+    let data = Arc::new(TextCanvasData::from_rows(
         rows_dyn,
         content_width,
         char_width,
         GUTTER_WIDTH,
-    ))
+    ));
+    span.finish_with("content_width", content_width);
+    data
 }
 
 fn compute_content_width(rows: &[DiffRow], char_w: f32) -> f32 {
@@ -364,31 +367,4 @@ pub fn diff_content_canvas(
 
 pub fn diff_gutter_canvas(data: Arc<TextCanvasData>, scroll_y: f32) -> Element<'static, Message> {
     text::gutter_canvas(CANVAS_ID, data, scroll_y, diff_panel_callbacks())
-}
-
-/// Helper for clipboard selection export.
-pub fn selection_text_for_rows(rows: &[DiffRow], selection: &TextSelection) -> String {
-    // Walk rows directly (no need to build a canvas) so call sites that
-    // only have a `Vec<DiffRow>` don't have to construct a full data.
-    if selection.is_empty() {
-        return String::new();
-    }
-    let (start, end) = selection.ordered();
-    let mut pieces: Vec<String> = Vec::new();
-    for (idx, row) in rows.iter().enumerate() {
-        if idx < start.row || idx > end.row {
-            continue;
-        }
-        if !CanvasRow::selectable(row) {
-            continue;
-        }
-        let raw = CanvasRow::raw_text(row);
-        let chars: Vec<char> = raw.chars().collect();
-        let from = if idx == start.row { start.col } else { 0 };
-        let to = if idx == end.row { end.col } else { chars.len() };
-        let from = from.min(chars.len());
-        let to = to.min(chars.len()).max(from);
-        pieces.push(chars[from..to].iter().collect());
-    }
-    pieces.join("\n")
 }

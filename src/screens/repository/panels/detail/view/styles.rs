@@ -60,10 +60,12 @@ pub(super) fn green_button_style(
     palette_button_style(CREATE_BUTTON, enabled)
 }
 
-pub(super) fn red_button_style() -> impl Fn(&Theme, button::Status) -> button::Style {
-    palette_button_style(DANGER_BUTTON, true)
+pub(super) fn red_button_style(enabled: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    palette_button_style(DANGER_BUTTON, enabled)
 }
 
-pub(super) fn resolve_button_style() -> impl Fn(&Theme, button::Status) -> button::Style {
-    palette_button_style(RESOLVE_BUTTON, true)
+pub(super) fn resolve_button_style(
+    enabled: bool,
+) -> impl Fn(&Theme, button::Status) -> button::Style {
+    palette_button_style(RESOLVE_BUTTON, enabled)
 }

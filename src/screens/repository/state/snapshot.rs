@@ -15,7 +15,8 @@ use crate::{
     services::presenter::signature::SignatureTracker,
     services::RepoRef,
     view_model::{
-        CommitPresentation, GraphRow, LoadedRefs, LoadedRepo, RepositoryProjection, SidebarSection,
+        CommitPresentation, GraphRow, LoadedDirtyRow, LoadedRefs, LoadedRepo, RepositoryProjection,
+        SidebarSection,
     },
 };
 
@@ -123,6 +124,31 @@ impl RepositorySnapshot {
         self.branch_refs = branch_refs;
 
         commit_diff_states
+    }
+
+    pub(in crate::screens::repository) fn replace_dirty_row(&mut self, row: LoadedDirtyRow) {
+        if self
+            .commits
+            .first()
+            .is_some_and(|c| c.kind == crate::core::CommitKind::Dirty)
+        {
+            self.commits[0] = row.commit;
+            self.commit_presentations[0] = row.presentation;
+        }
+    }
+
+    pub(in crate::screens::repository) fn remove_dirty_row(&mut self) {
+        if self
+            .commits
+            .first()
+            .is_some_and(|c| c.kind == crate::core::CommitKind::Dirty)
+        {
+            self.commits.remove(0);
+            self.commit_presentations.remove(0);
+            if !self.graph_rows.is_empty() {
+                self.graph_rows.remove(0);
+            }
+        }
     }
 
     fn apply_projection(

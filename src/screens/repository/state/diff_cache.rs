@@ -99,6 +99,18 @@ impl DiffCache {
             }
         }
     }
+
+    pub(in crate::screens::repository) fn replace_dirty(&mut self, state: CommitDiffState) {
+        if let Some(slot) = self.states.first_mut() {
+            *slot = state;
+        }
+    }
+
+    pub(in crate::screens::repository) fn remove_dirty(&mut self) {
+        if !self.states.is_empty() {
+            self.states.remove(0);
+        }
+    }
 }
 
 fn preserve_across_reload(

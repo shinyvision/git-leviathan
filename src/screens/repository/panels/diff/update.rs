@@ -3,14 +3,17 @@
 
 use iced::Task;
 
-use crate::message::{AppMessage, Message};
+use crate::{
+    message::{AppMessage, Message},
+    widgets::diff_canvas,
+    work::{git_read_work, git_write_work, presentation_work},
+};
 
 use super::super::super::{
-    gateway_work,
     panel_messages::DiffPanelAction,
     state::{
         conflict_ours_scroll_id, conflict_output_scroll_id, conflict_theirs_scroll_id,
-        diff_content_scroll_id,
+        diff_content_scroll_id, OperationKind,
     },
     RepositoryMessage,
 };
@@ -201,16 +204,29 @@ pub(in crate::screens::repository) fn update(
 
                 let path = state.file_path.clone();
                 let content = conflict_resolution_output_text(result, &state.selections);
+                let Some(operation_id) = ctx
+                    .data
+                    .operations
+                    .begin_write_kind(OperationKind::ResolveConflict)
+                else {
+                    return Task::none();
+                };
                 let repo = ctx.repository.clone();
                 let presenter = ctx.presenter.clone();
                 let tab_id = ctx.tab_id;
                 Task::perform(
-                    gateway_work(move || {
+                    git_write_work(move || {
                         repo.save_conflict_resolution(&path, &content)
                             .map(|s| presenter.project_loaded(s))
                     }),
                     move |result| {
-                        Message::tab(tab_id, RepositoryMessage::ConflictResolutionSaved(result))
+                        Message::tab(
+                            tab_id,
+                            RepositoryMessage::ConflictResolutionSaved {
+                                operation_id,
+                                result,
+                            },
+                        )
                     },
                 )
             } else {
@@ -218,57 +234,124 @@ pub(in crate::screens::repository) fn update(
             }
         }
         DiffPanelAction::DirtyFileHighlightReady {
+            generation,
             file_path,
             is_staged,
             old,
             new,
         } => {
-            panel.on_dirty_highlight_ready(file_path, is_staged, old, new);
-            panel.refresh_text_search_after_buffer_change();
-            Task::none()
+            if let Some(action) =
+                panel.on_dirty_highlight_ready(generation, file_path, is_staged, old, new)
+            {
+                update(panel, action, ctx)
+            } else {
+                Task::none()
+            }
         }
         DiffPanelAction::CommitFileHighlightReady {
+            generation,
             commit_hash,
             file_path,
             old,
             new,
         } => {
-            panel.on_commit_highlight_ready(commit_hash, file_path, old, new);
+            if let Some(action) =
+                panel.on_commit_highlight_ready(generation, commit_hash, file_path, old, new)
+            {
+                update(panel, action, ctx)
+            } else {
+                Task::none()
+            }
+        }
+        DiffPanelAction::ConflictHighlightReady {
+            generation,
+            ours,
+            theirs,
+        } => {
+            panel.on_conflict_highlight_ready(generation, ours, theirs);
             panel.refresh_text_search_after_buffer_change();
             Task::none()
         }
-        DiffPanelAction::ConflictHighlightReady { ours, theirs } => {
-            panel.on_conflict_highlight_ready(ours, theirs);
-            panel.refresh_text_search_after_buffer_change();
-            Task::none()
-        }
-        DiffPanelAction::LoadCommitFileDiff { commit_hash, path } => {
+        DiffPanelAction::LoadCommitFileDiff {
+            generation,
+            commit_hash,
+            path,
+        } => {
             let repo = ctx.repository.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let hash_for_log = commit_hash.clone();
+            let path_for_log = path.clone();
             Task::perform(
-                gateway_work(move || repo.load_commit_file_diff(&commit_hash, &path)),
-                move |result| Message::tab(tab_id, RepositoryMessage::CommitFileDiffLoaded(result)),
-            )
-        }
-        DiffPanelAction::LoadDirtyFileDiff { path, is_staged } => {
-            let repo = ctx.repository.clone();
-            let tab_id = ctx.tab_id;
-            Task::perform(
-                gateway_work(move || repo.load_working_tree_diff(&path, is_staged)),
-                move |result| Message::tab(tab_id, RepositoryMessage::DirtyFileDiffLoaded(result)),
-            )
-        }
-        DiffPanelAction::LoadConflictResolution { path } => {
-            let repo = ctx.repository.clone();
-            let tab_id = ctx.tab_id;
-            Task::perform(
-                gateway_work(move || repo.load_conflict_resolution(&path)),
+                git_read_work(move || {
+                    let span = crate::perf::Span::new("git.single_file_diff_load")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("kind", "commit")
+                        .field("hash", &hash_for_log)
+                        .field("path", &path_for_log);
+                    let result = repo.load_commit_file_diff(&commit_hash, &path);
+                    match &result {
+                        Ok(diff) => span.finish_with("lines", diff.lines.len()),
+                        Err(_) => span.finish_with("outcome", "err"),
+                    }
+                    result
+                }),
                 move |result| {
-                    Message::tab(tab_id, RepositoryMessage::ConflictResolutionLoaded(result))
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::CommitFileDiffLoaded { generation, result },
+                    )
+                },
+            )
+        }
+        DiffPanelAction::LoadDirtyFileDiff {
+            generation,
+            path,
+            is_staged,
+        } => {
+            let repo = ctx.repository.clone();
+            let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let path_for_log = path.clone();
+            Task::perform(
+                git_read_work(move || {
+                    let span = crate::perf::Span::new("git.single_file_diff_load")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("kind", "dirty")
+                        .field("path", &path_for_log)
+                        .field("staged", is_staged);
+                    let result = repo.load_working_tree_diff(&path, is_staged);
+                    match &result {
+                        Ok(diff) => span.finish_with("lines", diff.lines.len()),
+                        Err(_) => span.finish_with("outcome", "err"),
+                    }
+                    result
+                }),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyFileDiffLoaded { generation, result },
+                    )
+                },
+            )
+        }
+        DiffPanelAction::LoadConflictResolution { generation, path } => {
+            let repo = ctx.repository.clone();
+            let tab_id = ctx.tab_id;
+            Task::perform(
+                git_read_work(move || repo.load_conflict_resolution(&path)),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::ConflictResolutionLoaded { generation, result },
+                    )
                 },
             )
         }
         DiffPanelAction::RunDirtyHighlight {
+            generation,
             file_path,
             is_staged,
             old_content,
@@ -277,19 +360,32 @@ pub(in crate::screens::repository) fn update(
             let tab_id = ctx.tab_id;
             let ext = crate::services::file_extension_from_path(&file_path);
             let cb_path = file_path.clone();
+            let path_for_log = file_path.clone();
             Task::perform(
-                async move {
+                presentation_work(move || {
+                    let old_bytes = old_content.as_ref().map_or(0, |c| c.len());
+                    let new_bytes = new_content.as_ref().map_or(0, |c| c.len());
+                    let span = crate::perf::Span::new("cpu.syntax_highlight")
+                        .field("tab", tab_id)
+                        .field("kind", "dirty")
+                        .field("path", &path_for_log)
+                        .field("old_bytes", old_bytes)
+                        .field("new_bytes", new_bytes);
                     let old = old_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
                     let new = new_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
+                    let old_lines = old.as_ref().map_or(0, |file| file.line_count());
+                    let new_lines = new.as_ref().map_or(0, |file| file.line_count());
+                    span.finish_with("lines", old_lines + new_lines);
                     (old, new)
-                },
+                }),
                 move |(old, new)| {
                     Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::DirtyFileHighlightReady {
                             file_path: cb_path.clone(),
+                            generation,
                             is_staged,
                             old,
                             new,
@@ -299,6 +395,7 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DiffPanelAction::RunCommitHighlight {
+            generation,
             commit_hash,
             file_path,
             old_content,
@@ -308,20 +405,35 @@ pub(in crate::screens::repository) fn update(
             let ext = crate::services::file_extension_from_path(&file_path);
             let cb_hash = commit_hash.clone();
             let cb_path = file_path.clone();
+            let path_for_log = file_path.clone();
+            let hash_for_log = commit_hash.clone();
             Task::perform(
-                async move {
+                presentation_work(move || {
+                    let old_bytes = old_content.as_ref().map_or(0, |c| c.len());
+                    let new_bytes = new_content.as_ref().map_or(0, |c| c.len());
+                    let span = crate::perf::Span::new("cpu.syntax_highlight")
+                        .field("tab", tab_id)
+                        .field("kind", "commit")
+                        .field("hash", &hash_for_log)
+                        .field("path", &path_for_log)
+                        .field("old_bytes", old_bytes)
+                        .field("new_bytes", new_bytes);
                     let old = old_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
                     let new = new_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
+                    let old_lines = old.as_ref().map_or(0, |file| file.line_count());
+                    let new_lines = new.as_ref().map_or(0, |file| file.line_count());
+                    span.finish_with("lines", old_lines + new_lines);
                     (old, new)
-                },
+                }),
                 move |(old, new)| {
                     Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::CommitFileHighlightReady {
                             commit_hash: cb_hash.clone(),
                             file_path: cb_path.clone(),
+                            generation,
                             old,
                             new,
                         }),
@@ -330,24 +442,38 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DiffPanelAction::RunConflictHighlight {
+            generation,
             file_path,
             ours_content,
             theirs_content,
         } => {
             let tab_id = ctx.tab_id;
             let ext = crate::services::file_extension_from_path(&file_path);
+            let path_for_log = file_path.clone();
             Task::perform(
-                async move {
+                presentation_work(move || {
+                    let ours_bytes = ours_content.as_ref().map_or(0, |c| c.len());
+                    let theirs_bytes = theirs_content.as_ref().map_or(0, |c| c.len());
+                    let span = crate::perf::Span::new("cpu.syntax_highlight")
+                        .field("tab", tab_id)
+                        .field("kind", "conflict")
+                        .field("path", &path_for_log)
+                        .field("ours_bytes", ours_bytes)
+                        .field("theirs_bytes", theirs_bytes);
                     let ours = ours_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
                     let theirs = theirs_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
+                    let ours_lines = ours.as_ref().map_or(0, |file| file.line_count());
+                    let theirs_lines = theirs.as_ref().map_or(0, |file| file.line_count());
+                    span.finish_with("lines", ours_lines + theirs_lines);
                     (ours, theirs)
-                },
+                }),
                 move |(ours, theirs)| {
                     Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::ConflictHighlightReady {
+                            generation,
                             ours,
                             theirs,
                         }),
@@ -355,20 +481,41 @@ pub(in crate::screens::repository) fn update(
                 },
             )
         }
-        DiffPanelAction::LoadMergedFileDiff { hashes, path } => {
+        DiffPanelAction::LoadMergedFileDiff {
+            generation,
+            hashes,
+            path,
+        } => {
             let repo = ctx.repository.clone();
             let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let path_for_log = path.clone();
+            let commit_count = hashes.len();
             Task::perform(
-                gateway_work(move || repo.load_merged_commit_file_diff(&hashes, &path)),
+                git_read_work(move || {
+                    let span = crate::perf::Span::new("git.single_file_diff_load")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("kind", "merged")
+                        .field("path", &path_for_log)
+                        .field("commits", commit_count);
+                    let result = repo.load_merged_commit_file_diff(&hashes, &path);
+                    match &result {
+                        Ok(diff) => span.finish_with("lines", diff.lines.len()),
+                        Err(_) => span.finish_with("outcome", "err"),
+                    }
+                    result
+                }),
                 move |result| {
                     Message::tab(
                         tab_id,
-                        RepositoryMessage::MergedCommitFileDiffLoaded(result),
+                        RepositoryMessage::MergedCommitFileDiffLoaded { generation, result },
                     )
                 },
             )
         }
         DiffPanelAction::RunMergedHighlight {
+            generation,
             file_path,
             old_content,
             new_content,
@@ -376,18 +523,31 @@ pub(in crate::screens::repository) fn update(
             let tab_id = ctx.tab_id;
             let ext = crate::services::file_extension_from_path(&file_path);
             let cb_path = file_path.clone();
+            let path_for_log = file_path.clone();
             Task::perform(
-                async move {
+                presentation_work(move || {
+                    let old_bytes = old_content.as_ref().map_or(0, |c| c.len());
+                    let new_bytes = new_content.as_ref().map_or(0, |c| c.len());
+                    let span = crate::perf::Span::new("cpu.syntax_highlight")
+                        .field("tab", tab_id)
+                        .field("kind", "merged")
+                        .field("path", &path_for_log)
+                        .field("old_bytes", old_bytes)
+                        .field("new_bytes", new_bytes);
                     let old = old_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
                     let new = new_content
                         .map(|c| crate::services::highlight_file(&c.replace('\t', "    "), &ext));
+                    let old_lines = old.as_ref().map_or(0, |file| file.line_count());
+                    let new_lines = new.as_ref().map_or(0, |file| file.line_count());
+                    span.finish_with("lines", old_lines + new_lines);
                     (old, new)
-                },
+                }),
                 move |(old, new)| {
                     Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::MergedFileHighlightReady {
+                            generation,
                             file_path: cb_path.clone(),
                             old,
                             new,
@@ -397,11 +557,59 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DiffPanelAction::MergedFileHighlightReady {
+            generation,
             file_path,
             old,
             new,
         } => {
-            panel.on_merged_highlight_ready(file_path, old, new);
+            if let Some(action) = panel.on_merged_highlight_ready(generation, file_path, old, new) {
+                update(panel, action, ctx)
+            } else {
+                Task::none()
+            }
+        }
+        DiffPanelAction::RunSingleFileRenderBuild {
+            generation,
+            kind,
+            file_path,
+            lines,
+            fallbacks,
+            old_highlighted,
+            new_highlighted,
+        } => {
+            let tab_id = ctx.tab_id;
+            let cb_kind = kind.clone();
+            let cb_path = file_path.clone();
+            Task::perform(
+                presentation_work(move || {
+                    let rows = super::view::build_diff_rows_public(
+                        lines.as_ref(),
+                        old_highlighted.as_deref(),
+                        new_highlighted.as_deref(),
+                        &fallbacks,
+                    );
+                    diff_canvas::build_canvas_data(rows, diff_canvas::diff_char_width())
+                }),
+                move |data| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DiffPanel(DiffPanelAction::SingleFileRenderReady {
+                            generation,
+                            kind: cb_kind.clone(),
+                            file_path: cb_path.clone(),
+                            data,
+                        }),
+                    )
+                },
+            )
+        }
+        DiffPanelAction::SingleFileRenderReady {
+            generation,
+            kind,
+            file_path,
+            data,
+        } => {
+            panel.on_single_file_render_ready(kind, generation, file_path, data);
             panel.refresh_text_search_after_buffer_change();
             Task::none()
         }

@@ -14,15 +14,16 @@ use iced::{
 use crate::{
     assets,
     message::Message,
-    services::{HighlightedFile, WorkingTreeDiffLine},
     style, theme,
     widgets::{
         diff_canvas::{
-            self, diff_char_width, diff_content_canvas, diff_gutter_canvas, DiffSelection,
+            self, diff_content_canvas, diff_gutter_canvas, DiffCanvasData, DiffSelection,
         },
         shared::horizontal_space,
     },
 };
+
+use std::sync::Arc;
 
 use crate::screens::repository::{
     panel_messages::{DetailAction, DiffPanelAction},
@@ -45,9 +46,7 @@ use styles::{diff_scrollbar_style, save_button_style, DIFF_SCROLLBAR_WIDTH};
 
 pub(in crate::screens::repository) struct DiffViewModel<'a> {
     pub(in crate::screens::repository) file_path: &'a str,
-    pub(in crate::screens::repository) diff_lines: &'a [WorkingTreeDiffLine],
-    pub(in crate::screens::repository) old_highlighted: Option<&'a HighlightedFile>,
-    pub(in crate::screens::repository) new_highlighted: Option<&'a HighlightedFile>,
+    pub(in crate::screens::repository) render_data: Option<Arc<DiffCanvasData>>,
     pub(in crate::screens::repository) selection: Option<DiffSelection>,
     pub(in crate::screens::repository) scroll_y: f32,
     pub(in crate::screens::repository) shift_held: bool,
@@ -112,18 +111,20 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
 ) -> Element<'a, Message> {
     let DiffViewModel {
         file_path,
-        diff_lines,
-        old_highlighted,
-        new_highlighted,
+        render_data,
         selection,
         scroll_y,
         shift_held,
         search_bar,
     } = model;
+    let _span = crate::perf::Span::new("ui.diff_view").field("path", file_path);
 
     let header_container = diff_header(file_path, None);
 
-    let body: Element<'_, Message> = if diff_lines.is_empty() {
+    let body: Element<'_, Message> = if render_data
+        .as_ref()
+        .is_some_and(|data| data.rows().is_empty())
+    {
         container(
             text("No diff content")
                 .size(theme::FONT_MD)
@@ -134,17 +135,7 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
         .align_x(iced::alignment::Horizontal::Center)
         .align_y(iced::alignment::Vertical::Center)
         .into()
-    } else {
-        let rows = rows::build_diff_rows(diff_lines, old_highlighted, new_highlighted);
-        let char_w = diff_char_width();
-        let data = diff_canvas::build_canvas_data(rows, char_w);
-
-        // Layout: row[ sticky_gutter | scrollable(content_canvas) ]. Gutter
-        // canvas sits *outside* the scrollable so horizontal scroll never
-        // moves it; it reads `scroll_y` from the paired scrollable to mirror
-        // vertical scrolling. `responsive` gives container size to the
-        // content scrollable, so it stretches to fill and adds a horizontal
-        // scrollbar when content overflows.
+    } else if let Some(data) = render_data {
         let gutter_data = data.clone();
         let body_content = iced::widget::responsive(move |size| {
             let inner_viewport = iced::Size::new(
@@ -201,6 +192,17 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
                 ..Default::default()
             })
             .into()
+    } else {
+        container(
+            text("Loading diff...")
+                .size(theme::FONT_MD)
+                .style(style::dim_text),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(iced::alignment::Horizontal::Center)
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
     };
 
     let body = crate::widgets::search_widget::overlay(body, search_bar);
@@ -236,16 +238,25 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
         output_selection,
         shift_held,
         search_overlay,
+        save_busy,
     } = model;
+    let _span = crate::perf::Span::new("ui.diff_view")
+        .field("kind", "conflict")
+        .field("path", file_path);
 
     let save_button: Option<Element<Message>> = result.map(|_| {
-        button(text("Save").size(theme::FONT_SM).style(style::white_text))
+        let label = if save_busy { "Saving..." } else { "Save" };
+        let button = button(text(label).size(theme::FONT_SM).style(style::white_text))
             .style(save_button_style)
-            .padding(Padding::from([4, 14]))
-            .on_press(Message::repo(RepositoryMessage::DiffPanel(
+            .padding(Padding::from([4, 14]));
+        let button = if save_busy {
+            button
+        } else {
+            button.on_press(Message::repo(RepositoryMessage::DiffPanel(
                 DiffPanelAction::ConflictResolutionSaveRequested,
             )))
-            .into()
+        };
+        button.into()
     });
 
     let header_container = diff_header(file_path, save_button);

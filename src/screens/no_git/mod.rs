@@ -10,6 +10,7 @@ use crate::{
     services::GitStatus,
     theme,
     widgets::shared::horizontal_space,
+    work::{timer_work, ui_message},
 };
 
 /// Screen-local action enum. `Recheck` triggers app-level work
@@ -83,16 +84,14 @@ impl Screen for NoGitScreen {
 
     fn update(&mut self, msg: NoGitMessage) -> Task<Message> {
         match msg {
-            NoGitMessage::Recheck => Task::done(Message::App(AppMessage::GitRecheckRequested)),
+            NoGitMessage::Recheck => ui_message(Message::App(AppMessage::GitRecheckRequested)),
             NoGitMessage::CopyCommand(cmd) => {
                 self.flashed_command = Some(cmd.clone());
                 let clipboard_task = iced::clipboard::write::<Message>(cmd);
-                let clear_task = Task::perform(
-                    async {
-                        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    },
-                    |_| Message::no_git(NoGitMessage::ClearFlash),
-                );
+                let delay = std::time::Duration::from_millis(500);
+                let clear_task = Task::perform(timer_work(delay), |_| {
+                    Message::no_git(NoGitMessage::ClearFlash)
+                });
                 Task::batch(vec![clipboard_task, clear_task])
             }
             NoGitMessage::ClearFlash => {
