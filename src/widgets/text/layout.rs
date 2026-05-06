@@ -1,5 +1,5 @@
 //! Row layout and monospace metrics.
-use std::sync::Arc;
+use std::{any::Any, ops::Range, sync::Arc};
 
 use iced::widget::canvas::Frame;
 
@@ -16,7 +16,9 @@ pub struct CanvasId(pub u32);
 /// A row in the canvas. Implementations decide their own gutter + content
 /// rendering. The generic widget composes virtualization, scroll, and
 /// selection on top.
-pub trait CanvasRow: std::fmt::Debug + Send + Sync {
+pub trait CanvasRow: std::fmt::Debug + Send + Sync + Any {
+    fn as_any(&self) -> &dyn Any;
+
     fn height(&self) -> f32;
 
     fn selectable(&self) -> bool {
@@ -70,6 +72,12 @@ pub struct TextCanvasData {
     pub(in crate::widgets::text) gutter_width: f32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VisibleRowRange {
+    pub visible: Range<usize>,
+    pub with_overscan: Range<usize>,
+}
+
 impl TextCanvasData {
     pub fn from_rows(
         rows: Vec<Arc<dyn CanvasRow>>,
@@ -99,6 +107,41 @@ impl TextCanvasData {
             .iter()
             .position(|&y| y >= scroll_y)
             .unwrap_or(0)
+    }
+
+    pub fn visible_row_range(
+        &self,
+        scroll_y: f32,
+        viewport_height: f32,
+        overscan_rows: usize,
+    ) -> VisibleRowRange {
+        let row_count = self.rows.len();
+        if row_count == 0 || viewport_height <= 0.0 {
+            return VisibleRowRange {
+                visible: 0..0,
+                with_overscan: 0..0,
+            };
+        }
+
+        let top = scroll_y.max(0.0).min(self.total_height);
+        let bottom = (top + viewport_height).min(self.total_height);
+        if bottom <= top {
+            return VisibleRowRange {
+                visible: row_count..row_count,
+                with_overscan: row_count..row_count,
+            };
+        }
+
+        let start = self.row_offsets[1..].partition_point(|row_bottom| *row_bottom <= top);
+        let end = self.row_offsets[..row_count].partition_point(|row_top| *row_top < bottom);
+        let visible = start.min(row_count)..end.max(start).min(row_count);
+        let with_overscan = visible.start.saturating_sub(overscan_rows)
+            ..(visible.end + overscan_rows).min(row_count);
+
+        VisibleRowRange {
+            visible,
+            with_overscan,
+        }
     }
 
     pub fn row_top_y(&self, row: usize) -> f32 {
@@ -155,4 +198,64 @@ pub fn mono_char_width() -> f32 {
             theme::FONT_DIFF * 0.6
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct StubRow(f32);
+
+    impl CanvasRow for StubRow {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn height(&self) -> f32 {
+            self.0
+        }
+
+        fn draw_gutter(&self, _: &mut Frame, _: f32, _: f32) {}
+
+        fn draw_content(&self, _: &mut Frame, _: f32, _: f32, _: f32) {}
+    }
+
+    fn data_from_heights(heights: &[f32]) -> TextCanvasData {
+        let rows = heights
+            .iter()
+            .map(|height| Arc::new(StubRow(*height)) as Arc<dyn CanvasRow>)
+            .collect();
+        TextCanvasData::from_rows(rows, 100.0, 8.0, 40.0)
+    }
+
+    #[test]
+    fn visible_row_range_includes_intersecting_rows_and_overscan() {
+        let data = data_from_heights(&[10.0, 20.0, 30.0, 40.0, 50.0]);
+
+        let range = data.visible_row_range(25.0, 50.0, 1);
+
+        assert_eq!(range.visible, 1..4);
+        assert_eq!(range.with_overscan, 0..5);
+    }
+
+    #[test]
+    fn visible_row_range_respects_row_boundaries() {
+        let data = data_from_heights(&[10.0, 20.0, 30.0, 40.0]);
+
+        let range = data.visible_row_range(30.0, 30.0, 0);
+
+        assert_eq!(range.visible, 2..3);
+        assert_eq!(range.with_overscan, 2..3);
+    }
+
+    #[test]
+    fn visible_row_range_clamps_at_end() {
+        let data = data_from_heights(&[10.0, 20.0, 30.0]);
+
+        let range = data.visible_row_range(55.0, 40.0, 2);
+
+        assert_eq!(range.visible, 2..3);
+        assert_eq!(range.with_overscan, 0..3);
+    }
 }

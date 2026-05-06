@@ -13,7 +13,7 @@ use iced::{
 
 use crate::{
     assets,
-    message::Message,
+    message::{AppMessage, Message},
     style, theme,
     widgets::{
         diff_canvas::{
@@ -27,6 +27,7 @@ use std::sync::Arc;
 
 use crate::screens::repository::{
     panel_messages::{DetailAction, DiffPanelAction},
+    panels::diff::DiffGrammarStatusView,
     state::diff_content_scroll_id,
     RepositoryMessage,
 };
@@ -51,6 +52,7 @@ pub(in crate::screens::repository) struct DiffViewModel<'a> {
     pub(in crate::screens::repository) scroll_y: f32,
     pub(in crate::screens::repository) shift_held: bool,
     pub(in crate::screens::repository) search_bar: Option<Element<'a, Message>>,
+    pub(in crate::screens::repository) grammar_status: Option<DiffGrammarStatusView>,
 }
 
 /// Shared header row: "Back to graph" button + right-aligned file path,
@@ -58,6 +60,7 @@ pub(in crate::screens::repository) struct DiffViewModel<'a> {
 /// conflict resolver). Identical styling/padding in both views.
 fn diff_header<'a>(
     file_path: &'a str,
+    grammar_status: Option<Element<'a, Message>>,
     trailing: Option<Element<'a, Message>>,
 ) -> Element<'a, Message> {
     let back_btn = button(
@@ -87,23 +90,87 @@ fn diff_header<'a>(
         .style(|_: &Theme| text::Style {
             color: Some(theme::ACCENT_BLUE),
         });
-
     let header_row = match trailing {
-        Some(trailing) => row![back_btn, horizontal_space(), file_label, trailing]
-            .spacing(10)
-            .align_y(iced::Alignment::Center)
-            .padding(Padding::from([6, 10]))
-            .width(Length::Fill),
-        None => row![back_btn, horizontal_space(), file_label]
-            .align_y(iced::Alignment::Center)
-            .padding(Padding::from([6, 10]))
-            .width(Length::Fill),
+        Some(trailing) => {
+            let mut row = row![back_btn].spacing(10).align_y(iced::Alignment::Center);
+            if let Some(status) = grammar_status {
+                row = row.push(status);
+            }
+            row.push(horizontal_space())
+                .push(file_label)
+                .push(trailing)
+                .padding(Padding::from([6, 10]))
+                .width(Length::Fill)
+        }
+        None => {
+            let mut row = row![back_btn].spacing(10).align_y(iced::Alignment::Center);
+            if let Some(status) = grammar_status {
+                row = row.push(status);
+            }
+            row.push(horizontal_space())
+                .push(file_label)
+                .padding(Padding::from([6, 10]))
+                .width(Length::Fill)
+        }
     };
 
     container(header_row)
         .width(Length::Fill)
         .style(style::header_container)
         .into()
+}
+
+fn grammar_status_badge<'a>(status: DiffGrammarStatusView) -> Element<'a, Message> {
+    let mut content = row![text(status.label)
+        .size(theme::FONT_XS)
+        .style(style::secondary_text)]
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
+
+    if let Some(action) = status.action {
+        let command_id = action.command_id.to_string();
+        let language = action.language;
+        content = content.push(
+            button(text(action.label).size(theme::FONT_XS))
+                .style(grammar_action_button_style)
+                .padding(Padding::from([2, 8]))
+                .on_press(Message::App(AppMessage::InvokeCommand {
+                    id: command_id,
+                    args: serde_json::json!({ "language": language }),
+                })),
+        );
+    }
+
+    container(content)
+        .padding(Padding::from([2, 8]))
+        .style(grammar_status_container_style)
+        .into()
+}
+
+fn grammar_status_container_style(_: &Theme) -> container::Style {
+    container::Style {
+        background: Some(theme::BG_BASE.into()),
+        ..Default::default()
+    }
+}
+
+fn grammar_action_button_style(_: &Theme, status: button::Status) -> button::Style {
+    let background = if matches!(status, button::Status::Hovered | button::Status::Pressed) {
+        theme::ACCENT_BLUE
+    } else {
+        theme::BG_SELECTED
+    };
+    button::Style {
+        background: Some(background.into()),
+        text_color: theme::TEXT_PRIMARY,
+        border: iced::Border {
+            color: theme::BORDER,
+            width: 1.0,
+            radius: 3.0.into(),
+        },
+        shadow: Default::default(),
+        snap: false,
+    }
 }
 
 pub(in crate::screens::repository) fn diff_center_view<'a>(
@@ -116,10 +183,11 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
         scroll_y,
         shift_held,
         search_bar,
+        grammar_status,
     } = model;
     let _span = crate::perf::Span::new("ui.diff_view").field("path", file_path);
 
-    let header_container = diff_header(file_path, None);
+    let header_container = diff_header(file_path, grammar_status.map(grammar_status_badge), None);
 
     let body: Element<'_, Message> = if render_data
         .as_ref()
@@ -259,7 +327,7 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
         button.into()
     });
 
-    let header_container = diff_header(file_path, save_button);
+    let header_container = diff_header(file_path, None, save_button);
 
     let body: Element<'a, Message> = match result {
         Some(result) => {

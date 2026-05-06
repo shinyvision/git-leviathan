@@ -7,7 +7,7 @@ pub mod app;
 pub mod screen;
 pub mod toast;
 
-pub use app::AppMessage;
+pub use app::{AppMessage, SyntaxGrammarCommandOutcome};
 pub use screen::{ScreenMessage, ScreenRouted};
 pub use toast::ToastMessage;
 

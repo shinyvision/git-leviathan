@@ -19,9 +19,15 @@ use iced::Element;
 
 use crate::{
     message::Message,
-    services::{DiffFallbacks, WorkingTreeDiffLine, WorkingTreeDiffResult},
+    services::{
+        syntax_highlight::{installation::GrammarInstallStatus, SyntaxGrammarStatus},
+        DiffFallbacks, HighlightDocument, WorkingTreeDiffLine, WorkingTreeDiffResult,
+    },
     widgets::{
-        diff_canvas::{DiffCanvasData, DiffCanvasId, DiffPosition},
+        diff_canvas::{
+            CachedDiffHighlightProvider, DiffCanvasData, DiffCanvasId, DiffHighlightSide,
+            DiffPosition,
+        },
         search_widget::{SearchWidget, TextMatch},
     },
 };
@@ -32,6 +38,7 @@ mod auto_scroll;
 mod commit;
 mod conflict;
 mod dirty;
+mod highlight_schedule;
 mod merged;
 mod search;
 mod selection;
@@ -77,6 +84,7 @@ pub(in crate::screens::repository) struct DiffPanel {
     /// Current x scroll offset of the diff content scrollable. Tracked so we
     /// can issue relative horizontal `scroll_to` commands for shift+wheel.
     pub diff_scroll_x: f32,
+    pub diff_viewport_height: Option<f32>,
     /// Scrollable viewport rect (window coords) captured on drag start. Used
     /// with the window-level cursor position to compute off-canvas distance
     /// for auto-scroll — works even when the cursor leaves the widget, which
@@ -104,7 +112,21 @@ pub(in crate::screens::repository) struct DiffPanel {
     /// search bar renders and which buffer's content matches are computed
     /// against. `None` before the first `on_enter` fires on any buffer.
     pub hovered_canvas: Option<DiffCanvasId>,
+    highlight_scheduler: highlight_schedule::DiffHighlightScheduler,
     next_generation: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::screens::repository) struct DiffGrammarStatusView {
+    pub label: String,
+    pub action: Option<DiffGrammarStatusAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::screens::repository) struct DiffGrammarStatusAction {
+    pub command_id: &'static str,
+    pub label: &'static str,
+    pub language: String,
 }
 
 impl DiffPanel {
@@ -118,12 +140,14 @@ impl DiffPanel {
             diff_selection: None,
             diff_scroll_y: 0.0,
             diff_scroll_x: 0.0,
+            diff_viewport_height: None,
             diff_viewport_rect: None,
             diff_drag_canvas_data: None,
             diff_last_click: None,
             shift_held: false,
             text_search: None,
             hovered_canvas: None,
+            highlight_scheduler: highlight_schedule::DiffHighlightScheduler::default(),
             next_generation: 1,
         }
     }
@@ -160,11 +184,13 @@ impl DiffPanel {
         self.diff_selection = None;
         self.diff_scroll_y = 0.0;
         self.diff_scroll_x = 0.0;
+        self.diff_viewport_height = None;
         self.diff_viewport_rect = None;
         self.diff_drag_canvas_data = None;
         self.diff_last_click = None;
         self.hovered_canvas = None;
         self.text_search = None;
+        self.highlight_scheduler.reset();
         crate::services::release_syntax_caches();
         crate::services::release_text_caches();
     }
@@ -336,6 +362,7 @@ impl DiffPanel {
             scroll_y: self.diff_scroll_y,
             shift_held: self.shift_held,
             search_bar: self.diff_view_search_bar(),
+            grammar_status: self.active_grammar_status_view(),
         }
     }
 
@@ -345,7 +372,8 @@ impl DiffPanel {
         generation: u64,
         file_path: String,
         data: Arc<DiffCanvasData>,
-    ) {
+    ) -> bool {
+        let mut should_schedule = false;
         match kind {
             SingleFileDiffKind::Dirty { is_staged } => {
                 if let Some(state) = self.dirty_file_diff.as_mut() {
@@ -354,6 +382,7 @@ impl DiffPanel {
                         && state.render_generation == generation
                     {
                         state.render_data = Some(data);
+                        should_schedule = true;
                     }
                 }
             }
@@ -364,6 +393,7 @@ impl DiffPanel {
                         && state.render_generation == generation
                     {
                         state.render_data = Some(data);
+                        should_schedule = true;
                     }
                 }
             }
@@ -371,10 +401,236 @@ impl DiffPanel {
                 if let Some(state) = self.merged_file_diff.as_mut() {
                     if state.file_path == file_path && state.render_generation == generation {
                         state.render_data = Some(data);
+                        should_schedule = true;
                     }
                 }
             }
         }
+        if should_schedule {
+            self.highlight_scheduler.reset();
+        }
+        should_schedule
+    }
+
+    pub(in crate::screens::repository) fn schedule_visible_highlights(&mut self) -> bool {
+        let Some((generation, data)) = self.active_single_file_render_data() else {
+            return false;
+        };
+        let Some((old_document, new_document, provider)) =
+            self.active_highlight_documents_and_provider(generation)
+        else {
+            return false;
+        };
+        let old_document = old_document.cloned();
+        let new_document = new_document.cloned();
+        let document_ids = highlight_schedule::DiffHighlightDocumentIds::from_documents(
+            old_document.as_ref(),
+            new_document.as_ref(),
+        );
+        let viewport_height = self
+            .diff_viewport_height
+            .unwrap_or(highlight_schedule::INITIAL_HIGHLIGHT_VIEWPORT_HEIGHT);
+        let requests = self
+            .highlight_scheduler
+            .schedule(
+                generation,
+                document_ids,
+                data.as_ref(),
+                self.diff_scroll_y,
+                viewport_height,
+            )
+            .to_vec();
+        let schedule_stats = self.highlight_scheduler.last_stats();
+        if !requests.is_empty() {
+            let first = requests[0];
+            let first_side = match first.reference.side {
+                DiffHighlightSide::Old => "old",
+                DiffHighlightSide::New => "new",
+            };
+            crate::perf::Span::new("ui.diff_highlight_schedule")
+                .field("generation", generation)
+                .field("request_generation", first.generation)
+                .field("first_side", first_side)
+                .field("first_line", first.reference.line_number)
+                .field("scroll_y", self.diff_scroll_y)
+                .field("viewport_height", viewport_height)
+                .field("visible_rows", schedule_stats.visible_rows)
+                .field("candidate_rows", schedule_stats.candidate_rows)
+                .field("overscan_rows", schedule_stats.overscan_rows)
+                .field("request_budget", schedule_stats.request_budget)
+                .finish_with("requests", requests.len());
+        }
+        let materialized = highlight_schedule::highlight_scheduled_requests_with_stats(
+            &requests,
+            generation,
+            document_ids,
+            old_document.as_ref(),
+            new_document.as_ref(),
+            &provider,
+            highlight_schedule::HIGHLIGHT_REQUEST_BUDGET,
+        );
+        if materialized.highlighted > 0 || !requests.is_empty() {
+            crate::perf::Span::new("ui.diff_highlight_materialize")
+                .field("generation", generation)
+                .field("requested", materialized.requested)
+                .field("provider_hits", materialized.provider_hits)
+                .field("provider_misses", materialized.provider_misses)
+                .field("syntax_cache_hits", materialized.syntax_cache_hits)
+                .field("syntax_cache_misses", materialized.syntax_cache_misses)
+                .field("tree_parse_hits", materialized.tree_parse_hits)
+                .field("tree_parse_misses", materialized.tree_parse_misses)
+                .field("parsed_lines", materialized.parsed_lines)
+                .field("stale_documents", materialized.stale_documents)
+                .field("missing_documents", materialized.missing_documents)
+                .field("missing_grammars", materialized.missing_grammars)
+                .field("missing_lines", materialized.missing_lines)
+                .field("stale_generation", materialized.stale_generation)
+                .finish_with("highlighted", materialized.highlighted);
+        }
+        materialized.highlighted > 0
+    }
+
+    pub(in crate::screens::repository) fn on_syntax_grammar_assets_changed(
+        &mut self,
+    ) -> Option<DiffPanelAction> {
+        self.highlight_scheduler.reset();
+        if self.dirty_file_diff.is_some() {
+            let generation = self.next_diff_generation();
+            return rebuild_single_file_after_grammar_change(
+                self.dirty_file_diff.as_mut()?,
+                generation,
+            );
+        }
+        if self.commit_file_diff.is_some() {
+            let generation = self.next_diff_generation();
+            return rebuild_single_file_after_grammar_change(
+                self.commit_file_diff.as_mut()?,
+                generation,
+            );
+        }
+        if self.merged_file_diff.is_some() {
+            let generation = self.next_diff_generation();
+            return rebuild_single_file_after_grammar_change(
+                self.merged_file_diff.as_mut()?,
+                generation,
+            );
+        }
+        if self.conflict_file_resolution.is_some() {
+            let generation = self.next_diff_generation();
+            if let Some(state) = self.conflict_file_resolution.as_mut() {
+                state.render_generation = generation;
+                state.ours_highlighted = None;
+                state.theirs_highlighted = None;
+                let result = state.result.as_ref()?;
+                let file_path = state.file_path.clone();
+                let ours_content =
+                    conflict::conflict_side_highlight_content(result, ConflictSide::Ours);
+                let theirs_content =
+                    conflict::conflict_side_highlight_content(result, ConflictSide::Theirs);
+                return Some(DiffPanelAction::RunConflictHighlight {
+                    generation,
+                    file_path,
+                    ours_content,
+                    theirs_content,
+                });
+            }
+        }
+        None
+    }
+
+    fn active_single_file_render_data(&self) -> Option<(u64, Arc<DiffCanvasData>)> {
+        if let Some(state) = &self.dirty_file_diff {
+            return state
+                .render_data
+                .clone()
+                .map(|data| (state.render_generation, data));
+        }
+        if let Some(state) = &self.commit_file_diff {
+            return state
+                .render_data
+                .clone()
+                .map(|data| (state.render_generation, data));
+        }
+        if let Some(state) = &self.merged_file_diff {
+            return state
+                .render_data
+                .clone()
+                .map(|data| (state.render_generation, data));
+        }
+        None
+    }
+
+    fn active_highlight_documents_and_provider(
+        &self,
+        generation: u64,
+    ) -> Option<(
+        Option<&HighlightDocument>,
+        Option<&HighlightDocument>,
+        Arc<CachedDiffHighlightProvider>,
+    )> {
+        if let Some(state) = &self.dirty_file_diff {
+            if state.render_generation == generation {
+                return Some((
+                    state.old_highlight_document.as_ref(),
+                    state.new_highlight_document.as_ref(),
+                    state.highlight_provider.clone(),
+                ));
+            }
+        }
+        if let Some(state) = &self.commit_file_diff {
+            if state.render_generation == generation {
+                return Some((
+                    state.old_highlight_document.as_ref(),
+                    state.new_highlight_document.as_ref(),
+                    state.highlight_provider.clone(),
+                ));
+            }
+        }
+        if let Some(state) = &self.merged_file_diff {
+            if state.render_generation == generation {
+                return Some((
+                    state.old_highlight_document.as_ref(),
+                    state.new_highlight_document.as_ref(),
+                    state.highlight_provider.clone(),
+                ));
+            }
+        }
+        None
+    }
+
+    fn active_grammar_status_view(&self) -> Option<DiffGrammarStatusView> {
+        let statuses = self.active_single_file_documents().map(|(old, new)| {
+            [old, new]
+                .into_iter()
+                .flatten()
+                .filter_map(grammar_status_for_document)
+                .collect::<Vec<_>>()
+        })?;
+        grammar_status_view(statuses)
+    }
+
+    fn active_single_file_documents(
+        &self,
+    ) -> Option<(Option<&HighlightDocument>, Option<&HighlightDocument>)> {
+        if let Some(state) = &self.dirty_file_diff {
+            return Some((
+                state.old_highlight_document.as_ref(),
+                state.new_highlight_document.as_ref(),
+            ));
+        }
+        if let Some(state) = &self.commit_file_diff {
+            return Some((
+                state.old_highlight_document.as_ref(),
+                state.new_highlight_document.as_ref(),
+            ));
+        }
+        if let Some(state) = &self.merged_file_diff {
+            return Some((
+                state.old_highlight_document.as_ref(),
+                state.new_highlight_document.as_ref(),
+            ));
+        }
+        None
     }
 }
 
@@ -391,32 +647,132 @@ pub(super) trait SingleFileDiffView {
 /// Per-mode hook into the generic diff-load handler. Each of the three
 /// single-file diff state types (`DirtyFileDiffState`, `CommitFileDiffState`,
 /// `MergedFileDiffState`) implements this trait so `on_diff_loaded` can
-/// validate the incoming `WorkingTreeDiffResult` and schedule the matching
-/// syntax-highlight task without the caller caring which mode is active.
+/// validate the incoming `WorkingTreeDiffResult` and build render rows without
+/// the caller caring which mode is active.
 pub(in crate::screens::repository) trait DiffLoadMode {
     fn file_path(&self) -> &str;
-    fn set_lines(&mut self, lines: Arc<Vec<WorkingTreeDiffLine>>);
     fn lines(&self) -> Option<Arc<Vec<WorkingTreeDiffLine>>>;
+    fn set_lines(&mut self, lines: Arc<Vec<WorkingTreeDiffLine>>);
     fn generation(&self) -> u64;
     fn set_generation(&mut self, generation: u64);
-    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks);
     fn fallbacks(&self) -> DiffFallbacks;
-    fn clear_highlights(&mut self);
-    fn highlight_action(
-        &self,
-        generation: u64,
-        file_path: String,
-        old_content: Option<String>,
-        new_content: Option<String>,
-    ) -> DiffPanelAction;
+    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks);
+    fn set_highlight_documents(
+        &mut self,
+        old: Option<HighlightDocument>,
+        new: Option<HighlightDocument>,
+    );
+    fn reset_highlight_provider(&mut self);
+    fn highlight_provider(&self) -> Arc<CachedDiffHighlightProvider>;
     fn render_kind(&self) -> SingleFileDiffKind;
+}
+
+fn rebuild_single_file_after_grammar_change<S: DiffLoadMode>(
+    state: &mut S,
+    generation: u64,
+) -> Option<DiffPanelAction> {
+    let lines = state.lines()?;
+    let file_path = state.file_path().to_string();
+    let fallbacks = state.fallbacks();
+    state.reset_highlight_provider();
+    let highlight_provider = state.highlight_provider();
+    let kind = state.render_kind();
+    state.set_generation(generation);
+    Some(DiffPanelAction::RunSingleFileRenderBuild {
+        generation,
+        kind,
+        file_path,
+        lines,
+        fallbacks,
+        highlight_provider,
+    })
+}
+
+fn grammar_status_for_document(document: &HighlightDocument) -> Option<DiffGrammarStatusView> {
+    let status = crate::services::syntax_highlight::get_syntax_service()
+        .syntax_status_for_document(document);
+    let SyntaxGrammarStatus::Missing {
+        language_id,
+        syntax_key,
+        registry_checked,
+        installable,
+        install_status,
+    } = status
+    else {
+        return None;
+    };
+
+    let display_language = if language_id == "plain_text" {
+        syntax_key
+    } else {
+        language_id
+    };
+    let label = grammar_status_label(
+        &display_language,
+        registry_checked,
+        installable,
+        install_status,
+    );
+    let action = grammar_status_action(&display_language, installable, install_status);
+    Some(DiffGrammarStatusView { label, action })
+}
+
+fn grammar_status_label(
+    language: &str,
+    registry_checked: bool,
+    installable: bool,
+    install_status: GrammarInstallStatus,
+) -> String {
+    match install_status {
+        GrammarInstallStatus::Queued => format!("{language} grammar queued"),
+        GrammarInstallStatus::Installing => format!("{language} grammar installing"),
+        GrammarInstallStatus::Failed => format!("{language} grammar failed"),
+        _ if installable => format!("{language} grammar missing"),
+        _ if registry_checked => format!("{language} grammar unavailable"),
+        _ => format!("{language} grammar missing"),
+    }
+}
+
+fn grammar_status_action(
+    language: &str,
+    installable: bool,
+    install_status: GrammarInstallStatus,
+) -> Option<DiffGrammarStatusAction> {
+    if !installable {
+        return None;
+    }
+    let (command_id, label) = match install_status {
+        GrammarInstallStatus::Missing | GrammarInstallStatus::Queued => {
+            ("syntax.grammar.install", "Install")
+        }
+        GrammarInstallStatus::Failed => ("syntax.grammar.update", "Retry"),
+        _ => return None,
+    };
+    Some(DiffGrammarStatusAction {
+        command_id,
+        label,
+        language: language.to_string(),
+    })
+}
+
+fn grammar_status_view(mut statuses: Vec<DiffGrammarStatusView>) -> Option<DiffGrammarStatusView> {
+    statuses.sort_by(|a, b| a.label.cmp(&b.label));
+    statuses.dedup_by(|a, b| a.label == b.label && a.action == b.action);
+    match statuses.len() {
+        0 => None,
+        1 => statuses.pop(),
+        count => Some(DiffGrammarStatusView {
+            label: format!("{count} grammars need attention"),
+            action: None,
+        }),
+    }
 }
 
 /// Generic "diff loaded for a single file" handler. Validates that the
 /// result's file path still matches the mode's active file (so a stale
 /// response for a file the user already navigated away from is dropped),
-/// stores the diff lines, clears the old highlight (forcing a re-highlight),
-/// and returns the per-mode highlight action the caller should dispatch.
+/// stores the diff lines and returns the render-build action the caller should
+/// dispatch. Syntax spans are materialized lazily from visible-line requests.
 pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     slot: &mut Option<S>,
     next_generation: &mut u64,
@@ -448,26 +804,27 @@ pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     let lines = Arc::new(lines);
     state.set_lines(lines.clone());
     state.set_fallbacks(fallbacks.clone());
-    state.clear_highlights();
+    let extension = crate::services::file_extension_from_path(&file_path);
+    let old_document = old_file_content
+        .as_ref()
+        .map(|content| HighlightDocument::from_path(content, file_path.as_str()));
+    let new_document = new_file_content
+        .as_ref()
+        .map(|content| HighlightDocument::from_path(content, file_path.as_str()));
+    state.set_highlight_documents(old_document, new_document);
+    state.reset_highlight_provider();
+    let highlight_provider = state.highlight_provider();
     let presentation_generation = *next_generation;
     *next_generation = next_generation.wrapping_add(1).max(1);
     state.set_generation(presentation_generation);
-    span.finish_with("applied", true);
-    vec![
-        DiffPanelAction::RunSingleFileRenderBuild {
-            generation: presentation_generation,
-            kind: state.render_kind(),
-            file_path: file_path.clone(),
-            lines,
-            fallbacks: fallbacks.clone(),
-            old_highlighted: None,
-            new_highlighted: None,
-        },
-        state.highlight_action(
-            presentation_generation,
-            file_path,
-            old_file_content,
-            new_file_content,
-        ),
-    ]
+    span.field("extension", &extension)
+        .finish_with("applied", true);
+    vec![DiffPanelAction::RunSingleFileRenderBuild {
+        generation: presentation_generation,
+        kind: state.render_kind(),
+        file_path,
+        lines,
+        fallbacks: fallbacks.clone(),
+        highlight_provider,
+    }]
 }

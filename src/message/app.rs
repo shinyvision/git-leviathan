@@ -54,9 +54,20 @@ pub enum AppMessage {
         id: String,
         args: serde_json::Value,
     },
+    SyntaxGrammarCommandFinished(SyntaxGrammarCommandOutcome),
+    EagerGrammarInstallRequested(String),
     /// User requested window close or OS sent SIGTERM/SIGINT.
     ShutdownRequested,
     GitRecheckRequested,
     CopyToClipboard(String),
     OpenUrl(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct SyntaxGrammarCommandOutcome {
+    pub success_title: String,
+    pub error_title: String,
+    pub result: Result<String, String>,
+    pub changed_assets: bool,
+    pub silent_on_success: bool,
 }

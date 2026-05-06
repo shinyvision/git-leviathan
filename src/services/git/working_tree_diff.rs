@@ -5,8 +5,8 @@ use crate::services::git_error::GitError;
 use super::helpers::{find_commit_or, wrap_git2_error};
 use super::GitService;
 
-pub const MAX_HIGHLIGHT_FILE_BYTES: usize = 512 * 1024;
-pub const MAX_HIGHLIGHT_LINES: usize = 10_000;
+pub const MAX_HIGHLIGHT_FILE_BYTES: usize = 5 * 1024 * 1024;
+pub const MAX_HIGHLIGHT_LINES: usize = 50_000;
 pub const MAX_DIFF_LINES_RENDERED_FULLY: usize = 5_000;
 pub const MAX_INTRA_LINE_DIFF_LINE_CHARS: usize = 2_000;
 pub const MAX_INTRA_LINE_DIFF_PAIRS: usize = 1_000;

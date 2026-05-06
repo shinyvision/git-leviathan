@@ -465,6 +465,10 @@ mod tests {
     struct StubRow(String);
 
     impl CanvasRow for StubRow {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
         fn height(&self) -> f32 {
             20.0
         }

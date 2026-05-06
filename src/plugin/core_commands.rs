@@ -37,6 +37,18 @@ pub enum CoreCommandAction {
     },
     OpenSelectedDiff,
     StartRewordSelected,
+    RefreshGrammarRegistry {
+        path: String,
+    },
+    InstallGrammar {
+        language: String,
+    },
+    UpdateGrammar {
+        language: String,
+    },
+    UninstallGrammar {
+        language: String,
+    },
 }
 
 fn repository(message: RepositoryMessage) -> CoreCommandAction {
@@ -337,6 +349,43 @@ fn specs() -> Vec<CoreCommandSpec> {
         .cap("repo:read")
         .action(|_| Ok(CoreCommandAction::OpenSelectedDiff)),
         spec(
+            "syntax.grammar.refresh_registry",
+            "Syntax: Refresh Grammar Registry",
+            "Refresh the runtime grammar registry from a local file.",
+            CommandContext::GLOBAL,
+        )
+        .arg("path", StringArg, true, None, "Registry JSON path.")
+        .cap("syntax:grammar:manage")
+        .action(refresh_grammar_registry),
+        spec(
+            "syntax.grammar.install",
+            "Syntax: Install Grammar",
+            "Install a queued runtime grammar.",
+            CommandContext::GLOBAL,
+        )
+        .arg("language", StringArg, true, None, "Language id.")
+        .cap("syntax:grammar:manage")
+        .action(install_grammar),
+        spec(
+            "syntax.grammar.update",
+            "Syntax: Update Grammar",
+            "Update an installed runtime grammar.",
+            CommandContext::GLOBAL,
+        )
+        .arg("language", StringArg, true, None, "Language id.")
+        .cap("syntax:grammar:manage")
+        .action(update_grammar),
+        spec(
+            "syntax.grammar.uninstall",
+            "Syntax: Uninstall Grammar",
+            "Remove an installed runtime grammar.",
+            CommandContext::GLOBAL,
+        )
+        .arg("language", StringArg, true, None, "Language id.")
+        .cap("syntax:grammar:manage")
+        .destructive()
+        .action(uninstall_grammar),
+        spec(
             "commit.copy_hash",
             "Commit: Copy Hash",
             "Copy a commit hash.",
@@ -553,6 +602,30 @@ fn copy_hash(args: &Value) -> Result<CoreCommandAction, String> {
     })
 }
 
+fn refresh_grammar_registry(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(CoreCommandAction::RefreshGrammarRegistry {
+        path: required_string_arg(args, "path")?,
+    })
+}
+
+fn install_grammar(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(CoreCommandAction::InstallGrammar {
+        language: required_string_arg(args, "language")?,
+    })
+}
+
+fn update_grammar(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(CoreCommandAction::UpdateGrammar {
+        language: required_string_arg(args, "language")?,
+    })
+}
+
+fn uninstall_grammar(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(CoreCommandAction::UninstallGrammar {
+        language: required_string_arg(args, "language")?,
+    })
+}
+
 fn mark_file_resolved(args: &Value) -> Result<CoreCommandAction, String> {
     detail(DetailAction::MarkConflictResolved(required_string_arg(
         args, "path",
@@ -601,6 +674,9 @@ mod tests {
             "repository.open_search",
             "commit.copy_hash",
             "conflict.save_resolution",
+            "syntax.grammar.install",
+            "syntax.grammar.update",
+            "syntax.grammar.uninstall",
         ] {
             assert!(names.iter().any(|name| name == expected), "{expected}");
         }

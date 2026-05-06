@@ -118,6 +118,12 @@ impl App {
                 let _ = self.plugin_host.invoke_command(&id, args);
                 Task::none()
             }
+            AppMessage::SyntaxGrammarCommandFinished(outcome) => {
+                self.handle_syntax_grammar_command_finished(outcome)
+            }
+            AppMessage::EagerGrammarInstallRequested(language) => {
+                self.eager_install_grammar(language)
+            }
             AppMessage::TabRegistryOp(op) => {
                 if let crate::plugin::tab_snapshot::TabRegistryOp::Select(ref path) = op {
                     if self.tabs.tab_id_for_path(path) == Some(self.tabs.active_tab_id()) {

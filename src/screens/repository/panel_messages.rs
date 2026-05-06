@@ -220,6 +220,8 @@ pub enum DiffPanelAction {
     DiffContentScrolled {
         viewport: iced::widget::scrollable::Viewport,
     },
+    ContinueVisibleHighlighting,
+    SyntaxGrammarAssetsChanged,
     /// Shift+wheel over the diff — scroll horizontally by `delta_lines`,
     /// suppressing the default vertical scroll.
     DiffShiftWheel {
@@ -245,26 +247,6 @@ pub enum DiffPanelAction {
         delta_lines: f32,
     },
     ConflictResolutionSaveRequested,
-    DirtyFileHighlightReady {
-        generation: u64,
-        file_path: String,
-        is_staged: bool,
-        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-    },
-    CommitFileHighlightReady {
-        generation: u64,
-        commit_hash: String,
-        file_path: String,
-        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-    },
-    MergedFileHighlightReady {
-        generation: u64,
-        file_path: String,
-        old: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-        new: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-    },
     ConflictHighlightReady {
         generation: u64,
         ours: Option<std::sync::Arc<crate::services::HighlightedFile>>,
@@ -295,34 +277,14 @@ pub enum DiffPanelAction {
         file_path: String,
         lines: std::sync::Arc<Vec<crate::services::WorkingTreeDiffLine>>,
         fallbacks: crate::services::DiffFallbacks,
-        old_highlighted: Option<std::sync::Arc<crate::services::HighlightedFile>>,
-        new_highlighted: Option<std::sync::Arc<crate::services::HighlightedFile>>,
+        highlight_provider:
+            std::sync::Arc<crate::widgets::diff_canvas::CachedDiffHighlightProvider>,
     },
     SingleFileRenderReady {
         generation: u64,
         kind: super::panels::diff::SingleFileDiffKind,
         file_path: String,
         data: std::sync::Arc<crate::widgets::diff_canvas::DiffCanvasData>,
-    },
-    RunDirtyHighlight {
-        generation: u64,
-        file_path: String,
-        is_staged: bool,
-        old_content: Option<String>,
-        new_content: Option<String>,
-    },
-    RunCommitHighlight {
-        generation: u64,
-        commit_hash: String,
-        file_path: String,
-        old_content: Option<String>,
-        new_content: Option<String>,
-    },
-    RunMergedHighlight {
-        generation: u64,
-        file_path: String,
-        old_content: Option<String>,
-        new_content: Option<String>,
     },
     RunConflictHighlight {
         generation: u64,

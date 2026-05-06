@@ -7,15 +7,15 @@ use std::path::PathBuf;
 use iced::Task;
 
 use crate::core::TabId;
-use crate::message::{AppMessage, Message};
+use crate::message::{AppMessage, Message, SyntaxGrammarCommandOutcome};
 use crate::plugin::core_commands::CoreCommandAction;
 use crate::plugin::tab_snapshot::TabRegistryOp;
-use crate::screens::repository::panel_messages::{CenterAction, DetailAction};
+use crate::screens::repository::panel_messages::{CenterAction, DetailAction, DiffPanelAction};
 use crate::screens::repository::RepositoryMessage;
 use crate::services::GitError;
 use crate::toast::{auto_dismiss_task, ToastData};
 use crate::view_model::LoadedRepo;
-use crate::work::ui_message;
+use crate::work::{presentation_work, ui_message};
 
 use super::{tabs, App};
 
@@ -130,6 +130,12 @@ impl App {
             CoreCommandAction::CopyCommitHash { hash } => self.copy_commit_hash(hash),
             CoreCommandAction::OpenSelectedDiff => self.open_selected_diff(),
             CoreCommandAction::StartRewordSelected => self.start_reword_selected(),
+            CoreCommandAction::RefreshGrammarRegistry { path } => {
+                self.refresh_grammar_registry(path)
+            }
+            CoreCommandAction::InstallGrammar { language } => self.install_grammar(language),
+            CoreCommandAction::UpdateGrammar { language } => self.update_grammar(language),
+            CoreCommandAction::UninstallGrammar { language } => self.uninstall_grammar(language),
         }
     }
 
@@ -178,6 +184,104 @@ impl App {
         }
     }
 
+    fn refresh_grammar_registry(&mut self, path: String) -> Task<Message> {
+        syntax_grammar_command_task(
+            "Grammar Registry Refreshed",
+            "Grammar Registry Failed",
+            false,
+            move || {
+                crate::services::refresh_runtime_grammar_registry_from_path(&path)
+                    .map(|outcome| {
+                        format!("Loaded {} grammar entries", outcome.registry.grammars.len())
+                    })
+                    .map_err(|err| err.message)
+            },
+        )
+    }
+
+    fn install_grammar(&mut self, language: String) -> Task<Message> {
+        syntax_grammar_command_task(
+            "Grammar Installed",
+            "Grammar Install Failed",
+            false,
+            move || {
+                crate::services::install_runtime_grammar(&language)
+                    .map(|status| grammar_status_body(&status.language, status.status))
+                    .map_err(|err| err.message)
+            },
+        )
+    }
+
+    fn update_grammar(&mut self, language: String) -> Task<Message> {
+        syntax_grammar_command_task(
+            "Grammar Updated",
+            "Grammar Update Failed",
+            false,
+            move || {
+                crate::services::update_runtime_grammar(&language)
+                    .map(|status| grammar_status_body(&status.language, status.status))
+                    .map_err(|err| err.message)
+            },
+        )
+    }
+
+    fn uninstall_grammar(&mut self, language: String) -> Task<Message> {
+        syntax_grammar_command_task(
+            "Grammar Removed",
+            "Grammar Remove Failed",
+            false,
+            move || {
+                crate::services::uninstall_runtime_grammar(&language)
+                    .map(|status| grammar_status_body(&status.language, status.status))
+                    .map_err(|err| err.message)
+            },
+        )
+    }
+
+    pub(super) fn eager_install_grammar(&mut self, language: String) -> Task<Message> {
+        syntax_grammar_command_task(
+            "Grammar Installed",
+            "Grammar Install Failed",
+            true,
+            move || {
+                crate::services::install_runtime_grammar(&language)
+                    .map(|status| grammar_status_body(&status.language, status.status))
+                    .map_err(|err| err.message)
+            },
+        )
+    }
+
+    pub(super) fn handle_syntax_grammar_command_finished(
+        &mut self,
+        outcome: SyntaxGrammarCommandOutcome,
+    ) -> Task<Message> {
+        let succeeded = outcome.result.is_ok();
+        let changed_assets = outcome.changed_assets && succeeded;
+        let suppress_toast = succeeded && outcome.silent_on_success;
+        let toast_task = if suppress_toast {
+            Task::none()
+        } else {
+            let toast = match outcome.result {
+                Ok(body) => ToastData::success(outcome.success_title, body),
+                Err(body) => ToastData::error(outcome.error_title, body),
+            };
+            self.show_toast(toast)
+        };
+        let diff_task = if changed_assets {
+            self.tabs
+                .active_screen_mut()
+                .map(|screen| {
+                    screen.update(RepositoryMessage::DiffPanel(
+                        DiffPanelAction::SyntaxGrammarAssetsChanged,
+                    ))
+                })
+                .unwrap_or_else(Task::none)
+        } else {
+            Task::none()
+        };
+        Task::batch(vec![toast_task, diff_task])
+    }
+
     fn open_selected_diff(&self) -> Task<Message> {
         let Some(screen) = self.tabs.active_screen() else {
             return Task::none();
@@ -211,6 +315,43 @@ impl App {
             },
         )))
     }
+}
+
+fn syntax_grammar_command_task(
+    success_title: &'static str,
+    error_title: &'static str,
+    silent_on_success: bool,
+    run: impl FnOnce() -> Result<String, String> + Send + 'static,
+) -> Task<Message> {
+    Task::perform(presentation_work(run), move |result| {
+        Message::App(AppMessage::SyntaxGrammarCommandFinished(
+            SyntaxGrammarCommandOutcome {
+                success_title: success_title.to_string(),
+                error_title: error_title.to_string(),
+                result,
+                changed_assets: true,
+                silent_on_success,
+            },
+        ))
+    })
+}
+
+fn grammar_status_body(
+    language: &str,
+    status: crate::services::syntax_highlight::installation::GrammarInstallStatus,
+) -> String {
+    let status = match status {
+        crate::services::syntax_highlight::installation::GrammarInstallStatus::Missing => "missing",
+        crate::services::syntax_highlight::installation::GrammarInstallStatus::Queued => "queued",
+        crate::services::syntax_highlight::installation::GrammarInstallStatus::Installing => {
+            "installing"
+        }
+        crate::services::syntax_highlight::installation::GrammarInstallStatus::Installed => {
+            "installed"
+        }
+        crate::services::syntax_highlight::installation::GrammarInstallStatus::Failed => "failed",
+    };
+    format!("{language} is {status}")
 }
 
 pub(super) fn open_url(url: &str) {

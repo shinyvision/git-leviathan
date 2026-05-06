@@ -5,7 +5,7 @@
 use crate::{
     services::{
         ConflictBlock, ConflictResolutionResult, DiffContentSkipReason, DiffFallbacks,
-        DiffLineType, DiffSide, HighlightedFile, SegmentKind, SyntaxHighlightedSpan, SyntaxStyle,
+        DiffLineType, DiffSide, HighlightedFile, SegmentKind, SyntaxHighlightedSpan,
         WorkingTreeDiffLine,
     },
     widgets::{
@@ -13,7 +13,8 @@ use crate::{
             self, ConflictRow, GutterKind, CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS,
         },
         diff_canvas::{
-            diff_char_width, DiffCanvasId, DiffRow, LineKind as CanvasLineKind, SegmentBg,
+            diff_char_width, DiffCanvasId, DiffHighlightProvider, DiffHighlightReference,
+            DiffHighlightSide, DiffRow, DiffRowText, LineKind as CanvasLineKind, SegmentBg,
         },
         text::TextCanvasData,
     },
@@ -29,18 +30,16 @@ use super::super::conflict::{ConflictHunkSelection, ConflictSide};
 /// intra-line highlights without building a per-segment widget tree.
 pub(in crate::screens::repository) fn build_diff_rows_public(
     lines: &[WorkingTreeDiffLine],
-    old_hl: Option<&HighlightedFile>,
-    new_hl: Option<&HighlightedFile>,
     fallbacks: &DiffFallbacks,
+    highlight_provider: Option<Arc<dyn DiffHighlightProvider>>,
 ) -> Vec<DiffRow> {
-    build_diff_rows(lines, old_hl, new_hl, fallbacks)
+    build_diff_rows_with_provider(lines, fallbacks, highlight_provider)
 }
 
-pub(super) fn build_diff_rows(
+fn build_diff_rows_with_provider(
     lines: &[WorkingTreeDiffLine],
-    old_hl: Option<&HighlightedFile>,
-    new_hl: Option<&HighlightedFile>,
     fallbacks: &DiffFallbacks,
+    highlight_provider: Option<Arc<dyn DiffHighlightProvider>>,
 ) -> Vec<DiffRow> {
     let span = crate::perf::Span::new("cpu.diff_row_building").field("input_lines", lines.len());
     let notices = fallback_notices(fallbacks);
@@ -62,20 +61,14 @@ pub(super) fn build_diff_rows(
                     DiffLineType::Deletion => CanvasLineKind::Deletion,
                     _ => CanvasLineKind::Context,
                 };
-                let spans =
-                    highlighted_spans_for_diff_line(line, old_hl, new_hl).unwrap_or_else(|| {
-                        vec![SyntaxHighlightedSpan {
-                            text: line.content.clone(),
-                            style: SyntaxStyle::default(),
-                        }]
-                    });
-                let char_count: usize = spans.iter().map(|s| s.text.chars().count()).sum();
+                let text = row_text_for_diff_line(line, highlight_provider.clone());
+                let char_count = text.fallback().chars().count();
                 let segment_bgs = build_segment_bgs(&line.segments);
                 rows.push(DiffRow::Content {
                     old_lineno: line.old_lineno,
                     new_lineno: line.new_lineno,
                     kind,
-                    spans,
+                    text,
                     segment_bgs,
                     char_count,
                 });
@@ -248,19 +241,24 @@ pub(in crate::screens::repository) fn build_conflict_rows_for_canvas(
 ) -> Option<Arc<TextCanvasData>> {
     let span = crate::perf::Span::new("cpu.diff_row_building").field("kind", "conflict");
     let char_w = diff_char_width();
+    let mut output_rows = 0usize;
     let result = if canvas_id == CANVAS_ID_OURS {
         let rows = build_conflict_side_rows(result, selections, ConflictSide::Ours, ours_hl);
+        output_rows = rows.len();
         Some(conflict_canvas::build_side_canvas_data(rows, char_w))
     } else if canvas_id == CANVAS_ID_THEIRS {
         let rows = build_conflict_side_rows(result, selections, ConflictSide::Theirs, theirs_hl);
+        output_rows = rows.len();
         Some(conflict_canvas::build_side_canvas_data(rows, char_w))
     } else if canvas_id == CANVAS_ID_OUTPUT {
         let rows = build_conflict_output_rows(result, selections);
+        output_rows = rows.len();
         Some(conflict_canvas::build_output_canvas_data(rows, char_w))
     } else {
         None
     };
-    span.finish_with("canvas", canvas_id.0);
+    span.field("output_rows", output_rows)
+        .finish_with("canvas", canvas_id.0);
     result
 }
 
@@ -279,33 +277,50 @@ pub(super) fn row_char_count(spans: &[SyntaxHighlightedSpan]) -> usize {
     spans.iter().map(|s| s.text.chars().count()).sum()
 }
 
-fn highlighted_spans_for_diff_line(
+fn row_text_for_diff_line(
     line: &WorkingTreeDiffLine,
-    old_highlighted: Option<&HighlightedFile>,
-    new_highlighted: Option<&HighlightedFile>,
-) -> Option<Vec<SyntaxHighlightedSpan>> {
-    let spans = match line.line_type {
-        DiffLineType::Deletion => extract_highlighted_line(old_highlighted, line.old_lineno)
-            .or_else(|| extract_highlighted_line(new_highlighted, line.new_lineno)),
-        DiffLineType::Addition => extract_highlighted_line(new_highlighted, line.new_lineno)
-            .or_else(|| extract_highlighted_line(old_highlighted, line.old_lineno)),
-        DiffLineType::Context => extract_highlighted_line(new_highlighted, line.new_lineno)
-            .or_else(|| extract_highlighted_line(old_highlighted, line.old_lineno)),
-        _ => None,
-    }?;
+    provider: Option<Arc<dyn crate::widgets::diff_canvas::DiffHighlightProvider>>,
+) -> DiffRowText {
+    let Some((source, alternate_source)) = highlight_references_for_diff_line(line) else {
+        return DiffRowText::Plain(line.content.clone());
+    };
 
-    if spans.is_empty() {
-        None
-    } else {
-        Some(spans.to_vec())
+    DiffRowText::Highlighted {
+        source,
+        alternate_source,
+        fallback: line.content.clone(),
+        provider,
     }
 }
 
-fn extract_highlighted_line(
-    highlighted: Option<&HighlightedFile>,
+fn highlight_references_for_diff_line(
+    line: &WorkingTreeDiffLine,
+) -> Option<(DiffHighlightReference, Option<DiffHighlightReference>)> {
+    let preferred = match line.line_type {
+        DiffLineType::Deletion => highlight_reference(DiffHighlightSide::Old, line.old_lineno),
+        DiffLineType::Addition => highlight_reference(DiffHighlightSide::New, line.new_lineno),
+        DiffLineType::Context => highlight_reference(DiffHighlightSide::New, line.new_lineno),
+        _ => None,
+    };
+    let alternate = match line.line_type {
+        DiffLineType::Deletion => highlight_reference(DiffHighlightSide::New, line.new_lineno),
+        DiffLineType::Addition | DiffLineType::Context => {
+            highlight_reference(DiffHighlightSide::Old, line.old_lineno)
+        }
+        _ => None,
+    };
+
+    preferred.or(alternate).map(|source| {
+        let alternate_source = alternate.filter(|alternate| *alternate != source);
+        (source, alternate_source)
+    })
+}
+
+fn highlight_reference(
+    side: DiffHighlightSide,
     line_number: Option<u32>,
-) -> Option<&[SyntaxHighlightedSpan]> {
-    highlighted.and_then(|file| line_number.map(|line| file.line(line)))
+) -> Option<DiffHighlightReference> {
+    line_number.map(|line_number| DiffHighlightReference { side, line_number })
 }
 
 fn build_segment_bgs(segments: &[crate::services::DiffSegment]) -> Vec<SegmentBg> {
@@ -329,4 +344,156 @@ fn build_segment_bgs(segments: &[crate::services::DiffSegment]) -> Vec<SegmentBg
         col += len;
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::widgets::text::CanvasRow;
+
+    fn line(
+        line_type: DiffLineType,
+        content: &str,
+        old_lineno: Option<u32>,
+        new_lineno: Option<u32>,
+    ) -> WorkingTreeDiffLine {
+        WorkingTreeDiffLine {
+            line_type,
+            content: content.to_string(),
+            old_lineno,
+            new_lineno,
+            segments: Vec::new(),
+        }
+    }
+
+    fn content_text(row: &DiffRow) -> &DiffRowText {
+        let DiffRow::Content { text, .. } = row else {
+            panic!("expected content row");
+        };
+        text
+    }
+
+    fn source(text: &DiffRowText) -> Option<DiffHighlightReference> {
+        match text {
+            DiffRowText::Plain(_) => None,
+            DiffRowText::Highlighted { source, .. } => Some(*source),
+        }
+    }
+
+    fn alternate_source(text: &DiffRowText) -> Option<DiffHighlightReference> {
+        match text {
+            DiffRowText::Plain(_) => None,
+            DiffRowText::Highlighted {
+                alternate_source, ..
+            } => *alternate_source,
+        }
+    }
+
+    #[test]
+    fn diff_rows_carry_preferred_highlight_sources() {
+        let rows = build_diff_rows_public(
+            &[
+                line(DiffLineType::Addition, "added", None, Some(7)),
+                line(DiffLineType::Deletion, "deleted", Some(3), None),
+                line(DiffLineType::Context, "same", Some(11), Some(12)),
+            ],
+            &DiffFallbacks::default(),
+            None,
+        );
+
+        assert_eq!(
+            source(content_text(&rows[0])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::New,
+                line_number: 7,
+            })
+        );
+        assert_eq!(
+            source(content_text(&rows[1])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::Old,
+                line_number: 3,
+            })
+        );
+        assert_eq!(
+            source(content_text(&rows[2])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::New,
+                line_number: 12,
+            })
+        );
+        assert_eq!(
+            alternate_source(content_text(&rows[2])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::Old,
+                line_number: 11,
+            })
+        );
+    }
+
+    #[test]
+    fn diff_rows_fall_back_to_available_side_when_preferred_line_is_missing() {
+        let rows = build_diff_rows_public(
+            &[line(DiffLineType::Addition, "odd add", Some(4), None)],
+            &DiffFallbacks::default(),
+            None,
+        );
+
+        assert_eq!(
+            source(content_text(&rows[0])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::Old,
+                line_number: 4,
+            })
+        );
+        assert_eq!(alternate_source(content_text(&rows[0])), None);
+    }
+
+    #[test]
+    fn diff_rows_fall_back_to_available_side_or_plain_text_when_line_numbers_are_missing() {
+        let rows = build_diff_rows_public(
+            &[
+                line(DiffLineType::Deletion, "deleted", None, Some(8)),
+                line(DiffLineType::Context, "context", Some(4), None),
+                line(DiffLineType::Addition, "unmapped", None, None),
+            ],
+            &DiffFallbacks::default(),
+            None,
+        );
+
+        assert_eq!(
+            source(content_text(&rows[0])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::New,
+                line_number: 8,
+            })
+        );
+        assert_eq!(alternate_source(content_text(&rows[0])), None);
+        assert_eq!(
+            source(content_text(&rows[1])),
+            Some(DiffHighlightReference {
+                side: DiffHighlightSide::Old,
+                line_number: 4,
+            })
+        );
+        assert_eq!(alternate_source(content_text(&rows[1])), None);
+        assert!(matches!(content_text(&rows[2]), DiffRowText::Plain(text) if text == "unmapped"));
+    }
+
+    #[test]
+    fn diff_rows_use_fallback_text_for_raw_text_and_char_count() {
+        let fallback = "écho";
+        let rows = build_diff_rows_public(
+            &[line(DiffLineType::Addition, fallback, None, Some(1))],
+            &DiffFallbacks::default(),
+            None,
+        );
+
+        let DiffRow::Content { char_count, .. } = &rows[0] else {
+            panic!("expected content row");
+        };
+        assert_eq!(*char_count, fallback.chars().count());
+        assert_eq!(rows[0].raw_text(), fallback);
+        assert_eq!(content_text(&rows[0]).fallback(), fallback);
+    }
 }

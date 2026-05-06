@@ -358,7 +358,7 @@ pub(in crate::screens::repository) fn conflict_side_lines(
     out
 }
 
-fn conflict_side_highlight_content(
+pub(super) fn conflict_side_highlight_content(
     result: &ConflictResolutionResult,
     side: ConflictSide,
 ) -> Option<String> {

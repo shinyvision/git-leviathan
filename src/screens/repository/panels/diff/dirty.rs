@@ -4,8 +4,10 @@
 use std::sync::Arc;
 
 use crate::services::{
-    DiffFallbacks, DirtyDiffSignature, HighlightedFile, WorkingTreeDiffLine, WorkingTreeDiffResult,
+    DiffFallbacks, DirtyDiffSignature, HighlightDocument, WorkingTreeDiffLine,
+    WorkingTreeDiffResult,
 };
+use crate::widgets::diff_canvas::CachedDiffHighlightProvider;
 
 use super::{DiffLoadMode, DiffPanel, DiffPanelAction, SingleFileDiffKind, SingleFileDiffView};
 
@@ -14,8 +16,9 @@ pub struct DirtyFileDiffState {
     pub file_path: String,
     pub is_staged: bool,
     pub diff_lines: Option<Arc<Vec<WorkingTreeDiffLine>>>,
-    pub old_highlighted: Option<Arc<HighlightedFile>>,
-    pub new_highlighted: Option<Arc<HighlightedFile>>,
+    pub old_highlight_document: Option<HighlightDocument>,
+    pub new_highlight_document: Option<HighlightDocument>,
+    pub highlight_provider: Arc<CachedDiffHighlightProvider>,
     pub render_data: Option<Arc<crate::widgets::diff_canvas::DiffCanvasData>>,
     pub render_generation: u64,
     pub fallbacks: DiffFallbacks,
@@ -37,13 +40,13 @@ impl DiffLoadMode for DirtyFileDiffState {
         &self.file_path
     }
 
+    fn lines(&self) -> Option<Arc<Vec<WorkingTreeDiffLine>>> {
+        self.diff_lines.clone()
+    }
+
     fn set_lines(&mut self, lines: Arc<Vec<WorkingTreeDiffLine>>) {
         self.diff_lines = Some(lines);
         self.render_data = None;
-    }
-
-    fn lines(&self) -> Option<Arc<Vec<WorkingTreeDiffLine>>> {
-        self.diff_lines.clone()
     }
 
     fn generation(&self) -> u64 {
@@ -54,33 +57,29 @@ impl DiffLoadMode for DirtyFileDiffState {
         self.render_generation = generation;
     }
 
-    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks) {
-        self.fallbacks = fallbacks;
-    }
-
     fn fallbacks(&self) -> DiffFallbacks {
         self.fallbacks.clone()
     }
 
-    fn clear_highlights(&mut self) {
-        self.old_highlighted = None;
-        self.new_highlighted = None;
+    fn set_fallbacks(&mut self, fallbacks: DiffFallbacks) {
+        self.fallbacks = fallbacks;
     }
 
-    fn highlight_action(
-        &self,
-        generation: u64,
-        file_path: String,
-        old_content: Option<String>,
-        new_content: Option<String>,
-    ) -> DiffPanelAction {
-        DiffPanelAction::RunDirtyHighlight {
-            generation,
-            file_path,
-            is_staged: self.is_staged,
-            old_content,
-            new_content,
-        }
+    fn set_highlight_documents(
+        &mut self,
+        old: Option<HighlightDocument>,
+        new: Option<HighlightDocument>,
+    ) {
+        self.old_highlight_document = old;
+        self.new_highlight_document = new;
+    }
+
+    fn reset_highlight_provider(&mut self) {
+        self.highlight_provider = Arc::new(CachedDiffHighlightProvider::new());
+    }
+
+    fn highlight_provider(&self) -> Arc<CachedDiffHighlightProvider> {
+        self.highlight_provider.clone()
     }
 
     fn render_kind(&self) -> SingleFileDiffKind {
@@ -117,7 +116,9 @@ impl DiffPanel {
         self.commit_file_diff = None;
         self.diff_selection = None;
         self.diff_scroll_y = 0.0;
+        self.diff_viewport_height = None;
         self.text_search = None;
+        self.highlight_scheduler.reset();
 
         if is_conflicted {
             let generation = self.next_diff_generation();
@@ -151,8 +152,9 @@ impl DiffPanel {
             file_path: path.clone(),
             is_staged,
             diff_lines: None,
-            old_highlighted: None,
-            new_highlighted: None,
+            old_highlight_document: None,
+            new_highlight_document: None,
+            highlight_provider: Arc::new(CachedDiffHighlightProvider::new()),
             render_data: None,
             render_generation: generation,
             fallbacks: DiffFallbacks::default(),
@@ -248,40 +250,5 @@ impl DiffPanel {
             state.last_signature = signature;
         }
         action
-    }
-
-    pub(in crate::screens::repository) fn on_dirty_highlight_ready(
-        &mut self,
-        generation: u64,
-        file_path: String,
-        is_staged: bool,
-        old: Option<Arc<HighlightedFile>>,
-        new: Option<Arc<HighlightedFile>>,
-    ) -> Option<DiffPanelAction> {
-        if let Some(state) = self.dirty_file_diff.as_mut() {
-            if state.file_path == file_path
-                && state.is_staged == is_staged
-                && state.render_generation == generation
-            {
-                state.old_highlighted = old.clone();
-                state.new_highlighted = new.clone();
-                let lines = state.lines();
-                let fallbacks = state.fallbacks();
-                let generation = self.next_diff_generation();
-                if let Some(state) = self.dirty_file_diff.as_mut() {
-                    state.render_generation = generation;
-                }
-                return lines.map(|lines| DiffPanelAction::RunSingleFileRenderBuild {
-                    generation,
-                    kind: SingleFileDiffKind::Dirty { is_staged },
-                    file_path,
-                    lines,
-                    fallbacks,
-                    old_highlighted: old,
-                    new_highlighted: new,
-                });
-            }
-        }
-        None
     }
 }

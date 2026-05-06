@@ -75,6 +75,7 @@ pub fn build(app: &App) -> Subscription<Message> {
     };
 
     let sigterm_sub = Subscription::run(sigterm_stream);
+    let eager_grammar_install_sub = Subscription::run(eager_grammar_install_stream);
 
     let mut subs = vec![
         app_events,
@@ -83,6 +84,7 @@ pub fn build(app: &App) -> Subscription<Message> {
         screen_sub,
         plugin_runtime_sub,
         sigterm_sub,
+        eager_grammar_install_sub,
     ];
     subs.extend(file_watcher_subs);
 
@@ -121,6 +123,24 @@ fn translate_window_event(
         }
         _ => None,
     }
+}
+
+fn eager_grammar_install_stream() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(
+        16,
+        |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
+            let Some(mut rx) =
+                crate::services::syntax_highlight::take_eager_grammar_install_receiver()
+            else {
+                return;
+            };
+            while let Some(language) = rx.recv().await {
+                let _ = sender.try_send(Message::App(
+                    AppMessage::EagerGrammarInstallRequested(language),
+                ));
+            }
+        },
+    )
 }
 
 fn sigterm_stream() -> impl iced::futures::Stream<Item = Message> {

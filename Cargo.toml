@@ -37,16 +37,20 @@ tokio = { version = "1", features = ["time", "sync", "rt", "rt-multi-thread", "m
 notify = { workspace = true }
 rfd = "0.15"
 rusqlite = { version = "0.32", features = ["bundled"] }
-syntect = "5.3"
-two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
+tree-sitter = { version = "0.26.8", features = ["wasm"] }
+tree-sitter-language = "0.1.7"
 dirs = "5"
 tempfile = "3"
+flate2 = "1"
+tar = "0.4"
 mlua = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
 git_leviathan_plugin_api = { path = "git_leviathan_plugin_api" }
 semver = { workspace = true }
+libloading = "0.8"
+sha2 = "0.10"
 portable-pty = "0.8"
 vt100 = "0.15"
 
