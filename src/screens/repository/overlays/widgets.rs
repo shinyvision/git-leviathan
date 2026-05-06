@@ -138,6 +138,29 @@ pub const DANGER_BUTTON: OverlayButtonPalette = OverlayButtonPalette {
     hover_text: Color::WHITE,
 };
 
+pub const RESOLVE_BUTTON: OverlayButtonPalette = OverlayButtonPalette {
+    background: Color {
+        r: 0.549,
+        g: 0.392,
+        b: 0.118,
+        a: 1.0,
+    },
+    hover_background: Color {
+        r: 0.890,
+        g: 0.658,
+        b: 0.184,
+        a: 1.0,
+    },
+    border: Color {
+        r: 0.890,
+        g: 0.658,
+        b: 0.184,
+        a: 1.0,
+    },
+    text: theme::TEXT_PRIMARY,
+    hover_text: Color::WHITE,
+};
+
 const CANCEL_BORDER: Color = Color {
     r: 0.804,
     g: 0.820,

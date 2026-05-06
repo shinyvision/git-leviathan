@@ -6,11 +6,12 @@ use iced::{clipboard, Point, Task};
 use crate::{
     core::CommitKind,
     message::Message,
+    toast::ToastData,
     work::{git_write_work, timer_work},
 };
 
 use super::super::super::{
-    overlays::{discard, ActiveDialog, DialogCtx},
+    overlays::{discard, modify_delete_conflict, ActiveDialog, DialogCtx},
     panel_messages::DetailAction,
     state::{FocusedPanel, OperationKind, PendingFocus},
     RepositoryMessage,
@@ -70,6 +71,27 @@ pub(in crate::screens::repository) fn update(
                 .conflicted_files
                 .iter()
                 .any(|file| file.path == path);
+
+            if is_conflicted {
+                match ctx.repository.load_modify_delete_conflict(&path) {
+                    Ok(Some(_)) => {
+                        ctx.data.commit_search = None;
+                        diff_panel.close();
+                        ctx.overlay_manager.open(ActiveDialog::ModifyDeleteConflict(
+                            modify_delete_conflict::State { path },
+                        ));
+                        return repository_panel.restore_center_list_scroll();
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        eprintln!("git_leviathan: conflict inspection failed: {}", e);
+                        return Task::done(Message::show_toast(ToastData::error(
+                            "Open Conflict Failed",
+                            e.to_string(),
+                        )));
+                    }
+                }
+            }
 
             ctx.data.commit_search = None;
             let follow_up =

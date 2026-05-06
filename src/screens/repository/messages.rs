@@ -273,6 +273,9 @@ fn overlay_write_intent(action: &OverlayPanelAction) -> Option<GitWriteIntent> {
     match action {
         OverlayPanelAction::ConflictCreateBranch
         | OverlayPanelAction::ConflictResetLocal
+        | OverlayPanelAction::ModifyDeleteKeepModified
+        | OverlayPanelAction::ModifyDeleteDeleteFile
+        | OverlayPanelAction::ModifyDeleteKeepBase
         | OverlayPanelAction::BranchDeleteConfirmed
         | OverlayPanelAction::BranchDeleteAllConfirmed
         | OverlayPanelAction::StashDeleteConfirmed

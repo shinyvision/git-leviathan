@@ -7,37 +7,14 @@
 
 use iced::{
     widget::{button, text_editor},
-    Border, Color, Theme,
+    Border, Theme,
 };
 
 use crate::{
     screens::repository::overlays::widgets::{
-        palette_button_style, OverlayButtonPalette, CREATE_BUTTON, DANGER_BUTTON,
+        palette_button_style, CREATE_BUTTON, DANGER_BUTTON, RESOLVE_BUTTON,
     },
     theme,
-};
-
-const RESOLVE_BUTTON: OverlayButtonPalette = OverlayButtonPalette {
-    background: Color {
-        r: 0.549,
-        g: 0.392,
-        b: 0.118,
-        a: 1.0,
-    },
-    hover_background: Color {
-        r: 0.890,
-        g: 0.658,
-        b: 0.184,
-        a: 1.0,
-    },
-    border: Color {
-        r: 0.890,
-        g: 0.658,
-        b: 0.184,
-        a: 1.0,
-    },
-    text: theme::TEXT_PRIMARY,
-    hover_text: Color::WHITE,
 };
 
 pub(super) fn detail_text_editor_style(_: &Theme, _: text_editor::Status) -> text_editor::Style {

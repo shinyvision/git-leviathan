@@ -88,7 +88,11 @@ fn revert_in_place(
         return Ok(RevertStatus::Applied);
     }
 
-    if revert_blocked_by_working_changes(service, &output) {
+    if index_has_conflicts(service) || output_mentions_conflict(&output) {
+        return Ok(RevertStatus::RevertConflicted);
+    }
+
+    if revert_blocked_by_working_changes(&output) {
         abort_revert(repo_dir);
         return Err(GitError::Other(
             "commit cannot be reverted in-place due to working changes".to_string(),
@@ -170,10 +174,7 @@ fn output_mentions_conflict(output: &std::process::Output) -> bool {
         || String::from_utf8_lossy(&output.stderr).contains("CONFLICT")
 }
 
-fn revert_blocked_by_working_changes(service: &GitService, output: &std::process::Output) -> bool {
-    if index_has_conflicts(service) || output_mentions_conflict(output) {
-        return true;
-    }
+fn revert_blocked_by_working_changes(output: &std::process::Output) -> bool {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     stdout.contains("local changes would be overwritten")
@@ -241,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn in_place_revert_conflict_aborts_without_touching_worktree() {
+    fn in_place_revert_conflict_leaves_hunks_for_resolution() {
         let (temp, repo) = init_test_repo("revert_in_place_conflict");
         configure_test_signature(&repo);
 
@@ -251,18 +252,14 @@ mod tests {
         commit_all(&repo, "B");
 
         let mut service = GitService::open(temp.path_str()).expect("open service");
-        let err = revert_commit(&mut service, &original.to_string(), false).unwrap_err();
+        let status = revert_commit(&mut service, &original.to_string(), false).expect("revert");
 
-        assert_eq!(
-            err.to_string(),
-            "commit cannot be reverted in-place due to working changes"
-        );
-        assert_eq!(
-            fs::read_to_string(temp.path.join("tracked.txt")).unwrap(),
-            "from-b\n"
-        );
-        assert_eq!(repo.state(), git2::RepositoryState::Clean);
-        assert!(!repo.index().unwrap().has_conflicts());
+        assert!(matches!(status, RevertStatus::RevertConflicted));
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        assert!(index.has_conflicts());
+        let conflicted = fs::read_to_string(temp.path.join("tracked.txt")).unwrap();
+        assert!(conflicted.contains("<<<<<<<"));
     }
 
     #[test]

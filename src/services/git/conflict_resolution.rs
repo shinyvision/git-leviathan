@@ -1,4 +1,8 @@
-use super::{working_tree, GitService};
+use std::path::Path;
+
+use git2::{IndexConflict, IndexEntry};
+
+use super::{helpers::wrap_git2_error, working_tree, GitService};
 use crate::services::git_error::GitError;
 
 #[derive(Debug, Clone)]
@@ -26,6 +30,18 @@ pub struct ConflictHunk {
     pub original_lines: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModifyDeleteConflict {
+    pub file_path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModifyDeleteConflictChoice {
+    KeepModified,
+    DeleteFile,
+    KeepBase,
+}
+
 pub(super) fn load_conflict_resolution(
     service: &GitService,
     file_path: &str,
@@ -43,6 +59,59 @@ pub(super) fn load_conflict_resolution(
     })?;
 
     Ok(parse_conflict_content(file_path, &content))
+}
+
+pub(super) fn load_modify_delete_conflict(
+    service: &GitService,
+    file_path: &str,
+) -> Result<Option<ModifyDeleteConflict>, GitError> {
+    let Some(conflict) = index_conflict_for_path(service, file_path)? else {
+        return Ok(None);
+    };
+    if !is_modify_delete_conflict(&conflict) {
+        return Ok(None);
+    }
+    Ok(Some(ModifyDeleteConflict {
+        file_path: file_path.to_string(),
+    }))
+}
+
+pub(super) fn resolve_modify_delete_conflict(
+    service: &mut GitService,
+    file_path: &str,
+    choice: ModifyDeleteConflictChoice,
+) -> Result<(), GitError> {
+    let conflict = index_conflict_for_path(service, file_path)?
+        .ok_or_else(|| GitError::Other(format!("'{file_path}' is not conflicted")))?;
+    if !is_modify_delete_conflict(&conflict) {
+        return Err(GitError::Other(format!(
+            "'{file_path}' is not a modify/delete conflict"
+        )));
+    }
+
+    match choice {
+        ModifyDeleteConflictChoice::KeepModified => {
+            let entry = modified_entry(&conflict).ok_or_else(|| {
+                GitError::Other(format!(
+                    "modify/delete conflict for '{file_path}' has no modified version"
+                ))
+            })?;
+            write_entry_blob_to_workdir(service, file_path, entry)?;
+        }
+        ModifyDeleteConflictChoice::DeleteFile => {
+            remove_workdir_file(service, file_path)?;
+        }
+        ModifyDeleteConflictChoice::KeepBase => {
+            let entry = conflict.ancestor.as_ref().ok_or_else(|| {
+                GitError::Other(format!(
+                    "modify/delete conflict for '{file_path}' has no base version"
+                ))
+            })?;
+            write_entry_blob_to_workdir(service, file_path, entry)?;
+        }
+    }
+
+    working_tree::mark_conflict_resolved(service, file_path)
 }
 
 pub(super) fn save_conflict_resolution(
@@ -71,6 +140,111 @@ pub(super) fn save_conflict_resolution(
         ))
     })?;
     working_tree::mark_conflict_resolved(service, file_path)
+}
+
+fn index_conflict_for_path(
+    service: &GitService,
+    file_path: &str,
+) -> Result<Option<IndexConflict>, GitError> {
+    let mut index = service
+        .repo
+        .index()
+        .map_err(|e| wrap_git2_error("open repository index", e))?;
+    index
+        .read(true)
+        .map_err(|e| wrap_git2_error("read repository index", e))?;
+    let conflicts = index
+        .conflicts()
+        .map_err(|e| wrap_git2_error("read index conflicts", e))?;
+    for conflict in conflicts {
+        let conflict = conflict.map_err(|e| wrap_git2_error("read index conflict", e))?;
+        if conflict_path_matches(&conflict, file_path) {
+            return Ok(Some(conflict));
+        }
+    }
+    Ok(None)
+}
+
+fn conflict_path_matches(conflict: &IndexConflict, file_path: &str) -> bool {
+    conflict
+        .our
+        .as_ref()
+        .or(conflict.their.as_ref())
+        .or(conflict.ancestor.as_ref())
+        .is_some_and(|entry| String::from_utf8_lossy(&entry.path) == file_path)
+}
+
+fn is_modify_delete_conflict(conflict: &IndexConflict) -> bool {
+    conflict.ancestor.is_some()
+        && ((conflict.our.is_some() && conflict.their.is_none())
+            || (conflict.our.is_none() && conflict.their.is_some()))
+}
+
+fn modified_entry(conflict: &IndexConflict) -> Option<&IndexEntry> {
+    match (&conflict.our, &conflict.their) {
+        (Some(entry), None) | (None, Some(entry)) => Some(entry),
+        _ => None,
+    }
+}
+
+fn write_entry_blob_to_workdir(
+    service: &GitService,
+    file_path: &str,
+    entry: &IndexEntry,
+) -> Result<(), GitError> {
+    let blob = service
+        .repo
+        .find_blob(entry.id)
+        .map_err(|e| wrap_git2_error(&format!("read '{file_path}' blob"), e))?;
+    let content = blob.content().to_vec();
+    let workdir = service
+        .repo
+        .workdir()
+        .ok_or_else(|| GitError::Other("repository has no working directory".to_string()))?;
+    let full_path = workdir.join(Path::new(file_path));
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            GitError::Other(format!(
+                "failed to create parent directory for '{}': {e}",
+                file_path
+            ))
+        })?;
+    }
+    std::fs::write(&full_path, content)
+        .map_err(|e| GitError::Other(format!("failed to write '{}': {e}", file_path)))?;
+    apply_file_mode(&full_path, entry.mode)?;
+    Ok(())
+}
+
+fn remove_workdir_file(service: &GitService, file_path: &str) -> Result<(), GitError> {
+    let workdir = service
+        .repo
+        .workdir()
+        .ok_or_else(|| GitError::Other("repository has no working directory".to_string()))?;
+    let full_path = workdir.join(Path::new(file_path));
+    match std::fs::remove_file(&full_path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(GitError::Other(format!(
+            "failed to delete '{}': {err}",
+            file_path
+        ))),
+    }
+}
+
+#[cfg(unix)]
+fn apply_file_mode(path: &Path, mode: u32) -> Result<(), GitError> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let executable = mode & 0o111 != 0;
+    let permissions = std::fs::Permissions::from_mode(if executable { 0o755 } else { 0o644 });
+    std::fs::set_permissions(path, permissions)
+        .map_err(|e| GitError::Other(format!("failed to set file permissions: {e}")))
+}
+
+#[cfg(not(unix))]
+fn apply_file_mode(_path: &Path, _mode: u32) -> Result<(), GitError> {
+    Ok(())
 }
 
 fn parse_conflict_content(file_path: &str, content: &str) -> ConflictResolutionResult {

@@ -28,7 +28,9 @@ use crate::{
 };
 
 pub use checkout::ResetMode;
-pub use conflict_resolution::{ConflictBlock, ConflictResolutionResult};
+pub use conflict_resolution::{
+    ConflictBlock, ConflictResolutionResult, ModifyDeleteConflict, ModifyDeleteConflictChoice,
+};
 pub use helpers::kill_running_git_processes;
 pub use push::PushOutcome;
 
@@ -309,6 +311,21 @@ impl GitService {
         working_tree::mark_conflict_resolved(self, path)
     }
 
+    pub fn load_modify_delete_conflict(
+        &self,
+        path: &str,
+    ) -> Result<Option<ModifyDeleteConflict>, GitError> {
+        conflict_resolution::load_modify_delete_conflict(self, path)
+    }
+
+    pub fn resolve_modify_delete_conflict(
+        &mut self,
+        path: &str,
+        choice: ModifyDeleteConflictChoice,
+    ) -> Result<(), GitError> {
+        conflict_resolution::resolve_modify_delete_conflict(self, path, choice)
+    }
+
     pub fn discard_file(&mut self, path: &str) -> Result<(), GitError> {
         working_tree::discard_file(self, path)
     }
@@ -481,6 +498,72 @@ mod tests {
         push_refspec, stash_names, write_file,
     };
     use std::{fs, path::Path};
+
+    fn service_with_modify_delete_conflict(
+        prefix: &str,
+    ) -> (crate::services::test_support::TempRepo, GitService) {
+        let (temp_repo, repo) = init_test_repo(prefix);
+        configure_test_signature(&repo);
+
+        create_branch(&repo, "delete-file");
+        create_branch(&repo, "modify-file");
+
+        checkout_branch_for_setup(&repo, "modify-file");
+        write_file(&temp_repo.path, "tracked.txt", "modified\n");
+        commit_all(&repo, "modify tracked file");
+
+        checkout_branch_for_setup(&repo, "delete-file");
+        commit_deleted_file(&repo, &temp_repo.path, "tracked.txt", "delete tracked file");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        let outcome = service
+            .merge_branch_into("delete-file", "modify-file")
+            .expect("merge should report modify/delete conflict");
+        assert!(matches!(outcome, BranchMergeOutcome::Conflicted(_)));
+
+        (temp_repo, service)
+    }
+
+    fn commit_deleted_file(
+        repo: &git2::Repository,
+        repo_path: &Path,
+        relative_path: &str,
+        message: &str,
+    ) {
+        let full_path = repo_path.join(relative_path);
+        fs::remove_file(&full_path).expect("failed to delete test file");
+
+        let mut index = repo.index().expect("failed to open index");
+        index
+            .remove_path(Path::new(relative_path))
+            .expect("failed to stage test deletion");
+        index.write().expect("failed to write index");
+
+        let tree_id = index.write_tree().expect("failed to write tree");
+        let tree = repo.find_tree(tree_id).expect("failed to find tree");
+        let signature = git2::Signature::now("Git Leviathan Test", "test@example.invalid")
+            .expect("failed to create test signature");
+        let parent = repo
+            .head()
+            .expect("repo should have head")
+            .peel_to_commit()
+            .expect("head should point to a commit");
+        repo.commit(
+            Some("HEAD"),
+            &signature,
+            &signature,
+            message,
+            &tree,
+            &[&parent],
+        )
+        .expect("failed to commit test deletion");
+    }
+
+    fn assert_no_index_conflicts(service: &GitService) {
+        let mut index = service.repo.index().expect("failed to open index");
+        index.read(true).expect("failed to refresh index");
+        assert!(!index.has_conflicts());
+    }
 
     #[test]
     fn delete_branch_removes_local_branch_ref() {
@@ -866,6 +949,10 @@ mod tests {
         let resolution = service
             .load_conflict_resolution("tracked.txt")
             .expect("conflict resolution should load");
+        assert!(service
+            .load_modify_delete_conflict("tracked.txt")
+            .expect("modify/delete inspection should succeed")
+            .is_none());
         assert_eq!(resolution.blocks.len(), 1);
         assert_eq!(resolution.ours_label, "HEAD");
         assert!(resolution.theirs_label.contains("develop"));
@@ -896,6 +983,67 @@ mod tests {
             .peel_to_commit()
             .expect("head should point to a commit");
         assert_eq!(head.parent_count(), 2);
+    }
+
+    #[test]
+    fn load_modify_delete_conflict_detects_modified_deleted_file() {
+        let (_temp_repo, service) = service_with_modify_delete_conflict("modify_delete_detect");
+
+        let conflict = service
+            .load_modify_delete_conflict("tracked.txt")
+            .expect("modify/delete inspection should succeed")
+            .expect("tracked.txt should be a modify/delete conflict");
+
+        assert_eq!(conflict.file_path, "tracked.txt");
+        assert!(service
+            .load_modify_delete_conflict("missing.txt")
+            .expect("missing path inspection should succeed")
+            .is_none());
+    }
+
+    #[test]
+    fn resolve_modify_delete_conflict_can_keep_modified_version() {
+        let (temp_repo, mut service) =
+            service_with_modify_delete_conflict("modify_delete_keep_modified");
+
+        service
+            .resolve_modify_delete_conflict("tracked.txt", ModifyDeleteConflictChoice::KeepModified)
+            .expect("keep modified should resolve conflict");
+
+        assert_no_index_conflicts(&service);
+        assert_eq!(
+            fs::read_to_string(temp_repo.path.join("tracked.txt")).expect("file should exist"),
+            "modified\n"
+        );
+    }
+
+    #[test]
+    fn resolve_modify_delete_conflict_can_delete_file() {
+        let (temp_repo, mut service) =
+            service_with_modify_delete_conflict("modify_delete_delete_file");
+
+        service
+            .resolve_modify_delete_conflict("tracked.txt", ModifyDeleteConflictChoice::DeleteFile)
+            .expect("delete should resolve conflict");
+
+        assert_no_index_conflicts(&service);
+        assert!(!temp_repo.path.join("tracked.txt").exists());
+    }
+
+    #[test]
+    fn resolve_modify_delete_conflict_can_keep_base_version() {
+        let (temp_repo, mut service) =
+            service_with_modify_delete_conflict("modify_delete_keep_base");
+
+        service
+            .resolve_modify_delete_conflict("tracked.txt", ModifyDeleteConflictChoice::KeepBase)
+            .expect("keep base should resolve conflict");
+
+        assert_no_index_conflicts(&service);
+        assert_eq!(
+            fs::read_to_string(temp_repo.path.join("tracked.txt")).expect("file should exist"),
+            "base\n"
+        );
     }
 
     #[test]

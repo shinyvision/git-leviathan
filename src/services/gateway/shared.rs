@@ -4,9 +4,10 @@ use std::sync::{Arc, Mutex};
 use crate::services::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,
     CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature,
-    DirtySnapshot, GitError, GitService, MergedCommitDiffResult, PushOutcome, RefsSnapshot,
-    RemoteCheckoutOutcome, RepoSnapshot, ResetMode, RevertOutcome, StashApplyOutcome,
-    WorkingTreeDiffResult, WorktreeInfo, COMMIT_LOAD_LIMIT,
+    DirtySnapshot, GitError, GitService, MergedCommitDiffResult, ModifyDeleteConflict,
+    ModifyDeleteConflictChoice, PushOutcome, RefsSnapshot, RemoteCheckoutOutcome, RepoSnapshot,
+    ResetMode, RevertOutcome, StashApplyOutcome, WorkingTreeDiffResult, WorktreeInfo,
+    COMMIT_LOAD_LIMIT,
 };
 
 use super::branch_ops::BranchOps;
@@ -198,6 +199,13 @@ impl RepoRead for GitRepositoryGateway {
         self.with_service_unlocked(|service| service.load_conflict_resolution(file_path))
     }
 
+    fn load_modify_delete_conflict(
+        &self,
+        file_path: &str,
+    ) -> Result<Option<ModifyDeleteConflict>, GitError> {
+        self.with_service_unlocked(|service| service.load_modify_delete_conflict(file_path))
+    }
+
     fn compute_dirty_file_signature(&self, file_path: &str, is_staged: bool) -> DirtyDiffSignature {
         self.with_service_unlocked(|service| {
             Ok(service.compute_dirty_file_signature(file_path, is_staged))
@@ -370,6 +378,17 @@ impl WorkingTreeOps for GitRepositoryGateway {
     fn mark_all_conflicts_resolved(&self) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
             service.mark_all_conflicts_resolved()?;
+            Ok(service.load_repo(COMMIT_LOAD_LIMIT))
+        })
+    }
+
+    fn resolve_modify_delete_conflict(
+        &self,
+        path: &str,
+        choice: ModifyDeleteConflictChoice,
+    ) -> Result<RepoSnapshot, GitError> {
+        self.with_service(|service| {
+            service.resolve_modify_delete_conflict(path, choice)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }

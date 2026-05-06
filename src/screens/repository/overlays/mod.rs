@@ -10,7 +10,7 @@ use iced::{Element, Task};
 use crate::{
     core::TabId,
     message::Message,
-    services::{presenter::Presenter, SharedRepositoryGateway},
+    services::{presenter::Presenter, ModifyDeleteConflictChoice, SharedRepositoryGateway},
     theme,
     work::git_write_work,
 };
@@ -28,6 +28,7 @@ pub(crate) mod delete_branch;
 pub(crate) mod delete_tag;
 pub(crate) mod discard;
 pub(crate) mod force_push;
+pub(crate) mod modify_delete_conflict;
 pub(crate) mod push_behind;
 pub(crate) mod remove_worktree;
 pub(crate) mod rename_branch;
@@ -61,6 +62,7 @@ pub(crate) enum ActiveDialog {
     CherryPick(cherry_pick_confirm::State),
     Revert(revert_confirm::State),
     RemoveWorktree(remove_worktree::State),
+    ModifyDeleteConflict(modify_delete_conflict::State),
 }
 
 impl ActiveDialog {
@@ -252,6 +254,47 @@ impl OverlayManager {
         spawn_discard_task(target, ctx)
     }
 
+    fn resolve_modify_delete_conflict(
+        &mut self,
+        choice: ModifyDeleteConflictChoice,
+        ctx: DialogCtx<'_>,
+    ) -> DialogDispatch {
+        let Some(ActiveDialog::ModifyDeleteConflict(state)) = self.active.as_ref() else {
+            return DialogDispatch::Task(Task::none());
+        };
+        let path = state.path.clone();
+        let Some(operation_id) = ctx
+            .operations
+            .begin_write_kind(OperationKind::ResolveConflict)
+        else {
+            return DialogDispatch::Task(Task::none());
+        };
+        self.close();
+        let DialogCtx {
+            repository,
+            presenter,
+            tab_id,
+            ..
+        } = ctx;
+        let task = Task::perform(
+            git_write_work(move || {
+                repository
+                    .resolve_modify_delete_conflict(&path, choice)
+                    .map(|s| presenter.project_loaded(s))
+            }),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::DirtyIndexChanged {
+                        operation_id: Some(operation_id),
+                        result,
+                    },
+                )
+            },
+        );
+        DialogDispatch::Task(task)
+    }
+
     /// Checks whether deleting a branch is safe (can't delete HEAD locally).
     pub(crate) fn can_confirm_branch_delete(
         &self,
@@ -292,6 +335,7 @@ impl OverlayManager {
             ActiveDialog::CherryPick(_) => cherry_pick_confirm::view(slide),
             ActiveDialog::Revert(_) => revert_confirm::view(slide),
             ActiveDialog::RemoveWorktree(state) => remove_worktree::view(state, slide),
+            ActiveDialog::ModifyDeleteConflict(_) => modify_delete_conflict::view(slide),
             // AddRemote and CreateWorktree render as side panels via overlay_layers(),
             // not in the toolbar row.
             ActiveDialog::AddRemote(_) => return main_bar,
@@ -399,6 +443,19 @@ impl OverlayManager {
                 DialogDispatch::Task(task)
             }
             OverlayPanelAction::ConflictCancel => {
+                self.close();
+                DialogDispatch::CancelCloseFocus
+            }
+            OverlayPanelAction::ModifyDeleteKeepModified => {
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepModified, ctx)
+            }
+            OverlayPanelAction::ModifyDeleteDeleteFile => {
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::DeleteFile, ctx)
+            }
+            OverlayPanelAction::ModifyDeleteKeepBase => {
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepBase, ctx)
+            }
+            OverlayPanelAction::ModifyDeleteCancel => {
                 self.close();
                 DialogDispatch::CancelCloseFocus
             }

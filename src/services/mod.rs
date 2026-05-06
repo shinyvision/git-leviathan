@@ -21,8 +21,9 @@ pub use git::working_tree_diff::{
 pub use git::{
     kill_running_git_processes, load_commit_diff, load_merged_commit_diff,
     load_merged_commit_file_diff, BranchMergeOutcome, CherryPickOutcome, CommitDiffResult,
-    ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult, PushOutcome,
-    RemoteCheckoutOutcome, ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,
+    ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult,
+    ModifyDeleteConflict, ModifyDeleteConflictChoice, PushOutcome, RemoteCheckoutOutcome,
+    ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,
 };
 pub use git_detect::{detect as detect_git, resolve_primary_and_active, GitStatus};
 pub use git_error::GitError;
