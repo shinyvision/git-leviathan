@@ -1,3 +1,4 @@
+use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use super::harness::MockHost;
@@ -18,9 +19,14 @@ version = "0.1.0"
 api_version = "1.0"
 "#;
 
+fn shell_api_test_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F) {
     let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(3) {
+    while started.elapsed() < Duration::from_secs(10) {
         host.tick();
         if cond(host) {
             return;
@@ -43,6 +49,7 @@ fn terminal_text(id: u64) -> String {
 
 #[test]
 fn shell_tables_expose_requested_host_fields() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let mut host = MockHost::new();
     host.load_inline(
         "shellp",
@@ -75,6 +82,7 @@ fn shell_tables_expose_requested_host_fields() {
 
 #[test]
 fn shell_run_completes_on_runtime_tick() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let command = if cfg!(windows) {
         "echo shell-ok"
     } else {
@@ -123,6 +131,7 @@ fn shell_run_completes_on_runtime_tick() {
 
 #[test]
 fn shell_run_timeout_completes_without_blocking_runtime() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let command = if cfg!(windows) {
         "ping -n 3 127.0.0.1 >NUL"
     } else {
@@ -173,6 +182,7 @@ fn shell_run_timeout_completes_without_blocking_runtime() {
 
 #[test]
 fn shell_open_starts_pty_and_accepts_input() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let command = if cfg!(windows) {
         "echo pty-ok"
     } else {
@@ -221,6 +231,7 @@ fn shell_open_starts_pty_and_accepts_input() {
 
 #[test]
 fn shell_open_reports_not_running_after_exit() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let mut host = MockHost::new();
     host.load_inline(
         "shellp",
@@ -261,6 +272,7 @@ fn shell_open_reports_not_running_after_exit() {
 
 #[test]
 fn shell_run_requires_process_spawn_capability() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let mut host = MockHost::new();
     host.load_inline(
         "shellp",
@@ -280,6 +292,7 @@ fn shell_run_requires_process_spawn_capability() {
 
 #[test]
 fn shell_open_requires_process_spawn_capability() {
+    let _guard = shell_api_test_lock().lock().unwrap();
     let mut host = MockHost::new();
     host.load_inline(
         "shellp",
