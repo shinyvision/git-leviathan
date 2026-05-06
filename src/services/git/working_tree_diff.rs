@@ -215,7 +215,23 @@ pub(super) fn load_commit_file_diff(
     commit_hash: &str,
     file_path: &str,
 ) -> Result<WorkingTreeDiffResult, GitError> {
-    let repo = &service.repo;
+    load_commit_file_diff_from_repo(&service.repo, commit_hash, file_path)
+}
+
+pub(super) fn load_commit_file_diff_standalone(
+    repo_path: &str,
+    commit_hash: &str,
+    file_path: &str,
+) -> Result<WorkingTreeDiffResult, GitError> {
+    let repo = git2::Repository::open(repo_path).map_err(|e| wrap_git2_error("open repo", e))?;
+    load_commit_file_diff_from_repo(&repo, commit_hash, file_path)
+}
+
+fn load_commit_file_diff_from_repo(
+    repo: &git2::Repository,
+    commit_hash: &str,
+    file_path: &str,
+) -> Result<WorkingTreeDiffResult, GitError> {
     let mut opts = git2::DiffOptions::new();
     opts.pathspec(file_path);
 
@@ -230,6 +246,19 @@ pub(super) fn load_commit_file_diff(
         .diff_tree_to_tree(parent_tree.as_ref(), tree.as_ref(), Some(&mut opts))
         .map_err(|e| wrap_git2_error("create commit diff", e))?;
 
+    if diff.deltas().len() == 0 {
+        if let Some(untracked_tree) = stash_untracked_tree_for_path(repo, &commit, file_path) {
+            let mut untracked_opts = git2::DiffOptions::new();
+            untracked_opts.pathspec(file_path);
+            let untracked_diff = repo
+                .diff_tree_to_tree(None, Some(&untracked_tree), Some(&mut untracked_opts))
+                .map_err(|e| wrap_git2_error("create stash untracked file diff", e))?;
+            return process_git_diff(untracked_diff, file_path, FileContent::missing, || {
+                content_from_tree(repo, Some(&untracked_tree), file_path)
+            });
+        }
+    }
+
     process_git_diff(
         diff,
         file_path,
@@ -238,32 +267,17 @@ pub(super) fn load_commit_file_diff(
     )
 }
 
-pub(super) fn load_commit_file_diff_standalone(
-    repo_path: &str,
-    commit_hash: &str,
+fn stash_untracked_tree_for_path<'repo>(
+    repo: &'repo git2::Repository,
+    commit: &git2::Commit<'repo>,
     file_path: &str,
-) -> Result<WorkingTreeDiffResult, GitError> {
-    let repo = git2::Repository::open(repo_path).map_err(|e| wrap_git2_error("open repo", e))?;
-    let mut opts = git2::DiffOptions::new();
-    opts.pathspec(file_path);
-
-    let commit_oid = git2::Oid::from_str(commit_hash)
-        .map_err(|e| GitError::Other(format!("invalid commit hash: {e}")))?;
-    let commit = find_commit_or(&repo, commit_oid)?;
-
-    let tree = commit.tree().ok();
-    let parent_tree = commit.parent(0).ok().and_then(|p| p.tree().ok());
-
-    let diff = repo
-        .diff_tree_to_tree(parent_tree.as_ref(), tree.as_ref(), Some(&mut opts))
-        .map_err(|e| wrap_git2_error("create commit diff", e))?;
-
-    process_git_diff(
-        diff,
-        file_path,
-        || content_from_tree(&repo, parent_tree.as_ref(), file_path),
-        || content_from_tree(&repo, tree.as_ref(), file_path),
-    )
+) -> Option<git2::Tree<'repo>> {
+    if !super::diff::is_current_stash_commit(repo, commit.id()) {
+        return None;
+    }
+    let tree = commit.parent(2).ok().and_then(|p| p.tree().ok())?;
+    tree.get_path(Path::new(file_path)).ok()?;
+    Some(tree)
 }
 
 pub(super) fn process_git_diff<G, H>(
@@ -808,7 +822,7 @@ mod tests {
         MAX_INTRA_LINE_DIFF_PAIRS,
     };
     use crate::services::{
-        test_support::{commit_all, init_test_repo, write_file},
+        test_support::{commit_all, configure_test_signature, init_test_repo, write_file},
         GitService,
     };
 
@@ -1147,5 +1161,31 @@ mod tests {
             .new_file_content
             .as_deref()
             .is_some_and(|content| content.contains("newName")));
+    }
+
+    #[test]
+    fn stash_commit_file_diff_loads_untracked_parent_file() {
+        let (temp_repo, repo) = init_test_repo("stash_untracked_file_diff");
+        configure_test_signature(&repo);
+        write_file(&temp_repo.path, "untracked.txt", "new\ncontent\n");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service.create_stash().expect("failed to create stash");
+        let stash = service
+            .load_repo(super::super::COMMIT_LOAD_LIMIT)
+            .stashes
+            .into_iter()
+            .next()
+            .expect("stash should exist");
+
+        let result = load_commit_file_diff(&service, &stash.hash, "untracked.txt")
+            .expect("stash untracked file diff should load");
+
+        assert!(result.old_file_content.is_none());
+        assert_eq!(result.new_file_content.as_deref(), Some("new\ncontent\n"));
+        assert!(result
+            .lines
+            .iter()
+            .any(|line| line.line_type == DiffLineType::Addition && line.content == "new"));
     }
 }

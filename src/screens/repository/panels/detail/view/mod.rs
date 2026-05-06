@@ -266,21 +266,50 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
         .map(|d| d.modified_count)
         .unwrap_or(0);
     let diff_added = screen.commit_diff_state.map(|d| d.added_count).unwrap_or(0);
-    let stats_row = row![
-        assets::sidebar_icon(assets::PENCIL, theme::TEXT_SECONDARY),
-        text(format!("{} modified", diff_modified))
-            .size(theme::FONT_SM)
-            .style(style::secondary_text),
-        text(format!("  + {} added", diff_added))
-            .size(theme::FONT_SM)
-            .style(|_: &Theme| text::Style {
-                color: Some(theme::ACCENT_GREEN)
-            }),
-        horizontal_space(),
-    ]
-    .padding(Padding::from([6, 10]))
-    .spacing(4)
-    .align_y(iced::Alignment::Center);
+    let diff_deleted = screen
+        .commit_diff_state
+        .map(|d| d.deleted_count)
+        .unwrap_or(0);
+
+    let mut stats_items: Vec<Element<Message>> = Vec::new();
+    if diff_modified > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::PENCIL, theme::ACCENT_ORANGE),
+                text(format!("{} modified", diff_modified)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    if diff_added > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::PLUS, theme::ACCENT_GREEN),
+                text(format!("{} added", diff_added)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    if diff_deleted > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::MINUS, theme::ACCENT_RED),
+                text(format!("{} removed", diff_deleted)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    stats_items.push(horizontal_space().into());
+    let stats_row = row(stats_items)
+        .padding(Padding::from([6, 10]))
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
 
     let is_path = screen.file_view == FileView::Path;
 

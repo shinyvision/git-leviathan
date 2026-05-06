@@ -175,41 +175,150 @@ pub(super) fn diff_stats(
         Err(_) => return (0, 0, 0, vec![]),
     };
 
-    let mut modified_count = 0u32;
-    let mut added_count = 0u32;
-    let mut deleted_count = 0u32;
-    let mut files: Vec<ChangedFile> = Vec::new();
+    let mut stats = DiffStats::default();
+    stats.add_diff(&diff);
 
-    let _ = diff.foreach(
-        &mut |delta, _progress| {
-            let path = delta
-                .new_file()
-                .path()
-                .or_else(|| delta.old_file().path())
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default();
+    if is_current_stash_commit(repo, commit.id()) {
+        if let Some(untracked_tree) = commit.parent(2).ok().and_then(|p| p.tree().ok()) {
+            if let Ok(untracked_diff) = repo.diff_tree_to_tree(None, Some(&untracked_tree), None) {
+                stats.add_diff(&untracked_diff);
+            }
+        }
+    }
 
-            let kind = match delta.status() {
-                git2::Delta::Added => {
-                    added_count += 1;
-                    ChangeKind::Added
-                }
-                git2::Delta::Deleted => {
-                    deleted_count += 1;
-                    ChangeKind::Deleted
-                }
-                _ => {
-                    modified_count += 1;
-                    ChangeKind::Modified
-                }
-            };
-            files.push(ChangedFile { path, kind });
-            true
+    stats.finish()
+}
+
+#[derive(Default)]
+struct DiffStats {
+    modified_count: u32,
+    added_count: u32,
+    deleted_count: u32,
+    files: Vec<ChangedFile>,
+}
+
+impl DiffStats {
+    fn add_diff(&mut self, diff: &git2::Diff<'_>) {
+        let _ = diff.foreach(
+            &mut |delta, _progress| {
+                self.add_delta(delta);
+                true
+            },
+            None,
+            None,
+            None,
+        );
+    }
+
+    fn add_delta(&mut self, delta: git2::DiffDelta<'_>) {
+        let path = delta
+            .new_file()
+            .path()
+            .or_else(|| delta.old_file().path())
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        let kind = match delta.status() {
+            git2::Delta::Added => {
+                self.added_count += 1;
+                ChangeKind::Added
+            }
+            git2::Delta::Deleted => {
+                self.deleted_count += 1;
+                ChangeKind::Deleted
+            }
+            _ => {
+                self.modified_count += 1;
+                ChangeKind::Modified
+            }
+        };
+        self.files.push(ChangedFile { path, kind });
+    }
+
+    fn finish(mut self) -> (u32, u32, u32, Vec<ChangedFile>) {
+        self.files.sort_by(|a, b| a.path.cmp(&b.path));
+        (
+            self.modified_count,
+            self.added_count,
+            self.deleted_count,
+            self.files,
+        )
+    }
+}
+
+pub(super) fn is_current_stash_commit(repo: &Repository, oid: git2::Oid) -> bool {
+    repo.reflog("refs/stash")
+        .ok()
+        .is_some_and(|reflog| reflog.iter().any(|entry| entry.id_new() == oid))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::Path};
+
+    use super::load_commit_diff;
+    use crate::{
+        core::ChangeKind,
+        services::{
+            test_support::{commit_all, configure_test_signature, init_test_repo, write_file},
+            GitService,
         },
-        None,
-        None,
-        None,
-    );
+    };
 
-    (modified_count, added_count, deleted_count, files)
+    fn kind_for(files: &[crate::core::ChangedFile], path: &str) -> Option<ChangeKind> {
+        files
+            .iter()
+            .find(|file| file.path == path)
+            .map(|file| file.kind.clone())
+    }
+
+    #[test]
+    fn stash_diff_includes_tracked_and_untracked_file_kinds() {
+        let (temp_repo, repo) = init_test_repo("stash_diff_file_kinds");
+        configure_test_signature(&repo);
+        write_file(&temp_repo.path, "deleted.txt", "delete me\n");
+        commit_all(&repo, "add deleted fixture");
+
+        write_file(&temp_repo.path, "tracked.txt", "changed\n");
+        fs::remove_file(temp_repo.path.join("deleted.txt")).expect("failed to delete fixture");
+        write_file(&temp_repo.path, "staged_added.txt", "staged\n");
+        write_file(&temp_repo.path, "untracked.txt", "untracked\n");
+        let mut index = repo.index().expect("failed to open index");
+        index
+            .add_path(Path::new("staged_added.txt"))
+            .expect("failed to stage added file");
+        index.write().expect("failed to write index");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service.create_stash().expect("failed to create stash");
+        let stash = service
+            .load_repo(super::super::COMMIT_LOAD_LIMIT)
+            .stashes
+            .into_iter()
+            .next()
+            .expect("stash should exist");
+
+        let result =
+            load_commit_diff(temp_repo.path_str(), 0, &stash.hash).expect("stash diff loads");
+
+        assert_eq!(result.modified_count, 1);
+        assert_eq!(result.added_count, 2);
+        assert_eq!(result.deleted_count, 1);
+        assert_eq!(
+            kind_for(&result.files, "tracked.txt"),
+            Some(ChangeKind::Modified)
+        );
+        assert_eq!(
+            kind_for(&result.files, "deleted.txt"),
+            Some(ChangeKind::Deleted)
+        );
+        assert_eq!(
+            kind_for(&result.files, "staged_added.txt"),
+            Some(ChangeKind::Added)
+        );
+        assert_eq!(
+            kind_for(&result.files, "untracked.txt"),
+            Some(ChangeKind::Added)
+        );
+    }
 }

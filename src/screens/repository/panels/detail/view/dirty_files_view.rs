@@ -291,25 +291,55 @@ fn dirty_stats_row<'a>(
 ) -> Element<'a, Message> {
     let modified = commit_diff_state.map(|d| d.modified_count).unwrap_or(0);
     let added = commit_diff_state.map(|d| d.added_count).unwrap_or(0);
-    row![
-        assets::sidebar_icon(assets::PENCIL, theme::TEXT_SECONDARY),
-        text(format!("{} modified", modified))
-            .size(theme::FONT_SM)
-            .style(style::secondary_text),
-        text(format!("  + {} added", added))
-            .size(theme::FONT_SM)
-            .style(|_: &iced::Theme| text::Style {
-                color: Some(theme::ACCENT_GREEN),
-            }),
-        horizontal_space(),
+    let deleted = commit_diff_state.map(|d| d.deleted_count).unwrap_or(0);
+
+    let mut stats_items: Vec<Element<Message>> = Vec::new();
+    if modified > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::PENCIL, theme::ACCENT_ORANGE),
+                text(format!("{} modified", modified)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    if added > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::PLUS, theme::ACCENT_GREEN),
+                text(format!("{} added", added)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    if deleted > 0 {
+        stats_items.push(
+            row![
+                assets::sidebar_icon(assets::MINUS, theme::ACCENT_RED),
+                text(format!("{} removed", deleted)).size(theme::FONT_SM),
+            ]
+            .spacing(4)
+            .align_y(iced::Alignment::Center)
+            .into(),
+        );
+    }
+    stats_items.push(horizontal_space().into());
+    stats_items.push(
         text(operation_label.unwrap_or(""))
             .size(theme::FONT_SM)
-            .style(style::dim_text),
-    ]
-    .padding(Padding::from([6, 10]))
-    .spacing(4)
-    .align_y(iced::Alignment::Center)
-    .into()
+            .style(style::dim_text)
+            .into(),
+    );
+
+    row(stats_items)
+        .padding(Padding::from([6, 10]))
+        .spacing(10)
+        .align_y(iced::Alignment::Center)
+        .into()
 }
 
 fn dirty_file_list<'a>(
