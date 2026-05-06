@@ -1,4 +1,4 @@
-use crate::services::{CherryPickOutcome, GitError, RepoSnapshot, ResetMode};
+use crate::services::{CherryPickOutcome, GitError, RepoSnapshot, ResetMode, RevertOutcome};
 
 use super::read::RepoRead;
 
@@ -15,5 +15,10 @@ pub trait CommitOps: RepoRead {
         commit_hash: String,
         immediate_commit: bool,
     ) -> Result<CherryPickOutcome, GitError>;
+    fn revert_commit(
+        &self,
+        commit_hash: String,
+        immediate_commit: bool,
+    ) -> Result<RevertOutcome, GitError>;
     fn reword_commit(&self, hash: String, new_message: String) -> Result<RepoSnapshot, GitError>;
 }

@@ -627,6 +627,14 @@ pub fn commit_context_menu(
                     ))),
                 ));
             }
+            items.push(context_menu_item(
+                "Revert commit",
+                Some(Message::repo(RepositoryMessage::Center(
+                    CenterAction::RevertCommitRequested {
+                        commit_hash: commit_hash.clone(),
+                    },
+                ))),
+            ));
             if state.selected_indices.len() > 1 {
                 items.push(context_menu_item(
                     format!("Squash {} commits", state.selected_indices.len()),
@@ -695,6 +703,7 @@ pub fn commit_context_menu_width(
         if !is_head_commit {
             v.push("Cherry pick commit".into());
         }
+        v.push("Revert commit".into());
         if state.selected_indices.len() > 1 {
             v.push(format!("Squash {} commits", state.selected_indices.len()));
         }

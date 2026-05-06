@@ -10,7 +10,8 @@ use crate::{
     },
     view_model::{
         LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
-        LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+        LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedRevertOutcome,
+        LoadedStashApplyOutcome,
     },
 };
 
@@ -120,6 +121,10 @@ pub enum RepositoryMessage {
     CherryPickCompleted {
         operation_id: Option<OperationId>,
         result: Result<LoadedCherryPickOutcome, GitError>,
+    },
+    RevertCompleted {
+        operation_id: Option<OperationId>,
+        result: Result<LoadedRevertOutcome, GitError>,
     },
     StashApplyCompleted {
         operation_id: Option<OperationId>,
@@ -282,6 +287,8 @@ fn overlay_write_intent(action: &OverlayPanelAction) -> Option<GitWriteIntent> {
         | OverlayPanelAction::DeleteTagConfirmed
         | OverlayPanelAction::CherryPickImmediateConfirmed
         | OverlayPanelAction::CherryPickStagedConfirmed
+        | OverlayPanelAction::RevertImmediateConfirmed
+        | OverlayPanelAction::RevertInPlaceConfirmed
         | OverlayPanelAction::CreateWorktreeConfirmed
         | OverlayPanelAction::WorktreeRemoveConfirmed => Some(GitWriteIntent::Normal),
         _ => None,

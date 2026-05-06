@@ -62,6 +62,14 @@ pub enum LoadedCherryPickOutcome {
 }
 
 #[derive(Debug, Clone)]
+pub enum LoadedRevertOutcome {
+    Committed(LoadedRepo),
+    Applied(LoadedRepo),
+    RevertConflicted(LoadedRepo),
+    StashRestoreConflicted(LoadedRepo),
+}
+
+#[derive(Debug, Clone)]
 pub enum LoadedStashApplyOutcome {
     Applied(LoadedRepo),
     Conflicted(LoadedRepo),

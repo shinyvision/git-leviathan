@@ -4,7 +4,7 @@ use crate::{
     message::Message,
     services::GitError,
     toast::ToastData,
-    view_model::{LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedRepo},
+    view_model::{LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedRepo, LoadedRevertOutcome},
 };
 
 use super::super::overlays::ActiveDialog;
@@ -157,6 +157,45 @@ pub(super) fn on_cherry_pick_completed(
             eprintln!("git_leviathan: cherry-pick failed: {}", e);
             Task::done(Message::show_toast(ToastData::error(
                 "Cherry pick Failed",
+                e.to_string(),
+            )))
+        }
+    };
+    super::helpers::pending_reload_task_after_write(screen, task)
+}
+
+pub(super) fn on_revert_completed(
+    screen: &mut RepositoryScreen,
+    operation_id: Option<OperationId>,
+    result: Result<LoadedRevertOutcome, GitError>,
+) -> Task<Message> {
+    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
+        return Task::none();
+    }
+    let task = match result {
+        Ok(LoadedRevertOutcome::Committed(loaded)) | Ok(LoadedRevertOutcome::Applied(loaded)) => {
+            super::helpers::handle_repo_loaded(screen, loaded)
+        }
+        Ok(LoadedRevertOutcome::RevertConflicted(loaded)) => {
+            let load_task = super::helpers::handle_repo_loaded(screen, loaded);
+            let toast_task = Task::done(Message::show_toast(ToastData::error(
+                "Revert Failed",
+                "There are merge conflicts that need to be resolved",
+            )));
+            Task::batch(vec![load_task, toast_task])
+        }
+        Ok(LoadedRevertOutcome::StashRestoreConflicted(loaded)) => {
+            let load_task = super::helpers::handle_repo_loaded(screen, loaded);
+            let toast_task = Task::done(Message::show_toast(ToastData::error(
+                "Revert Completed With Conflicts",
+                "Restoring stashed changes caused conflicts that need to be resolved",
+            )));
+            Task::batch(vec![load_task, toast_task])
+        }
+        Err(e) => {
+            eprintln!("git_leviathan: revert failed: {}", e);
+            Task::done(Message::show_toast(ToastData::error(
+                "Revert Failed",
                 e.to_string(),
             )))
         }

@@ -1,10 +1,11 @@
 use crate::services::{
     BranchMergeOutcome, CherryPickOutcome, PushGatewayOutcome, RefsSnapshot, RemoteCheckoutOutcome,
-    RepoSnapshot, StashApplyOutcome,
+    RepoSnapshot, RevertOutcome, StashApplyOutcome,
 };
 use crate::view_model::{
     LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
-    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedRevertOutcome,
+    LoadedStashApplyOutcome,
 };
 
 use super::projection;
@@ -81,6 +82,23 @@ impl Presenter for DefaultPresenter {
             }
             CherryPickOutcome::Conflicted(s) => {
                 LoadedCherryPickOutcome::Conflicted(projection::project_loaded(s))
+            }
+        }
+    }
+
+    fn project_revert(&self, outcome: RevertOutcome) -> LoadedRevertOutcome {
+        match outcome {
+            RevertOutcome::Committed(s) => {
+                LoadedRevertOutcome::Committed(projection::project_loaded(s))
+            }
+            RevertOutcome::Applied(s) => {
+                LoadedRevertOutcome::Applied(projection::project_loaded(s))
+            }
+            RevertOutcome::RevertConflicted(s) => {
+                LoadedRevertOutcome::RevertConflicted(projection::project_loaded(s))
+            }
+            RevertOutcome::StashRestoreConflicted(s) => {
+                LoadedRevertOutcome::StashRestoreConflicted(projection::project_loaded(s))
             }
         }
     }

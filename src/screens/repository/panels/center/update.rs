@@ -15,7 +15,7 @@ use crate::{
 use super::super::super::{
     overlays::{
         cherry_pick_confirm, create_branch, create_tag, delete_branch, delete_tag, rename_branch,
-        stash_delete, ActiveDialog,
+        revert_confirm, stash_delete, ActiveDialog,
     },
     panel_messages::CenterAction,
     state::{CommitContextMenuState, ContextMenuState},
@@ -712,6 +712,12 @@ pub(in crate::screens::repository) fn update(
                 .open(ActiveDialog::CherryPick(cherry_pick_confirm::State {
                     commit_hash,
                 }));
+            panel.restore_center_list_scroll()
+        }
+        CenterAction::RevertCommitRequested { commit_hash } => {
+            ctx.data.branch_popout.close_context_menu();
+            ctx.overlay_manager
+                .open(ActiveDialog::Revert(revert_confirm::State { commit_hash }));
             panel.restore_center_list_scroll()
         }
         CenterAction::PushTagRequested {

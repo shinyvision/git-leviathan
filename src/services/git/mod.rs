@@ -10,6 +10,7 @@ mod push;
 mod rebase;
 mod refs;
 mod remotes;
+mod revert;
 mod reword;
 mod squash;
 mod stashes;
@@ -52,6 +53,14 @@ pub enum BranchMergeOutcome {
 pub enum CherryPickOutcome {
     Committed(RepoSnapshot),
     Conflicted(RepoSnapshot),
+}
+
+#[derive(Debug, Clone)]
+pub enum RevertOutcome {
+    Committed(RepoSnapshot),
+    Applied(RepoSnapshot),
+    RevertConflicted(RepoSnapshot),
+    StashRestoreConflicted(RepoSnapshot),
 }
 
 #[derive(Debug, Clone)]
@@ -405,6 +414,23 @@ impl GitService {
         Ok(match status {
             cherry_pick::CherryPickStatus::Committed => CherryPickOutcome::Committed(snapshot),
             cherry_pick::CherryPickStatus::Conflicted => CherryPickOutcome::Conflicted(snapshot),
+        })
+    }
+
+    pub fn revert_commit(
+        &mut self,
+        commit_hash: &str,
+        immediate_commit: bool,
+    ) -> Result<RevertOutcome, GitError> {
+        let status = revert::revert_commit(self, commit_hash, immediate_commit)?;
+        let snapshot = self.load_repo(COMMIT_LOAD_LIMIT);
+        Ok(match status {
+            revert::RevertStatus::Committed => RevertOutcome::Committed(snapshot),
+            revert::RevertStatus::Applied => RevertOutcome::Applied(snapshot),
+            revert::RevertStatus::RevertConflicted => RevertOutcome::RevertConflicted(snapshot),
+            revert::RevertStatus::StashRestoreConflicted => {
+                RevertOutcome::StashRestoreConflicted(snapshot)
+            }
         })
     }
 

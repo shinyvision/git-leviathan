@@ -190,6 +190,10 @@ pub(in crate::screens::repository) fn dispatch_result(
             operation_id,
             result,
         } => commit_ops::on_cherry_pick_completed(screen, operation_id, result),
+        RepositoryMessage::RevertCompleted {
+            operation_id,
+            result,
+        } => commit_ops::on_revert_completed(screen, operation_id, result),
         RepositoryMessage::ConflictResolutionSaved {
             operation_id,
             result,

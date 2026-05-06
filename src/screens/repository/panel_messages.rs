@@ -81,6 +81,9 @@ pub enum CenterAction {
     CherryPickRequested {
         commit_hash: String,
     },
+    RevertCommitRequested {
+        commit_hash: String,
+    },
     StashCreateRequested,
     StashApplyRequested {
         stash_index: usize,
@@ -350,6 +353,11 @@ pub enum OverlayPanelAction {
     /// Cherry pick: apply changes without committing.
     CherryPickStagedConfirmed,
     CherryPickCanceled,
+    /// Revert: immediately commit.
+    RevertImmediateConfirmed,
+    /// Revert: apply changes without committing.
+    RevertInPlaceConfirmed,
+    RevertCanceled,
     CreateWorktreeOpen {
         available_refs: Vec<super::overlays::create_worktree::RefChoice>,
         default_dir_prefix: String,

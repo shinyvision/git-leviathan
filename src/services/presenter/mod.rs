@@ -10,11 +10,12 @@ pub mod signature;
 
 use crate::services::{
     BranchMergeOutcome, CherryPickOutcome, PushGatewayOutcome, RefsSnapshot, RemoteCheckoutOutcome,
-    RepoSnapshot, StashApplyOutcome,
+    RepoSnapshot, RevertOutcome, StashApplyOutcome,
 };
 use crate::view_model::{
     LoadedBranchMergeOutcome, LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedPushOutcome,
-    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedStashApplyOutcome,
+    LoadedRefs, LoadedRemoteCheckoutOutcome, LoadedRepo, LoadedRevertOutcome,
+    LoadedStashApplyOutcome,
 };
 
 pub use default::DefaultPresenter;
@@ -30,6 +31,7 @@ pub trait Presenter: Send + Sync + 'static {
     ) -> LoadedRemoteCheckoutOutcome;
     fn project_branch_merge(&self, outcome: BranchMergeOutcome) -> LoadedBranchMergeOutcome;
     fn project_cherry_pick(&self, outcome: CherryPickOutcome) -> LoadedCherryPickOutcome;
+    fn project_revert(&self, outcome: RevertOutcome) -> LoadedRevertOutcome;
     fn project_push(&self, outcome: PushGatewayOutcome) -> LoadedPushOutcome;
     fn project_stash_apply(&self, outcome: StashApplyOutcome) -> LoadedStashApplyOutcome;
 }

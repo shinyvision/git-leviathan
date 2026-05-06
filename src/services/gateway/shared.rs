@@ -5,8 +5,8 @@ use crate::services::{
     load_commit_diff, load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome,
     CherryPickOutcome, CommitDiffResult, ConflictResolutionResult, DirtyDiffSignature,
     DirtySnapshot, GitError, GitService, MergedCommitDiffResult, PushOutcome, RefsSnapshot,
-    RemoteCheckoutOutcome, RepoSnapshot, ResetMode, StashApplyOutcome, WorkingTreeDiffResult,
-    WorktreeInfo, COMMIT_LOAD_LIMIT,
+    RemoteCheckoutOutcome, RepoSnapshot, ResetMode, RevertOutcome, StashApplyOutcome,
+    WorkingTreeDiffResult, WorktreeInfo, COMMIT_LOAD_LIMIT,
 };
 
 use super::branch_ops::BranchOps;
@@ -461,6 +461,14 @@ impl CommitOps for GitRepositoryGateway {
         immediate_commit: bool,
     ) -> Result<CherryPickOutcome, GitError> {
         self.with_service(|service| service.cherry_pick_commit(&commit_hash, immediate_commit))
+    }
+
+    fn revert_commit(
+        &self,
+        commit_hash: String,
+        immediate_commit: bool,
+    ) -> Result<RevertOutcome, GitError> {
+        self.with_service(|service| service.revert_commit(&commit_hash, immediate_commit))
     }
 
     fn reword_commit(&self, hash: String, new_message: String) -> Result<RepoSnapshot, GitError> {

@@ -31,6 +31,7 @@ pub(crate) mod force_push;
 pub(crate) mod push_behind;
 pub(crate) mod remove_worktree;
 pub(crate) mod rename_branch;
+pub(crate) mod revert_confirm;
 pub(crate) mod set_upstream;
 pub(crate) mod stash_delete;
 pub(crate) mod validation;
@@ -58,6 +59,7 @@ pub(crate) enum ActiveDialog {
     CreateTagHere(create_tag::State),
     DeleteTag(delete_tag::State),
     CherryPick(cherry_pick_confirm::State),
+    Revert(revert_confirm::State),
     RemoveWorktree(remove_worktree::State),
 }
 
@@ -288,6 +290,7 @@ impl OverlayManager {
             ActiveDialog::CreateTagHere(state) => create_tag::view(state, slide),
             ActiveDialog::DeleteTag(state) => delete_tag::view(state, slide),
             ActiveDialog::CherryPick(_) => cherry_pick_confirm::view(slide),
+            ActiveDialog::Revert(_) => revert_confirm::view(slide),
             ActiveDialog::RemoveWorktree(state) => remove_worktree::view(state, slide),
             // AddRemote and CreateWorktree render as side panels via overlay_layers(),
             // not in the toolbar row.
@@ -934,6 +937,26 @@ impl OverlayManager {
                 self.close();
                 DialogDispatch::CancelCloseFocus
             }
+            OverlayPanelAction::RevertImmediateConfirmed => {
+                let Some(ActiveDialog::Revert(state)) = self.active.as_ref() else {
+                    return DialogDispatch::Task(Task::none());
+                };
+                let commit_hash = state.commit_hash.clone();
+                self.close();
+                DialogDispatch::Task(spawn_revert_task(commit_hash, true, ctx))
+            }
+            OverlayPanelAction::RevertInPlaceConfirmed => {
+                let Some(ActiveDialog::Revert(state)) = self.active.as_ref() else {
+                    return DialogDispatch::Task(Task::none());
+                };
+                let commit_hash = state.commit_hash.clone();
+                self.close();
+                DialogDispatch::Task(spawn_revert_task(commit_hash, false, ctx))
+            }
+            OverlayPanelAction::RevertCanceled => {
+                self.close();
+                DialogDispatch::CancelCloseFocus
+            }
             OverlayPanelAction::CreateWorktreeOpen {
                 available_refs,
                 default_dir_prefix,
@@ -1163,6 +1186,34 @@ fn spawn_cherry_pick_task(
             Message::tab(
                 tab_id,
                 RepositoryMessage::CherryPickCompleted {
+                    operation_id: Some(operation_id),
+                    result,
+                },
+            )
+        },
+    )
+}
+
+fn spawn_revert_task(commit_hash: String, commit_now: bool, ctx: DialogCtx<'_>) -> Task<Message> {
+    let Some(operation_id) = ctx.operations.begin_write() else {
+        return Task::none();
+    };
+    let DialogCtx {
+        repository,
+        presenter,
+        tab_id,
+        ..
+    } = ctx;
+    Task::perform(
+        git_write_work(move || {
+            repository
+                .revert_commit(commit_hash, commit_now)
+                .map(|o| presenter.project_revert(o))
+        }),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::RevertCompleted {
                     operation_id: Some(operation_id),
                     result,
                 },
