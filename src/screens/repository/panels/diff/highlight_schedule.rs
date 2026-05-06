@@ -95,7 +95,6 @@ impl std::ops::Deref for DiffHighlightMaterializeResult {
 #[derive(Debug, Default)]
 pub(in crate::screens::repository) struct DiffHighlightScheduler {
     generation: Option<u64>,
-    requested: BTreeSet<DiffHighlightReference>,
     last_batch: Vec<DiffLineHighlightRequest>,
     last_scroll_y: Option<f32>,
     last_stats: DiffHighlightScheduleStats,
@@ -104,7 +103,6 @@ pub(in crate::screens::repository) struct DiffHighlightScheduler {
 impl DiffHighlightScheduler {
     pub fn reset(&mut self) {
         self.generation = None;
-        self.requested.clear();
         self.last_batch.clear();
         self.last_scroll_y = None;
         self.last_stats = DiffHighlightScheduleStats::default();
@@ -115,12 +113,12 @@ impl DiffHighlightScheduler {
         generation: u64,
         document_ids: DiffHighlightDocumentIds,
         data: &DiffCanvasData,
+        provider: &CachedDiffHighlightProvider,
         scroll_y: f32,
         viewport_height: f32,
     ) -> &[DiffLineHighlightRequest] {
         if self.generation != Some(generation) {
             self.generation = Some(generation);
-            self.requested.clear();
             self.last_batch.clear();
             self.last_scroll_y = None;
         }
@@ -136,10 +134,12 @@ impl DiffHighlightScheduler {
             overscan_rows,
             request_budget,
         };
+        let mut seen = BTreeSet::new();
         self.last_batch = collect_visible_highlight_requests(
             data,
             &rows,
-            &mut self.requested,
+            provider,
+            &mut seen,
             request_budget,
             direction,
         )
@@ -188,22 +188,23 @@ fn highlight_request_budget(visible_rows: usize) -> usize {
 fn collect_visible_highlight_requests(
     data: &DiffCanvasData,
     rows: &VisibleRowRange,
-    requested: &mut BTreeSet<DiffHighlightReference>,
+    provider: &CachedDiffHighlightProvider,
+    seen: &mut BTreeSet<DiffHighlightReference>,
     budget: usize,
     direction: ScrollDirection,
 ) -> Vec<DiffHighlightReference> {
     let mut out = Vec::new();
-    collect_range(data, rows.visible.clone(), requested, budget, &mut out);
+    collect_range(data, rows.visible.clone(), provider, seen, budget, &mut out);
     let before = rows.with_overscan.start..rows.visible.start;
     let after = rows.visible.end..rows.with_overscan.end;
     match direction {
         ScrollDirection::Down => {
-            collect_range(data, after, requested, budget, &mut out);
-            collect_range(data, before, requested, budget, &mut out);
+            collect_range(data, after, provider, seen, budget, &mut out);
+            collect_range(data, before, provider, seen, budget, &mut out);
         }
         _ => {
-            collect_range(data, before, requested, budget, &mut out);
-            collect_range(data, after, requested, budget, &mut out);
+            collect_range(data, before, provider, seen, budget, &mut out);
+            collect_range(data, after, provider, seen, budget, &mut out);
         }
     }
     out
@@ -212,7 +213,8 @@ fn collect_visible_highlight_requests(
 fn collect_range(
     data: &DiffCanvasData,
     rows: Range<usize>,
-    requested: &mut BTreeSet<DiffHighlightReference>,
+    provider: &CachedDiffHighlightProvider,
+    seen: &mut BTreeSet<DiffHighlightReference>,
     budget: usize,
     out: &mut Vec<DiffHighlightReference>,
 ) {
@@ -227,7 +229,7 @@ fn collect_range(
         let Some(diff_row) = row.as_any().downcast_ref::<DiffRow>() else {
             continue;
         };
-        push_row_references(diff_row, requested, budget, out);
+        push_row_references(diff_row, provider, seen, budget, out);
         if out.len() >= budget {
             return;
         }
@@ -236,7 +238,8 @@ fn collect_range(
 
 fn push_row_references(
     row: &DiffRow,
-    requested: &mut BTreeSet<DiffHighlightReference>,
+    provider: &CachedDiffHighlightProvider,
+    seen: &mut BTreeSet<DiffHighlightReference>,
     budget: usize,
     out: &mut Vec<DiffHighlightReference>,
 ) {
@@ -252,21 +255,29 @@ fn push_row_references(
         return;
     };
 
-    push_reference(*source, requested, budget, out);
+    push_reference(*source, provider, seen, budget, out);
     if let Some(alternate) = alternate_source {
-        push_reference(*alternate, requested, budget, out);
+        push_reference(*alternate, provider, seen, budget, out);
     }
 }
 
 fn push_reference(
     reference: DiffHighlightReference,
-    requested: &mut BTreeSet<DiffHighlightReference>,
+    provider: &CachedDiffHighlightProvider,
+    seen: &mut BTreeSet<DiffHighlightReference>,
     budget: usize,
     out: &mut Vec<DiffHighlightReference>,
 ) {
-    if out.len() < budget && requested.insert(reference) {
-        out.push(reference);
+    if out.len() >= budget {
+        return;
     }
+    if !seen.insert(reference) {
+        return;
+    }
+    if provider.contains(reference) {
+        return;
+    }
+    out.push(reference);
 }
 
 pub(in crate::screens::repository) fn highlight_scheduled_requests_with_stats(
@@ -400,12 +411,14 @@ mod tests {
             visible: 1..3,
             with_overscan: 0..4,
         };
-        let mut requested = BTreeSet::new();
+        let provider = CachedDiffHighlightProvider::new();
+        let mut seen = BTreeSet::new();
 
         let requests = collect_visible_highlight_requests(
             &data,
             &rows,
-            &mut requested,
+            &provider,
+            &mut seen,
             10,
             ScrollDirection::Stationary,
         );
@@ -432,12 +445,14 @@ mod tests {
             visible: 1..3,
             with_overscan: 0..4,
         };
-        let mut requested = BTreeSet::new();
+        let provider = CachedDiffHighlightProvider::new();
+        let mut seen = BTreeSet::new();
 
         let requests = collect_visible_highlight_requests(
             &data,
             &rows,
-            &mut requested,
+            &provider,
+            &mut seen,
             3,
             ScrollDirection::Stationary,
         );
@@ -446,26 +461,93 @@ mod tests {
     }
 
     #[test]
-    fn scheduler_resets_dedupe_when_generation_changes() {
+    fn scheduler_skips_already_cached_references() {
         let new_1 = reference(DiffHighlightSide::New, 1);
         let data =
             diff_canvas::build_canvas_data(vec![header_row(), content_row(new_1, None)], 8.0);
+        let document = HighlightDocument::new("one\n", "txt");
+        let provider = Arc::new(CachedDiffHighlightProvider::new());
         let mut scheduler = DiffHighlightScheduler::default();
+        let ids = document_ids(None, Some(&document));
 
         let first = scheduler
-            .schedule(7, DiffHighlightDocumentIds::default(), &data, 20.0, 20.0)
+            .schedule(7, ids, &data, provider.as_ref(), 20.0, 20.0)
             .to_vec();
+        let highlighted = highlight_scheduled_requests_with_stats(
+            &first,
+            7,
+            ids,
+            None,
+            Some(&document),
+            &provider,
+            10,
+        )
+        .highlighted;
         let repeated = scheduler
-            .schedule(7, DiffHighlightDocumentIds::default(), &data, 20.0, 20.0)
+            .schedule(7, ids, &data, provider.as_ref(), 20.0, 20.0)
             .to_vec();
         let next_generation = scheduler
-            .schedule(8, DiffHighlightDocumentIds::default(), &data, 20.0, 20.0)
+            .schedule(8, ids, &data, provider.as_ref(), 20.0, 20.0)
             .to_vec();
 
         assert_eq!(first.len(), 1);
-        assert!(repeated.is_empty());
-        assert_eq!(next_generation.len(), 1);
-        assert_eq!(next_generation[0].generation, 8);
+        assert_eq!(highlighted, 1);
+        assert!(
+            repeated.is_empty(),
+            "provider hit should suppress re-request"
+        );
+        assert!(next_generation.is_empty());
+    }
+
+    #[test]
+    fn scheduler_reissues_request_after_provider_eviction() {
+        let new_1 = reference(DiffHighlightSide::New, 1);
+        let new_2 = reference(DiffHighlightSide::New, 2);
+        let data = diff_canvas::build_canvas_data(
+            vec![content_row(new_1, None), content_row(new_2, None)],
+            8.0,
+        );
+        let document = HighlightDocument::new("one\ntwo\n", "txt");
+        let provider = CachedDiffHighlightProvider::with_capacity(1);
+        let ids = document_ids(None, Some(&document));
+        let mut scheduler = DiffHighlightScheduler::default();
+
+        let first = scheduler
+            .schedule(1, ids, &data, &provider, 0.0, DEFAULT_CONTENT_LINE_HEIGHT)
+            .to_vec();
+        provider.insert(
+            new_1,
+            Arc::from(
+                vec![crate::services::SyntaxHighlightedSpan {
+                    text: "one".to_string(),
+                    style: crate::services::SyntaxStyle::default(),
+                }]
+                .into_boxed_slice(),
+            ),
+        );
+        provider.insert(
+            new_2,
+            Arc::from(
+                vec![crate::services::SyntaxHighlightedSpan {
+                    text: "two".to_string(),
+                    style: crate::services::SyntaxStyle::default(),
+                }]
+                .into_boxed_slice(),
+            ),
+        );
+        assert!(provider.cached_spans(new_1).is_none());
+        assert!(provider.cached_spans(new_2).is_some());
+
+        let second = scheduler
+            .schedule(1, ids, &data, &provider, 0.0, DEFAULT_CONTENT_LINE_HEIGHT)
+            .to_vec();
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(
+            second.iter().map(|r| r.reference).collect::<Vec<_>>(),
+            vec![new_1],
+            "evicted reference must be re-requested"
+        );
     }
 
     #[test]
@@ -487,12 +569,14 @@ mod tests {
             visible: 1..3,
             with_overscan: 0..4,
         };
-        let mut requested = BTreeSet::new();
+        let provider = CachedDiffHighlightProvider::new();
+        let mut seen = BTreeSet::new();
 
         let requests = collect_visible_highlight_requests(
             &data,
             &rows,
-            &mut requested,
+            &provider,
+            &mut seen,
             3,
             ScrollDirection::Down,
         );
@@ -513,6 +597,7 @@ mod tests {
                 20,
                 document_ids(None, Some(&document)),
                 &data,
+                provider.as_ref(),
                 0.0,
                 DEFAULT_CONTENT_LINE_HEIGHT,
             )
@@ -532,6 +617,7 @@ mod tests {
                 21,
                 document_ids(None, Some(&document)),
                 &data,
+                provider.as_ref(),
                 0.0,
                 DEFAULT_CONTENT_LINE_HEIGHT,
             )
@@ -566,7 +652,14 @@ mod tests {
         let mut scheduler = DiffHighlightScheduler::default();
 
         let stale = scheduler
-            .schedule(42, old_ids, &data, 0.0, DEFAULT_CONTENT_LINE_HEIGHT)
+            .schedule(
+                42,
+                old_ids,
+                &data,
+                provider.as_ref(),
+                0.0,
+                DEFAULT_CONTENT_LINE_HEIGHT,
+            )
             .to_vec();
         let stale_result = highlight_scheduled_requests_with_stats(
             &stale,
@@ -579,7 +672,14 @@ mod tests {
         );
         scheduler.reset();
         let fresh = scheduler
-            .schedule(42, new_ids, &data, 0.0, DEFAULT_CONTENT_LINE_HEIGHT)
+            .schedule(
+                42,
+                new_ids,
+                &data,
+                provider.as_ref(),
+                0.0,
+                DEFAULT_CONTENT_LINE_HEIGHT,
+            )
             .to_vec();
         let fresh_result = highlight_scheduled_requests_with_stats(
             &fresh,
@@ -620,6 +720,7 @@ mod tests {
                 11,
                 document_ids(None, Some(&document)),
                 &data,
+                provider.as_ref(),
                 0.0,
                 DEFAULT_CONTENT_LINE_HEIGHT * 4.0,
             )
@@ -685,7 +786,14 @@ mod tests {
         let mut scheduler = DiffHighlightScheduler::default();
 
         let requests = scheduler
-            .schedule(70, ids, &data, 0.0, DEFAULT_CONTENT_LINE_HEIGHT)
+            .schedule(
+                70,
+                ids,
+                &data,
+                provider.as_ref(),
+                0.0,
+                DEFAULT_CONTENT_LINE_HEIGHT,
+            )
             .to_vec();
         let result = highlight_scheduled_requests_with_stats(
             &requests,

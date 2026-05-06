@@ -436,6 +436,7 @@ impl DiffPanel {
                 generation,
                 document_ids,
                 data.as_ref(),
+                provider.as_ref(),
                 self.diff_scroll_y,
                 viewport_height,
             )
