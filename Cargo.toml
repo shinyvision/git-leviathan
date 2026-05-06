@@ -53,6 +53,7 @@ libloading = "0.8"
 sha2 = "0.10"
 portable-pty = "0.8"
 vt100 = "0.15"
+lru = { version = "0.16", default-features = false }
 
 [package.metadata.deb]
 name = "git-leviathan"

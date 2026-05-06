@@ -1,9 +1,14 @@
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::ops::Range;
 
 use tree_sitter::{QueryCapture, QueryCursor, QueryMatch, QueryProperty, StreamingIterator, Tree};
 
 use super::registry::TreeSitterSyntax;
+
+thread_local! {
+    static INJECTION_QUERY_CURSOR: RefCell<QueryCursor> = RefCell::new(QueryCursor::new());
+}
 
 #[derive(Debug, Clone)]
 pub(super) struct Injection {
@@ -30,35 +35,38 @@ impl InjectionPlanner {
         };
 
         let capture_names = query.capture_names();
-        let mut cursor = QueryCursor::new();
-        let mut matches = cursor.matches(query, tree.root_node(), content.as_bytes());
         let mut injections = Vec::new();
         let mut combined = BTreeMap::<String, Vec<Range<usize>>>::new();
 
-        while let Some(query_match) = matches.next() {
-            let properties = query.property_settings(query_match.pattern_index);
-            let Some(language) =
-                injection_language(properties, query_match, capture_names, content)
-            else {
-                continue;
-            };
-            let ranges = content_ranges(query_match, capture_names, content);
-            if ranges.is_empty() {
-                continue;
-            }
+        INJECTION_QUERY_CURSOR.with_borrow_mut(|cursor| {
+            cursor.set_byte_range(0..content.len());
+            let mut matches = cursor.matches(query, tree.root_node(), content.as_bytes());
 
-            if properties
-                .iter()
-                .any(|property| property.key.as_ref() == "injection.combined")
-            {
-                combined.entry(language).or_default().extend(ranges);
-            } else {
-                let ranges = normalize_ranges(content, ranges);
-                if !ranges.is_empty() {
-                    injections.push(Injection { language, ranges });
+            while let Some(query_match) = matches.next() {
+                let properties = query.property_settings(query_match.pattern_index);
+                let Some(language) =
+                    injection_language(properties, query_match, capture_names, content)
+                else {
+                    continue;
+                };
+                let ranges = content_ranges(query_match, capture_names, content);
+                if ranges.is_empty() {
+                    continue;
+                }
+
+                if properties
+                    .iter()
+                    .any(|property| property.key.as_ref() == "injection.combined")
+                {
+                    combined.entry(language).or_default().extend(ranges);
+                } else {
+                    let ranges = normalize_ranges(content, ranges);
+                    if !ranges.is_empty() {
+                        injections.push(Injection { language, ranges });
+                    }
                 }
             }
-        }
+        });
 
         injections.extend(combined.into_iter().filter_map(|(language, ranges)| {
             let ranges = normalize_ranges(content, ranges);
@@ -177,4 +185,3 @@ fn normalize_ranges(content: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize
     }
     normalized
 }
-

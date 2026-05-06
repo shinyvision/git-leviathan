@@ -1,7 +1,7 @@
 //! Performance budgets and circuit breakers for host-invoked callbacks.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use crate::plugin::diagnostic::{
@@ -116,22 +116,10 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now_ms(&self) -> u128 {
-        // Anchor to a process-local origin captured the first time
-        // the clock is read. We hand back a millisecond tick from a
-        // fresh `Instant::now()` against a baseline so the value is
-        // monotonic and bounded.
-        let dur = Instant::now().elapsed();
-        // `Instant::now().elapsed()` is always near-zero on the very
-        // first call and grows from there, but that's not what we
-        // want — we want a stable reference. Use `SystemTime` deltas
-        // for the actual ms count; tests use `MockClock` so we don't
-        // need precision here.
-        let _ = dur;
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
+        static START: OnceLock<Instant> = OnceLock::new();
+        START.get_or_init(Instant::now).elapsed().as_millis()
     }
+
     fn now_unix_ms(&self) -> u128 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -874,6 +862,24 @@ mod tests {
         assert_eq!(CallbackKind::Init.default_budget().hard_ms, 2000);
         assert_eq!(CallbackKind::UiCallback.default_budget().soft_ms, 8);
         assert_eq!(CallbackKind::AsyncJob.default_budget().hard_ms, 10_000);
+    }
+
+    #[test]
+    fn system_clock_now_ms_is_monotonic_process_time() {
+        let clock = SystemClock;
+        let first = clock.now_ms();
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        let second = clock.now_ms();
+
+        assert!(second >= first);
+        assert!(
+            first < std::time::Duration::from_secs(7 * 24 * 60 * 60).as_millis(),
+            "now_ms should use process-relative monotonic time, got {first}"
+        );
+        assert!(
+            clock.now_unix_ms() > 1_000_000_000_000,
+            "now_unix_ms should still use epoch time"
+        );
     }
 
     #[test]

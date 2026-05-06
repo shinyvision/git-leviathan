@@ -1,7 +1,8 @@
-use std::collections::{HashMap, VecDeque};
 use std::mem;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use lru::LruCache;
 use tree_sitter::Tree;
 
 use super::queries::QuerySetIdentity;
@@ -102,42 +103,22 @@ impl HighlightFileCacheKey {
 }
 
 pub(super) struct HighlightCache {
-    map: HashMap<HighlightFileCacheKey, Arc<HighlightedFile>>,
-    order: VecDeque<HighlightFileCacheKey>,
+    map: LruCache<HighlightFileCacheKey, Arc<HighlightedFile>>,
 }
 
 impl HighlightCache {
     pub(super) fn new() -> Self {
         Self {
-            map: HashMap::new(),
-            order: VecDeque::new(),
+            map: LruCache::new(nonzero_capacity(HIGHLIGHT_CACHE_CAPACITY)),
         }
     }
 
     pub(super) fn get(&mut self, key: &HighlightFileCacheKey) -> Option<Arc<HighlightedFile>> {
-        let hit = self.map.get(key).cloned();
-        if hit.is_some() {
-            touch_key(&mut self.order, key);
-        }
-        hit
+        self.map.get(key).cloned()
     }
 
     pub(super) fn insert(&mut self, key: HighlightFileCacheKey, value: Arc<HighlightedFile>) {
-        if self.map.contains_key(&key) {
-            touch_key(&mut self.order, &key);
-            self.map.insert(key, value);
-            return;
-        }
-
-        while self.order.len() >= HIGHLIGHT_CACHE_CAPACITY {
-            if let Some(evict) = self.order.pop_front() {
-                self.map.remove(&evict);
-            } else {
-                break;
-            }
-        }
-        self.order.push_back(key.clone());
-        self.map.insert(key, value);
+        self.map.put(key, value);
     }
 }
 
@@ -149,8 +130,7 @@ pub struct CacheFootprint {
 }
 
 pub(super) struct ParseTreeCache {
-    map: HashMap<ParseTreeCacheKey, ParseTreeEntry>,
-    order: VecDeque<ParseTreeCacheKey>,
+    map: LruCache<ParseTreeCacheKey, ParseTreeEntry>,
     max_count: usize,
     max_bytes: usize,
     current_bytes: usize,
@@ -168,8 +148,7 @@ impl ParseTreeCache {
 
     fn with_limits(max_count: usize, max_bytes: usize) -> Self {
         Self {
-            map: HashMap::new(),
-            order: VecDeque::new(),
+            map: LruCache::new(nonzero_capacity(max_count)),
             max_count,
             max_bytes,
             current_bytes: 0,
@@ -177,11 +156,7 @@ impl ParseTreeCache {
     }
 
     pub(super) fn get(&mut self, key: &ParseTreeCacheKey) -> Option<Tree> {
-        let hit = self.map.get(key).map(|entry| entry.tree.clone());
-        if hit.is_some() {
-            touch_key(&mut self.order, key);
-        }
-        hit
+        self.map.get(key).map(|entry| entry.tree.clone())
     }
 
     pub(super) fn insert(&mut self, key: ParseTreeCacheKey, tree: Tree, bytes: usize) {
@@ -189,27 +164,20 @@ impl ParseTreeCache {
             return;
         }
 
-        if let Some(entry) = self.map.remove(&key) {
+        if let Some((_, entry)) = self.map.push(key, ParseTreeEntry { tree, bytes }) {
             self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
-            remove_key(&mut self.order, &key);
         }
-
         self.current_bytes = self.current_bytes.saturating_add(bytes);
-        self.order.push_back(key.clone());
-        self.map.insert(key, ParseTreeEntry { tree, bytes });
         self.evict_to_budget();
     }
 
     fn evict_to_budget(&mut self) {
         while self.map.len() > self.max_count || self.current_bytes > self.max_bytes {
-            let Some(evict) = self.order.pop_front() else {
-                self.map.clear();
+            let Some((_, entry)) = self.map.pop_lru() else {
                 self.current_bytes = 0;
                 break;
             };
-            if let Some(entry) = self.map.remove(&evict) {
-                self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
-            }
+            self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
         }
     }
 
@@ -223,8 +191,7 @@ impl ParseTreeCache {
 }
 
 pub(super) struct HighlightSpanCache {
-    map: HashMap<HighlightSpanCacheKey, SpanEntry>,
-    order: VecDeque<HighlightSpanCacheKey>,
+    map: LruCache<HighlightSpanCacheKey, SpanEntry>,
     max_count: usize,
     max_bytes: usize,
     current_bytes: usize,
@@ -242,8 +209,7 @@ impl HighlightSpanCache {
 
     fn with_limits(max_count: usize, max_bytes: usize) -> Self {
         Self {
-            map: HashMap::new(),
-            order: VecDeque::new(),
+            map: LruCache::new(nonzero_capacity(max_count)),
             max_count,
             max_bytes,
             current_bytes: 0,
@@ -254,11 +220,7 @@ impl HighlightSpanCache {
         &mut self,
         key: &HighlightSpanCacheKey,
     ) -> Option<Arc<[SyntaxHighlightedSpan]>> {
-        let hit = self.map.get(key).map(|entry| Arc::clone(&entry.spans));
-        if hit.is_some() {
-            touch_key(&mut self.order, key);
-        }
-        hit
+        self.map.get(key).map(|entry| Arc::clone(&entry.spans))
     }
 
     pub(super) fn insert(
@@ -271,27 +233,20 @@ impl HighlightSpanCache {
             return;
         }
 
-        if let Some(entry) = self.map.remove(&key) {
+        if let Some((_, entry)) = self.map.push(key, SpanEntry { spans, bytes }) {
             self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
-            remove_key(&mut self.order, &key);
         }
-
         self.current_bytes = self.current_bytes.saturating_add(bytes);
-        self.order.push_back(key.clone());
-        self.map.insert(key, SpanEntry { spans, bytes });
         self.evict_to_budget();
     }
 
     fn evict_to_budget(&mut self) {
         while self.map.len() > self.max_count || self.current_bytes > self.max_bytes {
-            let Some(evict) = self.order.pop_front() else {
-                self.map.clear();
+            let Some((_, entry)) = self.map.pop_lru() else {
                 self.current_bytes = 0;
                 break;
             };
-            if let Some(entry) = self.map.remove(&evict) {
-                self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
-            }
+            self.current_bytes = self.current_bytes.saturating_sub(entry.bytes);
         }
     }
 }
@@ -299,8 +254,7 @@ impl HighlightSpanCache {
 #[derive(Debug)]
 pub(super) struct LazyHighlightState {
     tree: Option<(ParseTreeCacheKey, Tree)>,
-    line_cache: HashMap<HighlightSpanCacheKey, Arc<[SyntaxHighlightedSpan]>>,
-    line_order: VecDeque<HighlightSpanCacheKey>,
+    line_cache: LruCache<HighlightSpanCacheKey, Arc<[SyntaxHighlightedSpan]>>,
     line_cache_capacity: usize,
     stats: HighlightLazyStats,
 }
@@ -309,8 +263,7 @@ impl LazyHighlightState {
     pub(super) fn with_limit(line_cache_capacity: usize) -> Self {
         Self {
             tree: None,
-            line_cache: HashMap::new(),
-            line_order: VecDeque::new(),
+            line_cache: LruCache::new(nonzero_capacity(line_cache_capacity)),
             line_cache_capacity,
             stats: HighlightLazyStats::default(),
         }
@@ -329,7 +282,6 @@ impl LazyHighlightState {
     ) -> Option<Arc<[SyntaxHighlightedSpan]>> {
         let spans = self.line_cache.get(key).cloned();
         if spans.is_some() {
-            touch_key(&mut self.line_order, key);
             self.stats.cache_hits += 1;
         } else {
             self.stats.cache_misses += 1;
@@ -350,24 +302,7 @@ impl LazyHighlightState {
             return;
         }
 
-        if let Some(cached) = self.line_cache.get_mut(&key) {
-            *cached = spans;
-            touch_key(&mut self.line_order, &key);
-            return;
-        }
-
-        while self.line_cache.len() >= self.line_cache_capacity {
-            let Some(evicted) = self.line_order.pop_front() else {
-                self.line_cache.clear();
-                break;
-            };
-            self.line_cache.remove(&evicted);
-        }
-
-        if self.line_cache.len() < self.line_cache_capacity {
-            self.line_order.push_back(key.clone());
-            self.line_cache.insert(key, spans);
-        }
+        self.line_cache.put(key, spans);
     }
 
     pub(super) fn cached_tree(&mut self, key: &ParseTreeCacheKey) -> Option<Tree> {
@@ -412,23 +347,8 @@ fn estimated_span_bytes(spans: &[SyntaxHighlightedSpan]) -> usize {
         .max(1)
 }
 
-fn touch_key<T>(order: &mut VecDeque<T>, key: &T)
-where
-    T: Clone + Eq,
-{
-    if let Some(pos) = order.iter().position(|cached_key| cached_key == key) {
-        let cached_key = order.remove(pos).unwrap();
-        order.push_back(cached_key);
-    }
-}
-
-fn remove_key<T>(order: &mut VecDeque<T>, key: &T)
-where
-    T: Eq,
-{
-    if let Some(pos) = order.iter().position(|cached_key| cached_key == key) {
-        order.remove(pos);
-    }
+fn nonzero_capacity(capacity: usize) -> NonZeroUsize {
+    NonZeroUsize::new(capacity.max(1)).expect("cache capacity is forced non-zero")
 }
 
 #[cfg(test)]

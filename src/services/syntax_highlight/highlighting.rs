@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ops::Range;
 use std::sync::{Arc, LazyLock, Mutex};
@@ -19,6 +20,10 @@ const INJECTION_CACHE_CAPACITY: usize = 32;
 
 static INJECTION_CACHE: LazyLock<Mutex<InjectionCache>> =
     LazyLock::new(|| Mutex::new(InjectionCache::new()));
+
+thread_local! {
+    static HIGHLIGHT_QUERY_CURSOR: RefCell<QueryCursor> = RefCell::new(QueryCursor::new());
+}
 
 pub(super) struct TreeSitterHighlighter {
     injections: InjectionPlanner,
@@ -243,49 +248,50 @@ impl<'a> HighlightWalk<'a> {
         let Some(query) = syntax.highlights_query() else {
             return Vec::new();
         };
-        let mut cursor = QueryCursor::new();
-        let mut captures = cursor.captures(query, tree.root_node(), self.content.as_bytes());
-        captures.set_byte_range(self.target_range.clone());
-        let names = query.capture_names();
         let mut ranges = Vec::new();
+        HIGHLIGHT_QUERY_CURSOR.with_borrow_mut(|cursor| {
+            cursor.set_byte_range(self.target_range.clone());
+            let mut captures = cursor.captures(query, tree.root_node(), self.content.as_bytes());
+            let names = query.capture_names();
 
-        while let Some((query_match, capture_index)) = captures.next() {
-            let capture = query_match.captures[*capture_index];
-            let Some(name) = names.get(capture.index as usize) else {
-                continue;
-            };
-            let Some((style, priority)) = style_for_capture(name) else {
-                continue;
-            };
-            let start = capture.node.start_byte().max(self.target_range.start);
-            let end = capture.node.end_byte().min(self.target_range.end);
-            if start >= end
-                || !self.content.is_char_boundary(start)
-                || !self.content.is_char_boundary(end)
-            {
-                continue;
-            }
-            for scoped in intersect_with_ranges(start..end, scope_ranges) {
-                for segment in subtract_ranges(scoped, excluded_ranges) {
-                    if segment.start >= segment.end
-                        || !self.content.is_char_boundary(segment.start)
-                        || !self.content.is_char_boundary(segment.end)
-                    {
-                        continue;
+            while let Some((query_match, capture_index)) = captures.next() {
+                let capture = query_match.captures[*capture_index];
+                let Some(name) = names.get(capture.index as usize) else {
+                    continue;
+                };
+                let Some((style, priority)) = style_for_capture(name) else {
+                    continue;
+                };
+                let start = capture.node.start_byte().max(self.target_range.start);
+                let end = capture.node.end_byte().min(self.target_range.end);
+                if start >= end
+                    || !self.content.is_char_boundary(start)
+                    || !self.content.is_char_boundary(end)
+                {
+                    continue;
+                }
+                for scoped in intersect_with_ranges(start..end, scope_ranges) {
+                    for segment in subtract_ranges(scoped, excluded_ranges) {
+                        if segment.start >= segment.end
+                            || !self.content.is_char_boundary(segment.start)
+                            || !self.content.is_char_boundary(segment.end)
+                        {
+                            continue;
+                        }
+                        ranges.push(StyledRange {
+                            start: segment.start,
+                            end: segment.end,
+                            style,
+                            priority,
+                            len: segment.end - segment.start,
+                            depth,
+                            order: self.order,
+                        });
+                        self.order += 1;
                     }
-                    ranges.push(StyledRange {
-                        start: segment.start,
-                        end: segment.end,
-                        style,
-                        priority,
-                        len: segment.end - segment.start,
-                        depth,
-                        order: self.order,
-                    });
-                    self.order += 1;
                 }
             }
-        }
+        });
 
         ranges
     }
