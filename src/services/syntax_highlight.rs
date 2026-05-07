@@ -950,7 +950,7 @@ mod tests {
 
         assert!(report.built_in.is_empty());
         assert!(report.installed.is_empty());
-        for language in ["rust", "go", "twig", "json", "typescript", "tsx"] {
+        for language in ["rust", "go", "twig", "json", "typescript", "tsx", "lua"] {
             assert!(
                 report
                     .missing
@@ -960,6 +960,36 @@ mod tests {
             );
         }
         assert!(report.errors.is_empty());
+    }
+
+    #[test]
+    fn lua_runtime_grammar_is_installable_and_queued_on_view() {
+        let tmp = tempfile::tempdir().unwrap();
+        let service =
+            SyntaxHighlightService::with_runtime_and_query_override_dirs(Some(tmp.path()), None);
+        let document = HighlightDocument::from_path("local answer = 42\n", "plugin/init.lua");
+
+        assert_eq!(
+            service.syntax_status_for_document(&document),
+            SyntaxGrammarStatus::Missing {
+                language_id: "lua".to_string(),
+                syntax_key: "lua".to_string(),
+                registry_checked: true,
+                installable: true,
+                install_status: GrammarInstallStatus::Missing,
+            }
+        );
+
+        let highlighted = service.highlight_line(&document, 1).unwrap();
+        assert_plain_line(highlighted.spans(), "local answer = 42");
+
+        assert!(matches!(
+            service.syntax_status_for_document(&document),
+            SyntaxGrammarStatus::Missing {
+                install_status: GrammarInstallStatus::Queued,
+                ..
+            }
+        ));
     }
 
     #[test]

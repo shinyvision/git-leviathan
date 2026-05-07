@@ -3,7 +3,7 @@ use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use semver::{Version, VersionReq};
@@ -391,6 +391,7 @@ impl AppVersionCompatibility {
 pub(super) struct BuiltinSyntaxRegistry {
     syntaxes: HashMap<&'static str, Arc<TreeSitterSyntax>>,
     languages: &'static [LanguageSpec],
+    bootstrap_languages: &'static [LanguageSpec],
     runtime_languages: Vec<LanguageSpec>,
     query_sources: HashMap<String, queries::QuerySources>,
     query_override_dir: Option<PathBuf>,
@@ -409,6 +410,7 @@ impl BuiltinSyntaxRegistry {
         Self {
             syntaxes,
             languages: BUILTIN_LANGUAGE_SPECS,
+            bootstrap_languages: BOOTSTRAP_NPM_WASM_LANGUAGE_SPECS.as_slice(),
             runtime_languages: Vec::new(),
             query_sources,
             query_override_dir: query_override_dir.map(Path::to_path_buf),
@@ -727,12 +729,21 @@ impl BuiltinSyntaxRegistry {
             sources.set(queries::QueryType::Injections, injections);
             loaded_any = true;
         }
+        if normalize_language_key(&package.manifest.language) == "cpp" {
+            if let Some(highlights) = sources.get(queries::QueryType::Highlights) {
+                let highlights = ensure_cpp_query_has_c_base(highlights);
+                sources.set(queries::QueryType::Highlights, highlights);
+            }
+        }
 
         loaded_any.then_some(sources)
     }
 
     fn language_specs(&self) -> impl Iterator<Item = &LanguageSpec> {
-        self.languages.iter().chain(self.runtime_languages.iter())
+        self.languages
+            .iter()
+            .chain(self.bootstrap_languages.iter())
+            .chain(self.runtime_languages.iter())
     }
 }
 
@@ -813,164 +824,373 @@ fn bootstrap_runtime_registry() -> GrammarRegistryFile {
     GrammarRegistryFile {
         schema_version: REGISTRY_SCHEMA_VERSION,
         cache: RegistryCacheMetadata::new(0, u64::MAX),
-        grammars: vec![
-            npm_wasm_grammar(
-                "go",
-                Version::new(0, 25, 0),
-                "https://registry.npmjs.org/tree-sitter-go/-/tree-sitter-go-0.25.0.tgz",
-                &["go"],
-                &["go"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "twig",
-                Version::new(1, 2, 0),
-                "https://registry.npmjs.org/tree-sitter-shopware-twig/-/tree-sitter-shopware-twig-1.2.0.tgz",
-                &["twig", "html.twig"],
-                &["twig"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "rust",
-                Version::new(0, 24, 0),
-                "https://registry.npmjs.org/tree-sitter-rust/-/tree-sitter-rust-0.24.0.tgz",
-                &["rust"],
-                &["rs"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "yaml",
-                Version::new(0, 7, 1),
-                "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-yaml/-/tree-sitter-yaml-0.7.1.tgz",
-                &["yaml"],
-                &["yaml", "yml"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "json",
-                Version::new(0, 24, 8),
-                "https://registry.npmjs.org/tree-sitter-json/-/tree-sitter-json-0.24.8.tgz",
-                &["json"],
-                &["json"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "toml",
-                Version::new(0, 7, 0),
-                "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-toml/-/tree-sitter-toml-0.7.0.tgz",
-                &["toml"],
-                &["toml"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "php",
-                Version::new(0, 24, 2),
-                "https://registry.npmjs.org/tree-sitter-php/-/tree-sitter-php-0.24.2.tgz",
-                &["php"],
-                &["php"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "php-only",
-                Version::new(0, 24, 2),
-                "https://registry.npmjs.org/tree-sitter-php/-/tree-sitter-php-0.24.2.tgz",
-                &["php"],
-                &["php"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "html",
-                Version::new(0, 23, 2),
-                "https://registry.npmjs.org/tree-sitter-html/-/tree-sitter-html-0.23.2.tgz",
-                &["html"],
-                &["html", "htm"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "css",
-                Version::new(0, 23, 2),
-                "https://registry.npmjs.org/tree-sitter-css/-/tree-sitter-css-0.23.2.tgz",
-                &["css"],
-                &["css"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "scss",
-                Version::new(1, 0, 0),
-                "https://registry.npmjs.org/tree-sitter-scss/-/tree-sitter-scss-1.0.0.tgz",
-                &["scss", "sass"],
-                &["scss", "sass"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "xml",
-                Version::new(0, 26, 1),
-                "https://registry.npmjs.org/@lumis-sh/wasm-xml/-/wasm-xml-0.26.1.tgz",
-                &["xml"],
-                &[
-                    "xml", "xsd", "xsl", "xslt", "rng", "rss", "atom", "svg", "plist", "wsdl",
-                    "xliff",
-                ],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "javascript",
-                Version::new(0, 23, 1),
-                "https://registry.npmjs.org/tree-sitter-javascript/-/tree-sitter-javascript-0.23.1.tgz",
-                &["javascript"],
-                &["js", "mjs", "cjs", "jsx"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "typescript",
-                Version::new(0, 23, 2),
-                "https://registry.npmjs.org/tree-sitter-typescript/-/tree-sitter-typescript-0.23.2.tgz",
-                &["typescript"],
-                &["ts"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "tsx",
-                Version::new(0, 23, 2),
-                "https://registry.npmjs.org/tree-sitter-typescript/-/tree-sitter-typescript-0.23.2.tgz",
-                &["tsx"],
-                &["tsx"],
-                &[],
-            ),
-            npm_wasm_grammar(
-                "markdown",
-                Version::new(0, 26, 0),
-                "https://registry.npmjs.org/@lumis-sh/wasm-markdown/-/wasm-markdown-0.26.0.tgz",
-                &["markdown"],
-                &["md"],
-                &[],
-            ),
-        ],
+        grammars: BOOTSTRAP_NPM_WASM_GRAMMARS
+            .iter()
+            .map(npm_wasm_grammar)
+            .collect(),
     }
 }
 
-fn npm_wasm_grammar(
-    language: &str,
-    version: Version,
-    url: &str,
-    filetypes: &[&str],
-    extensions: &[&str],
-    filenames: &[&str],
-) -> GrammarRegistryEntry {
+struct NpmWasmGrammarSpec {
+    language: &'static str,
+    version: (u64, u64, u64),
+    url: &'static str,
+    filetypes: &'static [&'static str],
+    extensions: &'static [&'static str],
+    filenames: &'static [&'static str],
+}
+
+impl NpmWasmGrammarSpec {
+    fn version(&self) -> Version {
+        let (major, minor, patch) = self.version;
+        Version::new(major, minor, patch)
+    }
+}
+
+const BOOTSTRAP_NPM_WASM_GRAMMARS: &[NpmWasmGrammarSpec] = &[
+    NpmWasmGrammarSpec {
+        language: "go",
+        version: (0, 25, 0),
+        url: "https://registry.npmjs.org/tree-sitter-go/-/tree-sitter-go-0.25.0.tgz",
+        filetypes: &["go"],
+        extensions: &["go"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "twig",
+        version: (1, 2, 0),
+        url: "https://registry.npmjs.org/tree-sitter-shopware-twig/-/tree-sitter-shopware-twig-1.2.0.tgz",
+        filetypes: &["twig", "html.twig"],
+        extensions: &["twig"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "rust",
+        version: (0, 24, 0),
+        url: "https://registry.npmjs.org/tree-sitter-rust/-/tree-sitter-rust-0.24.0.tgz",
+        filetypes: &["rust"],
+        extensions: &["rs"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "yaml",
+        version: (0, 7, 1),
+        url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-yaml/-/tree-sitter-yaml-0.7.1.tgz",
+        filetypes: &["yaml"],
+        extensions: &["yaml", "yml"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "json",
+        version: (0, 24, 8),
+        url: "https://registry.npmjs.org/tree-sitter-json/-/tree-sitter-json-0.24.8.tgz",
+        filetypes: &["json"],
+        extensions: &["json"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "toml",
+        version: (0, 7, 0),
+        url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-toml/-/tree-sitter-toml-0.7.0.tgz",
+        filetypes: &["toml"],
+        extensions: &["toml"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "php",
+        version: (0, 24, 2),
+        url: "https://registry.npmjs.org/tree-sitter-php/-/tree-sitter-php-0.24.2.tgz",
+        filetypes: &["php"],
+        extensions: &["php"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "php-only",
+        version: (0, 24, 2),
+        url: "https://registry.npmjs.org/tree-sitter-php/-/tree-sitter-php-0.24.2.tgz",
+        filetypes: &["php"],
+        extensions: &["php"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "html",
+        version: (0, 23, 2),
+        url: "https://registry.npmjs.org/tree-sitter-html/-/tree-sitter-html-0.23.2.tgz",
+        filetypes: &["html"],
+        extensions: &["html", "htm"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "css",
+        version: (0, 23, 2),
+        url: "https://registry.npmjs.org/tree-sitter-css/-/tree-sitter-css-0.23.2.tgz",
+        filetypes: &["css"],
+        extensions: &["css"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "scss",
+        version: (1, 0, 0),
+        url: "https://registry.npmjs.org/tree-sitter-scss/-/tree-sitter-scss-1.0.0.tgz",
+        filetypes: &["scss", "sass"],
+        extensions: &["scss", "sass"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "xml",
+        version: (0, 26, 1),
+        url: "https://registry.npmjs.org/@lumis-sh/wasm-xml/-/wasm-xml-0.26.1.tgz",
+        filetypes: &["xml"],
+        extensions: &[
+            "xml", "xsd", "xsl", "xslt", "rng", "rss", "atom", "svg", "plist", "wsdl", "xliff",
+        ],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "javascript",
+        version: (0, 23, 1),
+        url: "https://registry.npmjs.org/tree-sitter-javascript/-/tree-sitter-javascript-0.23.1.tgz",
+        filetypes: &["javascript"],
+        extensions: &["js", "mjs", "cjs", "jsx"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "typescript",
+        version: (0, 23, 2),
+        url: "https://registry.npmjs.org/tree-sitter-typescript/-/tree-sitter-typescript-0.23.2.tgz",
+        filetypes: &["typescript"],
+        extensions: &["ts"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "tsx",
+        version: (0, 23, 2),
+        url: "https://registry.npmjs.org/tree-sitter-typescript/-/tree-sitter-typescript-0.23.2.tgz",
+        filetypes: &["tsx"],
+        extensions: &["tsx"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "markdown",
+        version: (0, 26, 0),
+        url: "https://registry.npmjs.org/@lumis-sh/wasm-markdown/-/wasm-markdown-0.26.0.tgz",
+        filetypes: &["markdown"],
+        extensions: &["md"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "lua",
+        version: (0, 4, 1),
+        url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-lua/-/tree-sitter-lua-0.4.1.tgz",
+        filetypes: &["lua"],
+        extensions: &["lua"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "c",
+        version: (0, 24, 1),
+        url: "https://registry.npmjs.org/tree-sitter-c/-/tree-sitter-c-0.24.1.tgz",
+        filetypes: &["c"],
+        extensions: &["c", "h"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "cpp",
+        version: (0, 23, 4),
+        url: "https://registry.npmjs.org/tree-sitter-cpp/-/tree-sitter-cpp-0.23.4.tgz",
+        filetypes: &["cpp", "c++"],
+        extensions: &["cc", "cpp", "cxx", "c++", "hh", "hpp", "hxx", "h++", "ipp", "inl", "tpp"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "c-sharp",
+        version: (0, 23, 5),
+        url: "https://registry.npmjs.org/tree-sitter-c-sharp/-/tree-sitter-c-sharp-0.23.5.tgz",
+        filetypes: &["csharp", "c-sharp"],
+        extensions: &["cs", "csx"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "zig",
+        version: (1, 1, 2),
+        url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-zig/-/tree-sitter-zig-1.1.2.tgz",
+        filetypes: &["zig"],
+        extensions: &["zig", "zon"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "python",
+        version: (0, 25, 0),
+        url: "https://registry.npmjs.org/tree-sitter-python/-/tree-sitter-python-0.25.0.tgz",
+        filetypes: &["python"],
+        extensions: &["py", "pyw", "pyi"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "java",
+        version: (0, 23, 5),
+        url: "https://registry.npmjs.org/tree-sitter-java/-/tree-sitter-java-0.23.5.tgz",
+        filetypes: &["java"],
+        extensions: &["java"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "objc",
+        version: (3, 0, 2),
+        url: "https://registry.npmjs.org/tree-sitter-objc/-/tree-sitter-objc-3.0.2.tgz",
+        filetypes: &["objc", "objective-c"],
+        extensions: &["m", "mm"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "ruby",
+        version: (0, 23, 1),
+        url: "https://registry.npmjs.org/tree-sitter-ruby/-/tree-sitter-ruby-0.23.1.tgz",
+        filetypes: &["ruby"],
+        extensions: &["rb", "rake", "gemspec"],
+        filenames: &["gemfile", "rakefile", "guardfile", "capfile", "podfile", "vagrantfile"],
+    },
+    NpmWasmGrammarSpec {
+        language: "elixir",
+        version: (0, 3, 5),
+        url: "https://registry.npmjs.org/tree-sitter-elixir/-/tree-sitter-elixir-0.3.5.tgz",
+        filetypes: &["elixir"],
+        extensions: &["ex", "exs"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "haskell",
+        version: (0, 23, 1),
+        url: "https://registry.npmjs.org/tree-sitter-haskell/-/tree-sitter-haskell-0.23.1.tgz",
+        filetypes: &["haskell"],
+        extensions: &["hs", "lhs"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "ocaml",
+        version: (0, 24, 2),
+        url: "https://registry.npmjs.org/tree-sitter-ocaml/-/tree-sitter-ocaml-0.24.2.tgz",
+        filetypes: &["ocaml"],
+        extensions: &["ml", "mli", "mll", "mly"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "scala",
+        version: (0, 24, 0),
+        url: "https://registry.npmjs.org/tree-sitter-scala/-/tree-sitter-scala-0.24.0.tgz",
+        filetypes: &["scala"],
+        extensions: &["scala", "sc"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "r",
+        version: (1, 2, 0),
+        url: "https://registry.npmjs.org/@davisvaughan/tree-sitter-r/-/tree-sitter-r-1.2.0.tgz",
+        filetypes: &["r"],
+        extensions: &["r"],
+        filenames: &[".rprofile"],
+    },
+    NpmWasmGrammarSpec {
+        language: "julia",
+        version: (0, 23, 1),
+        url: "https://registry.npmjs.org/tree-sitter-julia/-/tree-sitter-julia-0.23.1.tgz",
+        filetypes: &["julia"],
+        extensions: &["jl"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "bash",
+        version: (0, 25, 1),
+        url: "https://registry.npmjs.org/tree-sitter-bash/-/tree-sitter-bash-0.25.1.tgz",
+        filetypes: &["bash", "shell"],
+        extensions: &["sh", "bash", "zsh"],
+        filenames: &[".bashrc", ".bash_profile", ".zshrc"],
+    },
+    NpmWasmGrammarSpec {
+        language: "powershell",
+        version: (0, 26, 4),
+        url: "https://registry.npmjs.org/tree-sitter-powershell/-/tree-sitter-powershell-0.26.4.tgz",
+        filetypes: &["powershell"],
+        extensions: &["ps1", "psm1", "psd1"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "make",
+        version: (1, 1, 1),
+        url: "https://registry.npmjs.org/tree-sitter-make/-/tree-sitter-make-1.1.1.tgz",
+        filetypes: &["make"],
+        extensions: &["mk", "mak"],
+        filenames: &["makefile", "gnumakefile"],
+    },
+    NpmWasmGrammarSpec {
+        language: "starlark",
+        version: (1, 3, 0),
+        url: "https://registry.npmjs.org/tree-sitter-starlark/-/tree-sitter-starlark-1.3.0.tgz",
+        filetypes: &["starlark", "bazel"],
+        extensions: &["bzl", "star"],
+        filenames: &["build", "workspace", "build.bazel", "workspace.bazel", "module.bazel"],
+    },
+    NpmWasmGrammarSpec {
+        language: "fsharp",
+        version: (0, 1, 0),
+        url: "https://registry.npmjs.org/tree-sitter-fsharp/-/tree-sitter-fsharp-0.1.0.tgz",
+        filetypes: &["fsharp", "f-sharp"],
+        extensions: &["fs", "fsi", "fsx"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "awk",
+        version: (0, 7, 2),
+        url: "https://registry.npmjs.org/tree-sitter-awk/-/tree-sitter-awk-0.7.2.tgz",
+        filetypes: &["awk"],
+        extensions: &["awk"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "batch",
+        version: (0, 11, 1),
+        url: "https://registry.npmjs.org/tree-sitter-batch/-/tree-sitter-batch-0.11.1.tgz",
+        filetypes: &["batch", "bat"],
+        extensions: &["bat", "cmd"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "cuda",
+        version: (0, 21, 1),
+        url: "https://registry.npmjs.org/tree-sitter-cuda/-/tree-sitter-cuda-0.21.1.tgz",
+        filetypes: &["cuda"],
+        extensions: &["cu", "cuh"],
+        filenames: &[],
+    },
+];
+
+fn npm_wasm_grammar(spec: &NpmWasmGrammarSpec) -> GrammarRegistryEntry {
     GrammarRegistryEntry {
-        language: language.to_string(),
-        version,
+        language: spec.language.to_string(),
+        version: spec.version(),
         parser_abi: LANGUAGE_VERSION,
         app_version_req: None,
         runtime: Some(GrammarRuntime::Wasm),
         platforms: vec!["wasm".to_string()],
-        filetypes: filetypes.iter().map(|value| value.to_string()).collect(),
-        extensions: extensions.iter().map(|value| value.to_string()).collect(),
-        filenames: filenames.iter().map(|value| value.to_string()).collect(),
+        filetypes: spec
+            .filetypes
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
+        extensions: spec
+            .extensions
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
+        filenames: spec
+            .filenames
+            .iter()
+            .map(|value| value.to_string())
+            .collect(),
         first_line_regex: None,
         content_regex: None,
         packages: vec![GrammarPackageDownload {
-            url: url.to_string(),
+            url: spec.url.to_string(),
             sha256: None,
             signature: None,
             source: GrammarPackageSource::Community,
@@ -1313,6 +1533,28 @@ fn normalize_injection_language(language: &str) -> Option<String> {
     Some(key.to_string())
 }
 
+fn ensure_query_inherits(source: &str, inherited_language: &str) -> String {
+    let expected = normalize_language_key(inherited_language);
+    let modeline = queries::parse_modelines(source);
+    if modeline
+        .inherits
+        .iter()
+        .any(|language| language == &expected)
+    {
+        source.to_string()
+    } else {
+        format!("; inherits: {expected}\n{source}")
+    }
+}
+
+fn ensure_cpp_query_has_c_base(source: &str) -> String {
+    if source.contains("(preproc_directive)") && source.contains("(primitive_type)") {
+        source.to_string()
+    } else {
+        ensure_query_inherits(source, "c")
+    }
+}
+
 fn leak_static_str(value: String) -> &'static str {
     Box::leak(value.into_boxed_str())
 }
@@ -1321,10 +1563,38 @@ fn leak_patterns<'a, I>(patterns: I) -> &'static [&'static str]
 where
     I: IntoIterator<Item = &'a String>,
 {
+    leak_patterns_from_strs(patterns.into_iter().map(String::as_str))
+}
+
+fn leak_patterns_from_strs<'a, I>(patterns: I) -> &'static [&'static str]
+where
+    I: IntoIterator<Item = &'a str>,
+{
     let mut seen = BTreeSet::new();
     let values: Vec<&'static str> = patterns
         .into_iter()
-        .filter_map(|pattern| normalize_detection_pattern(pattern))
+        .filter_map(normalize_detection_pattern)
+        .filter(|pattern| seen.insert(pattern.clone()))
+        .map(leak_static_str)
+        .collect();
+    Box::leak(values.into_boxed_slice())
+}
+
+fn leak_filename_patterns<'a, I>(patterns: I) -> &'static [&'static str]
+where
+    I: IntoIterator<Item = &'a String>,
+{
+    leak_filename_patterns_from_strs(patterns.into_iter().map(String::as_str))
+}
+
+fn leak_filename_patterns_from_strs<'a, I>(patterns: I) -> &'static [&'static str]
+where
+    I: IntoIterator<Item = &'a str>,
+{
+    let mut seen = BTreeSet::new();
+    let values: Vec<&'static str> = patterns
+        .into_iter()
+        .filter_map(normalize_filename_pattern)
         .filter(|pattern| seen.insert(pattern.clone()))
         .map(leak_static_str)
         .collect();
@@ -1333,6 +1603,11 @@ where
 
 fn normalize_detection_pattern(pattern: &str) -> Option<String> {
     let pattern = pattern.trim().trim_start_matches('.');
+    (!pattern.is_empty()).then(|| pattern.to_ascii_lowercase())
+}
+
+fn normalize_filename_pattern(pattern: &str) -> Option<String> {
+    let pattern = pattern.trim();
     (!pattern.is_empty()).then(|| pattern.to_ascii_lowercase())
 }
 
@@ -1413,8 +1688,34 @@ struct LanguageSpec {
 }
 
 impl LanguageSpec {
+    fn from_npm_wasm_spec(spec: &NpmWasmGrammarSpec) -> Self {
+        let filenames = leak_filename_patterns_from_strs(spec.filenames.iter().copied());
+        let extensions = leak_patterns_from_strs(
+            spec.extensions.iter().copied().chain(
+                spec.filetypes
+                    .iter()
+                    .copied()
+                    .filter(|filetype| !filetype.contains('.')),
+            ),
+        );
+        let compound_extensions = leak_patterns_from_strs(
+            spec.filetypes
+                .iter()
+                .copied()
+                .filter(|filetype| filetype.contains('.')),
+        );
+
+        Self {
+            language_id: spec.language,
+            syntax_key: spec.language,
+            filenames,
+            extensions,
+            compound_extensions,
+        }
+    }
+
     fn from_manifest(language_id: &'static str, manifest: &GrammarPackageManifest) -> Self {
-        let filenames = leak_patterns(manifest.filenames.iter());
+        let filenames = leak_filename_patterns(manifest.filenames.iter());
         let extensions = leak_patterns(
             manifest.extensions.iter().chain(
                 manifest
@@ -1469,6 +1770,16 @@ impl LanguageSpec {
         }
     }
 }
+
+fn bootstrap_npm_wasm_language_specs() -> Vec<LanguageSpec> {
+    BOOTSTRAP_NPM_WASM_GRAMMARS
+        .iter()
+        .map(LanguageSpec::from_npm_wasm_spec)
+        .collect()
+}
+
+static BOOTSTRAP_NPM_WASM_LANGUAGE_SPECS: LazyLock<Vec<LanguageSpec>> =
+    LazyLock::new(bootstrap_npm_wasm_language_specs);
 
 const BUILTIN_LANGUAGE_SPECS: &[LanguageSpec] = &[
     LanguageSpec {
@@ -1772,20 +2083,174 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_registry_uses_npm_scss_queries_package() {
+    fn bootstrap_npm_wasm_specs_match_registry_contract() {
         let registry = bootstrap_runtime_registry();
-        let scss = registry
-            .grammars
-            .iter()
-            .find(|entry| entry.language == "scss")
-            .unwrap();
+        assert_eq!(registry.grammars.len(), BOOTSTRAP_NPM_WASM_GRAMMARS.len());
 
-        assert_eq!(scss.version, Version::new(1, 0, 0));
+        let mut seen = BTreeSet::new();
+        for spec in BOOTSTRAP_NPM_WASM_GRAMMARS {
+            assert!(
+                seen.insert(normalize_language_key(spec.language)),
+                "duplicate bootstrap grammar language: {}",
+                spec.language
+            );
+            assert!(
+                !spec.filetypes.is_empty()
+                    || !spec.extensions.is_empty()
+                    || !spec.filenames.is_empty(),
+                "{} must have at least one detection pattern",
+                spec.language
+            );
+            assert!(
+                spec.url.starts_with("https://registry.npmjs.org/") && spec.url.ends_with(".tgz"),
+                "{} must use an npm tarball URL",
+                spec.language
+            );
+            assert!(
+                spec.url.contains(&format!("-{}.tgz", spec.version())),
+                "{} URL should match its declared version",
+                spec.language
+            );
+
+            let entry = registry
+                .grammars
+                .iter()
+                .find(|entry| entry.language == spec.language)
+                .unwrap_or_else(|| panic!("missing bootstrap grammar: {}", spec.language));
+            assert_eq!(entry.version, spec.version(), "{}", spec.language);
+            assert_eq!(entry.parser_abi, LANGUAGE_VERSION, "{}", spec.language);
+            assert_eq!(
+                entry.runtime,
+                Some(GrammarRuntime::Wasm),
+                "{}",
+                spec.language
+            );
+            assert_eq!(entry.platforms, ["wasm"], "{}", spec.language);
+            assert_eq!(entry.app_version_req, None, "{}", spec.language);
+            assert_eq!(
+                entry.filetypes,
+                spec.filetypes
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>(),
+                "{}",
+                spec.language
+            );
+            assert_eq!(
+                entry.extensions,
+                spec.extensions
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>(),
+                "{}",
+                spec.language
+            );
+            assert_eq!(
+                entry.filenames,
+                spec.filenames
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>(),
+                "{}",
+                spec.language
+            );
+            let [package] = entry.packages.as_slice() else {
+                panic!("{} must have exactly one package", spec.language);
+            };
+            assert_eq!(package.url, spec.url, "{}", spec.language);
+            assert_eq!(
+                package.source,
+                GrammarPackageSource::Community,
+                "{}",
+                spec.language
+            );
+            assert_eq!(
+                package.runtime,
+                Some(GrammarRuntime::Wasm),
+                "{}",
+                spec.language
+            );
+            assert_eq!(
+                package.platform.as_deref(),
+                Some("wasm"),
+                "{}",
+                spec.language
+            );
+            assert_eq!(package.sha256, None, "{}", spec.language);
+            assert_eq!(package.signature, None, "{}", spec.language);
+        }
+    }
+
+    #[test]
+    fn bootstrap_npm_wasm_specs_are_known_detection_languages() {
+        let registry = BuiltinSyntaxRegistry::new();
+        for spec in BOOTSTRAP_NPM_WASM_GRAMMARS {
+            if spec.language == "php-only" {
+                continue;
+            }
+
+            for extension in spec.extensions {
+                assert_detection_match(
+                    registry.language_for_extension(extension),
+                    spec.language,
+                    extension,
+                );
+            }
+            for filetype in spec.filetypes {
+                if filetype.contains('.') {
+                    let filename = format!("sample.{filetype}");
+                    assert_detection_match(
+                        registry.language_for_compound_extension(&filename),
+                        spec.language,
+                        filetype,
+                    );
+                } else {
+                    assert_detection_match(
+                        registry.language_for_extension(filetype),
+                        spec.language,
+                        filetype,
+                    );
+                }
+            }
+            for filename in spec.filenames {
+                assert_detection_match(
+                    registry.language_for_filename(filename),
+                    spec.language,
+                    filename,
+                );
+            }
+        }
+    }
+
+    fn assert_detection_match(
+        language_match: Option<LanguageMatch>,
+        expected_syntax_key: &str,
+        pattern: &str,
+    ) {
+        let language_match = language_match.unwrap_or_else(|| {
+            panic!("missing detection pattern: {expected_syntax_key} {pattern}")
+        });
         assert_eq!(
-            scss.packages[0].url,
-            "https://registry.npmjs.org/tree-sitter-scss/-/tree-sitter-scss-1.0.0.tgz"
+            language_match.syntax_key, expected_syntax_key,
+            "{expected_syntax_key} detection pattern {pattern}",
         );
-        assert_eq!(scss.extensions, ["scss", "sass"]);
+    }
+
+    #[test]
+    fn cpp_runtime_query_inherits_c_when_package_only_has_cpp_layer() {
+        let source = "(qualified_identifier name: (identifier) @function)\n";
+
+        let expanded = ensure_cpp_query_has_c_base(source);
+
+        assert!(expanded.starts_with("; inherits: c\n"));
+        assert!(expanded.contains(source));
+    }
+
+    #[test]
+    fn cpp_runtime_query_keeps_decoded_c_base_without_inheritance_modeline() {
+        let source = "(preproc_directive) @keyword\n(primitive_type) @type\n";
+
+        assert_eq!(ensure_cpp_query_has_c_base(source), source);
     }
 
     fn write_manifest(

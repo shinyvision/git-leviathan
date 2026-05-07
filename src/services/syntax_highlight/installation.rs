@@ -1393,6 +1393,7 @@ fn decode_npm_wasm_package(
             .entry(path.to_string())
             .or_insert_with(|| query.as_bytes().to_vec());
     }
+    normalize_query_files_for_package(&target_key, &mut query_files);
 
     let wasm_path = format!("wasm/{wasm_name}");
     fs::create_dir_all(staging_dir.join("wasm")).map_err(|err| err.to_string())?;
@@ -1473,6 +1474,25 @@ fn bundled_wasm_for_language(language: &str) -> Option<(&'static str, &'static [
         )),
         _ => None,
     }
+}
+
+fn normalize_query_files_for_package(language: &str, query_files: &mut BTreeMap<String, Vec<u8>>) {
+    if language == "cpp" {
+        if let Some(highlights) = query_files.get_mut("queries/highlights.scm") {
+            if !query_has_c_base_highlights(highlights) {
+                let mut combined = CPP_C_BASE_HIGHLIGHTS.as_bytes().to_vec();
+                combined.push(b'\n');
+                combined.extend_from_slice(highlights);
+                *highlights = combined;
+            }
+        }
+    }
+}
+
+fn query_has_c_base_highlights(query: &[u8]) -> bool {
+    std::str::from_utf8(query).is_ok_and(|query| {
+        query.contains("(preproc_directive)") && query.contains("(primitive_type)")
+    })
 }
 
 #[derive(Deserialize)]
@@ -1570,6 +1590,89 @@ fn fallback_queries_for_package(
         _ => &[],
     }
 }
+
+const CPP_C_BASE_HIGHLIGHTS: &str = r##"(identifier) @variable
+
+((identifier) @constant
+ (#match? @constant "^[A-Z][A-Z\\d_]*$"))
+
+"break" @keyword
+"case" @keyword
+"const" @keyword
+"continue" @keyword
+"default" @keyword
+"do" @keyword
+"else" @keyword
+"enum" @keyword
+"extern" @keyword
+"for" @keyword
+"if" @keyword
+"inline" @keyword
+"return" @keyword
+"sizeof" @keyword
+"static" @keyword
+"struct" @keyword
+"switch" @keyword
+"typedef" @keyword
+"union" @keyword
+"volatile" @keyword
+"while" @keyword
+
+"#define" @keyword
+"#elif" @keyword
+"#else" @keyword
+"#endif" @keyword
+"#if" @keyword
+"#ifdef" @keyword
+"#ifndef" @keyword
+"#include" @keyword
+(preproc_directive) @keyword
+
+"--" @operator
+"-" @operator
+"-=" @operator
+"->" @operator
+"=" @operator
+"!=" @operator
+"*" @operator
+"&" @operator
+"&&" @operator
+"+" @operator
+"++" @operator
+"+=" @operator
+"<" @operator
+"==" @operator
+">" @operator
+"||" @operator
+
+"." @delimiter
+";" @delimiter
+
+(string_literal) @string
+(system_lib_string) @string
+
+(null) @constant
+(number_literal) @number
+(char_literal) @number
+
+(field_identifier) @property
+(statement_identifier) @label
+(type_identifier) @type
+(primitive_type) @type
+(sized_type_specifier) @type
+
+(call_expression
+  function: (identifier) @function)
+(call_expression
+  function: (field_expression
+    field: (field_identifier) @function))
+(function_declarator
+  declarator: (identifier) @function)
+(preproc_function_def
+  name: (identifier) @function.special)
+
+(comment) @comment
+"##;
 
 const MARKDOWN_FALLBACK_HIGHLIGHTS: &str = r#"(atx_heading (inline) @text.title)
 (setext_heading (paragraph) @text.title)
@@ -2116,6 +2219,26 @@ mod tests {
         assert!(tmp.path().join("wasm/tree-sitter-go.wasm").exists());
         assert!(manifest.sha256.contains_key("wasm/tree-sitter-go.wasm"));
         assert!(manifest.sha256.contains_key("queries/highlights.scm"));
+    }
+
+    #[test]
+    fn runtime_decoder_expands_cpp_queries_with_c_base_highlights() {
+        let tmp = tempdir().unwrap();
+        let bytes = npm_wasm_package(
+            "tree-sitter-cpp",
+            "0.23.4",
+            "tree-sitter-cpp.wasm",
+            Some("(qualified_identifier name: (identifier) @function)\n"),
+        );
+
+        RuntimePackageDecoder
+            .decode_package(&bytes, tmp.path(), "cpp")
+            .unwrap();
+
+        let highlights = fs::read_to_string(tmp.path().join("queries/highlights.scm")).unwrap();
+        assert!(highlights.contains("(preproc_directive) @keyword"));
+        assert!(highlights.contains("(primitive_type) @type"));
+        assert!(highlights.contains("(qualified_identifier name: (identifier) @function)"));
     }
 
     #[test]

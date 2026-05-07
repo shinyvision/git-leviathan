@@ -396,12 +396,12 @@ fn override_query_path(override_dir: &Path, language_name: &str, query_type: Que
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-struct QueryModeline {
-    extends: bool,
-    inherits: Vec<String>,
+pub(super) struct QueryModeline {
+    pub(super) extends: bool,
+    pub(super) inherits: Vec<String>,
 }
 
-fn parse_modelines(source: &str) -> QueryModeline {
+pub(super) fn parse_modelines(source: &str) -> QueryModeline {
     let mut modeline = QueryModeline::default();
     for line in source.lines() {
         let trimmed = line.trim_start();
@@ -527,5 +527,4 @@ mod tests {
             "(line_comment) @comment\n\n; extends\n(identifier) @function\n"
         );
     }
-
 }
