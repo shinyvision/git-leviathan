@@ -1,4 +1,25 @@
-use iced::{widget::svg, Color, Element, Length, Theme};
+use std::sync::LazyLock;
+
+use iced::{
+    widget::{image, svg},
+    Color, Element, Length, Theme,
+};
+
+pub const BLANK_BACKGROUND: &[u8] = include_bytes!("images/git_leviathan_background.png");
+pub const APP_LOGO: &[u8] = include_bytes!("../../packaging/icons/git-leviathan.png");
+
+static BLANK_BACKGROUND_HANDLE: LazyLock<image::Handle> =
+    LazyLock::new(|| image::Handle::from_bytes(BLANK_BACKGROUND));
+static APP_LOGO_HANDLE: LazyLock<image::Handle> =
+    LazyLock::new(|| image::Handle::from_bytes(APP_LOGO));
+
+pub fn blank_background_handle() -> image::Handle {
+    BLANK_BACKGROUND_HANDLE.clone()
+}
+
+pub fn app_logo_handle() -> image::Handle {
+    APP_LOGO_HANDLE.clone()
+}
 
 pub const UNDO: &[u8] = include_bytes!("icons/arrow-back-up.svg");
 
@@ -51,4 +72,15 @@ pub fn sidebar_icon<'a, Message: 'a>(data: &'static [u8], color: Color) -> Eleme
 
 pub fn tab_icon<'a, Message: 'a>(data: &'static [u8], color: Color) -> Element<'a, Message> {
     icon(data, 13.0, color)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn blank_screen_image_handles_are_stable() {
+        assert_eq!(blank_background_handle(), blank_background_handle());
+        assert_eq!(app_logo_handle(), app_logo_handle());
+    }
 }
