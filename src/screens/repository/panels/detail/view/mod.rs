@@ -18,7 +18,7 @@ mod reword_view;
 mod styles;
 
 use iced::{
-    widget::{button, column, container, mouse_area, row, scrollable, text, MouseArea},
+    widget::{column, container, mouse_area, row, scrollable, text, MouseArea},
     Border, Color, Element, Length, Padding, Theme,
 };
 
@@ -37,7 +37,7 @@ use crate::{
 
 use super::super::super::{
     panel_messages::{CenterAction, DetailAction},
-    FileView, RepositoryMessage,
+    RepositoryMessage,
 };
 use super::state::DetailViewModel;
 use super::DetailOrientation;
@@ -311,77 +311,6 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
         .spacing(10)
         .align_y(iced::Alignment::Center);
 
-    let is_path = screen.file_view == FileView::Path;
-
-    let path_btn = button(text("Path").size(theme::FONT_SM))
-        .style(move |_: &Theme, _: button::Status| button::Style {
-            background: Some(
-                if is_path {
-                    theme::BG_HOVER
-                } else {
-                    theme::BG_HEADER
-                }
-                .into(),
-            ),
-            text_color: if is_path {
-                Color::WHITE
-            } else {
-                theme::TEXT_DIM
-            },
-            border: Border {
-                radius: 3.0.into(),
-                color: theme::BORDER,
-                width: 1.0,
-            },
-            shadow: Default::default(),
-            snap: false,
-        })
-        .padding(Padding::from([3, 8]))
-        .on_press(Message::repo(RepositoryMessage::Detail(
-            DetailAction::FileViewChanged(FileView::Path),
-        )));
-
-    let tree_btn = button(text("Tree").size(theme::FONT_SM))
-        .style(move |_: &Theme, _: button::Status| button::Style {
-            background: Some(
-                if !is_path {
-                    theme::BG_HOVER
-                } else {
-                    theme::BG_HEADER
-                }
-                .into(),
-            ),
-            text_color: if !is_path {
-                Color::WHITE
-            } else {
-                theme::TEXT_DIM
-            },
-            border: Border {
-                radius: 3.0.into(),
-                color: theme::BORDER,
-                width: 1.0,
-            },
-            shadow: Default::default(),
-            snap: false,
-        })
-        .padding(Padding::from([3, 8]))
-        .on_press(Message::repo(RepositoryMessage::Detail(
-            DetailAction::FileViewChanged(FileView::Tree),
-        )));
-
-    let view_toggle_row = row![
-        assets::sidebar_icon(assets::ARROWS_SORT, theme::TEXT_DIM),
-        path_btn,
-        tree_btn,
-        horizontal_space(),
-        text("View all files")
-            .size(theme::FONT_SM)
-            .style(style::dim_text),
-    ]
-    .spacing(4)
-    .align_y(iced::Alignment::Center)
-    .padding(Padding::from([4, 10]));
-
     let diff_loaded = screen
         .commit_diff_state
         .map(|d| d.diff_loaded)
@@ -440,10 +369,8 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
                 h_divider(),
                 commit_msg,
                 author_row,
-                h_divider(),
                 stats_row,
-                view_toggle_row,
-                h_divider(),
+                files_separator(),
                 file_list,
             ]
             .spacing(0)
@@ -461,7 +388,7 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
                 .height(Length::Fill)
                 .width(Length::FillPortion(3));
 
-            let right_col = column![stats_row, view_toggle_row, h_divider(), file_list,]
+            let right_col = column![stats_row, files_separator(), file_list,]
                 .spacing(0)
                 .height(Length::Fill)
                 .width(Length::FillPortion(2));
@@ -473,6 +400,13 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
                 .into()
         }
     }
+}
+
+fn files_separator<'a>() -> Element<'a, Message> {
+    container(h_divider())
+        .padding(Padding::from([5, 0]))
+        .width(Length::Fill)
+        .into()
 }
 
 fn parent_hash_column<'a>(commit: &'a Commit) -> Element<'a, Message> {

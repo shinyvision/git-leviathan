@@ -32,12 +32,6 @@ use self::{
     state::{FocusedPanel, MergedDiffCache, RepositoryData},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FileView {
-    Path,
-    Tree,
-}
-
 #[derive(Debug, Clone)]
 pub enum SelectedDiffTarget {
     Dirty { path: String, is_staged: bool },

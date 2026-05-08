@@ -153,7 +153,6 @@ pub enum CenterAction {
 
 #[derive(Debug, Clone)]
 pub enum DetailAction {
-    FileViewChanged(super::FileView),
     DirtyFileClicked {
         path: String,
         is_staged: bool,

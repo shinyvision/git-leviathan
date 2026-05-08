@@ -30,10 +30,6 @@ pub(in crate::screens::repository) fn update(
     diff_panel: &mut DiffPanel,
 ) -> Task<Message> {
     match action {
-        DetailAction::FileViewChanged(view) => {
-            ctx.data.selection.set_file_view(view);
-            Task::none()
-        }
         DetailAction::DirtyFileClicked { path, is_staged } => {
             if diff_panel.is_active() {
                 let already_shown = diff_panel

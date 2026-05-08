@@ -1,12 +1,9 @@
-//! Commit-list selection state: anchor, multi-select range, file view mode.
-
-use super::super::FileView;
+//! Commit-list selection state: anchor and multi-select range.
 
 #[derive(Debug, Clone)]
 pub(in crate::screens::repository) struct SelectionState {
     anchor: usize,
     selected: std::collections::BTreeSet<usize>,
-    file_view: FileView,
 }
 
 impl SelectionState {
@@ -16,7 +13,6 @@ impl SelectionState {
         Self {
             anchor: 0,
             selected,
-            file_view: FileView::Path,
         }
     }
 
@@ -91,13 +87,5 @@ impl SelectionState {
 
     pub(in crate::screens::repository) fn is_multi(&self) -> bool {
         self.selected.len() > 1
-    }
-
-    pub(in crate::screens::repository) fn file_view(&self) -> FileView {
-        self.file_view
-    }
-
-    pub(in crate::screens::repository) fn set_file_view(&mut self, view: FileView) {
-        self.file_view = view;
     }
 }

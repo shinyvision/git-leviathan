@@ -46,7 +46,6 @@ pub const TAG: &[u8] = include_bytes!("icons/tag.svg");
 pub const CHECK: &[u8] = include_bytes!("icons/check.svg");
 
 pub const PENCIL: &[u8] = include_bytes!("icons/pencil-filled.svg");
-pub const ARROWS_SORT: &[u8] = include_bytes!("icons/arrows-sort.svg");
 pub const REFRESH: &[u8] = include_bytes!("icons/refresh.svg");
 pub const PLUS: &[u8] = include_bytes!("icons/plus-filled.svg");
 pub const MINUS: &[u8] = include_bytes!("icons/minus.svg");

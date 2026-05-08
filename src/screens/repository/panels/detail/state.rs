@@ -4,10 +4,7 @@ use crate::{
     core::Commit, message::Message, services::MergedCommitDiffResult, view_model::CommitDiffState,
 };
 
-use super::super::super::{
-    state::{OperationKind, RepositoryData, SelectionState},
-    FileView,
-};
+use super::super::super::state::{OperationKind, RepositoryData, SelectionState};
 use super::view as detail_view;
 use super::{DetailOrientation, DetailViewCtx};
 
@@ -16,7 +13,6 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     pub(in crate::screens::repository) commit: Option<&'a Commit>,
     pub(in crate::screens::repository) commit_diff_state: Option<&'a CommitDiffState>,
     pub(in crate::screens::repository) commit_idx: usize,
-    pub(in crate::screens::repository) file_view: FileView,
     pub(in crate::screens::repository) width: f32,
     pub(in crate::screens::repository) is_resizing: bool,
     pub(in crate::screens::repository) orientation: DetailOrientation,
@@ -164,7 +160,6 @@ impl DetailPanel {
             commit: selected,
             commit_diff_state: data.cache.state(selection.selected_commit()),
             commit_idx: selection.selected_commit(),
-            file_view: selection.file_view(),
             width,
             is_resizing: data.resize.detail_resizing,
             orientation,
