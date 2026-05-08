@@ -27,13 +27,17 @@ pub(in crate::screens::repository) struct BranchPopoutState {
 #[derive(Debug, Clone)]
 struct BranchClickState {
     branch_name: String,
+    remote_ref: Option<String>,
     at: Instant,
 }
 
 pub(in crate::screens::repository) enum BranchPressOutcome {
     None,
     CheckoutLocal(String),
-    CheckoutRemote(String),
+    CheckoutRemote {
+        branch_name: String,
+        remote_ref: Option<String>,
+    },
 }
 
 pub(in crate::screens::repository) struct SidebarContextMenuRequest {
@@ -42,7 +46,7 @@ pub(in crate::screens::repository) struct SidebarContextMenuRequest {
     pub(in crate::screens::repository) is_tag: bool,
     pub(in crate::screens::repository) remote_name: Option<String>,
     pub(in crate::screens::repository) tag_remote_names: Vec<String>,
-    pub(in crate::screens::repository) default_remote_name: Option<String>,
+    pub(in crate::screens::repository) tag_push_remote_names: Vec<String>,
     pub(in crate::screens::repository) can_fast_forward: bool,
     pub(in crate::screens::repository) position: Point,
 }
@@ -165,7 +169,7 @@ impl BranchPopoutController {
             is_tag,
             remote_name,
             tag_remote_names,
-            default_remote_name,
+            tag_push_remote_names,
             can_fast_forward,
             position,
         } = request;
@@ -173,7 +177,7 @@ impl BranchPopoutController {
         self.context_menu = Some(ContextMenuState {
             branch_name: branch_name.clone(),
             tag_remote_names,
-            default_remote_name,
+            tag_push_remote_names,
             is_remote,
             has_remote: is_remote,
             is_tag,
@@ -348,11 +352,15 @@ impl BranchPopoutController {
         &mut self,
         branch_name: String,
         is_remote_only: bool,
+        remote_ref: Option<String>,
     ) -> BranchPressOutcome {
-        if self.branch_label_was_double_clicked(&branch_name) {
+        if self.branch_label_was_double_clicked(&branch_name, remote_ref.as_deref()) {
             self.last_branch_click = None;
             return if is_remote_only {
-                BranchPressOutcome::CheckoutRemote(branch_name)
+                BranchPressOutcome::CheckoutRemote {
+                    branch_name,
+                    remote_ref,
+                }
             } else {
                 BranchPressOutcome::CheckoutLocal(branch_name)
             };
@@ -360,6 +368,7 @@ impl BranchPopoutController {
 
         self.last_branch_click = Some(BranchClickState {
             branch_name,
+            remote_ref,
             at: Instant::now(),
         });
         BranchPressOutcome::None
@@ -390,9 +399,10 @@ impl BranchPopoutController {
         }
     }
 
-    fn branch_label_was_double_clicked(&self, branch_name: &str) -> bool {
+    fn branch_label_was_double_clicked(&self, branch_name: &str, remote_ref: Option<&str>) -> bool {
         self.last_branch_click.as_ref().is_some_and(|last_click| {
             last_click.branch_name == branch_name
+                && last_click.remote_ref.as_deref() == remote_ref
                 && last_click.at.elapsed() <= BRANCH_DOUBLE_CLICK_WINDOW
         })
     }

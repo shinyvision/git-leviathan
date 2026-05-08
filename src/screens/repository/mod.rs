@@ -140,6 +140,11 @@ impl RepositoryScreen {
         self.data.snapshot.default_remote_name()
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn remote_names(&self) -> &[String] {
+        self.data.snapshot.remote_names()
+    }
+
     pub fn initial_load_task(&self, tab_id: TabId) -> Task<Message> {
         let repo = self.fleet.active().clone();
         let presenter = self.presenter.clone();

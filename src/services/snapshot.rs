@@ -17,6 +17,10 @@ pub struct RepoSnapshot {
     /// when the repo has no remotes. Populated so right-click menus don't have
     /// to synchronously reopen the repo to derive it.
     pub default_remote_name: Option<String>,
+    /// Configured remote names in repository order. Populated alongside
+    /// `default_remote_name` so menus can offer every remote without reopening
+    /// the repo.
+    pub remote_names: Vec<String>,
     /// Local branch short-names that the current branch can strictly
     /// fast-forward to (i.e. current is a proper ancestor of the branch).
     /// Populated so `BranchLabelRightClicked` / `SidebarBranchRightClicked`
@@ -44,6 +48,7 @@ pub struct RefsSnapshot {
     pub head_hash: Option<String>,
     pub has_more_commits: bool,
     pub default_remote_name: Option<String>,
+    pub remote_names: Vec<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<WorktreeInfo>,
     /// Which worktree directory this snapshot reflects. Empty when the repo

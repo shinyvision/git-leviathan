@@ -161,13 +161,13 @@ fn builtin_git_command_specs() -> Vec<BuiltinGitCommandSpec> {
         BuiltinGitCommandSpec {
             name: "git.fetch",
             title: "Git: Fetch",
-            description: "Fetch from remote.",
+            description: "Fetch from one remote, or every remote when omitted.",
             args: vec![command_arg(
                 "remote",
                 StringArg,
                 false,
                 None,
-                "Remote name.",
+                "Remote name. Omit to fetch every configured remote.",
             )],
             destructive: false,
             background: true,
@@ -175,10 +175,22 @@ fn builtin_git_command_specs() -> Vec<BuiltinGitCommandSpec> {
         BuiltinGitCommandSpec {
             name: "git.push",
             title: "Git: Push",
-            description: "Push current branch.",
+            description: "Push the current branch, or an explicit local branch to a remote.",
             args: vec![
-                command_arg("remote", StringArg, false, None, "Remote name."),
-                command_arg("ref", StringArg, false, None, "Ref to push."),
+                command_arg(
+                    "remote",
+                    StringArg,
+                    false,
+                    None,
+                    "Remote for explicit branch push. Omit with ref to use configured current-branch push.",
+                ),
+                command_arg(
+                    "ref",
+                    StringArg,
+                    false,
+                    None,
+                    "Local branch name or refs/heads/* source for explicit push. Requires remote.",
+                ),
             ],
             destructive: false,
             background: true,

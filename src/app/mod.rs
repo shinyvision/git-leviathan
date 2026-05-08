@@ -354,21 +354,10 @@ impl App {
         );
     }
 
-    pub(super) fn fetch_remote_name_for_tab(&self, tab_id: crate::core::TabId) -> String {
-        self.tabs
-            .screen(tab_id)
-            .and_then(|screen| screen.default_remote_name())
-            .filter(|remote| !remote.is_empty())
-            .unwrap_or("origin")
-            .to_string()
-    }
-
-    pub(super) fn fetch_remote_payload(remote_name: impl Into<String>) -> EventPayload {
+    pub(super) fn fetch_all_remotes_payload() -> EventPayload {
         let mut payload = EventPayload::new();
-        payload.insert(
-            "remote".into(),
-            serde_json::Value::String(remote_name.into()),
-        );
+        payload.insert("remote".into(), serde_json::Value::String(String::new()));
+        payload.insert("scope".into(), serde_json::Value::String("all".into()));
         payload
     }
 

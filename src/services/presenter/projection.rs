@@ -100,6 +100,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         head_hash,
         has_more_commits,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees,
         active_worktree_path,
@@ -115,6 +116,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         head_hash,
         has_more_commits,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees,
         active_worktree_path,
@@ -132,6 +134,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         num_lanes,
         head_hash,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         repo_name: _,
         current_branch: _,
@@ -148,6 +151,7 @@ pub fn project_refs(snapshot: RefsSnapshot) -> LoadedRefs {
         num_lanes,
         head_hash,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         signature,
         has_more_commits,
@@ -179,6 +183,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         head_hash,
         has_more_commits: _,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees,
         active_worktree_path: _,
@@ -319,6 +324,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         current_branch: current_branch.unwrap_or_else(|| "HEAD".to_string()),
         head_hash,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees: worktrees.clone(),
         branch_refs,
@@ -769,15 +775,24 @@ pub fn build_sidebar_sections(
                 worktree_path: None,
             }),
             RepoRefKind::RemoteBranch => {
-                let remote_name = repo_ref
-                    .remote_name
-                    .clone()
-                    .unwrap_or_else(|| "origin".to_string());
-                let full_ref = format!("{}/{}", remote_name, repo_ref.name);
+                let (remote_name, branch_name) = match repo_ref.remote_name.as_ref() {
+                    Some(remote_name) if !remote_name.is_empty() => {
+                        (remote_name.clone(), repo_ref.name.clone())
+                    }
+                    _ => match repo_ref.name.split_once('/') {
+                        Some((remote_name, branch_name))
+                            if !remote_name.is_empty() && !branch_name.is_empty() =>
+                        {
+                            (remote_name.to_string(), branch_name.to_string())
+                        }
+                        _ => continue,
+                    },
+                };
+                let full_ref = format!("{}/{}", remote_name, branch_name);
                 let is_current = upstream_ref_name.as_ref() == Some(&full_ref)
                     && current_hash.as_ref() == Some(&repo_ref.target_hash);
                 remotes_map.entry(remote_name).or_default().push(Branch {
-                    name: repo_ref.name.clone(),
+                    name: branch_name,
                     is_current,
                     children: vec![],
                     worktree_path: None,
@@ -1015,10 +1030,15 @@ fn find_free_slot_mfp(lanes: &mut Vec<Option<String>>, mfp: &mut Vec<bool>) -> u
 
 #[cfg(test)]
 mod tests {
-    use super::{build_ref_map, compute_graph_rows, format::relative_time_from_diff, project_repo};
+    use super::{
+        build_ref_map, compute_graph_rows, format::relative_time_from_diff, project_refs,
+        project_repo,
+    };
     use crate::{
         core::{ChangeKind, ChangedFile, CommitKind},
-        services::{CommitSnapshot, DirtySnapshot, RepoRef, RepoRefKind, RepoSnapshot},
+        services::{
+            CommitSnapshot, DirtySnapshot, RefsSnapshot, RepoRef, RepoRefKind, RepoSnapshot,
+        },
         view_model::{BranchLabelKind, GraphRow, GraphSegment},
     };
 
@@ -1037,6 +1057,31 @@ mod tests {
         segments.iter().any(|segment| {
             segment.from_lane == from_lane as f32 && segment.to_lane == to_lane as f32
         })
+    }
+
+    #[test]
+    fn projections_preserve_remote_names() {
+        let remote_names = vec![
+            "upstream".to_string(),
+            "origin".to_string(),
+            "fork".to_string(),
+        ];
+
+        let projection = project_repo(RepoSnapshot {
+            default_remote_name: Some("origin".to_string()),
+            remote_names: remote_names.clone(),
+            ..RepoSnapshot::default()
+        });
+        assert_eq!(projection.default_remote_name.as_deref(), Some("origin"));
+        assert_eq!(projection.remote_names, remote_names);
+
+        let loaded_refs = project_refs(RefsSnapshot {
+            default_remote_name: Some("origin".to_string()),
+            remote_names: remote_names.clone(),
+            ..RefsSnapshot::default()
+        });
+        assert_eq!(loaded_refs.default_remote_name.as_deref(), Some("origin"));
+        assert_eq!(loaded_refs.remote_names, remote_names);
     }
 
     #[test]

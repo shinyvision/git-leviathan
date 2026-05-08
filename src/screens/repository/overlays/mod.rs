@@ -465,6 +465,14 @@ impl OverlayManager {
                 };
                 let branch_name = state.branch_name.clone();
                 let is_remote = state.is_remote;
+                let branch_ref = if is_remote {
+                    state
+                        .remote_ref
+                        .clone()
+                        .unwrap_or_else(|| branch_name.clone())
+                } else {
+                    branch_name.clone()
+                };
                 let Some(operation_id) = ctx.operations.begin_write() else {
                     return DialogDispatch::Task(Task::none());
                 };
@@ -474,11 +482,10 @@ impl OverlayManager {
                     tab_id,
                     ..
                 } = ctx;
-                let delete_branch_name = branch_name.clone();
                 let task = Task::perform(
                     git_write_work(move || {
                         repository
-                            .delete_branch(&delete_branch_name, is_remote)
+                            .delete_branch(&branch_ref, is_remote)
                             .map(|s| presenter.project_loaded(s))
                     }),
                     move |result| {
@@ -578,6 +585,11 @@ impl OverlayManager {
                 let old_name = state.branch_name.clone();
                 let new_name = state.new_branch_input.trim().to_string();
                 let is_remote = state.is_remote;
+                let old_ref = if is_remote {
+                    state.remote_ref.clone().unwrap_or_else(|| old_name.clone())
+                } else {
+                    old_name.clone()
+                };
                 if new_name.is_empty() || new_name == old_name {
                     self.close();
                     return DialogDispatch::Task(Task::none());
@@ -591,7 +603,7 @@ impl OverlayManager {
                     tab_id,
                     ..
                 } = ctx;
-                let old_name_clone = old_name.clone();
+                let old_name_clone = old_ref;
                 let new_name_clone = new_name.clone();
                 let task = Task::perform(
                     git_write_work(move || {
@@ -758,15 +770,28 @@ impl OverlayManager {
                 }
                 DialogDispatch::Task(Task::none())
             }
+            OverlayPanelAction::SetUpstreamRemoteChanged(remote_name) => {
+                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
+                    state.select_remote(remote_name);
+                    state.remote_dropdown_open = false;
+                }
+                DialogDispatch::Task(Task::none())
+            }
+            OverlayPanelAction::SetUpstreamRemoteDropdownToggled => {
+                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
+                    state.remote_dropdown_open = !state.remote_dropdown_open;
+                }
+                DialogDispatch::Task(Task::none())
+            }
             OverlayPanelAction::SetUpstreamConfirmed => {
                 let Some(ActiveDialog::SetUpstream(state)) = self.active.as_ref() else {
                     return DialogDispatch::Task(Task::none());
                 };
                 let remote_branch = state.new_branch_input.trim().to_string();
-                if remote_branch.is_empty() {
+                let remote_name = state.selected_remote_name.trim().to_string();
+                if remote_branch.is_empty() || remote_name.is_empty() {
                     return DialogDispatch::Task(Task::none());
                 }
-                let remote_name = state.remote_name.clone();
                 let Some(operation_id) = ctx.operations.begin_write() else {
                     return DialogDispatch::Task(Task::none());
                 };
@@ -1332,6 +1357,7 @@ mod tests {
             new_branch_input: String::new(),
             needs_focus: false,
             remote_name: None,
+            remote_ref: None,
         }));
         assert!(m.is_text_input_active());
     }
@@ -1355,6 +1381,7 @@ mod tests {
             is_remote: false,
             has_remote: false,
             remote_name: None,
+            remote_ref: None,
         }));
         assert!(!m.is_text_input_active());
 

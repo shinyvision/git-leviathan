@@ -358,8 +358,24 @@ impl GitService {
         fetch::fetch_all_refs(self)
     }
 
+    pub fn fetch_remote_refs(&mut self, remote_name: &str) -> Result<(), GitError> {
+        fetch::fetch_remote_refs(self, remote_name)
+    }
+
     pub fn push_current_branch(&mut self) -> Result<PushOutcome, GitError> {
         push::push_current_branch(self)
+    }
+
+    pub fn push_ref_to_remote(
+        &mut self,
+        remote_name: &str,
+        ref_name: &str,
+    ) -> Result<PushOutcome, GitError> {
+        push::push_ref_to_remote(self, remote_name, ref_name)
+    }
+
+    pub fn current_branch_push_remote(&mut self) -> Result<String, GitError> {
+        push::current_branch_push_remote(self)
     }
 
     pub fn push_and_set_upstream(
@@ -559,6 +575,36 @@ mod tests {
         .expect("failed to commit test deletion");
     }
 
+    fn create_duplicate_remote_main_refs(
+        repo: &git2::Repository,
+        repo_path: &Path,
+    ) -> (git2::Oid, git2::Oid) {
+        let original_branch = repo
+            .head()
+            .expect("repo should have head")
+            .shorthand()
+            .expect("head branch should be utf-8")
+            .to_string();
+        let origin_oid = repo
+            .head()
+            .expect("repo should have head")
+            .target()
+            .expect("head should point to a commit");
+
+        create_remote_tracking_branch(repo, "origin/main");
+
+        create_branch(repo, "fork-source");
+        checkout_branch_for_setup(repo, "fork-source");
+        write_file(repo_path, "tracked.txt", "fork remote\n");
+        let fork_oid = commit_all(repo, "fork remote main");
+        repo.reference("refs/remotes/fork/main", fork_oid, true, "set fork main")
+            .expect("failed to create fork remote ref");
+
+        checkout_branch_for_setup(repo, &original_branch);
+
+        (origin_oid, fork_oid)
+    }
+
     fn assert_no_index_conflicts(service: &GitService) {
         let mut index = service.repo.index().expect("failed to open index");
         index.read(true).expect("failed to refresh index");
@@ -609,6 +655,28 @@ mod tests {
 
         assert!(repo
             .find_branch("origin/feature/remote-only", git2::BranchType::Remote)
+            .is_err());
+    }
+
+    #[test]
+    fn delete_branch_exact_remote_ref_does_not_prefer_origin_duplicate() {
+        let (temp_repo, repo) = init_test_repo("delete_exact_duplicate_remote");
+        let (origin_oid, _) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .delete_branch("fork/main", true)
+            .expect("delete should target exact fork ref");
+
+        let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
+        assert_eq!(
+            repo.find_reference("refs/remotes/origin/main")
+                .expect("origin/main should remain")
+                .target(),
+            Some(origin_oid)
+        );
+        assert!(repo
+            .find_branch("fork/main", git2::BranchType::Remote)
             .is_err());
     }
 
@@ -852,6 +920,136 @@ mod tests {
                 .workdir_has_changes()
                 .expect("failed to inspect status"),
             "fast-forward checkout should leave the worktree clean"
+        );
+    }
+
+    #[test]
+    fn checkout_remote_branch_exact_ref_uses_fork_when_short_name_duplicates() {
+        let (temp_repo, repo) = init_test_repo("checkout_exact_duplicate_remote");
+        let (_, fork_oid) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+        let (fork_remote_temp, _fork_remote_repo) =
+            init_bare_test_repo("checkout_exact_duplicate_remote_fork");
+        add_remote(
+            &repo,
+            "fork",
+            &format!("file://{}", fork_remote_temp.path_str()),
+        );
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        let outcome = service
+            .checkout_remote_branch("fork/main")
+            .expect("remote checkout should target exact fork ref");
+
+        assert!(matches!(outcome, RemoteCheckoutOutcome::Success(_)));
+        assert_eq!(service.current_branch_name().as_deref(), Some("main"));
+        assert_eq!(
+            service.repo.head().expect("repo should have head").target(),
+            Some(fork_oid)
+        );
+        assert_eq!(
+            fs::read_to_string(temp_repo.path.join("tracked.txt"))
+                .expect("failed to read tracked file"),
+            "fork remote\n"
+        );
+    }
+
+    #[test]
+    fn checkout_remote_branch_short_name_duplicate_requires_exact_ref() {
+        let (temp_repo, repo) = init_test_repo("checkout_ambiguous_duplicate_remote");
+        create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        let err = service
+            .checkout_remote_branch("main")
+            .expect_err("ambiguous remote short name should fail");
+
+        assert!(err.to_string().contains("use an exact remote ref"));
+    }
+
+    #[test]
+    fn create_branch_from_remote_exact_ref_uses_fork_when_short_name_duplicates() {
+        let (temp_repo, repo) = init_test_repo("create_from_exact_duplicate_remote");
+        let (_, fork_oid) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+        let (fork_remote_temp, _fork_remote_repo) =
+            init_bare_test_repo("create_from_exact_duplicate_remote_fork");
+        add_remote(
+            &repo,
+            "fork",
+            &format!("file://{}", fork_remote_temp.path_str()),
+        );
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .create_branch_from_remote_ref_and_checkout("from-fork", "fork/main")
+            .expect("create from remote should target exact fork ref");
+
+        assert_eq!(service.current_branch_name().as_deref(), Some("from-fork"));
+        assert_eq!(
+            service.repo.head().expect("repo should have head").target(),
+            Some(fork_oid)
+        );
+        let branch = service
+            .repo
+            .find_branch("from-fork", git2::BranchType::Local)
+            .expect("from-fork branch should exist");
+        assert_eq!(
+            branch
+                .upstream()
+                .expect("from-fork should track fork/main")
+                .name()
+                .expect("upstream name should be readable"),
+            Some("fork/main")
+        );
+    }
+
+    #[test]
+    fn reset_branch_to_remote_exact_ref_uses_fork_when_short_name_duplicates() {
+        let (temp_repo, repo) = init_test_repo("reset_to_exact_duplicate_remote");
+        let (_, fork_oid) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+        create_branch(&repo, "target");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .reset_branch_to_remote_and_checkout("target", "fork/main")
+            .expect("reset should target exact fork ref");
+
+        assert_eq!(service.current_branch_name().as_deref(), Some("target"));
+        assert_eq!(
+            service.repo.head().expect("repo should have head").target(),
+            Some(fork_oid)
+        );
+        assert_eq!(
+            fs::read_to_string(temp_repo.path.join("tracked.txt"))
+                .expect("failed to read tracked file"),
+            "fork remote\n"
+        );
+    }
+
+    #[test]
+    fn rename_branch_exact_remote_ref_keeps_original_remote_when_short_name_duplicates() {
+        let (temp_repo, repo) = init_test_repo("rename_exact_duplicate_remote");
+        let (origin_oid, fork_oid) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .rename_branch("fork/main", "renamed", true)
+            .expect("rename should target exact fork ref");
+
+        let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
+        assert_eq!(
+            repo.find_reference("refs/remotes/origin/main")
+                .expect("origin/main should remain")
+                .target(),
+            Some(origin_oid)
+        );
+        assert!(repo
+            .find_branch("fork/main", git2::BranchType::Remote)
+            .is_err());
+        assert_eq!(
+            repo.find_reference("refs/remotes/fork/renamed")
+                .expect("fork/renamed should exist")
+                .target(),
+            Some(fork_oid)
         );
     }
 

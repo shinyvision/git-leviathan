@@ -26,7 +26,16 @@ pub trait RemoteOps: RepoRead {
     /// halves is deliberate: keeps the "reload" signal scoped to the
     /// components that consume refs instead of spraying a full-repo snapshot.
     fn fetch_remotes(&self) -> Result<(), GitError>;
+    /// Fetch refs from one explicit configured remote. This is the lower-level
+    /// path for API/plugin callers that already know which remote they need.
+    fn fetch_remote(&self, remote_name: &str) -> Result<(), GitError>;
     fn push_current_branch(&self) -> Result<PushGatewayOutcome, GitError>;
+    fn push_ref_to_remote(
+        &self,
+        remote_name: &str,
+        ref_name: &str,
+    ) -> Result<PushGatewayOutcome, GitError>;
+    fn current_branch_push_remote(&self) -> Result<String, GitError>;
     fn push_and_set_upstream(
         &self,
         remote_name: &str,

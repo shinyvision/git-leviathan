@@ -34,6 +34,7 @@ pub(super) fn load_repo(service: &GitService, commit_limit: usize) -> RepoSnapsh
         head_hash: head_hash(service),
         has_more_commits,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees,
         active_worktree_path,
@@ -67,6 +68,7 @@ pub(super) fn load_refs_snapshot(service: &GitService, commit_limit: usize) -> R
         head_hash: head_hash(service),
         has_more_commits,
         default_remote_name,
+        remote_names,
         fast_forward_candidates,
         worktrees,
         active_worktree_path,
@@ -201,7 +203,8 @@ fn head_hash(service: &GitService) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::pick_default_remote;
+    use super::{load_refs_snapshot, load_repo, pick_default_remote};
+    use crate::services::{git::GitService, test_support};
 
     #[test]
     fn pick_default_remote_returns_none_when_empty() {
@@ -228,5 +231,36 @@ mod tests {
     fn pick_default_remote_returns_first_when_no_origin() {
         let remotes = vec!["upstream".to_string(), "fork".to_string()];
         assert_eq!(pick_default_remote(&remotes), Some("upstream".to_string()));
+    }
+
+    #[test]
+    fn snapshots_include_all_remote_names_in_repo_order() {
+        let (temp_repo, repo) = test_support::init_test_repo("load_repo_remote_names");
+        test_support::add_remote(&repo, "upstream", "https://example.invalid/upstream.git");
+        test_support::add_remote(&repo, "origin", "https://example.invalid/origin.git");
+        test_support::add_remote(&repo, "fork", "https://example.invalid/fork.git");
+
+        let service = GitService::open(temp_repo.path_str()).expect("open service");
+        // Keep libgit2's repository order; selecting the default remote must
+        // not move "origin" to the front of the exposed list.
+        let expected = vec![
+            "fork".to_string(),
+            "origin".to_string(),
+            "upstream".to_string(),
+        ];
+
+        let repo_snapshot = load_repo(&service, 10);
+        assert_eq!(repo_snapshot.remote_names, expected);
+        assert_eq!(
+            repo_snapshot.default_remote_name,
+            Some("origin".to_string())
+        );
+
+        let refs_snapshot = load_refs_snapshot(&service, 10);
+        assert_eq!(refs_snapshot.remote_names, expected);
+        assert_eq!(
+            refs_snapshot.default_remote_name,
+            Some("origin".to_string())
+        );
     }
 }

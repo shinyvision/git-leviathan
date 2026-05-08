@@ -43,7 +43,8 @@ pub(in crate::screens::repository) use animation::AnimationState;
 pub(in crate::screens::repository) use commit_index::CommitIndex;
 pub use context_menu::ContextMenuState;
 pub(in crate::screens::repository) use context_menu::{
-    CommitContextMenuState, DirtyFileContextMenuState, ResetSubmenuState,
+    eligible_tag_push_remote_names, CommitContextMenuState, DirtyFileContextMenuState,
+    ResetSubmenuState,
 };
 pub(in crate::screens::repository) use diff_cache::DiffCache;
 pub(crate) use gateway_fleet::GatewayFleet;
@@ -367,6 +368,7 @@ mod tests {
             head_hash: Some("aaaaaaaa".to_string()),
             has_more_commits: false,
             default_remote_name: None,
+            remote_names: Vec::new(),
             fast_forward_candidates: Default::default(),
             worktrees: vec![],
             active_worktree_path: Default::default(),

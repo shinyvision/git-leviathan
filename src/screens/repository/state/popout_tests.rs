@@ -29,7 +29,7 @@ fn context_menu_state(branch_name: &str) -> ContextMenuState {
     ContextMenuState {
         branch_name: branch_name.to_string(),
         tag_remote_names: Vec::new(),
-        default_remote_name: None,
+        tag_push_remote_names: Vec::new(),
         is_remote: false,
         has_remote: false,
         is_tag: false,

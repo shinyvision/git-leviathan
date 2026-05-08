@@ -99,13 +99,11 @@ pub(super) fn on_push_completed(
         }) => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::SetUpstream(set_upstream::State {
-                    branch_name: branch_name.clone(),
+                .open(ActiveDialog::SetUpstream(set_upstream_state(
+                    screen,
+                    branch_name,
                     remote_name,
-                    new_branch_input: branch_name,
-                    needs_focus: true,
-                    submitting: false,
-                }));
+                )));
             Task::none()
         }
         Ok(LoadedPushOutcome::BehindRemote {
@@ -194,13 +192,11 @@ pub(super) fn on_force_push_completed(
         }) => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::SetUpstream(set_upstream::State {
-                    branch_name: branch_name.clone(),
+                .open(ActiveDialog::SetUpstream(set_upstream_state(
+                    screen,
+                    branch_name,
                     remote_name,
-                    new_branch_input: branch_name,
-                    needs_focus: true,
-                    submitting: false,
-                }));
+                )));
             Task::none()
         }
         Ok(LoadedPushOutcome::BehindRemote { .. }) => {
@@ -218,6 +214,40 @@ pub(super) fn on_force_push_completed(
         }
     };
     super::helpers::pending_reload_task_after_write(screen, task)
+}
+
+fn set_upstream_state(
+    screen: &RepositoryScreen,
+    branch_name: String,
+    proposed_remote_name: String,
+) -> set_upstream::State {
+    set_upstream::State::new(
+        branch_name,
+        proposed_remote_name.clone(),
+        available_remote_names(screen, &proposed_remote_name),
+    )
+}
+
+fn available_remote_names(screen: &RepositoryScreen, proposed_remote_name: &str) -> Vec<String> {
+    let mut remotes = Vec::new();
+
+    push_unique_remote(&mut remotes, proposed_remote_name);
+    for remote_name in screen.remote_names() {
+        push_unique_remote(&mut remotes, remote_name);
+    }
+    if let Some(default_remote_name) = screen.default_remote_name() {
+        push_unique_remote(&mut remotes, default_remote_name);
+    }
+
+    remotes
+}
+
+fn push_unique_remote(remotes: &mut Vec<String>, remote_name: &str) {
+    let remote_name = remote_name.trim();
+    if remote_name.is_empty() || remotes.iter().any(|remote| remote == remote_name) {
+        return;
+    }
+    remotes.push(remote_name.to_string());
 }
 
 pub(super) fn on_pull_requested(screen: &mut RepositoryScreen) -> Task<Message> {

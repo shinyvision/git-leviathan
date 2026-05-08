@@ -30,6 +30,7 @@ pub(in crate::screens::repository) struct RepositorySnapshot {
     current_branch: String,
     head_hash: Option<String>,
     default_remote_name: Option<String>,
+    remote_names: Vec<String>,
     fast_forward_candidates: HashSet<String>,
     worktrees: Vec<WorktreeInfo>,
     /// Local + remote branch refs. Read by `App::sync_repository_to_plugins`
@@ -50,6 +51,7 @@ impl RepositorySnapshot {
             current_branch: String::new(),
             head_hash: None,
             default_remote_name: None,
+            remote_names: Vec::new(),
             fast_forward_candidates: HashSet::new(),
             worktrees: Vec::new(),
             branch_refs: Vec::new(),
@@ -58,7 +60,8 @@ impl RepositorySnapshot {
     }
 
     /// Clears commit/graph/sidebar view data but preserves identity fields
-    /// (`repo_name`, `current_branch`, `head_hash`, `default_remote_name`).
+    /// (`repo_name`, `current_branch`, `head_hash`, `default_remote_name`,
+    /// `remote_names`).
     /// Used by tab hibernation: the repo on disk does not change while a tab
     /// sits in the background, so the main bar can keep showing the correct
     /// repo + branch instead of flashing "Loading…" during the async rehydrate.
@@ -105,6 +108,7 @@ impl RepositorySnapshot {
             num_lanes,
             head_hash,
             default_remote_name,
+            remote_names,
             fast_forward_candidates,
             signature,
             has_more_commits: _,
@@ -120,6 +124,7 @@ impl RepositorySnapshot {
         self.num_lanes = num_lanes;
         self.head_hash = head_hash;
         self.default_remote_name = default_remote_name;
+        self.remote_names = remote_names;
         self.fast_forward_candidates = fast_forward_candidates;
         self.branch_refs = branch_refs;
 
@@ -166,6 +171,7 @@ impl RepositorySnapshot {
             current_branch,
             head_hash,
             default_remote_name,
+            remote_names,
             fast_forward_candidates,
             worktrees,
             branch_refs,
@@ -180,6 +186,7 @@ impl RepositorySnapshot {
         self.current_branch = current_branch;
         self.head_hash = head_hash;
         self.default_remote_name = default_remote_name;
+        self.remote_names = remote_names;
         self.fast_forward_candidates = fast_forward_candidates;
         self.worktrees = worktrees;
         self.branch_refs = branch_refs;
@@ -234,6 +241,10 @@ impl RepositorySnapshot {
         self.default_remote_name.as_deref()
     }
 
+    pub(crate) fn remote_names(&self) -> &[String] {
+        &self.remote_names
+    }
+
     pub(in crate::screens::repository) fn can_fast_forward_to(&self, branch_name: &str) -> bool {
         self.fast_forward_candidates.contains(branch_name)
     }
@@ -275,5 +286,37 @@ impl RepositorySnapshot {
                 return None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RepositorySnapshot;
+    use crate::services::{presenter::projection, RepoSnapshot};
+
+    #[test]
+    fn snapshot_exposes_remote_names_from_loaded_projection() {
+        let remotes = vec![
+            "upstream".to_string(),
+            "origin".to_string(),
+            "fork".to_string(),
+        ];
+        let mut snapshot = RepositorySnapshot::loading_with_repo_name("repo".to_string());
+
+        snapshot.replace_loaded(projection::project_loaded(RepoSnapshot {
+            repo_name: "repo".to_string(),
+            current_branch: Some("main".to_string()),
+            default_remote_name: Some("origin".to_string()),
+            remote_names: remotes.clone(),
+            ..RepoSnapshot::default()
+        }));
+
+        assert_eq!(snapshot.default_remote_name(), Some("origin"));
+        assert_eq!(snapshot.remote_names(), remotes.as_slice());
+
+        snapshot.hibernate();
+
+        assert_eq!(snapshot.default_remote_name(), Some("origin"));
+        assert_eq!(snapshot.remote_names(), remotes.as_slice());
     }
 }

@@ -10,9 +10,9 @@ pub struct ContextMenuState {
     pub branch_name: String,
     /// For tag rows: remote names known to hold this tag. Empty for non-tag.
     pub tag_remote_names: Vec<String>,
-    /// For tag rows: name of the first configured remote (for "Push tag to
-    /// {remote}" menu entry). None if no remote configured.
-    pub default_remote_name: Option<String>,
+    /// For tag rows: configured remotes that do not already hold this tag.
+    /// Empty for non-tag.
+    pub tag_push_remote_names: Vec<String>,
     pub is_remote: bool,
     pub has_remote: bool,
     pub is_tag: bool,
@@ -27,6 +27,30 @@ pub struct ContextMenuState {
     /// (current branch is an ancestor of this branch).
     pub can_fast_forward: bool,
     pub position: Point,
+}
+
+pub(in crate::screens::repository) fn eligible_tag_push_remote_names(
+    configured_remote_names: &[String],
+    default_remote_name: Option<&str>,
+    tag_remote_names: &[String],
+) -> Vec<String> {
+    let mut remote_names = configured_remote_names.to_vec();
+    if remote_names.is_empty() {
+        if let Some(default_remote_name) = default_remote_name {
+            remote_names.push(default_remote_name.to_string());
+        }
+    }
+
+    let mut eligible = Vec::new();
+    for remote_name in remote_names {
+        if tag_remote_names.iter().any(|name| name == &remote_name)
+            || eligible.iter().any(|name| name == &remote_name)
+        {
+            continue;
+        }
+        eligible.push(remote_name);
+    }
+    eligible
 }
 
 /// State for the Reset submenu shown when user clicks "Reset ... to this commit".
@@ -71,4 +95,35 @@ pub(in crate::screens::repository) struct WorktreeContextMenuState {
     pub(in crate::screens::repository) branch_name: String,
     pub(in crate::screens::repository) is_active: bool,
     pub(in crate::screens::repository) position: Point,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::eligible_tag_push_remote_names;
+
+    #[test]
+    fn eligible_tag_push_remotes_exclude_known_tag_remotes() {
+        let configured = vec![
+            "origin".to_string(),
+            "upstream".to_string(),
+            "fork".to_string(),
+        ];
+        let known_tag_remotes = vec!["origin".to_string(), "fork".to_string()];
+
+        assert_eq!(
+            eligible_tag_push_remote_names(&configured, Some("origin"), &known_tag_remotes),
+            vec!["upstream".to_string()]
+        );
+    }
+
+    #[test]
+    fn eligible_tag_push_remotes_fall_back_to_default_remote() {
+        assert_eq!(
+            eligible_tag_push_remote_names(&[], Some("origin"), &[]),
+            vec!["origin".to_string()]
+        );
+        assert!(
+            eligible_tag_push_remote_names(&[], Some("origin"), &["origin".to_string()]).is_empty()
+        );
+    }
 }

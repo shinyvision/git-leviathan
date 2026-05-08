@@ -239,7 +239,7 @@ fn center_write_intent(action: &CenterAction) -> Option<GitWriteIntent> {
     match action {
         CenterAction::BranchLabelClicked { .. }
         | CenterAction::BranchLabelPressed(_)
-        | CenterAction::RemoteBranchLabelPressed(_)
+        | CenterAction::RemoteBranchLabelPressed { .. }
         | CenterAction::BranchMergeRequested { .. }
         | CenterAction::BranchFastForwardRequested { .. }
         | CenterAction::BranchRebaseRequested { .. }

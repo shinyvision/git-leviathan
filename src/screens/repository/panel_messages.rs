@@ -14,17 +14,27 @@ pub enum CenterAction {
     BranchLabelClicked {
         branch_name: String,
         is_remote_only: bool,
+        /// Exact remote ref for remote-only labels, e.g. "origin/feature".
+        /// Existing service calls may still consume `branch_name` until the
+        /// exact-ref methods are wired through.
+        remote_ref: Option<String>,
     },
     /// Double-click confirmed — checkout.
     BranchLabelPressed(String),
     /// Double-click confirmed — checkout.
-    RemoteBranchLabelPressed(String),
+    RemoteBranchLabelPressed {
+        branch_name: String,
+        /// Exact remote ref selected by the UI, e.g. "origin/feature".
+        remote_ref: Option<String>,
+    },
     BranchLabelRightClicked {
         branch_name: String,
         is_remote: bool,
         has_remote: bool,
         is_tag: bool,
         remote_name: Option<String>,
+        /// Exact remote ref for the remote side of this label, if known.
+        remote_ref: Option<String>,
         /// Short branch name on the remote side, if it differs from
         /// `branch_name` (happens when local tracks a renamed remote).
         remote_branch_name: Option<String>,
@@ -45,6 +55,9 @@ pub enum CenterAction {
         source_branch: String,
         target_ref: String,
         target_display: String,
+        /// Exact remote ref for remote targets. Mirrors `target_ref` when the
+        /// target is remote and is kept explicit for exact-ref service wiring.
+        target_remote_ref: Option<String>,
     },
     /// "Reset ... to this commit" parent item clicked — opens submenu.
     ResetSubmenuRequested {
@@ -69,11 +82,15 @@ pub enum CenterAction {
         is_remote: bool,
         has_remote: bool,
         remote_name: Option<String>,
+        /// Exact remote ref for remote deletes, e.g. "origin/feature".
+        remote_ref: Option<String>,
     },
     BranchRenameRequested {
         branch_name: String,
         is_remote: bool,
         remote_name: Option<String>,
+        /// Exact remote ref for remote renames, e.g. "origin/feature".
+        remote_ref: Option<String>,
     },
     CommitRightClicked {
         commit_idx: usize,
@@ -337,6 +354,10 @@ pub enum OverlayPanelAction {
     AddRemoteConfirmed,
     /// Set upstream (first push): remote-branch name input.
     SetUpstreamInput(String),
+    /// Set upstream (first push): selected remote.
+    SetUpstreamRemoteChanged(String),
+    /// Set upstream (first push): remote dropdown visibility.
+    SetUpstreamRemoteDropdownToggled,
     SetUpstreamConfirmed,
     SetUpstreamCanceled,
     /// Push behind remote: pull (fast-forward).

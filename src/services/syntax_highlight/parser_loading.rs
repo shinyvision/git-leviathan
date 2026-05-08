@@ -969,5 +969,4 @@ mod tests {
         let cached = load_wasm_language(&package).unwrap_err();
         assert_eq!(cached.kind(), WasmParserLoadErrorKind::CachedFailure);
     }
-
 }

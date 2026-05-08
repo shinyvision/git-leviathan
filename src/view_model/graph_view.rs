@@ -60,6 +60,7 @@ pub struct RepositoryProjection {
     pub current_branch: String,
     pub head_hash: Option<String>,
     pub default_remote_name: Option<String>,
+    pub remote_names: Vec<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<crate::core::WorktreeInfo>,
     /// Local + remote branch refs (tags filtered out). Kept on the

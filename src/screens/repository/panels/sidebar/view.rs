@@ -8,8 +8,11 @@ use crate::{
     message::Message,
     style, theme,
     view_model::{Branch, SidebarSection, SidebarSectionKind, SidebarStash},
-    widgets::primitives::hoverable::{HoverStatus, Hoverable, HoverableSwap},
-    widgets::shared::{horizontal_space, scrollbar_style},
+    widgets::{
+        branch_label::remote_ref_name,
+        primitives::hoverable::{HoverStatus, Hoverable, HoverableSwap},
+        shared::{horizontal_space, scrollbar_style},
+    },
 };
 
 use super::super::super::{overlays, panel_messages::OverlayPanelAction, RepositoryMessage};
@@ -580,6 +583,11 @@ fn branch_tree_item<'a>(
     let is_tag = matches!(section_kind, SidebarSectionKind::Tags);
     let is_remote_name_node = is_remote && depth == 0;
     let branch_name = branch.name.clone();
+    let remote_ref = if is_remote && depth > 0 {
+        remote_ref_name(remote_name, &branch.name)
+    } else {
+        None
+    };
 
     let row_with_hover: Element<Message> = if is_remote_name_node {
         row_with_border
@@ -616,6 +624,7 @@ fn branch_tree_item<'a>(
         sidebar_msg(SidebarAction::BranchPressed {
             branch_name,
             is_remote,
+            remote_ref: remote_ref.clone(),
         })
     };
 
@@ -630,6 +639,7 @@ fn branch_tree_item<'a>(
             is_remote,
             is_tag,
             remote_name: menu_remote_name,
+            remote_ref,
         })
     };
 

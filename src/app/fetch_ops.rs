@@ -50,13 +50,12 @@ impl App {
         let Some(operation_id) = screen.begin_git_fetch() else {
             return Task::none();
         };
-        let remote_name = screen.default_remote_name().unwrap_or("origin").to_string();
         let task = self
             .fetch
             .start(tab_id, operation_id, screen.fetch_task(operation_id));
         self.tabs.persist_most_recent_if_needed(tab_id);
         self.plugin_host
-            .fire_event_typed("FetchStarted", Self::fetch_remote_payload(remote_name));
+            .fire_event_typed("FetchStarted", Self::fetch_all_remotes_payload());
         task
     }
 

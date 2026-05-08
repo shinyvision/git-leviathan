@@ -544,22 +544,39 @@ fn create_branch(args: &Value) -> Result<CoreCommandAction, String> {
 
 fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
     let remote_name = string_arg(args, "remote_name");
+    let branch_name = required_string_arg(args, "name")?;
+    let remote_ref = string_arg(args, "remote_ref").or_else(|| {
+        remote_name
+            .as_ref()
+            .filter(|remote| !remote.trim().is_empty())
+            .map(|remote| format!("{}/{}", remote.trim(), branch_name.trim()))
+    });
     Ok(repository(RepositoryMessage::Center(
         CenterAction::BranchDeleteRequested {
-            branch_name: required_string_arg(args, "name")?,
+            branch_name,
             is_remote: bool_arg(args, "is_remote"),
             has_remote: bool_arg(args, "has_remote"),
             remote_name,
+            remote_ref,
         },
     )))
 }
 
 fn rename_branch(args: &Value) -> Result<CoreCommandAction, String> {
+    let remote_name = string_arg(args, "remote_name");
+    let branch_name = required_string_arg(args, "name")?;
+    let remote_ref = string_arg(args, "remote_ref").or_else(|| {
+        remote_name
+            .as_ref()
+            .filter(|remote| !remote.trim().is_empty())
+            .map(|remote| format!("{}/{}", remote.trim(), branch_name.trim()))
+    });
     Ok(repository(RepositoryMessage::Center(
         CenterAction::BranchRenameRequested {
-            branch_name: required_string_arg(args, "name")?,
+            branch_name,
             is_remote: bool_arg(args, "is_remote"),
-            remote_name: string_arg(args, "remote_name"),
+            remote_name,
+            remote_ref,
         },
     )))
 }
@@ -567,7 +584,10 @@ fn rename_branch(args: &Value) -> Result<CoreCommandAction, String> {
 fn checkout_branch(args: &Value) -> Result<CoreCommandAction, String> {
     let branch = required_string_arg(args, "ref")?;
     let action = if bool_arg(args, "remote") {
-        CenterAction::RemoteBranchLabelPressed(branch)
+        CenterAction::RemoteBranchLabelPressed {
+            branch_name: branch,
+            remote_ref: None,
+        }
     } else {
         CenterAction::BranchLabelPressed(branch)
     };

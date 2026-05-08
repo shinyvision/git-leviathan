@@ -135,9 +135,9 @@ fn eager_grammar_install_stream() -> impl iced::futures::Stream<Item = Message> 
                 return;
             };
             while let Some(language) = rx.recv().await {
-                let _ = sender.try_send(Message::App(
-                    AppMessage::EagerGrammarInstallRequested(language),
-                ));
+                let _ = sender.try_send(Message::App(AppMessage::EagerGrammarInstallRequested(
+                    language,
+                )));
             }
         },
     )

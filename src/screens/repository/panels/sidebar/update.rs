@@ -5,7 +5,9 @@ use crate::{
     work::{git_read_work, git_write_work},
 };
 
-use super::super::super::state::{FocusedPanel, PendingFocus, SidebarContextMenuRequest};
+use super::super::super::state::{
+    eligible_tag_push_remote_names, FocusedPanel, PendingFocus, SidebarContextMenuRequest,
+};
 use super::super::super::RepositoryMessage;
 use super::super::center::CenterPanel;
 use super::super::ScreenCtx;
@@ -160,6 +162,7 @@ pub(super) fn update(
         SidebarAction::BranchPressed {
             branch_name,
             is_remote,
+            remote_ref,
         } => {
             if panel.register_branch_click(&branch_name) {
                 // Double-click on a branch that's already checked out in some
@@ -177,7 +180,8 @@ pub(super) fn update(
                         }
                     }
                 }
-                checkout_task(ctx, branch_name, is_remote)
+                let checkout_ref = remote_ref.unwrap_or_else(|| branch_name.clone());
+                checkout_task(ctx, checkout_ref, is_remote)
             } else {
                 ctx.data.pending_focus = Some(PendingFocus::Branch {
                     name: branch_name,
@@ -191,6 +195,7 @@ pub(super) fn update(
             is_remote,
             is_tag,
             remote_name,
+            remote_ref: _,
         } => {
             let tag_remote_names = if is_tag {
                 ctx.repository.tag_remotes_for(&branch_name)
@@ -204,6 +209,15 @@ pub(super) fn update(
                     .map(|s| s.to_string())
             } else {
                 None
+            };
+            let tag_push_remote_names = if is_tag {
+                eligible_tag_push_remote_names(
+                    ctx.data.snapshot.remote_names(),
+                    default_remote_name.as_deref(),
+                    &tag_remote_names,
+                )
+            } else {
+                Vec::new()
             };
             let current = ctx.data.snapshot.current_branch().to_string();
             let can_fast_forward = !is_tag
@@ -220,7 +234,7 @@ pub(super) fn update(
                     is_tag,
                     remote_name,
                     tag_remote_names,
-                    default_remote_name,
+                    tag_push_remote_names,
                     can_fast_forward,
                     position,
                 });

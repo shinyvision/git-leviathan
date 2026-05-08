@@ -7,6 +7,8 @@ use crate::screens::repository::{
 };
 use crate::widgets::context_menu::{context_menu_item, ContextMenu, ContextMenuItem};
 
+use super::{remote_branch_short_name, remote_ref_name};
+
 pub fn branch_context_menu(
     state: &ContextMenuState,
     current_branch: &str,
@@ -16,9 +18,16 @@ pub fn branch_context_menu(
     let has_remote = state.has_remote;
     let is_tag = state.is_tag;
     let remote_name = state.remote_name.clone();
+    let remote_branch_name = state
+        .remote_branch_name
+        .as_deref()
+        .map(|name| remote_branch_short_name(remote_name.as_deref(), name).into_owned())
+        .unwrap_or_else(|| {
+            remote_branch_short_name(remote_name.as_deref(), branch_name.as_str()).into_owned()
+        });
 
-    let remote_display = |name: &str| match remote_name.as_deref() {
-        Some(remote) => format!("{}/{}", remote, name),
+    let remote_display = |name: &str| match remote_ref_name(remote_name.as_deref(), name) {
+        Some(remote_ref) => remote_ref,
         None => format!("remote {}", name),
     };
 
@@ -37,18 +46,16 @@ pub fn branch_context_menu(
     ));
 
     if is_tag {
-        if let Some(remote) = state.default_remote_name.as_ref() {
-            if !state.tag_remote_names.iter().any(|r| r == remote) {
-                items.push(context_menu_item(
-                    format!("Push tag to {}", remote),
-                    Some(Message::repo(RepositoryMessage::Center(
-                        CenterAction::PushTagRequested {
-                            tag_name: branch_name.clone(),
-                            remote_name: remote.clone(),
-                        },
-                    ))),
-                ));
-            }
+        for remote in &state.tag_push_remote_names {
+            items.push(context_menu_item(
+                format!("Push tag to {}", remote),
+                Some(Message::repo(RepositoryMessage::Center(
+                    CenterAction::PushTagRequested {
+                        tag_name: branch_name.clone(),
+                        remote_name: remote.clone(),
+                    },
+                ))),
+            ));
         }
         items.push(context_menu_item(
             "Delete tag",
@@ -90,16 +97,15 @@ pub fn branch_context_menu(
     if !is_tag && !current_branch.is_empty() {
         let same_local = !is_remote && branch_name == current_branch;
         if !same_local {
-            let (target_ref, target_display) = if is_remote {
-                let remote = remote_name.as_deref().unwrap_or("");
-                let remote_branch = state
-                    .remote_branch_name
-                    .as_deref()
-                    .unwrap_or(branch_name.as_str());
-                let combined = format!("{}/{}", remote, remote_branch);
-                (combined.clone(), combined)
+            let (target_ref, target_display, target_remote_ref) = if is_remote {
+                let target_remote_ref =
+                    remote_ref_name(remote_name.as_deref(), &remote_branch_name);
+                let target = target_remote_ref
+                    .clone()
+                    .unwrap_or_else(|| remote_branch_name.clone());
+                (target.clone(), target, target_remote_ref)
             } else {
-                (branch_name.clone(), branch_name.clone())
+                (branch_name.clone(), branch_name.clone(), None)
             };
             items.push(context_menu_item(
                 format!("Rebase {} onto {}", current_branch, target_display),
@@ -108,6 +114,7 @@ pub fn branch_context_menu(
                         source_branch: current_branch.to_string(),
                         target_ref,
                         target_display,
+                        target_remote_ref,
                     },
                 ))),
             ));
@@ -123,6 +130,7 @@ pub fn branch_context_menu(
                     branch_name: branch_name.clone(),
                     is_remote: false,
                     remote_name: None,
+                    remote_ref: None,
                 },
             ))),
         ));
@@ -134,6 +142,7 @@ pub fn branch_context_menu(
                     is_remote: false,
                     has_remote,
                     remote_name: remote_name.clone(),
+                    remote_ref: remote_ref_name(remote_name.as_deref(), &remote_branch_name),
                 },
             ))),
         ));
@@ -141,10 +150,8 @@ pub fn branch_context_menu(
 
     // Remote rename/delete — shown when a remote counterpart exists.
     if !is_tag && has_remote {
-        let remote_target = state
-            .remote_branch_name
-            .clone()
-            .unwrap_or_else(|| branch_name.clone());
+        let remote_target = remote_branch_name.clone();
+        let remote_ref = remote_ref_name(remote_name.as_deref(), &remote_target);
         items.push(context_menu_item(
             format!("Rename {}", remote_display(&remote_target)),
             Some(Message::repo(RepositoryMessage::Center(
@@ -152,6 +159,7 @@ pub fn branch_context_menu(
                     branch_name: remote_target.clone(),
                     is_remote: true,
                     remote_name: remote_name.clone(),
+                    remote_ref: remote_ref.clone(),
                 },
             ))),
         ));
@@ -163,6 +171,7 @@ pub fn branch_context_menu(
                     is_remote: true,
                     has_remote: false,
                     remote_name: remote_name.clone(),
+                    remote_ref,
                 },
             ))),
         ));

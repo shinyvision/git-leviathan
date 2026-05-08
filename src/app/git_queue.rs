@@ -159,12 +159,11 @@ impl App {
     }
 
     fn finish_cancelled_fetch(&mut self, cancelled: FetchCancellation) {
-        let remote_name = self.fetch_remote_name_for_tab(cancelled.tab_id);
         if let Some(screen) = self.tabs.screen_mut(cancelled.tab_id) {
             let _ = screen.finish_git_write(cancelled.operation_id);
         }
         self.plugin_host
-            .fire_event_typed("FetchFinished", Self::fetch_remote_payload(remote_name));
+            .fire_event_typed("FetchFinished", Self::fetch_all_remotes_payload());
     }
 }
 

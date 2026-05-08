@@ -144,13 +144,18 @@ impl CenterPanel {
         branch_popout: &mut BranchPopoutController,
         branch_name: String,
         is_remote_only: bool,
+        remote_ref: Option<String>,
     ) -> CenterAction {
-        match branch_popout.handle_branch_pressed(branch_name, is_remote_only) {
+        match branch_popout.handle_branch_pressed(branch_name, is_remote_only, remote_ref) {
             BranchPressOutcome::None => CenterAction::None,
             BranchPressOutcome::CheckoutLocal(name) => CenterAction::BranchLabelPressed(name),
-            BranchPressOutcome::CheckoutRemote(name) => {
-                CenterAction::RemoteBranchLabelPressed(name)
-            }
+            BranchPressOutcome::CheckoutRemote {
+                branch_name,
+                remote_ref,
+            } => CenterAction::RemoteBranchLabelPressed {
+                branch_name,
+                remote_ref,
+            },
         }
     }
 

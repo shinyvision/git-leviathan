@@ -70,6 +70,30 @@ impl GitRepositoryGateway {
         }
     }
 
+    pub(super) fn refresh_tag_remote_cache(&self, service: &GitService, remote_name: &str) {
+        let tags = service.list_remote_tags(remote_name);
+
+        if let Ok(mut cache) = self.tag_remotes.lock() {
+            cache.retain(|_, remotes| {
+                remotes.remove(remote_name);
+                !remotes.is_empty()
+            });
+            match tags {
+                Ok(tags) => {
+                    for tag in tags {
+                        cache
+                            .entry(tag)
+                            .or_default()
+                            .insert(remote_name.to_string());
+                    }
+                }
+                Err(e) => {
+                    eprintln!("git_leviathan: ls-remote --tags {remote_name} failed: {e}");
+                }
+            }
+        }
+    }
+
     pub(super) fn add_tag_remote_to_cache(&self, tag_name: &str, remote_name: &str) {
         if let Ok(mut cache) = self.tag_remotes.lock() {
             cache
@@ -513,6 +537,16 @@ impl RemoteOps for GitRepositoryGateway {
         })
     }
 
+    fn fetch_remote(&self, remote_name: &str) -> Result<(), GitError> {
+        // Keep the write-lock scoped to the requested fetch. The tag cache is
+        // refreshed for only that remote after the fetch completes.
+        self.with_service(|service| service.fetch_remote_refs(remote_name))?;
+        self.with_service_unlocked(|service| {
+            self.refresh_tag_remote_cache(service, remote_name);
+            Ok(())
+        })
+    }
+
     fn push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| match service.push_current_branch()? {
             PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
@@ -533,6 +567,38 @@ impl RemoteOps for GitRepositoryGateway {
                 remote_name,
             }),
         })
+    }
+
+    fn push_ref_to_remote(
+        &self,
+        remote_name: &str,
+        ref_name: &str,
+    ) -> Result<PushGatewayOutcome, GitError> {
+        self.with_service(
+            |service| match service.push_ref_to_remote(remote_name, ref_name)? {
+                PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
+                    service.load_repo(COMMIT_LOAD_LIMIT),
+                ))),
+                PushOutcome::NeedsUpstream {
+                    branch_name,
+                    remote_name,
+                } => Ok(PushGatewayOutcome::NeedsUpstream {
+                    branch_name,
+                    remote_name,
+                }),
+                PushOutcome::BehindRemote {
+                    branch_name,
+                    remote_name,
+                } => Ok(PushGatewayOutcome::BehindRemote {
+                    branch_name,
+                    remote_name,
+                }),
+            },
+        )
+    }
+
+    fn current_branch_push_remote(&self) -> Result<String, GitError> {
+        self.with_service(|service| service.current_branch_push_remote())
     }
 
     fn push_and_set_upstream(
@@ -659,9 +725,15 @@ impl TagOps for GitRepositoryGateway {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{BranchOps, RepoRead};
+    use super::super::{BranchOps, RemoteOps, RepoRead};
     use super::GitRepositoryGateway;
-    use crate::services::{test_support::init_test_repo, GitService};
+    use crate::services::{
+        test_support::{
+            add_remote, create_branch, init_bare_test_repo, init_test_repo, push_refspec,
+        },
+        GitService,
+    };
+    use git2::{BranchType, Repository as Git2Repository};
     use std::{
         sync::{
             atomic::{AtomicBool, Ordering},
@@ -670,6 +742,19 @@ mod tests {
         thread,
         time::Duration,
     };
+
+    fn has_remote_branch(repo: &Git2Repository, branch_name: &str) -> bool {
+        repo.find_branch(branch_name, BranchType::Remote).is_ok()
+    }
+
+    fn remove_remote_branch(repo: &Git2Repository, branch_name: &str) {
+        let full_ref = format!("refs/remotes/{branch_name}");
+        if let Ok(mut reference) = repo.find_reference(&full_ref) {
+            reference
+                .delete()
+                .expect("failed to remove setup remote-tracking ref");
+        }
+    }
 
     #[test]
     fn gateway_blocks_concurrent_operations_until_active_call_finishes() {
@@ -735,6 +820,48 @@ mod tests {
             service.load_repo(10).current_branch.as_deref(),
             Some("feature")
         );
+    }
+
+    #[test]
+    fn gateway_fetch_remote_fetches_only_requested_remote() {
+        let (temp_repo, repo) = init_test_repo("gateway_fetch_one_remote");
+        let (origin_temp, _origin_repo) = init_bare_test_repo("gateway_fetch_one_origin");
+        let (backup_temp, _backup_repo) = init_bare_test_repo("gateway_fetch_one_backup");
+
+        add_remote(
+            &repo,
+            "origin",
+            &format!("file://{}", origin_temp.path_str()),
+        );
+        add_remote(
+            &repo,
+            "backup",
+            &format!("file://{}", backup_temp.path_str()),
+        );
+
+        create_branch(&repo, "origin-only");
+        push_refspec(
+            &repo,
+            "origin",
+            "refs/heads/origin-only:refs/heads/origin-only",
+        );
+        create_branch(&repo, "backup-only");
+        push_refspec(
+            &repo,
+            "backup",
+            "refs/heads/backup-only:refs/heads/backup-only",
+        );
+        remove_remote_branch(&repo, "origin/origin-only");
+        remove_remote_branch(&repo, "backup/backup-only");
+
+        let gateway = GitRepositoryGateway::from_repo_path(temp_repo.path_str());
+        gateway
+            .fetch_remote("backup")
+            .expect("gateway should fetch selected remote");
+
+        let repo = Git2Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
+        assert!(!has_remote_branch(&repo, "origin/origin-only"));
+        assert!(has_remote_branch(&repo, "backup/backup-only"));
     }
 
     /// Compile-time check: a function that takes `&impl BranchOps` must not be

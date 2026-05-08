@@ -117,12 +117,16 @@ pub enum SidebarAction {
     BranchPressed {
         branch_name: String,
         is_remote: bool,
+        /// Exact remote ref for remote branch rows, e.g. "origin/feature".
+        remote_ref: Option<String>,
     },
     BranchRightClicked {
         branch_name: String,
         is_remote: bool,
         is_tag: bool,
         remote_name: Option<String>,
+        /// Exact remote ref for remote branch rows, e.g. "origin/feature".
+        remote_ref: Option<String>,
     },
     StashPressed {
         hash: String,

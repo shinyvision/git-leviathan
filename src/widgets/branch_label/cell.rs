@@ -19,7 +19,7 @@ use super::layout::{
     BRANCH_LABEL_CLOUD_ICON_SIZE, BRANCH_LABEL_ICON_SIZE, BRANCH_LABEL_LAPTOP_ICON_SIZE,
     PILL_ROW_SPACING,
 };
-use super::{BRANCH_LABEL_INSET_X, BRANCH_POPOUT_RADIUS};
+use super::{remote_ref_name, BRANCH_LABEL_INSET_X, BRANCH_POPOUT_RADIUS};
 
 // ─── Color helpers ────────────────────────────────────────────────────────────
 
@@ -192,10 +192,19 @@ pub(super) fn branch_checkout_message(row_data: &BranchDisplayRow) -> Option<Mes
         return None;
     }
     let is_remote_only = row_data.has_remote && !row_data.has_local && !row_data.is_current;
+    let remote_branch = row_data
+        .remote_branch_name
+        .as_deref()
+        .unwrap_or(row_data.name.as_str());
     Some(Message::repo(RepositoryMessage::Center(
         CenterAction::BranchLabelClicked {
             branch_name: row_data.name.clone(),
             is_remote_only,
+            remote_ref: if is_remote_only {
+                remote_ref_name(row_data.remote_name.as_deref(), remote_branch)
+            } else {
+                None
+            },
         },
     )))
 }
@@ -208,6 +217,10 @@ pub(super) fn branch_context_menu_message(row_data: &BranchDisplayRow) -> Option
             has_remote: row_data.has_remote && !row_data.is_tag,
             is_tag: row_data.is_tag,
             remote_name: row_data.remote_name.clone(),
+            remote_ref: row_data
+                .remote_branch_name
+                .as_deref()
+                .and_then(|branch| remote_ref_name(row_data.remote_name.as_deref(), branch)),
             remote_branch_name: row_data.remote_branch_name.clone(),
         },
     )))

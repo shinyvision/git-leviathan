@@ -10,7 +10,7 @@ use crate::plugin::diagnostic::{
 };
 use crate::plugin::events::EventPayload;
 use crate::plugin::resources::{GenerationId, PluginId};
-use crate::services::gateway::SharedRepositoryGateway;
+use crate::services::gateway::{PushGatewayOutcome, SharedRepositoryGateway};
 
 /// One Git write request in flight (or just completed). Capped at 32
 /// in the host's [`PendingGitWrites`] ring; older entries are dropped.
@@ -130,14 +130,27 @@ fn unix_now_ms() -> u128 {
         .unwrap_or(0)
 }
 
-fn remote_event_payload(remote_name: &str) -> EventPayload {
-    let remote = if remote_name.is_empty() {
-        "origin"
-    } else {
-        remote_name
-    };
+fn remote_event_payload(remote_name: Option<&str>, scope: &str) -> EventPayload {
     let mut payload = EventPayload::new();
-    payload.insert("remote".into(), serde_json::Value::String(remote.into()));
+    payload.insert(
+        "remote".into(),
+        serde_json::Value::String(remote_name.unwrap_or_default().into()),
+    );
+    payload.insert("scope".into(), serde_json::Value::String(scope.into()));
+    payload
+}
+
+fn finished_remote_event_payload(
+    remote_name: Option<&str>,
+    scope: &str,
+    ok: bool,
+    error: Option<&str>,
+) -> EventPayload {
+    let mut payload = remote_event_payload(remote_name, scope);
+    payload.insert("ok".into(), serde_json::Value::Bool(ok));
+    if let Some(error) = error {
+        payload.insert("error".into(), serde_json::Value::String(error.into()));
+    }
     payload
 }
 
@@ -300,6 +313,7 @@ impl GitOpRequest {
 
 /// Outcome of a successful git op, indicating which typed autocmd events
 /// event the host should fire (or `None` for ops that don't fit one).
+#[derive(Debug)]
 pub struct GitOpEvents {
     pub fires: Vec<(&'static str, EventPayload)>,
 }
@@ -477,6 +491,34 @@ pub struct GitOpExecution {
     pub events: GitOpEvents,
 }
 
+#[derive(Debug)]
+struct GitOpFailure {
+    message: String,
+    events: GitOpEvents,
+}
+
+impl GitOpFailure {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            events: GitOpEvents::empty(),
+        }
+    }
+
+    fn with_events(message: impl Into<String>, events: GitOpEvents) -> Self {
+        Self {
+            message: message.into(),
+            events,
+        }
+    }
+}
+
+impl From<String> for GitOpFailure {
+    fn from(message: String) -> Self {
+        Self::new(message)
+    }
+}
+
 impl GitOpsContext {
     /// Single entry point. Validates capability + destructive policy,
     /// records audit + diagnostic, runs the op against the gateway,
@@ -631,7 +673,7 @@ impl GitOpsContext {
                 }
             }
             Err(err) => {
-                let cause = err.clone();
+                let cause = err.message.clone();
                 self.record_audit(
                     plugin_id,
                     &op,
@@ -655,8 +697,8 @@ impl GitOpsContext {
                 self.pending
                     .finish(plugin_id, &op, started_at, GitOpStatus::Failed);
                 GitOpExecution {
-                    error: Some(err),
-                    events: GitOpEvents::empty(),
+                    error: Some(err.message),
+                    events: err.events,
                 }
             }
         }
@@ -684,10 +726,18 @@ impl GitOpsContext {
     }
 }
 
+fn incomplete_push_target_message(remote: Option<&str>, ref_name: Option<&str>) -> String {
+    let requested_remote = remote.unwrap_or("<omitted>");
+    let requested_ref = ref_name.unwrap_or("<omitted>");
+    format!(
+        "git.push explicit target requires both `remote` and `ref`; got remote=`{requested_remote}`, ref=`{requested_ref}`, so no push was attempted"
+    )
+}
+
 fn run_request(
     request: &GitOpRequest,
     gateway: &SharedRepositoryGateway,
-) -> Result<GitOpEvents, String> {
+) -> Result<GitOpEvents, GitOpFailure> {
     use crate::services::ResetMode as ServiceResetMode;
     match request {
         GitOpRequest::Checkout { ref_name } => {
@@ -822,20 +872,38 @@ fn run_request(
             Ok(GitOpEvents::one("HeadChanged", head_payload))
         }
         GitOpRequest::Fetch { remote } => {
-            let remote_name = remote.as_deref().unwrap_or("origin");
-            let started_payload = remote_event_payload(remote_name);
-            // Fire the started event eagerly via the returned event
-            // list so the host emits it before completion. We collect
-            // started + finished into the same fire list because
+            let remote_name = remote.as_deref();
+            let scope = if remote_name.is_some() {
+                "remote"
+            } else {
+                "all"
+            };
+            let started_payload = remote_event_payload(remote_name, scope);
+            // Collect started + finished into the same fire list because
             // execution is currently synchronous (synchronous Git API compromise).
-            let result = gateway.fetch_remotes();
-            let mut finished_payload = remote_event_payload(remote_name);
+            let result = match remote_name {
+                Some(remote_name) => gateway.fetch_remote(remote_name),
+                None => gateway.fetch_remotes(),
+            };
             match result {
                 Ok(()) => {
-                    finished_payload.insert("ok".into(), serde_json::Value::Bool(true));
-                    let snapshot = gateway
-                        .load_refs_snapshot(crate::services::COMMIT_LOAD_LIMIT)
-                        .map_err(|e| e.to_string())?;
+                    let finished_payload =
+                        finished_remote_event_payload(remote_name, scope, true, None);
+                    let snapshot =
+                        match gateway.load_refs_snapshot(crate::services::COMMIT_LOAD_LIMIT) {
+                            Ok(snapshot) => snapshot,
+                            Err(e) => {
+                                return Err(GitOpFailure::with_events(
+                                    e.to_string(),
+                                    GitOpEvents {
+                                        fires: vec![
+                                            ("FetchStarted", started_payload),
+                                            ("FetchFinished", finished_payload),
+                                        ],
+                                    },
+                                ));
+                            }
+                        };
                     let mut refs_payload = EventPayload::new();
                     refs_payload.insert(
                         "count".into(),
@@ -851,17 +919,47 @@ fn run_request(
                         ],
                     })
                 }
-                Err(e) => Err(e.to_string()),
+                Err(e) => {
+                    let error = e.to_string();
+                    let finished_payload =
+                        finished_remote_event_payload(remote_name, scope, false, Some(&error));
+                    Err(GitOpFailure::with_events(
+                        error,
+                        GitOpEvents {
+                            fires: vec![
+                                ("FetchStarted", started_payload),
+                                ("FetchFinished", finished_payload),
+                            ],
+                        },
+                    ))
+                }
             }
         }
-        GitOpRequest::Push { remote, .. } => {
-            let remote_name = remote.as_deref().unwrap_or("origin");
-            let started_payload = remote_event_payload(remote_name);
-            let push_result = gateway.push_current_branch();
-            let mut finished_payload = remote_event_payload(remote_name);
+        GitOpRequest::Push { remote, ref_name } => {
+            let (push_result, event_remote, event_scope) =
+                match (remote.as_deref(), ref_name.as_deref()) {
+                    (Some(remote_name), Some(ref_name)) => (
+                        gateway.push_ref_to_remote(remote_name, ref_name),
+                        Some(remote_name.to_string()),
+                        "remote",
+                    ),
+                    (None, None) => {
+                        let event_remote = gateway.current_branch_push_remote().ok();
+                        (gateway.push_current_branch(), event_remote, "configured")
+                    }
+                    _ => {
+                        return Err(GitOpFailure::new(incomplete_push_target_message(
+                            remote.as_deref(),
+                            ref_name.as_deref(),
+                        )));
+                    }
+                };
             match push_result {
-                Ok(_) => {
-                    finished_payload.insert("ok".into(), serde_json::Value::Bool(true));
+                Ok(PushGatewayOutcome::Pushed(_snapshot)) => {
+                    let remote_name = event_remote.as_deref();
+                    let started_payload = remote_event_payload(remote_name, event_scope);
+                    let finished_payload =
+                        finished_remote_event_payload(remote_name, event_scope, true, None);
                     Ok(GitOpEvents {
                         fires: vec![
                             ("PushStarted", started_payload),
@@ -869,7 +967,37 @@ fn run_request(
                         ],
                     })
                 }
-                Err(e) => Err(e.to_string()),
+                Ok(PushGatewayOutcome::NeedsUpstream {
+                    branch_name,
+                    remote_name,
+                }) => Err(GitOpFailure::new(format!(
+                    "current branch `{branch_name}` has no upstream; set an upstream before pushing (suggested remote `{remote_name}`)"
+                ))),
+                Ok(PushGatewayOutcome::BehindRemote {
+                    branch_name,
+                    remote_name,
+                }) => {
+                    let error = format!(
+                        "push target `{remote_name}/{branch_name}` is behind its remote counterpart; pull first"
+                    );
+                    let started_payload = remote_event_payload(Some(&remote_name), event_scope);
+                    let finished_payload = finished_remote_event_payload(
+                        Some(&remote_name),
+                        event_scope,
+                        false,
+                        Some(&error),
+                    );
+                    Err(GitOpFailure::with_events(
+                        error,
+                        GitOpEvents {
+                            fires: vec![
+                                ("PushStarted", started_payload),
+                                ("PushFinished", finished_payload),
+                            ],
+                        },
+                    ))
+                }
+                Err(e) => Err(GitOpFailure::new(e.to_string())),
             }
         }
         GitOpRequest::Merge { ref_name } => {
@@ -998,5 +1126,158 @@ mod tests {
             ref_name: "x".into()
         }
         .destructive());
+    }
+
+    #[test]
+    fn fetch_with_remote_uses_requested_remote_and_payload() {
+        use crate::services::{
+            gateway::GitRepositoryGateway,
+            test_support::{
+                add_remote, create_branch, init_bare_test_repo, init_test_repo, push_refspec,
+            },
+        };
+
+        let (temp_repo, repo) = init_test_repo("plugin_fetch_one_remote");
+        let (origin_temp, _origin_repo) = init_bare_test_repo("plugin_fetch_one_origin");
+        let (backup_temp, _backup_repo) = init_bare_test_repo("plugin_fetch_one_backup");
+
+        add_remote(
+            &repo,
+            "origin",
+            &format!("file://{}", origin_temp.path_str()),
+        );
+        add_remote(
+            &repo,
+            "backup",
+            &format!("file://{}", backup_temp.path_str()),
+        );
+
+        create_branch(&repo, "origin-only");
+        push_refspec(
+            &repo,
+            "origin",
+            "refs/heads/origin-only:refs/heads/origin-only",
+        );
+        create_branch(&repo, "backup-only");
+        push_refspec(
+            &repo,
+            "backup",
+            "refs/heads/backup-only:refs/heads/backup-only",
+        );
+        remove_remote_branch_for_test(&repo, "origin/origin-only");
+        remove_remote_branch_for_test(&repo, "backup/backup-only");
+
+        let gateway = GitRepositoryGateway::from_path(temp_repo.path_str());
+        let events = run_request(
+            &GitOpRequest::Fetch {
+                remote: Some("backup".to_string()),
+            },
+            &gateway,
+        )
+        .expect("fetch should succeed");
+
+        let repo = git2::Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
+        assert!(repo
+            .find_branch("backup/backup-only", git2::BranchType::Remote)
+            .is_ok());
+        assert!(repo
+            .find_branch("origin/origin-only", git2::BranchType::Remote)
+            .is_err());
+
+        let fetch_started = events
+            .fires
+            .iter()
+            .find(|(name, _)| *name == "FetchStarted")
+            .expect("FetchStarted should fire");
+        assert_eq!(
+            fetch_started
+                .1
+                .get("remote")
+                .and_then(serde_json::Value::as_str),
+            Some("backup")
+        );
+        assert_eq!(
+            fetch_started
+                .1
+                .get("scope")
+                .and_then(serde_json::Value::as_str),
+            Some("remote")
+        );
+    }
+
+    #[test]
+    fn push_with_explicit_target_pushes_requested_branch_and_payload() {
+        use crate::services::{
+            gateway::GitRepositoryGateway,
+            test_support::{
+                add_remote, checkout_branch_for_setup, commit_all, create_branch,
+                init_bare_test_repo, init_test_repo, write_file,
+            },
+        };
+
+        let (temp_repo, repo) = init_test_repo("plugin_push_explicit_branch");
+        let (fork_temp, _fork_repo) = init_bare_test_repo("plugin_push_explicit_fork");
+        if repo.find_branch("main", git2::BranchType::Local).is_err() {
+            create_branch(&repo, "main");
+        }
+        checkout_branch_for_setup(&repo, "main");
+        add_remote(&repo, "fork", &format!("file://{}", fork_temp.path_str()));
+        write_file(&temp_repo.path, "tracked.txt", "explicit plugin push\n");
+        let pushed_oid = commit_all(&repo, "explicit plugin push");
+
+        let gateway = GitRepositoryGateway::from_path(temp_repo.path_str());
+
+        let events = run_request(
+            &GitOpRequest::Push {
+                remote: Some("fork".to_string()),
+                ref_name: Some("main".to_string()),
+            },
+            &gateway,
+        )
+        .expect("explicit push target should succeed");
+
+        let fork_repo =
+            git2::Repository::open_bare(fork_temp.path_str()).expect("failed to open fork");
+        assert_eq!(
+            fork_repo
+                .find_reference("refs/heads/main")
+                .expect("fork/main should exist")
+                .target(),
+            Some(pushed_oid)
+        );
+        assert!(repo
+            .find_branch("main", git2::BranchType::Local)
+            .expect("main branch should exist")
+            .upstream()
+            .is_err());
+
+        let push_started = events
+            .fires
+            .iter()
+            .find(|(name, _)| *name == "PushStarted")
+            .expect("PushStarted should fire");
+        assert_eq!(
+            push_started
+                .1
+                .get("remote")
+                .and_then(serde_json::Value::as_str),
+            Some("fork")
+        );
+        assert_eq!(
+            push_started
+                .1
+                .get("scope")
+                .and_then(serde_json::Value::as_str),
+            Some("remote")
+        );
+    }
+
+    fn remove_remote_branch_for_test(repo: &git2::Repository, branch_name: &str) {
+        let full_ref = format!("refs/remotes/{branch_name}");
+        if let Ok(mut reference) = repo.find_reference(&full_ref) {
+            reference
+                .delete()
+                .expect("failed to remove setup remote-tracking ref");
+        }
     }
 }

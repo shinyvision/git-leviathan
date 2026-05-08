@@ -20,14 +20,15 @@ pub(super) fn checkout_remote_branch(
 ) -> Result<CheckoutRemoteBranchResult, GitError> {
     let branch_name = branch_name.trim();
 
-    let (remote_ref, remote_oid) = resolve_remote_checkout_source(service, branch_name)?
+    let (remote_ref, remote_oid) = resolve_remote_branch_input(service, branch_name)?
         .ok_or_else(|| GitError::RemoteBranchNotFound(branch_name.to_string()))?;
+    let remote_branch_name = remote_branch_short_name(&remote_ref)?.to_string();
 
     // If a local branch is already tracking this remote ref (possibly under a
     // different name, e.g. after a remote rename), treat the checkout as if
     // the user had clicked that local's upstream — reuse the tracking local.
     let effective_local_name =
-        local_tracking_name_for(service, &remote_ref)?.unwrap_or_else(|| branch_name.to_string());
+        local_tracking_name_for(service, &remote_ref)?.unwrap_or(remote_branch_name);
     let branch_name = effective_local_name.as_str();
 
     if service
@@ -78,8 +79,8 @@ pub(super) fn create_branch_from_remote_ref_and_checkout(
         return Err(GitError::EmptyBranchName);
     }
 
-    let remote_oid = remote_ref_oid(service, remote_ref)?;
-    create_local_tracking_branch(service, new_name, remote_ref, remote_oid)?;
+    let (remote_ref, remote_oid) = resolve_remote_ref_oid(service, remote_ref)?;
+    create_local_tracking_branch(service, new_name, &remote_ref, remote_oid)?;
     checkout_branch(service, new_name)
 }
 
@@ -88,7 +89,7 @@ pub(super) fn reset_branch_to_remote_and_checkout(
     branch_name: &str,
     remote_ref: &str,
 ) -> Result<(), GitError> {
-    let remote_oid = remote_ref_oid(service, remote_ref)?;
+    let (remote_ref, remote_oid) = resolve_remote_ref_oid(service, remote_ref)?;
 
     let ref_name = format!("refs/heads/{}", branch_name);
     service
@@ -177,7 +178,7 @@ pub(super) fn delete_branch(
     }
 
     if is_remote {
-        let (remote_ref, _) = resolve_remote_checkout_source(service, branch_name)?
+        let (remote_ref, _) = resolve_remote_branch_input(service, branch_name)?
             .ok_or_else(|| GitError::RemoteBranchNotFound(branch_name.to_string()))?;
         delete_remote_branch_ref(service, &remote_ref)
     } else {
@@ -209,7 +210,7 @@ pub(super) fn rename_branch(
     }
 
     if is_remote {
-        let (remote_ref, _) = resolve_remote_checkout_source(service, old_name)?
+        let (remote_ref, _) = resolve_remote_branch_input(service, old_name)?
             .ok_or_else(|| GitError::RemoteBranchNotFound(old_name.to_string()))?;
 
         let branch = find_branch_or(&service.repo, &remote_ref, BranchType::Remote)?;
@@ -221,7 +222,12 @@ pub(super) fn rename_branch(
         let remote_name = remote_ref
             .split_once('/')
             .map(|(remote, _)| remote)
-            .unwrap_or("origin");
+            .ok_or_else(|| {
+                GitError::RemoteBranchNotFound(format!(
+                    "remote branch '{}' is missing a remote name",
+                    remote_ref
+                ))
+            })?;
         let new_remote_ref = format!("{}/{}", remote_name, new_name);
         let new_full_ref = format!("refs/remotes/{}", new_remote_ref);
 
@@ -479,7 +485,7 @@ fn ensure_local_checkout_branch(
         return Ok(());
     }
 
-    let (remote_ref_name, remote_oid) = resolve_remote_checkout_source(service, branch_name)?
+    let (remote_ref_name, remote_oid) = resolve_remote_branch_by_short_name(service, branch_name)?
         .ok_or_else(|| {
             GitError::BranchNotFound(format!(
                 "branch '{}' does not exist locally or on a remote",
@@ -490,7 +496,25 @@ fn ensure_local_checkout_branch(
     create_local_tracking_branch(service, branch_name, &remote_ref_name, remote_oid)
 }
 
-fn resolve_remote_checkout_source(
+fn resolve_remote_branch_input(
+    service: &GitService,
+    remote_ref_or_branch_name: &str,
+) -> Result<Option<(String, git2::Oid)>, GitError> {
+    let input = remote_ref_or_branch_name.trim();
+    let (candidate, is_qualified_ref) = remote_ref_candidate(input);
+
+    if let Some(source) = resolve_exact_remote_ref(service, candidate)? {
+        return Ok(Some(source));
+    }
+
+    if is_qualified_ref {
+        return Ok(None);
+    }
+
+    resolve_remote_branch_by_short_name(service, candidate)
+}
+
+fn resolve_remote_branch_by_short_name(
     service: &GitService,
     branch_name: &str,
 ) -> Result<Option<(String, git2::Oid)>, GitError> {
@@ -525,27 +549,68 @@ fn resolve_remote_checkout_source(
         return Ok(matches.into_iter().next());
     }
 
-    let preferred = format!("origin/{}", branch_name);
-    let preferred_matches = matches
-        .iter()
-        .filter(|(full_name, _)| full_name == &preferred)
-        .count();
-
-    if preferred_matches == 1 {
-        return Ok(matches
-            .into_iter()
-            .find(|(full_name, _)| full_name == &preferred));
-    }
-
     let options = matches
         .iter()
         .map(|(full_name, _)| full_name.as_str())
         .collect::<Vec<_>>()
         .join(", ");
     Err(GitError::Other(format!(
-        "branch '{}' matches multiple remote refs: {}",
+        "branch '{}' matches multiple remote refs: {}; use an exact remote ref",
         branch_name, options
     )))
+}
+
+fn resolve_exact_remote_ref(
+    service: &GitService,
+    remote_ref: &str,
+) -> Result<Option<(String, git2::Oid)>, GitError> {
+    if remote_ref.is_empty() || !remote_ref.contains('/') || remote_ref.ends_with("/HEAD") {
+        return Ok(None);
+    }
+
+    let branch = match service.repo.find_branch(remote_ref, BranchType::Remote) {
+        Ok(branch) => branch,
+        Err(e) if e.code() == git2::ErrorCode::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(wrap_git2_error(
+                &format!("find remote branch '{remote_ref}'"),
+                e,
+            ));
+        }
+    };
+
+    let target_oid = branch.get().target().ok_or_else(|| {
+        GitError::ReferenceBroken(format!("remote branch '{}' has no target", remote_ref))
+    })?;
+
+    Ok(Some((remote_ref.to_string(), target_oid)))
+}
+
+fn resolve_remote_ref_oid(
+    service: &GitService,
+    remote_ref: &str,
+) -> Result<(String, git2::Oid), GitError> {
+    resolve_remote_branch_input(service, remote_ref)?
+        .ok_or_else(|| GitError::RemoteBranchNotFound(remote_ref.trim().to_string()))
+}
+
+fn remote_ref_candidate(input: &str) -> (&str, bool) {
+    match input.strip_prefix("refs/remotes/") {
+        Some(remote_ref) => (remote_ref, true),
+        None => (input, false),
+    }
+}
+
+fn remote_branch_short_name(remote_ref: &str) -> Result<&str, GitError> {
+    remote_ref
+        .split_once('/')
+        .map(|(_, name)| name)
+        .ok_or_else(|| {
+            GitError::RemoteBranchNotFound(format!(
+                "remote branch '{}' is missing a remote name",
+                remote_ref
+            ))
+        })
 }
 
 /// Find the name of a local branch whose upstream is `remote_ref` (e.g.
@@ -786,19 +851,6 @@ fn create_local_tracking_branch(
     local_branch
         .set_upstream(Some(remote_ref))
         .map_err(|e| wrap_git2_error(&format!("track '{remote_ref}'"), e))
-}
-
-fn remote_ref_oid(service: &GitService, remote_ref: &str) -> Result<git2::Oid, GitError> {
-    let full = format!("refs/remotes/{}", remote_ref);
-    service
-        .repo
-        .find_reference(&full)
-        .or_else(|_| service.repo.find_reference(remote_ref))
-        .map_err(|_| GitError::RemoteBranchNotFound(remote_ref.to_string()))?
-        .target()
-        .ok_or_else(|| {
-            GitError::ReferenceBroken(format!("remote ref '{}' has no direct target", remote_ref))
-        })
 }
 
 fn fast_forward_and_checkout(

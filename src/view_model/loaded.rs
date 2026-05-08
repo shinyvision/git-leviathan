@@ -41,6 +41,7 @@ pub struct LoadedRefs {
     pub num_lanes: usize,
     pub head_hash: Option<String>,
     pub default_remote_name: Option<String>,
+    pub remote_names: Vec<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub signature: ProjectionSignature,
     pub has_more_commits: bool,

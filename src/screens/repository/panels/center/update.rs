@@ -18,7 +18,7 @@ use super::super::super::{
         revert_confirm, stash_delete, ActiveDialog,
     },
     panel_messages::CenterAction,
-    state::{CommitContextMenuState, ContextMenuState},
+    state::{eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState},
     RepositoryMessage,
 };
 use super::super::sidebar::{commit_selection_changed_task, load_more_commits};
@@ -83,11 +83,13 @@ pub(in crate::screens::repository) fn update(
         CenterAction::BranchLabelClicked {
             branch_name,
             is_remote_only,
+            remote_ref,
         } => {
             let follow_up = CenterPanel::handle_branch_label_pressed(
                 &mut ctx.data.branch_popout,
                 branch_name,
                 is_remote_only,
+                remote_ref,
             );
             update(panel, follow_up, ctx)
         }
@@ -126,16 +128,20 @@ pub(in crate::screens::repository) fn update(
                 },
             )
         }
-        CenterAction::RemoteBranchLabelPressed(branch_name) => {
+        CenterAction::RemoteBranchLabelPressed {
+            branch_name,
+            remote_ref,
+        } => {
             let Some(operation_id) = ctx.data.operations.begin_write() else {
                 return Task::none();
             };
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
+            let checkout_ref = remote_ref.unwrap_or_else(|| branch_name.clone());
             Task::perform(
                 git_write_work(move || {
-                    repo.checkout_remote_branch(&branch_name)
+                    repo.checkout_remote_branch(&checkout_ref)
                         .map(|o| presenter.project_remote_checkout(o))
                 }),
                 move |result| {
@@ -155,6 +161,7 @@ pub(in crate::screens::repository) fn update(
             has_remote,
             is_tag,
             remote_name,
+            remote_ref: _,
             remote_branch_name,
         } => {
             let tag_remote_names = if is_tag {
@@ -170,6 +177,15 @@ pub(in crate::screens::repository) fn update(
             } else {
                 None
             };
+            let tag_push_remote_names = if is_tag {
+                eligible_tag_push_remote_names(
+                    ctx.data.snapshot.remote_names(),
+                    default_remote_name.as_deref(),
+                    &tag_remote_names,
+                )
+            } else {
+                Vec::new()
+            };
             let current = ctx.data.snapshot.current_branch().to_string();
             let can_fast_forward = !is_tag
                 && !is_remote
@@ -180,7 +196,7 @@ pub(in crate::screens::repository) fn update(
             ctx.data.branch_popout.open_context_menu(ContextMenuState {
                 branch_name,
                 tag_remote_names,
-                default_remote_name,
+                tag_push_remote_names,
                 is_remote,
                 has_remote,
                 is_tag,
@@ -255,6 +271,7 @@ pub(in crate::screens::repository) fn update(
             source_branch,
             target_ref,
             target_display,
+            target_remote_ref: _,
         } => {
             ctx.data.branch_popout.close_context_menu();
             let Some(operation_id) = ctx.data.operations.begin_write() else {
@@ -392,6 +409,7 @@ pub(in crate::screens::repository) fn update(
             is_remote,
             has_remote,
             remote_name,
+            remote_ref,
         } => {
             ctx.data.branch_popout.close_context_menu();
 
@@ -416,6 +434,7 @@ pub(in crate::screens::repository) fn update(
                     is_remote,
                     has_remote,
                     remote_name,
+                    remote_ref,
                 }));
             panel.restore_center_list_scroll()
         }
@@ -423,6 +442,7 @@ pub(in crate::screens::repository) fn update(
             branch_name,
             is_remote,
             remote_name,
+            remote_ref,
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
@@ -432,6 +452,7 @@ pub(in crate::screens::repository) fn update(
                     new_branch_input: branch_name,
                     needs_focus: true,
                     remote_name,
+                    remote_ref,
                 }));
             panel.restore_center_list_scroll()
         }

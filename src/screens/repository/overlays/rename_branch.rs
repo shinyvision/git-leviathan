@@ -21,8 +21,10 @@ pub(crate) struct State {
     pub new_branch_input: String,
     /// Whether the input field needs focus after animation completes.
     pub needs_focus: bool,
-    /// Remote name for display (e.g. "origin"). Not used for the git op.
+    /// Remote name for display (e.g. "origin").
     pub remote_name: Option<String>,
+    /// Exact remote ref for remote-side rename, e.g. "origin/feature".
+    pub remote_ref: Option<String>,
 }
 
 pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
