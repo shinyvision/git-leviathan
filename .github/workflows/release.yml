@@ -127,7 +127,11 @@ jobs:
           fi
           STAGE="git-leviathan-${VERSION}-aarch64-apple-darwin"
           mkdir -p "$STAGE"
-          cp -R "target/release/bundle/osx/Git Leviathan.app" "$STAGE/"
+          APP_BUNDLE="target/release/bundle/osx/Git Leviathan.app"
+          if [ ! -d "$APP_BUNDLE" ]; then
+            APP_BUNDLE="target/release/bundle/osx/git_leviathan.app"
+          fi
+          cp -R "$APP_BUNDLE" "$STAGE/Git Leviathan.app"
           cp README.md LICENSE "$STAGE/"
           tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
           ls -la dist/

@@ -55,6 +55,9 @@ portable-pty = "0.8"
 vt100 = "0.15"
 lru = { version = "0.16", default-features = false }
 
+[build-dependencies]
+winresource = "0.1.31"
+
 [package.metadata.deb]
 name = "git-leviathan"
 maintainer = "Rachel Snijders"
@@ -68,3 +71,57 @@ assets = [
     ["packaging/git-leviathan.desktop", "usr/share/applications/", "644"],
     ["packaging/icons/git-leviathan.png", "usr/share/icons/hicolor/256x256/apps/", "644"],
 ]
+
+[package.metadata.generate-rpm]
+name = "git-leviathan"
+summary = "Git client built with Iced."
+
+[[package.metadata.generate-rpm.assets]]
+source = "target/release/git_leviathan"
+dest = "/usr/bin/git_leviathan"
+mode = "755"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/git-leviathan.desktop"
+dest = "/usr/share/applications/git-leviathan.desktop"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/16x16/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/16x16/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/32x32/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/32x32/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/48x48/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/48x48/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/64x64/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/64x64/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/128x128/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/128x128/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/256x256/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/256x256/apps/git-leviathan.png"
+mode = "644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "packaging/icons/hicolor/512x512/git-leviathan.png"
+dest = "/usr/share/icons/hicolor/512x512/apps/git-leviathan.png"
+mode = "644"
+
+[package.metadata.bundle]
+name = "Git Leviathan"
+identifier = "com.github.shinyvision.git-leviathan"
+icon = ["packaging/icons/git-leviathan.icns"]
