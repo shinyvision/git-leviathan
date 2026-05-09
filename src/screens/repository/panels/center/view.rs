@@ -1,7 +1,8 @@
 use iced::{
     advanced::text::Shaping,
     widget::{
-        button, column, container, responsive, row, scrollable, text, text_editor, MouseArea, Stack,
+        button, column, container, mouse_area, responsive, row, scrollable, text, text_editor,
+        MouseArea, Stack,
     },
     Border, Color, Element, Length, Padding, Theme,
 };
@@ -30,57 +31,44 @@ use super::super::super::{
 use super::state::CenterViewModel;
 
 const COMMIT_LIST_OVERSCAN_ROWS: usize = 10;
+const MIN_MESSAGE_COL_WIDTH: f32 = 80.0;
+const TABLE_DIVIDER_WIDTH: f32 = 1.0;
+const GRAPH_RESIZE_HIT_WIDTH: f32 = 5.0;
+const GRAPH_RESIZE_VISUAL_WIDTH: f32 = 2.0;
 
 pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Message> {
-    let graph_col_width = crate::widgets::graph::graph_column_width(screen.num_lanes);
-
-    let header = row![
-        container(
-            text("BRANCH / TAG")
-                .size(theme::FONT_XS)
-                .style(style::dim_text)
-        )
-        .width(Length::Fixed(theme::BRANCH_COL_WIDTH as f32))
-        .padding(Padding::from([4, 8])),
-        container(text("GRAPH").size(theme::FONT_XS).style(style::dim_text))
-            .width(Length::Fixed(graph_col_width))
-            .padding(Padding::from([4, 4])),
-        container(
-            text("COMMIT MESSAGE")
-                .size(theme::FONT_XS)
-                .style(style::dim_text)
-        )
-        .padding(Padding::from([4, 8])),
-        horizontal_space(),
-    ]
-    .height(Length::Fixed(22.0));
-
-    let header_container = container(header)
+    let commit_search_ref = screen.commit_search;
+    let panel_content: Element<Message> = responsive(move |size| {
+        let graph_col_width = visible_graph_col_width(screen.graph_col_width, size.width);
+        let window_width = screen.window_width.unwrap_or(size.width);
+        let header_container = container(header_row(
+            graph_col_width,
+            screen.graph_col_resizing,
+            window_width,
+        ))
         .width(Length::Fill)
         .style(style::header_container);
 
-    let commit_search_ref = screen.commit_search;
+        let list_scroll = scrollable(build_list_contents(&screen, graph_col_width, size.width))
+            .id(center_list_scroll_id())
+            .height(Length::Fill)
+            .width(Length::Fill)
+            .on_scroll(|viewport| {
+                Message::repo(RepositoryMessage::Center(CenterAction::CenterListScrolled(
+                    viewport,
+                )))
+            })
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(5).scroller_width(5),
+            ))
+            .style(scrollbar_style);
 
-    let list_scroll = scrollable(responsive(move |size| {
-        build_list_contents(&screen, graph_col_width, size.width)
-    }))
-    .id(center_list_scroll_id())
-    .height(Length::Fill)
-    .width(Length::Fill)
-    .on_scroll(|viewport| {
-        Message::repo(RepositoryMessage::Center(CenterAction::CenterListScrolled(
-            viewport,
-        )))
+        column![header_container, list_scroll]
+            .spacing(0)
+            .height(Length::Fill)
+            .into()
     })
-    .direction(scrollable::Direction::Vertical(
-        scrollable::Scrollbar::new().width(5).scroller_width(5),
-    ))
-    .style(scrollbar_style);
-
-    let panel_content: Element<Message> = column![header_container, list_scroll]
-        .spacing(0)
-        .height(Length::Fill)
-        .into();
+    .into();
 
     // Overlay the floating commit-search bar on top of the panel content so
     // it sits in the top-right corner of the graph area.
@@ -96,6 +84,113 @@ pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Mess
         CenterAction::PanelFocused(super::super::super::state::FocusedPanel::Center),
     )))
     .into()
+}
+
+fn header_row(
+    graph_col_width: f32,
+    graph_col_resizing: bool,
+    window_width: f32,
+) -> Element<'static, Message> {
+    row![
+        container(
+            text("BRANCH / TAG")
+                .size(theme::FONT_XS)
+                .style(style::dim_text)
+        )
+        .width(Length::Fixed(theme::BRANCH_COL_WIDTH as f32))
+        .padding(Padding::from([4, 8])),
+        table_divider(),
+        graph_header_cell(graph_col_width, graph_col_resizing, window_width),
+        container(
+            text("COMMIT MESSAGE")
+                .size(theme::FONT_XS)
+                .style(style::dim_text)
+        )
+        .padding(Padding::from([4, 8])),
+        horizontal_space(),
+    ]
+    .height(Length::Fixed(22.0))
+    .into()
+}
+
+fn graph_header_cell(
+    graph_col_width: f32,
+    is_resizing: bool,
+    window_width: f32,
+) -> Element<'static, Message> {
+    let label = container(text("GRAPH").size(theme::FONT_XS).style(style::dim_text))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding::from([4, 4]));
+
+    row![
+        label,
+        graph_resize_handle(graph_col_width, is_resizing, window_width)
+    ]
+    .width(Length::Fixed(graph_col_width))
+    .height(Length::Fill)
+    .into()
+}
+
+fn graph_resize_handle(
+    graph_col_width: f32,
+    is_resizing: bool,
+    window_width: f32,
+) -> Element<'static, Message> {
+    let visual = container(horizontal_space())
+        .width(Length::Fixed(GRAPH_RESIZE_VISUAL_WIDTH))
+        .height(Length::Fill)
+        .style(move |_: &Theme| container::Style {
+            background: Some(
+                if is_resizing {
+                    theme::ACCENT_BLUE
+                } else {
+                    theme::BORDER
+                }
+                .into(),
+            ),
+            ..Default::default()
+        });
+
+    let handle = container(row![horizontal_space(), visual, horizontal_space()])
+        .width(Length::Fixed(GRAPH_RESIZE_HIT_WIDTH))
+        .height(Length::Fill);
+
+    mouse_area(handle)
+        .on_press(Message::repo(RepositoryMessage::Center(
+            CenterAction::GraphColumnResizeStarted {
+                effective_width: graph_col_width,
+                window_width,
+            },
+        )))
+        .interaction(iced::mouse::Interaction::ResizingHorizontally)
+        .into()
+}
+
+fn table_divider() -> Element<'static, Message> {
+    container(horizontal_space())
+        .width(Length::Fixed(TABLE_DIVIDER_WIDTH))
+        .height(Length::Fill)
+        .style(|_: &Theme| container::Style {
+            background: Some(theme::BORDER.into()),
+            ..Default::default()
+        })
+        .into()
+}
+
+fn graph_body_divider() -> Element<'static, Message> {
+    container(horizontal_space())
+        .width(Length::Fixed(TABLE_DIVIDER_WIDTH))
+        .height(Length::Fill)
+        .into()
+}
+
+fn visible_graph_col_width(preferred_width: f32, viewport_w: f32) -> f32 {
+    let divider_width = TABLE_DIVIDER_WIDTH * 2.0;
+    let viewport_max =
+        (viewport_w - theme::BRANCH_COL_WIDTH as f32 - divider_width - MIN_MESSAGE_COL_WIDTH)
+            .max(theme::GRAPH_COL_GUTTER);
+    preferred_width.min(viewport_max)
 }
 
 fn build_list_contents<'a>(
@@ -137,7 +232,7 @@ fn build_list_contents<'a>(
     let graph_col = column![full_graph_widget(
         screen.graph_rows,
         screen.selected_indices.clone(),
-        screen.num_lanes,
+        graph_col_width,
         screen.graph_revision,
         visible_start,
         visible_end,
@@ -145,7 +240,9 @@ fn build_list_contents<'a>(
     .spacing(0)
     .width(Length::Fixed(graph_col_width));
 
-    let msg_col_w = (viewport_w - theme::BRANCH_COL_WIDTH as f32 - graph_col_width).max(80.0);
+    let divider_width = TABLE_DIVIDER_WIDTH * 2.0;
+    let msg_col_w = (viewport_w - theme::BRANCH_COL_WIDTH as f32 - graph_col_width - divider_width)
+        .max(MIN_MESSAGE_COL_WIDTH);
 
     let search_dimming = screen.commit_search.is_some_and(|s| s.is_dimming_active());
 
@@ -178,7 +275,9 @@ fn build_list_contents<'a>(
         column(branch_col)
             .spacing(0)
             .width(Length::Fixed(theme::BRANCH_COL_WIDTH as f32)),
+        graph_body_divider(),
         graph_col,
+        graph_body_divider(),
         column(msg_col).spacing(0).width(Length::Fill),
     ]
     .height(Length::Fixed(total_h));

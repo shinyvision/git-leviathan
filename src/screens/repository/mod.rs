@@ -374,6 +374,10 @@ impl RepositoryScreen {
             iced::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => Some(
                 Message::repo(RepositoryMessage::Center(CenterAction::ResizeReleased)),
             ),
+            iced::Event::Window(iced::window::Event::Opened { size, .. })
+            | iced::Event::Window(iced::window::Event::Resized(size)) => Some(Message::repo(
+                RepositoryMessage::Center(CenterAction::WindowResized { width: size.width }),
+            )),
             iced::Event::Keyboard(keyboard::Event::ModifiersChanged(mods)) => Some(Message::repo(
                 RepositoryMessage::Center(CenterAction::ModifiersChanged(mods)),
             )),

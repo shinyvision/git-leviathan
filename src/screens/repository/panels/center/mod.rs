@@ -24,6 +24,7 @@ pub(in crate::screens::repository) struct CenterViewCtx<'a> {
     pub dirty_commit_message: &'a text_editor::Content,
     pub commit_search: Option<&'a CommitSearch>,
     pub branch_popout: &'a BranchPopoutController,
+    pub window_width: Option<f32>,
 }
 
 impl CenterPanel {
@@ -39,6 +40,7 @@ impl CenterPanel {
             ctx.dirty_commit_message,
             ctx.commit_search,
             ctx.branch_popout,
+            ctx.window_width,
         );
         wrap_with_slots(body, top_slot, bottom_slot)
     }

@@ -170,12 +170,11 @@ impl Program<Message> for FullGraphProgram<'_> {
 pub fn full_graph_widget<'a>(
     rows: &'a [GraphRow],
     selected_indices: Vec<usize>,
-    num_lanes: usize,
+    width: f32,
     graph_revision: RepoVersion,
     visible_row_start: usize,
     visible_row_end: usize,
 ) -> Element<'a, Message> {
-    let width = super::graph_column_width(num_lanes);
     let height = rows.len() as f32 * ROW_H;
     Canvas::new(FullGraphProgram {
         rows,

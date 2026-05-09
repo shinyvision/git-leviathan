@@ -27,7 +27,9 @@ pub(crate) struct CenterViewModel<'a> {
     pub(in crate::screens::repository) graph_rows: &'a [GraphRow],
     pub(in crate::screens::repository) graph_revision: RepoVersion,
     pub(in crate::screens::repository) selected_indices: Vec<usize>,
-    pub(in crate::screens::repository) num_lanes: usize,
+    pub(in crate::screens::repository) graph_col_width: f32,
+    pub(in crate::screens::repository) graph_col_resizing: bool,
+    pub(in crate::screens::repository) window_width: Option<f32>,
     pub(in crate::screens::repository) center_list_offset_y: f32,
     pub(in crate::screens::repository) center_list_viewport_h: f32,
     pub(in crate::screens::repository) branch_popout: Option<BranchPopoutState>,
@@ -228,6 +230,7 @@ impl CenterPanel {
         dirty_commit_message: &'a text_editor::Content,
         commit_search: Option<&'a CommitSearch>,
         active_popout: Option<BranchPopoutState>,
+        window_width: Option<f32>,
     ) -> CenterViewModel<'a> {
         CenterViewModel {
             commits: data.snapshot.commits(),
@@ -236,7 +239,9 @@ impl CenterPanel {
             graph_rows: data.snapshot.graph_rows(),
             graph_revision: data.snapshot.graph_revision(),
             selected_indices: selection.selected_indices(),
-            num_lanes: data.snapshot.num_lanes(),
+            graph_col_width: data.resize.graph_column_width(data.snapshot.num_lanes()),
+            graph_col_resizing: data.resize.graph_column_resizing,
+            window_width,
             center_list_offset_y: self.center_list.offset_y(),
             center_list_viewport_h: self.center_list.viewport_h(),
             branch_popout: active_popout,
@@ -252,6 +257,7 @@ impl CenterPanel {
         dirty_commit_message: &'a text_editor::Content,
         commit_search: Option<&'a CommitSearch>,
         branch_popout: &BranchPopoutController,
+        window_width: Option<f32>,
     ) -> Element<'a, Message> {
         center_view::center_panel_view(self.center_view_model(
             data,
@@ -259,6 +265,7 @@ impl CenterPanel {
             dirty_commit_message,
             commit_search,
             branch_popout.active().cloned(),
+            window_width,
         ))
     }
 }

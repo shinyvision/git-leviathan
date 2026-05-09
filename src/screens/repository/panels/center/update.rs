@@ -671,6 +671,7 @@ pub(in crate::screens::repository) fn update(
         CenterAction::PointerMoved(position) => {
             ctx.input.last_pointer_position = Some(position);
             ctx.data.branch_popout.pointer_moved(position);
+            let num_lanes = ctx.data.snapshot.num_lanes();
             let resize = &mut ctx.data.resize;
             if !resize.any_resizing() {
                 return Task::none();
@@ -684,6 +685,12 @@ pub(in crate::screens::repository) fn update(
             if resize.detail_height_resizing {
                 resize.handle_detail_height(position.y.floor());
             }
+            if resize.graph_column_resizing {
+                resize.handle_graph_column(position.x.floor(), num_lanes);
+            }
+            if resize.sync_effective_layout(num_lanes) {
+                return panel.restore_center_list_scroll();
+            }
             Task::none()
         }
         CenterAction::PointerLeftWindow => {
@@ -693,6 +700,7 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::DetailResizeStarted { effective_width } => {
             ctx.data.resize.stop_sidebar();
+            ctx.data.resize.stop_graph_column();
             let pointer_x = ctx
                 .input
                 .last_pointer_position
@@ -704,6 +712,7 @@ pub(in crate::screens::repository) fn update(
         CenterAction::DetailHeightResizeStarted => {
             ctx.data.resize.stop_sidebar();
             ctx.data.resize.stop_detail();
+            ctx.data.resize.stop_graph_column();
             let pointer_y = ctx
                 .input
                 .last_pointer_position
@@ -711,6 +720,40 @@ pub(in crate::screens::repository) fn update(
                 .unwrap_or(0.0);
             ctx.data.resize.start_detail_height(pointer_y);
             Task::none()
+        }
+        CenterAction::GraphColumnResizeStarted {
+            effective_width,
+            window_width,
+        } => {
+            ctx.data.resize.stop_sidebar();
+            ctx.data.resize.stop_detail();
+            ctx.data.resize.stop_detail_height();
+            let num_lanes = ctx.data.snapshot.num_lanes();
+            ctx.data.resize.set_layout_baseline(window_width, num_lanes);
+            let pointer_x = ctx
+                .input
+                .last_pointer_position
+                .map(|p| p.x.floor())
+                .unwrap_or(0.0);
+            ctx.data
+                .resize
+                .start_graph_column(pointer_x, effective_width, num_lanes);
+            if ctx.data.resize.sync_effective_layout(num_lanes) {
+                panel.restore_center_list_scroll()
+            } else {
+                Task::none()
+            }
+        }
+        CenterAction::WindowResized { width } => {
+            if ctx
+                .data
+                .resize
+                .update_window_width(width, ctx.data.snapshot.num_lanes())
+            {
+                panel.restore_center_list_scroll()
+            } else {
+                Task::none()
+            }
         }
         CenterAction::ResizeReleased => {
             ctx.data.resize.stop_all();

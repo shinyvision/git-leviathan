@@ -132,6 +132,13 @@ pub enum CenterAction {
         effective_width: f32,
     },
     DetailHeightResizeStarted,
+    GraphColumnResizeStarted {
+        effective_width: f32,
+        window_width: f32,
+    },
+    WindowResized {
+        width: f32,
+    },
     ResizeReleased,
     None,
     SquashCommitsRequested {
