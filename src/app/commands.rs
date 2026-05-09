@@ -359,10 +359,9 @@ pub(super) fn open_url(url: &str) {
 
     #[cfg(target_os = "windows")]
     let result = {
-        use std::os::windows::process::CommandExt;
-        Command::new("cmd")
+        let mut command = Command::new("cmd");
+        crate::utils::configure_background_command(&mut command)
             .args(["/C", "start", "", url])
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

@@ -16,6 +16,7 @@ use crate::plugin::async_jobs::{
 };
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::resources::{GenerationId, PluginId, PluginResourceKind, ResourceLedger};
+use crate::utils::configure_background_command;
 
 const DEFAULT_OUTPUT_LIMIT: usize = 2 * 1024 * 1024;
 const MAX_OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
@@ -464,6 +465,7 @@ fn run_command(
     cancel: CancellationToken,
 ) -> JobOutcome {
     let mut command = Command::new(&executable);
+    configure_background_command(&mut command);
     command.args(shell_args(target.kind, &spec.command));
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     if spec.input.is_some() {

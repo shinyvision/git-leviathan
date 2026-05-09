@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 use git2::{Branch, BranchType, Commit, ErrorClass, ErrorCode, Oid, Reference, Repository};
 
 use crate::services::git_error::GitError;
+use crate::utils::configure_background_command;
 
 /// PIDs of `git` subprocesses currently being awaited by `spawn_git_command`.
 /// On app shutdown the close handler calls `kill_running_git_processes` to
@@ -59,7 +60,8 @@ fn kill_pid(pid: u32) {
 
 #[cfg(windows)]
 fn kill_pid(pid: u32) {
-    let _ = Command::new("taskkill")
+    let mut command = Command::new("taskkill");
+    let _ = configure_background_command(&mut command)
         .args(["/F", "/PID", &pid.to_string()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -163,7 +165,8 @@ fn spawn_git_command_inner(
     op: &str,
     timeout: Option<Duration>,
 ) -> Result<Output, GitError> {
-    let child = Command::new("git")
+    let mut command = Command::new("git");
+    let child = configure_background_command(&mut command)
         .current_dir(repo_path)
         .args(args)
         .stdin(Stdio::null())

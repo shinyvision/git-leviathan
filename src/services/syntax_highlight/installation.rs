@@ -116,7 +116,8 @@ fn fetch_via_curl(url: &str) -> Result<Vec<u8>, String> {
 
     const MAX_SECONDS: &str = "60";
 
-    let output = Command::new("curl")
+    let mut command = Command::new("curl");
+    let output = crate::utils::configure_background_command(&mut command)
         .arg("-sSLf")
         .arg("--max-time")
         .arg(MAX_SECONDS)

@@ -45,7 +45,8 @@ pub(super) fn cherry_pick_commit(
     }
     args.push(commit_hash);
 
-    let output = std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    let output = crate::utils::configure_background_command(&mut command)
         .arg("-C")
         .arg(&repo_dir)
         .args(&args)

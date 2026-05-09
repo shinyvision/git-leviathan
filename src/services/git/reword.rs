@@ -114,7 +114,8 @@ fn reword_commit_inner(
     // match git's own exactly, including merge driver behaviour.
     let new_oid_str = new_oid.to_string();
     let target_oid_str = target_oid.to_string();
-    let output = std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    let output = crate::utils::configure_background_command(&mut command)
         .arg("-C")
         .arg(repo_dir)
         .arg("rebase")

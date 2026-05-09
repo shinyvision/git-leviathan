@@ -1,4 +1,5 @@
 use crate::services::git_error::GitError;
+use crate::utils::configure_background_command;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -102,13 +103,7 @@ fn xcode_clt_installed() -> bool {
 fn run_git_version(path: &Path) -> Option<String> {
     let mut cmd = Command::new(path);
     cmd.arg("--version");
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW — prevents console flash when running from a GUI.
-        cmd.creation_flags(0x0800_0000);
-    }
+    configure_background_command(&mut cmd);
 
     let child = cmd
         .stdin(std::process::Stdio::null())
