@@ -509,10 +509,6 @@ api_version = "1.0"
         dirs
     }
 
-    fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
-        plugin_dirs_under(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins"))
-    }
-
     fn example_plugin_dirs() -> Vec<std::path::PathBuf> {
         plugin_dirs_under(
             std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -521,105 +517,32 @@ api_version = "1.0"
         )
     }
 
-    fn load_all_local_plugins() -> MockHost {
-        let mut host = MockHost::new();
-        for dir in local_plugin_dirs() {
-            let plugin_name = dir
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("<unknown>")
-                .to_string();
-            host.host_mut()
-                .load_plugin(&dir)
-                .unwrap_or_else(|e| panic!("local plugin {plugin_name} failed to load: {e}"));
-        }
-        host
+    #[test]
+    fn repo_root_plugins_directory_has_no_bundled_plugin_packages() {
+        let dirs =
+            plugin_dirs_under(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("plugins"));
+        assert!(
+            dirs.is_empty(),
+            "plugin packages under repo-root plugins/ are treated as bundled app plugins: {dirs:?}"
+        );
     }
 
     #[test]
-    fn local_command_palette_opens_from_colon_keymap() {
-        let mut host = load_all_local_plugins();
-        let outcome = host.dispatch_key("global", &[crate::plugin::keymap::Keystroke::plain(":")]);
-        assert!(
-            matches!(
-                outcome,
-                crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }
-            ),
-            "colon keymap should dispatch: {outcome:?}"
-        );
-        let overlay = host
-            .introspect()
-            .overlays
-            .iter()
-            .find(|overlay| {
-                overlay.plugin_id == "command_palette" && overlay.id == "command_palette"
-            })
-            .expect("command palette overlay should exist")
-            .clone();
-        let snap = crate::plugin::ui::widget_ast::snapshot(&overlay.widget);
-        assert!(snap.starts_with("container "), "{snap}");
-        assert!(
-            snap.contains("bg=\"#151927\" width=fixed(620) height=fixed(500)"),
-            "{snap}"
-        );
-        assert!(
-            snap.contains("top=14 right=14 bottom=14 left=14 width=fill height=fill"),
-            "{snap}"
-        );
-        assert!(snap.contains("placeholder=\"command args\""), "{snap}");
-        assert!(snap.contains("mouse_area"), "{snap}");
-        assert!(snap.contains("scrollable"), "{snap}");
-        assert!(snap.contains("height=fixed(394)"), "{snap}");
-    }
-
-    #[test]
-    fn local_command_palette_submits_command_line_args() {
-        let mut host = load_all_local_plugins();
-        let outcome = host.dispatch_key("global", &[crate::plugin::keymap::Keystroke::plain(":")]);
-        assert!(
-            matches!(
-                outcome,
-                crate::plugin::keymap::KeymapDispatchOutcome::Dispatched { .. }
-            ),
-            "colon keymap should dispatch: {outcome:?}"
-        );
-
-        host.host_mut().dispatch_overlay_event(
-            "command_palette",
-            "command_palette",
-            "query",
-            serde_json::json!("plugin.disable terminal"),
-        );
-        host.host_mut().dispatch_overlay_event(
-            "command_palette",
-            "command_palette",
-            "submit",
-            serde_json::Value::Null,
-        );
-
-        assert!(host.host().is_plugin_disabled("terminal"));
-        assert!(host
-            .introspect()
-            .plugins
-            .iter()
-            .all(|plugin| plugin.id != "terminal"));
-    }
-
-    #[test]
-    fn production_host_auto_grants_workspace_local_command_palette() {
+    fn production_host_auto_grants_workspace_example_plugins() {
         let mut host = PluginHost::new();
         host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
         host.load_plugin(
             &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("plugins")
-                .join("command_palette"),
+                .join("examples")
+                .join("status_bar"),
         )
-        .expect("load local command palette");
+        .expect("load example status bar plugin");
 
-        let capability = "ui:overlay";
+        let capability = "ui:region:main_bar";
         let row = host
             .grant_store()
-            .lookup("command_palette", "0.1.0", capability)
+            .lookup("example_status_bar", "0.1.0", capability)
             .unwrap_or_else(|| panic!("missing grant row for {capability}"));
         assert_eq!(
             row.decision,
@@ -632,35 +555,14 @@ api_version = "1.0"
     }
 
     #[test]
-    fn loads_every_local_plugin_under_current_api_version() {
-        let dirs = local_plugin_dirs();
-        assert!(!dirs.is_empty(), "expected local plugins");
-
-        let host = load_all_local_plugins();
-        let snap = host.introspect();
-        let ids: Vec<&str> = snap
-            .plugins
-            .iter()
-            .map(|plugin| plugin.id.as_str())
-            .collect();
-        assert_eq!(ids, vec!["command_palette", "terminal"]);
-        assert!(
-            snap.plugins
-                .iter()
-                .all(|plugin| plugin.api_version == "1.0"),
-            "all local plugins should use the v1 authoring surface"
-        );
-    }
-
-    #[test]
-    fn local_plugin_manifest_api_version_snapshot() {
+    fn example_plugin_manifest_api_version_snapshot() {
         use git_leviathan_plugin_api::api_version::HOST_API_VERSION;
 
         assert_eq!(HOST_API_VERSION.major, 1);
         assert_eq!(HOST_API_VERSION.minor, 0);
 
         let mut snapshot = String::from("api_version = \"1.0\"\n");
-        for dir in local_plugin_dirs() {
+        for dir in example_plugin_dirs() {
             let manifest_path = dir.join("plugin.toml");
             let raw = std::fs::read_to_string(&manifest_path).expect("manifest");
             let manifest: toml::Value = toml::from_str(&raw).expect("manifest toml");
@@ -679,15 +581,21 @@ api_version = "1.0"
             snapshot,
             concat!(
                 "api_version = \"1.0\"\n",
-                "command_palette: api_version=1.0\n",
-                "terminal: api_version=1.0\n",
+                "example_command_wrapper: api_version=1.0\n",
+                "example_diff_gutter_provider: api_version=1.0\n",
+                "example_dock_panel: api_version=1.0\n",
+                "example_full_screen: api_version=1.0\n",
+                "example_graph_decoration_provider: api_version=1.0\n",
+                "example_settings_panel: api_version=1.0\n",
+                "example_status_bar: api_version=1.0\n",
+                "example_toolbar_only: api_version=1.0\n",
             )
         );
     }
 
     #[test]
-    fn local_plugin_slot_registration_snapshot() {
-        let host = load_all_local_plugins();
+    fn builtin_slot_registration_snapshot_without_bundled_plugins() {
+        let host = MockHost::new();
         let snap = host.introspect();
         let mut snapshot = String::from("api_version = \"1.0\"\n");
         for slot in snap.slots {
@@ -706,13 +614,11 @@ api_version = "1.0"
                 "main_bar center builtin.pull priority=10 owner=builtin\n",
                 "main_bar center builtin.push priority=20 owner=builtin\n",
                 "main_bar center builtin.stash priority=40 owner=builtin\n",
-                "main_bar center plugin.terminal.terminal priority=60 owner=terminal\n",
                 "main_bar left builtin.branch_info priority=30 owner=builtin\n",
                 "main_bar left builtin.fetch_indicator priority=40 owner=builtin\n",
                 "main_bar left builtin.repo_info priority=10 owner=builtin\n",
                 "main_bar left builtin.separator_chevron priority=20 owner=builtin\n",
                 "main_bar right builtin.search priority=10 owner=builtin\n",
-                "repository graph.bottom plugin.terminal.panel priority=100 owner=terminal\n",
                 "tab_bar center builtin.tab_list priority=10 owner=builtin\n",
                 "tab_bar left builtin.plus_button priority=10 owner=builtin\n",
                 "tab_bar right builtin.version_label priority=10 owner=builtin\n",

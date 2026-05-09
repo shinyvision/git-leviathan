@@ -1,12 +1,159 @@
 use super::*;
 
+const BOOTSTRAP_PLUGIN_ID: &str = "host.bootstrap";
+const DEFAULT_CONFIG_INIT_LUA: &str = r#"-- Git Leviathan plugin bootstrap.
+-- This file is user-owned. Load plugin directories relative to this config root.
+leviathan.plugins.load_dir("plugins")
+"#;
+
+#[derive(Clone)]
+enum BootstrapLoadRequest {
+    Plugin(PathBuf),
+    Directory(PathBuf),
+}
+
 impl PluginHost {
     pub fn load_from_default_dirs(&mut self) {
-        let cwd_plugins = std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join("plugins");
-        if cwd_plugins.is_dir() {
-            self.load_from_dir(&cwd_plugins);
+        match self.prepare_config_plugin_root() {
+            Ok(config_root) => {
+                self.trust_local_plugin_root(config_root.join("plugins"));
+                self.load_from_config_init(&config_root);
+            }
+            Err(e) => {
+                self.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                        DiagnosticSeverity::Error,
+                        "bootstrap.config_failed",
+                        format!("could not prepare plugin config directory: {e}"),
+                    )
+                    .with_context(serde_json::json!({
+                        "config_root": self.storage_roots.config_root.display().to_string(),
+                    })),
+                );
+            }
+        }
+    }
+
+    fn prepare_config_plugin_root(&mut self) -> std::io::Result<PathBuf> {
+        let config_root = self.storage_roots.config_root.clone();
+        fs::create_dir_all(config_root.join("plugins"))?;
+        self.migrate_legacy_plugins(&config_root);
+
+        let init_path = config_root.join("init.lua");
+        if !init_path.exists() {
+            fs::write(&init_path, DEFAULT_CONFIG_INIT_LUA)?;
+        }
+
+        Ok(config_root)
+    }
+
+    fn migrate_legacy_plugins(&mut self, config_root: &Path) {
+        let Ok(cwd) = std::env::current_dir() else {
+            return;
+        };
+        let legacy_root = cwd.join("plugins");
+        let config_plugins_root = config_root.join("plugins");
+        if !legacy_root.is_dir() || paths_equivalent(&legacy_root, &config_plugins_root) {
+            return;
+        }
+
+        for source in plugin_candidate_dirs(&legacy_root) {
+            let Some(name) = source.file_name() else {
+                continue;
+            };
+            let target = config_plugins_root.join(name);
+            if target.exists() {
+                continue;
+            }
+            if let Err(e) = copy_dir_recursively(&source, &target) {
+                self.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                        DiagnosticSeverity::Warning,
+                        "bootstrap.legacy_migration_failed",
+                        format!("could not migrate legacy plugin {}: {e}", source.display()),
+                    )
+                    .with_context(serde_json::json!({
+                        "source": source.display().to_string(),
+                        "target": target.display().to_string(),
+                    })),
+                );
+            }
+        }
+    }
+
+    fn load_from_config_init(&mut self, config_root: &Path) {
+        let init_path = config_root.join("init.lua");
+        let source = match fs::read_to_string(&init_path) {
+            Ok(source) => source,
+            Err(e) => {
+                self.diagnostics.record(
+                    PluginDiagnostic::new(
+                        PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                        DiagnosticSeverity::Error,
+                        "bootstrap.read_failed",
+                        format!("could not read {}: {e}", init_path.display()),
+                    )
+                    .with_source(PluginSourceSpan::Lua {
+                        file: init_path.display().to_string(),
+                        line: None,
+                        traceback: None,
+                    }),
+                );
+                return;
+            }
+        };
+
+        let lua = Lua::new();
+        let requests: Rc<RefCell<Vec<BootstrapLoadRequest>>> = Rc::new(RefCell::new(Vec::new()));
+        if let Err(e) = install_bootstrap_api(&lua, config_root, Rc::clone(&requests)) {
+            self.diagnostics.record(
+                PluginDiagnostic::new(
+                    PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                    DiagnosticSeverity::Error,
+                    "bootstrap.install_api_failed",
+                    String::new(),
+                )
+                .with_mlua_error(&init_path.display().to_string(), &e),
+            );
+            return;
+        }
+
+        let chunk_name = init_path.display().to_string();
+        if let Err(e) = lua.load(&source).set_name(chunk_name.clone()).exec() {
+            self.diagnostics.record(
+                PluginDiagnostic::new(
+                    PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                    DiagnosticSeverity::Error,
+                    "bootstrap.lua_failed",
+                    String::new(),
+                )
+                .with_mlua_error(&chunk_name, &e),
+            );
+            return;
+        }
+
+        let requests = std::mem::take(&mut *requests.borrow_mut());
+        for request in requests {
+            match request {
+                BootstrapLoadRequest::Directory(dir) => self.load_from_dir(&dir),
+                BootstrapLoadRequest::Plugin(dir) => {
+                    if let Err(e) = self.load_plugin(&dir) {
+                        self.diagnostics.record(
+                            PluginDiagnostic::new(
+                                PluginId::from(BOOTSTRAP_PLUGIN_ID),
+                                DiagnosticSeverity::Warning,
+                                "bootstrap.plugin_load_failed",
+                                format!("could not load plugin {}: {e}", dir.display()),
+                            )
+                            .with_context(serde_json::json!({
+                                "plugin_dir": dir.display().to_string(),
+                            })),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -16,15 +163,7 @@ impl PluginHost {
     /// a `Result` because the startup path needs to keep going past
     /// per-plugin failures.
     pub fn load_from_dir(&mut self, dir: &Path) {
-        let Ok(entries) = fs::read_dir(dir) else {
-            return;
-        };
-        let mut candidate_dirs: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| p.is_dir() && p.join("plugin.toml").exists() && p.join("init.lua").exists())
-            .collect();
-        candidate_dirs.sort();
+        let candidate_dirs = plugin_candidate_dirs(dir);
         self.resolve_and_load(dir, &candidate_dirs);
     }
 
@@ -663,5 +802,183 @@ impl PluginHost {
                 );
             }
         }
+    }
+}
+
+fn install_bootstrap_api(
+    lua: &Lua,
+    config_root: &Path,
+    requests: Rc<RefCell<Vec<BootstrapLoadRequest>>>,
+) -> mlua::Result<()> {
+    let leviathan = lua.create_table()?;
+    let plugins = lua.create_table()?;
+
+    let load_root = config_root.to_path_buf();
+    let load_requests = Rc::clone(&requests);
+    plugins.set(
+        "load",
+        lua.create_function(move |_, path: String| -> mlua::Result<bool> {
+            let path = resolve_bootstrap_path(&load_root, &path)?;
+            load_requests
+                .borrow_mut()
+                .push(BootstrapLoadRequest::Plugin(path));
+            Ok(true)
+        })?,
+    )?;
+
+    let dir_root = config_root.to_path_buf();
+    let dir_requests = Rc::clone(&requests);
+    plugins.set(
+        "load_dir",
+        lua.create_function(move |_, path: Option<String>| -> mlua::Result<bool> {
+            let path = path.unwrap_or_else(|| "plugins".to_string());
+            let path = resolve_bootstrap_path(&dir_root, &path)?;
+            dir_requests
+                .borrow_mut()
+                .push(BootstrapLoadRequest::Directory(path));
+            Ok(true)
+        })?,
+    )?;
+
+    let config_dir = config_root.display().to_string();
+    plugins.set(
+        "config_dir",
+        lua.create_function(move |_, ()| Ok(config_dir.clone()))?,
+    )?;
+
+    leviathan.set(
+        "log",
+        lua.create_function(|_, msg: String| {
+            eprintln!("git_leviathan plugin bootstrap: {msg}");
+            Ok(())
+        })?,
+    )?;
+    leviathan.set("plugins", plugins)?;
+    lua.globals().set("leviathan", leviathan)?;
+    Ok(())
+}
+
+fn resolve_bootstrap_path(config_root: &Path, raw: &str) -> mlua::Result<PathBuf> {
+    if raw.trim().is_empty() {
+        return Err(mlua::Error::external("plugin path must not be empty"));
+    }
+    let path = PathBuf::from(raw);
+    Ok(if path.is_absolute() {
+        path
+    } else {
+        config_root.join(path)
+    })
+}
+
+fn plugin_candidate_dirs(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut candidate_dirs: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir() && p.join("plugin.toml").is_file() && p.join("init.lua").is_file())
+        .collect();
+    candidate_dirs.sort();
+    candidate_dirs
+}
+
+fn copy_dir_recursively(source: &Path, target: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(target)?;
+    for entry in fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir_recursively(&source_path, &target_path)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = target_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&source_path, &target_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn paths_equivalent(left: &Path, right: &Path) -> bool {
+    match (fs::canonicalize(left), fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+    use std::sync::Arc;
+
+    fn quiet_host_under(base: &Path) -> PluginHost {
+        let mut host = PluginHost::new();
+        host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
+        host.set_plugin_storage_base(base);
+        host
+    }
+
+    fn write_plugin(dir: &Path, id: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("plugin.toml"),
+            format!(
+                r#"id = "{id}"
+name = "{id}"
+version = "0.1.0"
+api_version = "1.0"
+
+[runtime]
+strict_globals = false
+"#
+            ),
+        )
+        .unwrap();
+        fs::write(dir.join("init.lua"), "leviathan.log('loaded')\n").unwrap();
+    }
+
+    #[test]
+    fn default_startup_creates_config_bootstrap_without_bundled_plugins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut host = quiet_host_under(tmp.path());
+
+        host.load_from_default_dirs();
+
+        let config_root = tmp.path().join("config");
+        assert!(config_root.join("init.lua").is_file());
+        assert!(config_root.join("plugins").is_dir());
+        assert_eq!(
+            std::fs::read_to_string(config_root.join("init.lua")).unwrap(),
+            DEFAULT_CONFIG_INIT_LUA
+        );
+    }
+
+    #[test]
+    fn user_config_init_controls_which_plugins_load() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut host = quiet_host_under(tmp.path());
+        let config_root = tmp.path().join("config");
+        fs::create_dir_all(&config_root).unwrap();
+        fs::write(
+            config_root.join("init.lua"),
+            r#"leviathan.plugins.load("custom/only")"#,
+        )
+        .unwrap();
+        write_plugin(&config_root.join("custom").join("only"), "only");
+
+        host.load_from_default_dirs();
+
+        let mut ids: Vec<String> = host
+            .introspect()
+            .plugins
+            .iter()
+            .map(|plugin| plugin.id.clone())
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["only"]);
     }
 }

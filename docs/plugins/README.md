@@ -1,14 +1,24 @@
 # Leviathan Plugin Author Guide
 
 Leviathan plugins are Lua scripts that extend the GUI git client. They live
-in `<repo-or-config>/plugins/<plugin_id>/` and consist of two files:
+under the app config root in `plugins/<plugin_id>/` and consist of two files:
 
 - `plugin.toml` — manifest declaring identity, capabilities, services
 - `init.lua` — the plugin's entry point
 
+On Linux `<config-root>` is `$XDG_CONFIG_HOME/git_leviathan`, falling back to
+`~/.config/git_leviathan`. On macOS it is
+`~/Library/Application Support/git_leviathan`, and on Windows it is
+`%APPDATA%\git_leviathan`. That directory has its own bootstrap `init.lua`
+which decides what to load:
+
+```lua
+leviathan.plugins.load_dir("plugins")
+```
+
 ## Hello World
 
-Create `plugins/hello_world/plugin.toml`:
+Create `<config-root>/plugins/hello_world/plugin.toml`:
 
 ```toml
 id = "hello_world"
@@ -17,7 +27,7 @@ version = "0.1.0"
 api_version = "1.0"
 ```
 
-And `plugins/hello_world/init.lua`:
+And `<config-root>/plugins/hello_world/init.lua`:
 
 ```lua
 local handle, err = leviathan.ui.slot.add{

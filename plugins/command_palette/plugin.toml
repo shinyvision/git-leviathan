@@ -1,5 +1,0 @@
-id = "command_palette"
-name = "Command Palette"
-version = "0.1.0"
-api_version = "1.0"
-capabilities = ["ui:overlay"]

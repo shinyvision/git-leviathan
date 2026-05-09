@@ -1,10 +1,11 @@
 //! Lua plugin system.
 //!
-//! Plugins live in `./plugins/<name>/` alongside the binary's CWD. Each carries
-//! `plugin.toml` (metadata) + `init.lua` (entry point). On startup, `PluginHost`
-//! loads every plugin, runs its `init.lua` in a dedicated `mlua::Lua` state, and
-//! exposes the `leviathan.*` API so the plugin can contribute main-bar buttons,
-//! screens, and (eventually) overlays/keybinds.
+//! User plugins live under the app config root in `plugins/<name>/`. The config
+//! root owns a bootstrap `init.lua`; startup runs that file and lets Lua decide
+//! which plugin packages to load through `leviathan.plugins.*`. Each plugin
+//! package carries `plugin.toml` (metadata) + `init.lua` (entry point), and the
+//! host runs each plugin entry point in a dedicated `mlua::Lua` state with the
+//! `leviathan.*` API installed.
 //!
 //! All Lua calls happen synchronously on the main thread from `App::update`.
 //! The Lua state is never passed across tasks; plugin side-effects come back

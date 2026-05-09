@@ -2,11 +2,28 @@
 
 The package layout supports multi-file plugins modelled on Neovim. A single
 `init.lua` still works, but plugins of any size should split into modules.
+Startup first runs the app config bootstrap at `<config-root>/init.lua`.
+The default bootstrap loads every package under `<config-root>/plugins/`:
+
+```lua
+leviathan.plugins.load_dir("plugins")
+```
+
+There are no default plugin packages bundled into the app binary. Plugin load
+order and availability are entirely owned by this bootstrap file and the
+packages present in the config directory.
+
+The bootstrap API is intentionally small:
+
+- `leviathan.plugins.load(path)` queues one plugin directory.
+- `leviathan.plugins.load_dir(path)` discovers every plugin package directly
+  under a directory and loads them through the dependency resolver.
+- `leviathan.plugins.config_dir()` returns the config root as a string.
 
 ## Layout
 
 ```text
-plugins/<plugin_id>/
+<config-root>/plugins/<plugin_id>/
   plugin.toml                       # manifest
   init.lua                          # entry point; runs once at load
   lua/<plugin_id>/                  # plugin's own modules
@@ -99,4 +116,5 @@ A single-file `init.lua` keeps working unchanged. To migrate:
 4. If your plugin scribbled on `_G`, either rewrite to `local`/`M.` or
    add `[runtime] strict_globals = false` to the manifest.
 
-The bundled `foo_demo` plugin in this repo demonstrates the new layout.
+The example plugins under `plugins/examples/` demonstrate the package layout
+without being loaded as application defaults.

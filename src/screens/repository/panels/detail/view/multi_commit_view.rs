@@ -241,7 +241,7 @@ fn merged_stats_and_files<'a>(
         )
     };
 
-    (stats.into(), files.into())
+    (stats.into(), files)
 }
 
 fn truncate_summary(message: &str, available_width: f32) -> String {

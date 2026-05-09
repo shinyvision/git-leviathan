@@ -676,9 +676,9 @@ fn staged_reload_failure_does_not_register_new_runtime_path() {
     assert!(own_entry.is_some(), "own runtime-path entry must persist");
 }
 
-fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir("plugins")
-        .expect("plugins dir")
+fn example_plugin_dirs() -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = std::fs::read_dir("plugins/examples")
+        .expect("plugins/examples dir")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .filter(|path| path.join("plugin.toml").is_file() && path.join("init.lua").is_file())
@@ -688,31 +688,33 @@ fn local_plugin_dirs() -> Vec<std::path::PathBuf> {
 }
 
 #[test]
-fn every_local_plugin_reloads_cleanly() {
+fn every_example_plugin_reloads_cleanly() {
     let mut host = MockHost::new();
     let mut ids: Vec<String> = Vec::new();
-    for dir in local_plugin_dirs() {
-        let id = dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("<unknown>")
+    for dir in example_plugin_dirs() {
+        let raw = std::fs::read_to_string(dir.join("plugin.toml")).expect("manifest");
+        let manifest: toml::Value = toml::from_str(&raw).expect("manifest toml");
+        let id = manifest
+            .get("id")
+            .and_then(|value| value.as_str())
+            .expect("manifest id")
             .to_string();
         host.host_mut()
             .load_plugin(&dir)
-            .unwrap_or_else(|e| panic!("local plugin {id} failed initial load: {e}"));
+            .unwrap_or_else(|e| panic!("example plugin {id} failed initial load: {e}"));
         ids.push(id);
     }
 
     for id in &ids {
         host.host_mut()
             .reload_plugin(id)
-            .unwrap_or_else(|e| panic!("local plugin {id} failed staged reload: {e}"));
+            .unwrap_or_else(|e| panic!("example plugin {id} failed staged reload: {e}"));
         let history = host.host().reload_history(id);
         assert!(
             history
                 .iter()
                 .any(|h| h.outcome == ReloadOutcome::Succeeded),
-            "local plugin {id} must record a Succeeded reload entry"
+            "example plugin {id} must record a Succeeded reload entry"
         );
         let snap = host.introspect();
         let stale: Vec<_> = snap
