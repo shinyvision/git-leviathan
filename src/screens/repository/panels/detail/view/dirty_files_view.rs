@@ -5,7 +5,7 @@
 //! and Commit-All / Abort-Merge action row.
 
 use iced::{
-    widget::{button, column, container, responsive, row, scrollable, text, text_editor},
+    widget::{button, column, container, responsive, row, text, text_editor, Space},
     Element, Length, Padding,
 };
 
@@ -13,14 +13,17 @@ use crate::{
     assets,
     core::{ChangedFile, Commit},
     message::Message,
-    screens::repository::{panel_messages::DetailAction, RepositoryMessage},
+    screens::repository::{
+        panel_messages::{DetailAction, DetailFileListKind},
+        RepositoryMessage,
+    },
     style, theme,
-    widgets::shared::{h_divider, horizontal_space, scrollbar_style, v_divider},
+    widgets::shared::{h_divider, horizontal_space, v_divider},
 };
 
 use super::super::state::DetailViewModel;
-use super::file_row_view;
 use super::styles::{detail_text_editor_style, green_button_style, red_button_style};
+use super::{file_row_view, virtualized_file_list_view, FILE_ROW_HEIGHT};
 
 const DIRTY_COMMIT_ACTION_BUTTON_HEIGHT: f32 = 40.0;
 
@@ -119,7 +122,12 @@ pub(super) fn dirty_detail_panel_content<'a>(
         busy.general,
     );
     let stats_row = dirty_stats_row(screen.commit_diff_state, screen.dirty_operation_label);
-    let file_list = dirty_file_list(commit, screen.active_diff_file_path, width, busy);
+    let file_list = dirty_file_list(
+        commit,
+        screen.active_diff_file_path,
+        screen.dirty_file_list_scroll_y,
+        busy,
+    );
 
     let commit_msg = container(
         text("Uncommitted changes")
@@ -169,7 +177,6 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
     screen: DetailViewModel<'a>,
     commit: &'a Commit,
 ) -> Element<'a, Message> {
-    let width = screen.width;
     let dirty_summary = dirty_summary_text(commit);
     let has_any_dirty = dirty_change_count(commit) > 0;
     let busy = DirtyActionBusy {
@@ -185,7 +192,12 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
         busy.general,
     );
     let stats_row = dirty_stats_row(screen.commit_diff_state, screen.dirty_operation_label);
-    let file_list = dirty_file_list(commit, screen.active_diff_file_path, width, busy);
+    let file_list = dirty_file_list(
+        commit,
+        screen.active_diff_file_path,
+        screen.dirty_file_list_scroll_y,
+        busy,
+    );
 
     let can_commit = !commit.staged_files.is_empty()
         && dirty_commit_message_has_summary(screen.dirty_commit_message);
@@ -345,48 +357,58 @@ fn dirty_stats_row<'a>(
 fn dirty_file_list<'a>(
     commit: &'a Commit,
     active_diff_file_path: Option<&'a str>,
-    width: f32,
+    scroll_y: f32,
     busy: DirtyActionBusy,
 ) -> Element<'a, Message> {
-    scrollable(
-        column![
-            dirty_file_section(
-                "Conflicts",
-                &commit.conflicted_files,
-                DirtyFileSection::Conflicted,
-                None,
-                active_diff_file_path,
-                width,
-                busy,
-            ),
-            dirty_file_section(
-                "Unstaged Files",
-                &commit.unstaged_files,
-                DirtyFileSection::Unstaged,
-                None,
-                active_diff_file_path,
-                width,
-                busy,
-            ),
-            dirty_file_section(
-                "Staged Files",
-                &commit.staged_files,
-                DirtyFileSection::Staged,
-                None,
-                active_diff_file_path,
-                width,
-                busy,
-            ),
-        ]
-        .spacing(0)
-        .width(Length::Fill),
+    let sections = [
+        DirtySectionSpec {
+            title: "Conflicts",
+            files: &commit.conflicted_files,
+            section: DirtyFileSection::Conflicted,
+        },
+        DirtySectionSpec {
+            title: "Unstaged Files",
+            files: &commit.unstaged_files,
+            section: DirtyFileSection::Unstaged,
+        },
+        DirtySectionSpec {
+            title: "Staged Files",
+            files: &commit.staged_files,
+            section: DirtyFileSection::Staged,
+        },
+    ];
+    let row_count = dirty_file_row_count(&sections);
+
+    virtualized_file_list_view(
+        row_count,
+        DetailFileListKind::Dirty,
+        scroll_y,
+        move |row_idx, available_width| {
+            let Some((spec, row)) = dirty_file_row_at(&sections, row_idx) else {
+                return Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(FILE_ROW_HEIGHT))
+                    .into();
+            };
+
+            match row {
+                DirtyFileRow::Header => dirty_file_section_header(spec, busy),
+                DirtyFileRow::Empty => dirty_empty_file_row(),
+                DirtyFileRow::File(file_idx) => {
+                    let action_busy = busy.for_section(spec.section);
+                    file_row_view(
+                        &spec.files[file_idx],
+                        Some(spec.section),
+                        None,
+                        false,
+                        active_diff_file_path,
+                        available_width,
+                        action_busy,
+                    )
+                }
+            }
+        },
     )
-    .height(Length::Fill)
-    .direction(scrollable::Direction::Vertical(
-        scrollable::Scrollbar::new().width(5).scroller_width(5),
-    ))
-    .style(scrollbar_style)
-    .into()
 }
 
 fn dirty_commit_form_inline<'a>(
@@ -516,18 +538,61 @@ fn commit_action_row<'a>(
     }
 }
 
-fn dirty_file_section<'a>(
+#[derive(Clone, Copy)]
+struct DirtySectionSpec<'a> {
     title: &'static str,
     files: &'a [ChangedFile],
     section: DirtyFileSection,
-    _hovered_path: Option<&'a str>,
-    active_diff_path: Option<&'a str>,
-    available_width: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirtyFileRow {
+    Header,
+    Empty,
+    File(usize),
+}
+
+fn dirty_file_row_count(sections: &[DirtySectionSpec<'_>; 3]) -> usize {
+    sections
+        .iter()
+        .map(|section| 1 + section.files.len().max(1))
+        .sum()
+}
+
+fn dirty_file_row_at<'a>(
+    sections: &[DirtySectionSpec<'a>; 3],
+    mut row_idx: usize,
+) -> Option<(DirtySectionSpec<'a>, DirtyFileRow)> {
+    for section in sections {
+        if row_idx == 0 {
+            return Some((*section, DirtyFileRow::Header));
+        }
+        row_idx -= 1;
+
+        if section.files.is_empty() {
+            if row_idx == 0 {
+                return Some((*section, DirtyFileRow::Empty));
+            }
+            row_idx -= 1;
+            continue;
+        }
+
+        if row_idx < section.files.len() {
+            return Some((*section, DirtyFileRow::File(row_idx)));
+        }
+        row_idx -= section.files.len();
+    }
+
+    None
+}
+
+fn dirty_file_section_header<'a>(
+    spec: DirtySectionSpec<'a>,
     busy: DirtyActionBusy,
 ) -> Element<'a, Message> {
-    let action_busy = busy.for_section(section);
+    let action_busy = busy.for_section(spec.section);
     let mut header = row![
-        text(format!("{} ({})", title, files.len()))
+        text(format!("{} ({})", spec.title, spec.files.len()))
             .size(theme::FONT_SM)
             .style(style::secondary_text),
         horizontal_space(),
@@ -536,42 +601,30 @@ fn dirty_file_section<'a>(
     .align_y(iced::Alignment::Center)
     .width(Length::Fill);
 
-    if !files.is_empty() {
+    if !spec.files.is_empty() {
         header = header.push(dirty_action_button(
-            section.all_action_label(),
-            section.all_action_message(),
-            section.action_tone(),
+            spec.section.all_action_label(),
+            spec.section.all_action_message(),
+            spec.section.action_tone(),
             !action_busy,
         ));
     }
 
-    let mut rows: Vec<Element<Message>> = vec![container(header)
-        .padding(Padding::from([8, 10]))
+    container(header)
+        .padding(Padding::from([0, 10]))
         .width(Length::Fill)
-        .into()];
+        .height(Length::Fixed(FILE_ROW_HEIGHT))
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
+}
 
-    if files.is_empty() {
-        rows.push(
-            container(text("No files").size(theme::FONT_SM).style(style::dim_text))
-                .padding(Padding::from([3, 10]))
-                .width(Length::Fill)
-                .into(),
-        );
-    } else {
-        rows.extend(files.iter().map(|file| {
-            file_row_view(
-                file,
-                Some(section),
-                None,
-                false,
-                active_diff_path,
-                available_width,
-                action_busy,
-            )
-        }));
-    }
-
-    column(rows).spacing(0).width(Length::Fill).into()
+fn dirty_empty_file_row<'a>() -> Element<'a, Message> {
+    container(text("No files").size(theme::FONT_SM).style(style::dim_text))
+        .padding(Padding::from([0, 10]))
+        .width(Length::Fill)
+        .height(Length::Fixed(FILE_ROW_HEIGHT))
+        .align_y(iced::alignment::Vertical::Center)
+        .into()
 }
 
 pub(super) fn dirty_action_button<'a>(
@@ -623,4 +676,55 @@ fn dirty_change_count(commit: &Commit) -> usize {
         .map(|file| file.path.as_str())
         .collect::<HashSet<_>>()
         .len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ChangeKind;
+
+    fn changed(path: &str) -> ChangedFile {
+        ChangedFile {
+            path: path.to_string(),
+            kind: ChangeKind::Modified,
+        }
+    }
+
+    #[test]
+    fn dirty_file_row_count_keeps_headers_and_empty_rows() {
+        let conflicted = vec![changed("conflict.txt")];
+        let unstaged = vec![changed("one.txt"), changed("two.txt")];
+        let staged: Vec<ChangedFile> = Vec::new();
+        let sections = [
+            DirtySectionSpec {
+                title: "Conflicts",
+                files: &conflicted,
+                section: DirtyFileSection::Conflicted,
+            },
+            DirtySectionSpec {
+                title: "Unstaged Files",
+                files: &unstaged,
+                section: DirtyFileSection::Unstaged,
+            },
+            DirtySectionSpec {
+                title: "Staged Files",
+                files: &staged,
+                section: DirtyFileSection::Staged,
+            },
+        ];
+
+        assert_eq!(dirty_file_row_count(&sections), 7);
+        assert_eq!(
+            dirty_file_row_at(&sections, 0).map(|(_, row)| row),
+            Some(DirtyFileRow::Header)
+        );
+        assert_eq!(
+            dirty_file_row_at(&sections, 4).map(|(_, row)| row),
+            Some(DirtyFileRow::File(1))
+        );
+        assert_eq!(
+            dirty_file_row_at(&sections, 6).map(|(_, row)| row),
+            Some(DirtyFileRow::Empty)
+        );
+    }
 }

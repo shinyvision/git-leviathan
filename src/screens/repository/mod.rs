@@ -439,7 +439,7 @@ impl RepositoryScreen {
 
     fn handle_center_action(&mut self, action: CenterAction) -> Task<Message> {
         let (mut ctx, panels) = self.ctx_and_panels();
-        panels::center::update_center(&mut panels.center, action, &mut ctx)
+        panels::center::update_center(&mut panels.center, &mut panels.detail, action, &mut ctx)
     }
 
     fn handle_detail_action(&mut self, action: DetailAction) -> Task<Message> {

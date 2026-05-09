@@ -462,6 +462,10 @@ pub(in crate::screens::repository) fn update(
             let follow_up = diff_panel.open_merged_file(hashes, path, selected_idx);
             update_diff(diff_panel, follow_up, ctx)
         }
+        DetailAction::FileListScrolled { kind, viewport } => {
+            panel.set_file_list_scroll_y(kind, viewport.absolute_offset().y);
+            Task::none()
+        }
         DetailAction::CommitMessageAction(action) => {
             panel.dirty_commit_message.perform(action);
             Task::none()

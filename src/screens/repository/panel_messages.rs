@@ -158,6 +158,13 @@ pub enum CenterAction {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailFileListKind {
+    Commit,
+    Dirty,
+    Merged,
+}
+
 #[derive(Debug, Clone)]
 pub enum DetailAction {
     DirtyFileClicked {
@@ -184,6 +191,10 @@ pub enum DetailAction {
     /// File in the merged (multi-commit) diff.
     MergedFileClicked {
         path: String,
+    },
+    FileListScrolled {
+        kind: DetailFileListKind,
+        viewport: iced::widget::scrollable::Viewport,
     },
     CloseDirtyFileDiff,
     CommitMessageAction(iced::widget::text_editor::Action),

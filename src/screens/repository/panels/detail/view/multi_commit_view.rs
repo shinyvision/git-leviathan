@@ -21,7 +21,8 @@ use crate::{
 
 use super::super::state::DetailViewModel;
 use super::super::DetailOrientation;
-use super::file_row_view;
+use super::{file_list_status, file_list_view, FileListClickTarget};
+use crate::screens::repository::panel_messages::DetailFileListKind;
 
 pub(super) fn multi_commit_detail_panel_content<'a>(
     screen: DetailViewModel<'a>,
@@ -51,8 +52,11 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
             .width(Length::Fill)
             .padding(Padding::from([0, 10]));
 
-        let (stats_elem, files_elem) =
-            merged_stats_and_files(merged_diff, active_diff_file_path, width);
+        let (stats_elem, files_elem) = merged_stats_and_files(
+            merged_diff,
+            active_diff_file_path,
+            screen.merged_file_list_scroll_y,
+        );
 
         column![
             cl_container,
@@ -84,7 +88,6 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
 }
 
 fn multi_commit_detail_panel_horizontal<'a>(screen: DetailViewModel<'a>) -> Element<'a, Message> {
-    let width = screen.width;
     let count = screen.multi_commits.len();
     let multi_commits = screen.multi_commits;
     let merged_diff = screen.merged_diff;
@@ -109,8 +112,11 @@ fn multi_commit_detail_panel_horizontal<'a>(screen: DetailViewModel<'a>) -> Elem
     .height(Length::Fill)
     .width(Length::FillPortion(3));
 
-    let (stats_elem, files_elem) =
-        merged_stats_and_files(merged_diff, active_diff_file_path, width);
+    let (stats_elem, files_elem) = merged_stats_and_files(
+        merged_diff,
+        active_diff_file_path,
+        screen.merged_file_list_scroll_y,
+    );
 
     let right_col = column![stats_elem, h_divider(), files_elem]
         .spacing(0)
@@ -187,7 +193,7 @@ fn scrollable_commit_rows<'a>(
 fn merged_stats_and_files<'a>(
     merged_diff: Option<&'a MergedCommitDiffResult>,
     active_diff_file_path: Option<&'a str>,
-    width: f32,
+    scroll_y: f32,
 ) -> (Element<'a, Message>, Element<'a, Message>) {
     let Some(merged) = merged_diff else {
         let loading = container(
@@ -223,28 +229,17 @@ fn merged_stats_and_files<'a>(
     .spacing(4)
     .align_y(iced::Alignment::Center);
 
-    let file_rows: Vec<Element<Message>> = if merged.files.is_empty() {
-        vec![container(
-            text("No file changes")
-                .size(theme::FONT_SM)
-                .style(style::dim_text),
-        )
-        .padding(Padding::from([6, 10]))
-        .into()]
+    let files = if merged.files.is_empty() {
+        file_list_status("No file changes")
     } else {
-        merged
-            .files
-            .iter()
-            .map(|file| file_row_view(file, None, None, true, active_diff_file_path, width, false))
-            .collect()
+        file_list_view(
+            &merged.files,
+            FileListClickTarget::Merged,
+            DetailFileListKind::Merged,
+            scroll_y,
+            active_diff_file_path,
+        )
     };
-
-    let files = scrollable(column(file_rows).spacing(0).width(Length::Fill))
-        .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(5).scroller_width(5),
-        ))
-        .style(scrollbar_style);
 
     (stats.into(), files.into())
 }

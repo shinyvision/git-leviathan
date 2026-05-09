@@ -21,12 +21,14 @@ use super::super::super::{
     state::{eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState},
     RepositoryMessage,
 };
+use super::super::detail::DetailPanel;
 use super::super::sidebar::{commit_selection_changed_task, load_more_commits};
 use super::super::ScreenCtx;
 use super::CenterPanel;
 
 pub(in crate::screens::repository) fn update(
     panel: &mut CenterPanel,
+    detail_panel: &mut DetailPanel,
     action: CenterAction,
     ctx: &mut ScreenCtx<'_>,
 ) -> Task<Message> {
@@ -41,7 +43,10 @@ pub(in crate::screens::repository) fn update(
             } else {
                 ctx.data.selection.select_commit(idx);
             }
-            commit_selection_changed_task(ctx, idx)
+            Task::batch(vec![
+                detail_panel.reset_file_list_scroll(),
+                commit_selection_changed_task(ctx, idx),
+            ])
         }
         CenterAction::ModifiersChanged(mods) => {
             ctx.input.modifiers = mods;
@@ -56,7 +61,7 @@ pub(in crate::screens::repository) fn update(
                     &mut ctx.data.branch_popout,
                 );
                 Task::batch(vec![
-                    update(panel, follow_up, ctx),
+                    update(panel, detail_panel, follow_up, ctx),
                     panel.scroll_to_commit(current - 1).unwrap_or(Task::none()),
                 ])
             } else {
@@ -73,7 +78,7 @@ pub(in crate::screens::repository) fn update(
                     &mut ctx.data.branch_popout,
                 );
                 Task::batch(vec![
-                    update(panel, follow_up, ctx),
+                    update(panel, detail_panel, follow_up, ctx),
                     panel.scroll_to_commit(current + 1).unwrap_or(Task::none()),
                 ])
             } else {
@@ -91,7 +96,7 @@ pub(in crate::screens::repository) fn update(
                 is_remote_only,
                 remote_ref,
             );
-            update(panel, follow_up, ctx)
+            update(panel, detail_panel, follow_up, ctx)
         }
         CenterAction::BranchLabelPressed(branch_name) => {
             // On confirmed double-click checkout: if the branch is checked out in

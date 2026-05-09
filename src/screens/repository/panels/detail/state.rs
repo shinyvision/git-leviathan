@@ -1,9 +1,13 @@
-use iced::{widget::text_editor, Element};
+use iced::{
+    widget::{scrollable, text_editor},
+    Element, Task,
+};
 
 use crate::{
     core::Commit, message::Message, services::MergedCommitDiffResult, view_model::CommitDiffState,
 };
 
+use super::super::super::panel_messages::DetailFileListKind;
 use super::super::super::state::{OperationKind, RepositoryData, SelectionState};
 use super::view as detail_view;
 use super::{DetailOrientation, DetailViewCtx};
@@ -33,6 +37,9 @@ pub(in crate::screens::repository) struct DetailViewModel<'a> {
     pub(in crate::screens::repository) dirty_actions_busy: bool,
     pub(in crate::screens::repository) dirty_fast_actions_busy: bool,
     pub(in crate::screens::repository) dirty_operation_label: Option<&'static str>,
+    pub(in crate::screens::repository) commit_file_list_scroll_y: f32,
+    pub(in crate::screens::repository) dirty_file_list_scroll_y: f32,
+    pub(in crate::screens::repository) merged_file_list_scroll_y: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -44,6 +51,9 @@ pub(in crate::screens::repository) struct DetailPanel {
     pub dirty_commit_message: text_editor::Content,
     reword_state: Option<RewordEditState>,
     copied_sha_flash: bool,
+    commit_file_list_scroll_y: f32,
+    dirty_file_list_scroll_y: f32,
+    merged_file_list_scroll_y: f32,
 }
 
 struct RewordEditState {
@@ -57,6 +67,9 @@ impl DetailPanel {
             dirty_commit_message: text_editor::Content::new(),
             reword_state: None,
             copied_sha_flash: false,
+            commit_file_list_scroll_y: 0.0,
+            dirty_file_list_scroll_y: 0.0,
+            merged_file_list_scroll_y: 0.0,
         }
     }
 
@@ -66,6 +79,29 @@ impl DetailPanel {
 
     pub(in crate::screens::repository) fn clear_copied_sha_flash(&mut self) {
         self.copied_sha_flash = false;
+    }
+
+    pub(in crate::screens::repository) fn set_file_list_scroll_y(
+        &mut self,
+        kind: DetailFileListKind,
+        scroll_y: f32,
+    ) {
+        match kind {
+            DetailFileListKind::Commit => self.commit_file_list_scroll_y = scroll_y.max(0.0),
+            DetailFileListKind::Dirty => self.dirty_file_list_scroll_y = scroll_y.max(0.0),
+            DetailFileListKind::Merged => self.merged_file_list_scroll_y = scroll_y.max(0.0),
+        }
+    }
+
+    pub(in crate::screens::repository) fn reset_file_list_scroll(&mut self) -> Task<Message> {
+        self.commit_file_list_scroll_y = 0.0;
+        self.dirty_file_list_scroll_y = 0.0;
+        self.merged_file_list_scroll_y = 0.0;
+
+        iced::widget::operation::scroll_to(
+            detail_file_list_scroll_id(),
+            scrollable::AbsoluteOffset { x: 0.0, y: 0.0 },
+        )
     }
 
     pub(in crate::screens::repository) fn clear_commit_message(&mut self) {
@@ -175,6 +211,9 @@ impl DetailPanel {
             dirty_actions_busy: actions_busy,
             dirty_fast_actions_busy: fast_actions_busy,
             dirty_operation_label: data.operations.active_label(),
+            commit_file_list_scroll_y: self.commit_file_list_scroll_y,
+            dirty_file_list_scroll_y: self.dirty_file_list_scroll_y,
+            merged_file_list_scroll_y: self.merged_file_list_scroll_y,
         }
     }
 
@@ -197,6 +236,10 @@ impl DetailPanel {
             bottom_slot,
         )
     }
+}
+
+pub(in crate::screens::repository) fn detail_file_list_scroll_id() -> iced::widget::Id {
+    iced::widget::Id::new("detail-file-list")
 }
 
 pub(in crate::screens::repository) fn dirty_commit_message_text(

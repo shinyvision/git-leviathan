@@ -18,7 +18,7 @@ mod reword_view;
 mod styles;
 
 use iced::{
-    widget::{column, container, mouse_area, row, scrollable, text, MouseArea},
+    widget::{column, container, mouse_area, responsive, row, scrollable, text, MouseArea, Space},
     Border, Color, Element, Length, Padding, Theme,
 };
 
@@ -36,17 +36,18 @@ use crate::{
 };
 
 use super::super::super::{
-    panel_messages::{CenterAction, DetailAction},
+    panel_messages::{CenterAction, DetailAction, DetailFileListKind},
     RepositoryMessage,
 };
-use super::state::DetailViewModel;
+use super::state::{detail_file_list_scroll_id, DetailViewModel};
 use super::DetailOrientation;
 
 use dirty_files_view::{
     dirty_detail_panel_content, dirty_detail_panel_content_horizontal, DirtyFileSection,
 };
 
-const DIRTY_FILE_ROW_HEIGHT: f32 = theme::ROW_H;
+pub(super) const FILE_ROW_HEIGHT: f32 = theme::ROW_H;
+const FILE_LIST_OVERSCAN_ROWS: usize = 8;
 
 pub fn dirty_file_context_menu(
     state: &super::super::super::state::DirtyFileContextMenuState,
@@ -318,49 +319,22 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
     let commit_files: Option<&'_ [ChangedFile]> =
         screen.commit_diff_state.map(|d| d.files.as_slice());
 
-    let file_rows: Vec<Element<Message>> = if !diff_loaded {
-        vec![container(
-            text("Loading files…")
-                .size(theme::FONT_SM)
-                .style(style::dim_text),
-        )
-        .padding(Padding::from([6, 10]))
-        .into()]
+    let file_list = if !diff_loaded {
+        file_list_status("Loading files…")
     } else if commit_files.map(|f| f.is_empty()).unwrap_or(true) {
         // Genuinely zero-diff commit (e.g. a merge whose first-parent tree
         // matches the merge tree). Render an explicit empty state instead of
         // looping on "Loading files…".
-        vec![container(
-            text("No file changes")
-                .size(theme::FONT_SM)
-                .style(style::dim_text),
-        )
-        .padding(Padding::from([6, 10]))
-        .into()]
+        file_list_status("No file changes")
     } else {
-        commit_files
-            .unwrap_or(&[])
-            .iter()
-            .map(|file| {
-                file_row_view(
-                    file,
-                    None,
-                    Some(screen.commit_idx),
-                    false,
-                    screen.active_diff_file_path,
-                    width,
-                    false,
-                )
-            })
-            .collect()
+        file_list_view(
+            commit_files.unwrap_or(&[]),
+            FileListClickTarget::Commit(screen.commit_idx),
+            DetailFileListKind::Commit,
+            screen.commit_file_list_scroll_y,
+            screen.active_diff_file_path,
+        )
     };
-
-    let file_list = scrollable(column(file_rows).spacing(0).width(Length::Fill))
-        .height(Length::Fill)
-        .direction(scrollable::Direction::Vertical(
-            scrollable::Scrollbar::new().width(5).scroller_width(5),
-        ))
-        .style(scrollbar_style);
 
     match orientation {
         DetailOrientation::Vertical => {
@@ -407,6 +381,128 @@ fn files_separator<'a>() -> Element<'a, Message> {
         .padding(Padding::from([5, 0]))
         .width(Length::Fill)
         .into()
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum FileListClickTarget {
+    Commit(usize),
+    Merged,
+}
+
+pub(super) fn file_list_status<'a>(label: &'static str) -> Element<'a, Message> {
+    container(text(label).size(theme::FONT_SM).style(style::dim_text))
+        .padding(Padding::from([6, 10]))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+pub(super) fn file_list_view<'a>(
+    files: &'a [ChangedFile],
+    target: FileListClickTarget,
+    scroll_kind: DetailFileListKind,
+    scroll_y: f32,
+    active_diff_file_path: Option<&'a str>,
+) -> Element<'a, Message> {
+    virtualized_file_list_view(files.len(), scroll_kind, scroll_y, move |index, width| {
+        let (commit_idx, is_merged) = match target {
+            FileListClickTarget::Commit(idx) => (Some(idx), false),
+            FileListClickTarget::Merged => (None, true),
+        };
+        file_row_view(
+            &files[index],
+            None,
+            commit_idx,
+            is_merged,
+            active_diff_file_path,
+            width,
+            false,
+        )
+    })
+}
+
+pub(super) fn virtualized_file_list_view<'a>(
+    row_count: usize,
+    scroll_kind: DetailFileListKind,
+    scroll_y: f32,
+    row: impl Fn(usize, f32) -> Element<'a, Message> + 'a,
+) -> Element<'a, Message> {
+    responsive(move |size| {
+        let window = virtual_file_window(row_count, scroll_y, size.height);
+        let visible_count = window.end.saturating_sub(window.start);
+        let mut rows: Vec<Element<Message>> = Vec::with_capacity(visible_count + 2);
+
+        if window.top_spacer > 0.0 {
+            rows.push(
+                Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(window.top_spacer))
+                    .into(),
+            );
+        }
+
+        rows.extend((window.start..window.end).map(|index| row(index, size.width)));
+
+        if window.bottom_spacer > 0.0 {
+            rows.push(
+                Space::new()
+                    .width(Length::Fill)
+                    .height(Length::Fixed(window.bottom_spacer))
+                    .into(),
+            );
+        }
+
+        scrollable(column(rows).spacing(0).width(Length::Fill))
+            .id(detail_file_list_scroll_id())
+            .height(Length::Fill)
+            .direction(scrollable::Direction::Vertical(
+                scrollable::Scrollbar::new().width(5).scroller_width(5),
+            ))
+            .style(scrollbar_style)
+            .on_scroll(move |viewport| {
+                Message::repo(RepositoryMessage::Detail(DetailAction::FileListScrolled {
+                    kind: scroll_kind,
+                    viewport,
+                }))
+            })
+            .into()
+    })
+    .into()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct VirtualFileWindow {
+    start: usize,
+    end: usize,
+    top_spacer: f32,
+    bottom_spacer: f32,
+}
+
+fn virtual_file_window(row_count: usize, scroll_y: f32, viewport_height: f32) -> VirtualFileWindow {
+    if row_count == 0 {
+        return VirtualFileWindow {
+            start: 0,
+            end: 0,
+            top_spacer: 0.0,
+            bottom_spacer: 0.0,
+        };
+    }
+
+    let viewport_height = viewport_height.max(FILE_ROW_HEIGHT);
+    let total_height = row_count as f32 * FILE_ROW_HEIGHT;
+    let max_scroll_y = (total_height - viewport_height).max(0.0);
+    let scroll_y = scroll_y.clamp(0.0, max_scroll_y);
+    let first_visible = (scroll_y / FILE_ROW_HEIGHT).floor() as usize;
+    let visible_rows = (viewport_height / FILE_ROW_HEIGHT).ceil() as usize + 1;
+    let start = first_visible.saturating_sub(FILE_LIST_OVERSCAN_ROWS);
+    let end = (first_visible + visible_rows + FILE_LIST_OVERSCAN_ROWS).min(row_count);
+
+    VirtualFileWindow {
+        start,
+        end,
+        top_spacer: start as f32 * FILE_ROW_HEIGHT,
+        bottom_spacer: total_height - end as f32 * FILE_ROW_HEIGHT,
+    }
 }
 
 fn parent_hash_column<'a>(commit: &'a Commit) -> Element<'a, Message> {
@@ -695,12 +791,12 @@ fn file_row_view<'a>(
 
         let idle_row = container(idle_content)
             .width(Length::Fill)
-            .height(Length::Fixed(DIRTY_FILE_ROW_HEIGHT))
+            .height(Length::Fixed(FILE_ROW_HEIGHT))
             .align_y(iced::alignment::Vertical::Center);
 
         let hover_row = container(hover_content)
             .width(Length::Fill)
-            .height(Length::Fixed(DIRTY_FILE_ROW_HEIGHT))
+            .height(Length::Fixed(FILE_ROW_HEIGHT))
             .align_y(iced::alignment::Vertical::Center);
 
         let right_click_msg = Message::repo(RepositoryMessage::Detail(
@@ -757,7 +853,7 @@ fn file_row_view<'a>(
         let idle_row = container(row_content)
             .padding(row_padding)
             .width(Length::Fill)
-            .height(Length::Fixed(DIRTY_FILE_ROW_HEIGHT))
+            .height(Length::Fixed(FILE_ROW_HEIGHT))
             .align_y(iced::alignment::Vertical::Center);
 
         let interactive = Hoverable::new(idle_row, move |theme, status: HoverStatus| {
@@ -784,5 +880,39 @@ fn file_row_view<'a>(
         } else {
             interactive.into()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn virtual_file_window_renders_small_lists_fully() {
+        let window = virtual_file_window(5, 0.0, FILE_ROW_HEIGHT * 20.0);
+
+        assert_eq!(window.start, 0);
+        assert_eq!(window.end, 5);
+        assert_eq!(window.top_spacer, 0.0);
+        assert_eq!(window.bottom_spacer, 0.0);
+    }
+
+    #[test]
+    fn virtual_file_window_keeps_only_visible_rows_plus_overscan() {
+        let window = virtual_file_window(6_000, FILE_ROW_HEIGHT * 100.0, 340.0);
+
+        assert_eq!(window.start, 92);
+        assert_eq!(window.end, 119);
+        assert_eq!(window.top_spacer, 92.0 * FILE_ROW_HEIGHT);
+        assert_eq!(window.bottom_spacer, (6_000 - 119) as f32 * FILE_ROW_HEIGHT);
+    }
+
+    #[test]
+    fn virtual_file_window_clamps_scroll_to_content_end() {
+        let window = virtual_file_window(20, FILE_ROW_HEIGHT * 100.0, 170.0);
+
+        assert!(window.end <= 20);
+        assert_eq!(window.end, 20);
+        assert_eq!(window.bottom_spacer, 0.0);
     }
 }
