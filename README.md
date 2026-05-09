@@ -12,6 +12,10 @@
 
 ---
 
+<p align="center">
+  <img src=".github/images/screenshot_1.png" alt="Git Leviathan showing a repository graph, commit history, and commit details" />
+</p>
+
 ## Beta software
 This is a brand new piece of software. Expect bugs and instability! If you encounter a bug, I would hugely appreciate if you'd create a new issue.
 
@@ -19,15 +23,17 @@ This is a brand new piece of software. Expect bugs and instability! If you encou
 
 ## About
 
-Git Leviathan is a desktop Git repository visualizer written in Rust and built on the [Iced](https://iced.rs/) GUI framework. It turns the tangled mass of your commit history into a clean, navigable graph — branches, merges, tags, and all — so you can read a repository the way it actually is, not the way `git log` pretends.
+A lot of Git clients exist, but most of them still look like they are stuck in the '90s. The ones that do feel good to use are usually closed source, slow because they are built on Electron, or hard to shape around your own workflow.
 
-Under the hood it talks to your repos via `libgit2` (vendored, no system dependency), persists settings in SQLite, and reacts to filesystem changes in real time. The result: a responsive, native-feeling client that boots fast, stays out of your way, and never phones home.
+Git Leviathan started as an attempt to solve all three problems at once: an open source Git client that is native, fast, and built to be extended. It is designed around the graph first, so branches, merges, tags, stashes, and release trains are visible as the shape of the project instead of hidden behind a flat log.
 
 ## Features
 
-- **Graph-first history view** — every branch, merge, and tag rendered as a readable DAG.
+- **Graph-first history view** — follow branches, merges, tags, stashes, and long-lived maintenance lines without losing context.
+- **Commit details at a glance** — select a commit and inspect the message, author, parents, changed files, and stats in one place.
+- **Diff viewer with syntax highlighting** — read changes with tree-sitter based highlighting.
 - **Multi-tab workspace** — keep several repositories open side by side.
-- **Diff viewer with syntax highlighting** — powered by `syntect` and `two-face`.
+- **Plugin system** — extend the app with Lua plugins for commands, UI slots, dock panels, graph decorations, services, and more. Documentation coming soon.
 - **Live filesystem watching** — the UI updates when your working tree does.
 - **Structured error reporting** — auth failures, corrupt objects, and network issues surfaced with context, not stack traces.
 - **Cross-platform** — Linux, macOS, and Windows.
@@ -128,8 +134,10 @@ cargo generate-rpm        # -> target/generate-rpm/*.rpm
 | Git | [`git2`](https://crates.io/crates/git2) 0.19 (vendored libgit2) |
 | Async | [`tokio`](https://crates.io/crates/tokio) 1 |
 | Persistence | [`rusqlite`](https://crates.io/crates/rusqlite) 0.32 (bundled) |
-| Syntax highlighting | [`syntect`](https://crates.io/crates/syntect) + [`two-face`](https://crates.io/crates/two-face) |
+| Syntax highlighting | [`tree-sitter`](https://crates.io/crates/tree-sitter) 0.26 + [`tree-sitter-language`](https://crates.io/crates/tree-sitter-language) |
+| Plugin runtime | [`mlua`](https://crates.io/crates/mlua) 0.10 (vendored LuaJIT) |
 | Filesystem watching | [`notify`](https://crates.io/crates/notify) 7 |
+| Terminal support | [`portable-pty`](https://crates.io/crates/portable-pty) + [`vt100`](https://crates.io/crates/vt100) |
 | Text shaping | [`swash`](https://crates.io/crates/swash) |
 
 ## License
