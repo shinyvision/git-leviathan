@@ -1,5 +1,7 @@
 //! Keyboard-input dispatch for `App`. Extracted from `update.rs` in keymaps.
 
+use std::borrow::Cow;
+
 use iced::{keyboard, Task};
 
 use crate::message::Message;
@@ -20,6 +22,7 @@ impl App {
             modifiers.control() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
 
         if is_ctrl_tab {
+            self.key_chord.clear();
             let target = if modifiers.shift() {
                 self.tabs.prev_tab_id_circular()
             } else {
@@ -37,6 +40,20 @@ impl App {
                 .fetch
                 .schedule_debounced(FETCH_DEBOUNCE_AFTER_TAB_SWITCH);
             return Task::batch(vec![screen_task, debounce_task]);
+        }
+
+        if is_escape_key(&key) {
+            if let Some(screen) = self.tabs.active_screen_mut() {
+                if let Some(task) = screen.handle_overlay_key_pressed(&key, modifiers) {
+                    self.key_chord.clear();
+                    return task;
+                }
+            }
+        }
+
+        if is_escape_key(&key) && self.key_chord.is_active() {
+            self.key_chord.clear();
+            return Task::none();
         }
 
         if is_escape_key(&key) {
@@ -67,13 +84,15 @@ impl App {
             return self.focus_plugin_overlay_input();
         }
 
+        if let Some(screen) = self.tabs.active_screen_mut() {
+            if let Some(task) = screen.handle_overlay_key_pressed(&key, modifiers) {
+                return task;
+            }
+        }
+
         if let Some(keystroke) = keystroke_from_iced_key(&modified_key, modifiers) {
             let context = self.keymap_context();
-            let outcome = self.plugin_host.dispatch_key(&context, &[keystroke]);
-            if matches!(
-                outcome,
-                KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending
-            ) {
+            if self.handle_keymap_candidate(context, keystroke) {
                 return self.focus_plugin_overlay_input();
             }
         }
@@ -96,11 +115,52 @@ impl App {
             .unwrap_or(Task::none())
     }
 
+    fn handle_keymap_candidate(&mut self, context: String, keystroke: Keystroke) -> bool {
+        if self.key_chord.context() != Some(context.as_str()) {
+            self.key_chord.reset_for_context(context.clone());
+        }
+
+        self.key_chord.push(keystroke.clone());
+        match self.dispatch_current_key_chord(&context) {
+            KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending => true,
+            KeymapDispatchOutcome::Unhandled => {
+                let should_retry_current = self.key_chord.buffer().len() > 1;
+                self.key_chord.clear();
+                if !should_retry_current {
+                    return false;
+                }
+
+                self.key_chord.replace_with(context.clone(), keystroke);
+                match self.dispatch_current_key_chord(&context) {
+                    KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending => {
+                        true
+                    }
+                    KeymapDispatchOutcome::Unhandled => {
+                        self.key_chord.clear();
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    fn dispatch_current_key_chord(&mut self, context: &str) -> KeymapDispatchOutcome {
+        let buffer = self.key_chord.buffer().to_vec();
+        let outcome = self.plugin_host.dispatch_key(context, &buffer);
+        if matches!(outcome, KeymapDispatchOutcome::Dispatched { .. }) {
+            self.key_chord.clear();
+        }
+        outcome
+    }
+
     fn keymap_context(&self) -> String {
         if let Some(screen) = self.tabs.active_plugin_screen() {
             format!("plugin_screen:{}", screen.screen_id())
-        } else if self.no_git_screen.is_none() && self.tabs.active_screen().is_some() {
-            "repository".to_string()
+        } else if self.no_git_screen.is_none() {
+            self.tabs
+                .active_screen()
+                .map(|screen| screen.keymap_context().to_string())
+                .unwrap_or_else(|| "global".to_string())
         } else {
             "global".to_string()
         }
@@ -128,9 +188,9 @@ fn overlay_key_event(
     key: &keyboard::Key,
     modifiers: keyboard::Modifiers,
 ) -> Option<OverlayKeyEvent> {
-    let key_name = named_key_from_iced_key(key)?;
+    let key_name = overlay_key_name_from_iced_key(key)?;
     let top_overlay = overlays.first()?;
-    if !top_overlay.listens_for_key(key_name) {
+    if !top_overlay.listens_for_key(key_name.as_ref()) {
         return None;
     }
 
@@ -138,7 +198,7 @@ fn overlay_key_event(
         plugin_id: top_overlay.plugin_id.clone(),
         overlay_id: top_overlay.id.clone(),
         payload: serde_json::json!({
-            "key": key_name,
+            "key": key_name.as_ref(),
             "ctrl": modifiers.control(),
             "shift": modifiers.shift(),
             "alt": modifiers.alt(),
@@ -152,10 +212,18 @@ fn is_escape_key(key: &keyboard::Key) -> bool {
     matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
 }
 
-fn named_key_from_iced_key(key: &keyboard::Key) -> Option<&'static str> {
-    match key {
-        keyboard::Key::Named(named) => named_key_name(*named),
-        _ => None,
+fn overlay_key_name_from_iced_key(key: &keyboard::Key) -> Option<Cow<'static, str>> {
+    match key.as_ref() {
+        keyboard::Key::Named(named) => named_key_name(named).map(Cow::Borrowed),
+        keyboard::Key::Character(character) => {
+            let mut chars = character.chars();
+            let ch = chars.next()?;
+            if chars.next().is_some() || ch.is_control() {
+                return None;
+            }
+            Some(Cow::Owned(ch.to_ascii_lowercase().to_string()))
+        }
+        keyboard::Key::Unidentified => None,
     }
 }
 
@@ -343,8 +411,23 @@ mod tests {
     }
 
     #[test]
-    fn overlay_key_event_ignores_character_keys() {
-        let overlays = vec![overlay("top", 100, &["tab"])];
+    fn overlay_key_event_routes_opted_in_character_keys() {
+        let overlays = vec![overlay("top", 100, &["j"])];
+        let event = overlay_key_event(
+            &overlays,
+            &keyboard::Key::Character("j".into()),
+            keyboard::Modifiers::default(),
+        )
+        .expect("j should be captured");
+
+        assert_eq!(event.plugin_id, "plugin_top");
+        assert_eq!(event.overlay_id, "top");
+        assert_eq!(event.payload["key"], "j");
+    }
+
+    #[test]
+    fn overlay_key_event_ignores_unlisted_character_keys() {
+        let overlays = vec![overlay("top", 100, &["k"])];
         let event = overlay_key_event(
             &overlays,
             &keyboard::Key::Character("j".into()),

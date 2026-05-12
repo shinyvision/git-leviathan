@@ -11,7 +11,7 @@ use iced::{keyboard, Point, Task};
 
 use crate::message::Message;
 
-use super::panel_messages::{CenterAction, DiffPanelAction};
+use super::panel_messages::{CenterAction, DetailAction, DiffPanelAction};
 use super::state::FocusedPanel;
 use super::RepositoryScreen;
 
@@ -49,6 +49,31 @@ pub(super) fn on_modifiers_changed(screen: &mut RepositoryScreen, modifiers: key
     // shift/ctrl clicks after a tab switch.
     screen.input.modifiers = modifiers;
     screen.panels.diff.shift_held = modifiers.shift();
+}
+
+pub(super) fn on_overlay_key_pressed(
+    screen: &mut RepositoryScreen,
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> Option<Task<Message>> {
+    if modifiers.control() || modifiers.alt() || modifiers.logo() {
+        return None;
+    }
+
+    let action = match key.as_ref() {
+        keyboard::Key::Named(keyboard::key::Named::Escape) => {
+            screen.overlay_manager.cancel_active_action()
+        }
+        keyboard::Key::Character("n") | keyboard::Key::Character("N") => {
+            screen.overlay_manager.cancel_confirmation_action()
+        }
+        keyboard::Key::Character("y") | keyboard::Key::Character("Y") => {
+            screen.overlay_manager.confirm_confirmation_action()
+        }
+        _ => None,
+    }?;
+
+    Some(screen.dispatch_overlay_action(action))
 }
 
 pub(super) fn on_key_pressed(
@@ -127,6 +152,7 @@ pub(super) fn on_key_pressed(
         keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
             Some(handle_navigate(screen, CenterAction::NavigateDown))
         }
+        keyboard::Key::Named(keyboard::key::Named::Enter) => Some(handle_enter(screen)),
         keyboard::Key::Character(ref c) if c == "j" => {
             Some(handle_navigate(screen, CenterAction::NavigateDown))
         }
@@ -142,18 +168,52 @@ fn handle_navigate(screen: &mut RepositoryScreen, action: CenterAction) -> Task<
         return Task::none();
     }
 
-    if screen.panels.diff.is_active() {
-        let diff_action = match action {
-            CenterAction::NavigateUp => DiffPanelAction::NavigateFileUp,
-            CenterAction::NavigateDown => DiffPanelAction::NavigateFileDown,
-            _ => return Task::none(),
-        };
-        return screen.handle_diff_panel_action(diff_action);
+    if screen.input.focused_panel == FocusedPanel::Detail {
+        if let Some(action) = detail_navigation_action(&action) {
+            return screen.handle_detail_action(action);
+        }
     }
 
     if screen.input.focused_panel != FocusedPanel::Center {
         return Task::none();
     }
 
+    if screen.panels.diff.is_active() {
+        if let Some(action) = diff_scroll_action(&action) {
+            return screen.handle_diff_panel_action(action);
+        }
+        return Task::none();
+    }
+
     screen.handle_center_action(action)
+}
+
+fn handle_enter(screen: &mut RepositoryScreen) -> Task<Message> {
+    if screen.overlay_manager.is_text_input_active() {
+        return Task::none();
+    }
+    if screen.input.focused_panel == FocusedPanel::Detail {
+        return screen.handle_detail_action(DetailAction::OpenSelectedFile);
+    }
+    Task::none()
+}
+
+fn detail_navigation_action(action: &CenterAction) -> Option<DetailAction> {
+    match action {
+        CenterAction::NavigateUp => Some(DetailAction::NavigateFileUp),
+        CenterAction::NavigateDown => Some(DetailAction::NavigateFileDown),
+        CenterAction::NavigateFirst => Some(DetailAction::NavigateFileFirst),
+        CenterAction::NavigateLast => Some(DetailAction::NavigateFileLast),
+        _ => None,
+    }
+}
+
+fn diff_scroll_action(action: &CenterAction) -> Option<DiffPanelAction> {
+    match action {
+        CenterAction::NavigateUp => Some(DiffPanelAction::ScrollUp),
+        CenterAction::NavigateDown => Some(DiffPanelAction::ScrollDown),
+        CenterAction::NavigateFirst => Some(DiffPanelAction::ScrollTop),
+        CenterAction::NavigateLast => Some(DiffPanelAction::ScrollBottom),
+        _ => None,
+    }
 }

@@ -304,6 +304,72 @@ fn reload_drops_old_generation_autocmds() {
 }
 
 #[test]
+fn sync_focus_fires_focus_changed_autocmd_with_payload() {
+    use crate::plugin::ui::focus::{
+        FocusReason, FocusSnapshot, FocusSurface, RepositoryFocusSurface,
+    };
+
+    let mut host = MockHost::new();
+    host.load_inline(
+        "focus_listener",
+        &manifest("focus_listener"),
+        r#"
+        leviathan.autocmd.create("FocusChanged", {
+            callback = function(ev)
+                _G.fires = (_G.fires or 0) + 1
+                _G.last_old = ev.payload.old_surface
+                _G.last_new = ev.payload.new_surface
+                _G.last_reason = ev.payload.reason
+            end,
+        })
+        "#,
+    )
+    .expect("load");
+
+    let first = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+        reason: FocusReason::Startup,
+    };
+    assert!(host.host_mut().sync_focus(first.clone()));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(1));
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_old")
+            .as_deref(),
+        Some("none")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_new")
+            .as_deref(),
+        Some("repository.graph")
+    );
+
+    assert!(!host.host_mut().sync_focus(first));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(1));
+
+    let next = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Details),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(next));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(2));
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_old")
+            .as_deref(),
+        Some("repository.graph")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_new")
+            .as_deref(),
+        Some("repository.details")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_reason")
+            .as_deref(),
+        Some("keymap")
+    );
+}
+
+#[test]
 fn canonical_fetch_event_dispatches_to_canonical_listener() {
     let mut host = MockHost::new();
     host.load_inline(

@@ -175,12 +175,40 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
                 "spec.widget must be a LeviathanWidget table",
                 "spec.dismissible must be boolean",
                 "spec.priority must be a number",
-                "spec.key_events must be an array of supported named keys when present",
+                "spec.key_events must be an array of supported keys when present",
             ],
             returns: &[],
             notes: &[
                 "Host owns Esc / click-outside dismissal.",
                 "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input.",
+            ],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.dialog",
+        name: "dialog",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.",
+        params: UI_DIALOG_PARAM,
+        returns: &[],
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &[
+                "spec.id must be a string",
+                "spec.text must be a string",
+                "spec.buttons must contain one or more button specs",
+                "button.style must be red, green, blue, or white",
+                "button.text must be a string",
+                "button.on_click or button.action must be a function",
+                "button.keys must be an array of supported keys when present",
+            ],
+            returns: &[],
+            notes: &[
+                "Button clicks call the matching button function.",
+                "Configured keys call the same button function as a click.",
+                "Escape is routed as key `esc` when a button declares it; otherwise a dismissible dialog closes.",
+                "The dialog is rendered in the main toolbar band, matching native confirmation overlays.",
             ],
         },
     },
@@ -591,6 +619,13 @@ const UI_OVERLAY_PARAM: &[ApiParam] = &[ApiParam {
     lua_type: "LeviathanOverlaySpec",
     required: true,
     doc: "Overlay descriptor (id, widget, dismissible, priority, key_events).",
+}];
+
+const UI_DIALOG_PARAM: &[ApiParam] = &[ApiParam {
+    name: "spec",
+    lua_type: "LeviathanDialogSpec",
+    required: true,
+    doc: "Dialog descriptor (id, text, optional dropdown, buttons).",
 }];
 
 const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[

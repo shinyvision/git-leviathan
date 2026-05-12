@@ -79,7 +79,25 @@ pub(in crate::screens::repository) fn dispatch_result(
         | RepositoryMessage::DiffPanel(_)
         | RepositoryMessage::CommitSearch(_)
         | RepositoryMessage::OpenCommitSearch
-        | RepositoryMessage::OverlayPanel(_) => unreachable!("panel messages routed in mod.rs"),
+        | RepositoryMessage::OverlayPanel(_)
+        | RepositoryMessage::FetchRequested
+        | RepositoryMessage::RefreshRequested
+        | RepositoryMessage::CreateBranchAtSelected { .. }
+        | RepositoryMessage::CopyCommitHash { .. }
+        | RepositoryMessage::OpenSelectedDiff
+        | RepositoryMessage::MoveSelection { .. }
+        | RepositoryMessage::ClearMultiSelection
+        | RepositoryMessage::EscapePressed
+        | RepositoryMessage::FocusCommitMessage
+        | RepositoryMessage::StartRewordSelected
+        | RepositoryMessage::FocusPanel(_)
+        | RepositoryMessage::StageSelectedDirtyFile
+        | RepositoryMessage::UnstageSelectedDirtyFile
+        | RepositoryMessage::DiscardSelectedDirtyFile
+        | RepositoryMessage::DeleteBranchDirect { .. }
+        | RepositoryMessage::DeleteBranchLocalAndRemote { .. } => {
+            unreachable!("repository UI messages routed in mod.rs")
+        }
 
         RepositoryMessage::RepoLoaded(result) => loaders::on_repo_loaded(screen, result),
         RepositoryMessage::WriteRepoLoaded {

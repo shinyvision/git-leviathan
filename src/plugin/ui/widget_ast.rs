@@ -354,6 +354,8 @@ pub struct ScrollableNode {
     pub child: Option<Box<WidgetAst>>,
     pub width: AstLength,
     pub height: AstLength,
+    pub id: Option<String>,
+    pub scroll_y: Option<f32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -774,6 +776,8 @@ fn decode_scrollable(
         child: opt_child(obj, "child", path, depth, ctx)?,
         width: opt_length(obj, "width", path)?,
         height: opt_length(obj, "height", path)?,
+        id: opt_string(obj, "id", path, ctx)?,
+        scroll_y: opt_f32(obj, "scroll_y", path)?.map(|value| value.max(0.0)),
     })
 }
 
@@ -1831,10 +1835,17 @@ fn snapshot_node(ast: &WidgetAst, indent: usize, out: &mut String) {
         }
         WidgetNode::Scrollable(s) => {
             out.push_str(&format!(
-                " width={} height={}\n",
+                " width={} height={}",
                 fmt_length(s.width),
                 fmt_length(s.height)
             ));
+            if let Some(id) = &s.id {
+                out.push_str(&format!(" scroll_id={id:?}"));
+            }
+            if let Some(scroll_y) = s.scroll_y {
+                out.push_str(&format!(" scroll_y={scroll_y}"));
+            }
+            out.push('\n');
             if let Some(c) = &s.child {
                 snapshot_node(c, indent + 1, out);
             }

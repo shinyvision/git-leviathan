@@ -138,6 +138,7 @@
           "fs:watch:scope:<dir>",
           "ui:overlay",
           "ui:context_menu:<region>",
+          "ui:chrome:<point>",
           "ui:decoration:graph",
           "ui:decoration:diff",
           "ui:screen",

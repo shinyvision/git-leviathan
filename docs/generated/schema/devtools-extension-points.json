@@ -554,6 +554,54 @@
       "ordering_model": "area order, then plugin/id",
       "ownership_rules": "owned by plugin + dock panel id",
       "render_mount_handler": "DockManager"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.sidebar.chrome"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.sidebar.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.graph.chrome"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.graph.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.details.chrome"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.details.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.diff.chrome"
+      ],
+      "context_schema": "RepositoryDiffContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.diff.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
     }
   ],
   "schema_version": 1,

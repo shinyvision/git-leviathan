@@ -19,12 +19,45 @@ use super::commit_search::CommitSearchMessage;
 use super::panel_messages::{CenterAction, DetailAction, DiffPanelAction, OverlayPanelAction};
 use super::panels::diff::DirtyDiffSyncResult;
 use super::panels::sidebar::SidebarAction;
-use super::state::OperationId;
+use super::state::{FocusedPanel, OperationId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GitWriteIntent {
     FastLocal,
     Normal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepositoryFocusTarget {
+    Sidebar,
+    Center,
+    Graph,
+    Details,
+    Diff,
+}
+
+impl RepositoryFocusTarget {
+    pub(crate) fn resolve(self, diff_active: bool) -> Result<FocusedPanel, &'static str> {
+        match self {
+            Self::Sidebar => Ok(FocusedPanel::Sidebar),
+            Self::Details => Ok(FocusedPanel::Detail),
+            Self::Center => Ok(FocusedPanel::Center),
+            Self::Graph => {
+                if diff_active {
+                    Err("graph is not visible while diff is active")
+                } else {
+                    Ok(FocusedPanel::Center)
+                }
+            }
+            Self::Diff => {
+                if diff_active {
+                    Ok(FocusedPanel::Center)
+                } else {
+                    Err("diff is not visible")
+                }
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +68,36 @@ pub enum RepositoryMessage {
     Detail(DetailAction),
     DiffPanel(DiffPanelAction),
     OverlayPanel(OverlayPanelAction),
+    FetchRequested,
+    RefreshRequested,
+    CreateBranchAtSelected {
+        commit_idx: Option<usize>,
+        hash: Option<String>,
+    },
+    CopyCommitHash {
+        hash: Option<String>,
+    },
+    OpenSelectedDiff,
+    MoveSelection {
+        action: CenterAction,
+        extend: bool,
+    },
+    ClearMultiSelection,
+    EscapePressed,
+    FocusCommitMessage,
+    StartRewordSelected,
+    FocusPanel(RepositoryFocusTarget),
+    StageSelectedDirtyFile,
+    UnstageSelectedDirtyFile,
+    DiscardSelectedDirtyFile,
+    DeleteBranchDirect {
+        branch_name: String,
+        is_remote: bool,
+        remote_ref: Option<String>,
+    },
+    DeleteBranchLocalAndRemote {
+        branch_name: String,
+    },
 
     // Git operation results — all snapshots are pre-projected off the main
     // thread (see `project_loaded`) so the UI can swap without running the
@@ -229,6 +292,12 @@ impl RepositoryMessage {
                 Some(GitWriteIntent::Normal)
             }
             Self::OverlayPanel(action) => overlay_write_intent(action),
+            Self::StageSelectedDirtyFile | Self::UnstageSelectedDirtyFile => {
+                Some(GitWriteIntent::FastLocal)
+            }
+            Self::DeleteBranchDirect { .. } | Self::DeleteBranchLocalAndRemote { .. } => {
+                Some(GitWriteIntent::Normal)
+            }
             Self::PushRequested | Self::PullRequested => Some(GitWriteIntent::Normal),
             _ => None,
         }
@@ -257,8 +326,10 @@ fn detail_write_intent(action: &DetailAction) -> Option<GitWriteIntent> {
     match action {
         DetailAction::StageFile(_)
         | DetailAction::StageAll
+        | DetailAction::StageSelectedFiles
         | DetailAction::UnstageFile(_)
         | DetailAction::UnstageAll
+        | DetailAction::UnstageSelectedFiles
         | DetailAction::CommitConfirmed => Some(GitWriteIntent::FastLocal),
         DetailAction::MarkConflictResolved(_)
         | DetailAction::MarkAllConflictsResolved
@@ -295,5 +366,64 @@ fn overlay_write_intent(action: &OverlayPanelAction) -> Option<GitWriteIntent> {
         | OverlayPanelAction::CreateWorktreeConfirmed
         | OverlayPanelAction::WorktreeRemoveConfirmed => Some(GitWriteIntent::Normal),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_dirty_file_writes_use_git_queue() {
+        assert_eq!(
+            RepositoryMessage::StageSelectedDirtyFile.git_write_intent(),
+            Some(GitWriteIntent::FastLocal)
+        );
+        assert_eq!(
+            RepositoryMessage::UnstageSelectedDirtyFile.git_write_intent(),
+            Some(GitWriteIntent::FastLocal)
+        );
+        assert_eq!(
+            RepositoryMessage::DiscardSelectedDirtyFile.git_write_intent(),
+            None
+        );
+    }
+
+    #[test]
+    fn repository_focus_target_resolves_against_visible_panels() {
+        assert_eq!(
+            RepositoryFocusTarget::Sidebar.resolve(false),
+            Ok(FocusedPanel::Sidebar)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Sidebar.resolve(true),
+            Ok(FocusedPanel::Sidebar)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Details.resolve(false),
+            Ok(FocusedPanel::Detail)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Details.resolve(true),
+            Ok(FocusedPanel::Detail)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Center.resolve(false),
+            Ok(FocusedPanel::Center)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Center.resolve(true),
+            Ok(FocusedPanel::Center)
+        );
+        assert_eq!(
+            RepositoryFocusTarget::Graph.resolve(false),
+            Ok(FocusedPanel::Center)
+        );
+        assert!(RepositoryFocusTarget::Graph.resolve(true).is_err());
+        assert_eq!(
+            RepositoryFocusTarget::Diff.resolve(true),
+            Ok(FocusedPanel::Center)
+        );
+        assert!(RepositoryFocusTarget::Diff.resolve(false).is_err());
     }
 }

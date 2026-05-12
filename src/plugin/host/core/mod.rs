@@ -207,6 +207,7 @@ impl PluginHost {
                     crate::plugin::ui::context::UiContextSurface::Screen,
                     None,
                     &TabsSnapshot::default(),
+                    None,
                 ),
             )),
             keymap_registry: Rc::new(RefCell::new(KeymapRegistry::new())),
@@ -216,6 +217,7 @@ impl PluginHost {
             destructive_policy: DestructiveConfirmPolicy::new(),
             pending_git_writes: PendingGitWrites::new(),
             pending_git_events: crate::plugin::api::git::PendingGitEvents::new(),
+            pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects::new(),
             async_jobs: AsyncJobRegistry::new(),
             timers: TimerRegistry::new(),
             watchers: FileWatcherRegistry::new(),
@@ -224,6 +226,7 @@ impl PluginHost {
             lazy_registry: crate::plugin::activation::LazyRegistry::new(),
             lazy_ledgers: HashMap::new(),
             last_repository_shape: None,
+            last_selection_snapshot: crate::plugin::ui::context::SelectionContextSnapshot::none(),
             extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
             dock_manager: DockManager::new(),
             contribution_overrides:
@@ -235,6 +238,7 @@ impl PluginHost {
             last_devtools_result: None,
             core_command_actions: crate::plugin::core_commands::CoreCommandActions::new(),
             pending_navigation_effects: Vec::new(),
+            last_focus_snapshot: crate::plugin::ui::focus::FocusSnapshot::default(),
         };
         host.dock_manager.set_persist_path(
             host.storage_roots

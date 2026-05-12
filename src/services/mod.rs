@@ -19,9 +19,9 @@ pub use git::working_tree_diff::{
     SegmentKind, WorkingTreeDiffLine, WorkingTreeDiffResult,
 };
 pub use git::{
-    kill_running_git_processes, load_commit_diff, load_merged_commit_diff,
-    load_merged_commit_file_diff, BranchMergeOutcome, CherryPickOutcome, CommitDiffResult,
-    ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult,
+    kill_running_fetch_processes, kill_running_git_processes, load_commit_diff,
+    load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome, CherryPickOutcome,
+    CommitDiffResult, ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult,
     ModifyDeleteConflict, ModifyDeleteConflictChoice, PushOutcome, RemoteCheckoutOutcome,
     ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,
 };

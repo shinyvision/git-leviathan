@@ -114,13 +114,29 @@ pub(super) fn on_dirty_index_reloaded(
                 screen.overlay_manager.close();
             }
             if !screen.data.apply_dirty_index_update(loaded) {
+                screen
+                    .panels
+                    .detail
+                    .clear_pending_dirty_reselection(operation_id);
                 let task = screen.reload_task();
                 return super::helpers::pending_reload_task_after_write(screen, task);
             }
+            screen
+                .panels
+                .detail
+                .apply_pending_dirty_reselection_after_reload(
+                    operation_id,
+                    &screen.data,
+                    &screen.data.selection,
+                );
             let task = super::helpers::sync_dirty_diff_after_reload(screen);
             super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
+            screen
+                .panels
+                .detail
+                .clear_pending_dirty_reselection(operation_id);
             eprintln!("git_leviathan: index update failed: {}", e);
             super::helpers::pending_reload_task_after_write(
                 screen,

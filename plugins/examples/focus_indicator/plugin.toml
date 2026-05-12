@@ -1,0 +1,12 @@
+id = "example_focus_indicator"
+name = "Example Focus Indicator"
+version = "0.1.0"
+api_version = "1.0"
+description = "Draws a focus bar over the active repository pane using ctx.focus.matches_pane."
+capabilities = [
+  "ui:region:repository",
+  "ui:chrome:repository.sidebar.chrome",
+  "ui:chrome:repository.graph.chrome",
+  "ui:chrome:repository.details.chrome",
+  "ui:chrome:repository.diff.chrome",
+]

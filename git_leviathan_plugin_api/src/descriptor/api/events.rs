@@ -154,6 +154,39 @@ const PAYLOAD_COMMAND: &[ApiTypeField] = &[
     },
 ];
 
+const PAYLOAD_FOCUS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "old_surface",
+        lua_type: "string",
+        required: true,
+        doc: "Previous active focus surface id.",
+    },
+    ApiTypeField {
+        name: "new_surface",
+        lua_type: "string",
+        required: true,
+        doc: "New active focus surface id.",
+    },
+    ApiTypeField {
+        name: "old",
+        lua_type: "table",
+        required: false,
+        doc: "Previous focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+    },
+    ApiTypeField {
+        name: "new",
+        lua_type: "table",
+        required: false,
+        doc: "New focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string",
+        required: true,
+        doc: "Normalized reason for the focus change.",
+    },
+];
+
 const PAYLOAD_KEYMAP: &[ApiTypeField] = &[
     ApiTypeField {
         name: "context",
@@ -407,6 +440,15 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired after a keymap chord matches and the host dispatches the underlying command.",
         payload_type: "table",
         payload_fields: PAYLOAD_KEYMAP,
+        aliases: &[],
+        is_alias: false,
+    },
+    ApiEvent {
+        name: "FocusChanged",
+        since: "1.0",
+        doc: "Fired when the active focus surface changes.",
+        payload_type: "table",
+        payload_fields: PAYLOAD_FOCUS,
         aliases: &[],
         is_alias: false,
     },

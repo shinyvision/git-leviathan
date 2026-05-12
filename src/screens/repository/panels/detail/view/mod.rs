@@ -109,12 +109,16 @@ fn wrap_with_slots<'a>(
     if let Some(bottom) = bottom_slot {
         col_items.push(bottom);
     }
-    column(col_items).spacing(0).height(Length::Fill).into()
+    column(col_items)
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
 
 fn resize_handle_view(is_resizing: bool, effective_width: f32) -> Element<'static, Message> {
     let handle = container(horizontal_space())
-        .width(Length::Fixed(5.0))
+        .width(Length::Fixed(theme::PANE_SPLITTER_SIZE))
         .height(Length::Fill)
         .style(move |_: &Theme| container::Style {
             background: if is_resizing {
@@ -332,7 +336,7 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
             FileListClickTarget::Commit(screen.commit_idx),
             DetailFileListKind::Commit,
             screen.commit_file_list_scroll_y,
-            screen.active_diff_file_path,
+            screen.selected_file_path,
         )
     };
 
@@ -411,12 +415,15 @@ pub(super) fn file_list_view<'a>(
         };
         file_row_view(
             &files[index],
-            None,
-            commit_idx,
-            is_merged,
-            active_diff_file_path,
+            FileRowContext {
+                dirty_section: None,
+                commit_idx,
+                is_merged,
+                active_diff_path: active_diff_file_path,
+                dirty_actions_busy: false,
+                is_selected: false,
+            },
             width,
-            false,
         )
     })
 }
@@ -658,14 +665,20 @@ fn truncate_path_for_width(path: &str, max_width: f32) -> TruncatedPath {
     }
 }
 
-fn file_row_view<'a>(
+pub(in crate::screens::repository::panels::detail::view) struct FileRowContext<'a> {
+    pub(in crate::screens::repository::panels::detail::view) dirty_section:
+        Option<DirtyFileSection>,
+    pub(in crate::screens::repository::panels::detail::view) commit_idx: Option<usize>,
+    pub(in crate::screens::repository::panels::detail::view) is_merged: bool,
+    pub(in crate::screens::repository::panels::detail::view) active_diff_path: Option<&'a str>,
+    pub(in crate::screens::repository::panels::detail::view) dirty_actions_busy: bool,
+    pub(in crate::screens::repository::panels::detail::view) is_selected: bool,
+}
+
+pub(in crate::screens::repository::panels::detail::view) fn file_row_view<'a>(
     file: &'a ChangedFile,
-    dirty_section: Option<DirtyFileSection>,
-    commit_idx: Option<usize>,
-    is_merged: bool,
-    active_diff_path: Option<&'a str>,
+    ctx: FileRowContext<'a>,
     available_width: f32,
-    dirty_actions_busy: bool,
 ) -> Element<'a, Message> {
     fn make_indicator(kind: &ChangeKind) -> Element<'static, Message> {
         match kind {
@@ -675,15 +688,16 @@ fn file_row_view<'a>(
         }
     }
 
-    let is_active_diff = active_diff_path == Some(file.path.as_str());
+    let is_active_diff = ctx.active_diff_path == Some(file.path.as_str());
+    let is_highlighted = is_active_diff || ctx.is_selected;
 
-    let row_padding = if dirty_section.is_some() {
+    let row_padding = if ctx.dirty_section.is_some() {
         Padding::from([0, 10])
     } else {
         Padding::from([3, 10])
     };
 
-    if let Some(section) = dirty_section {
+    if let Some(section) = ctx.dirty_section {
         let indicator_width = 14.0;
         let row_padding_h = 10.0;
         let row_h_padding = Padding {
@@ -704,7 +718,7 @@ fn file_row_view<'a>(
             section.file_action_label(),
             section.file_action_message(file.path.clone()),
             section.action_tone(),
-            !dirty_actions_busy,
+            !ctx.dirty_actions_busy,
         );
 
         let path_row = row![
@@ -763,7 +777,7 @@ fn file_row_view<'a>(
                 .height(Length::Fill);
 
         let idle_style = move |_: &Theme| container::Style {
-            background: if is_active_diff {
+            background: if is_highlighted {
                 Some(theme::BG_SELECTED.into())
             } else {
                 None
@@ -773,7 +787,7 @@ fn file_row_view<'a>(
 
         let hover_style = move |_: &Theme| container::Style {
             background: Some(
-                if is_active_diff {
+                if is_highlighted {
                     theme::BG_SELECTED
                 } else {
                     theme::BG_HOVER
@@ -830,7 +844,7 @@ fn file_row_view<'a>(
         .width(Length::Fill);
 
         let idle_style = move |_: &Theme| container::Style {
-            background: if is_active_diff {
+            background: if is_highlighted {
                 Some(theme::BG_SELECTED.into())
             } else {
                 None
@@ -864,14 +878,14 @@ fn file_row_view<'a>(
             }
         });
 
-        if let Some(idx) = commit_idx {
+        if let Some(idx) = ctx.commit_idx {
             let on_click_msg =
                 Message::repo(RepositoryMessage::Detail(DetailAction::CommitFileClicked {
                     commit_idx: idx,
                     path: file.path.clone(),
                 }));
             MouseArea::new(interactive).on_press(on_click_msg).into()
-        } else if is_merged {
+        } else if ctx.is_merged {
             let on_click_msg =
                 Message::repo(RepositoryMessage::Detail(DetailAction::MergedFileClicked {
                     path: file.path.clone(),

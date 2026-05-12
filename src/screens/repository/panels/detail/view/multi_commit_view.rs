@@ -35,7 +35,7 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
     let count = screen.multi_commits.len();
     let multi_commits = screen.multi_commits;
     let merged_diff = screen.merged_diff;
-    let active_diff_file_path = screen.active_diff_file_path;
+    let selected_file_path = screen.selected_file_path;
 
     let multi_commit_row_height: f32 = 42.0;
     let commit_list_natural_height = count as f32 * multi_commit_row_height;
@@ -54,7 +54,7 @@ pub(super) fn multi_commit_detail_panel_content<'a>(
 
         let (stats_elem, files_elem) = merged_stats_and_files(
             merged_diff,
-            active_diff_file_path,
+            selected_file_path,
             screen.merged_file_list_scroll_y,
         );
 
@@ -91,7 +91,7 @@ fn multi_commit_detail_panel_horizontal<'a>(screen: DetailViewModel<'a>) -> Elem
     let count = screen.multi_commits.len();
     let multi_commits = screen.multi_commits;
     let merged_diff = screen.merged_diff;
-    let active_diff_file_path = screen.active_diff_file_path;
+    let selected_file_path = screen.selected_file_path;
 
     let commit_list =
         responsive(move |size| scrollable_commit_rows(&multi_commits, size.width, Length::Fill));
@@ -114,7 +114,7 @@ fn multi_commit_detail_panel_horizontal<'a>(screen: DetailViewModel<'a>) -> Elem
 
     let (stats_elem, files_elem) = merged_stats_and_files(
         merged_diff,
-        active_diff_file_path,
+        selected_file_path,
         screen.merged_file_list_scroll_y,
     );
 

@@ -33,10 +33,26 @@ pub fn install(
     keymaps: SharedKeymapRegistry,
 ) -> mlua::Result<()> {
     let keymap_tbl = lua.create_table()?;
+    install_set_leader(lua, Rc::clone(&keymaps), &keymap_tbl)?;
     install_set(lua, Rc::clone(&build), ledger.clone(), &keymap_tbl)?;
     install_del(lua, Rc::clone(&build), &keymap_tbl)?;
     install_list(lua, keymaps, &keymap_tbl)?;
     leviathan.set("keymap", keymap_tbl)?;
+    Ok(())
+}
+
+fn install_set_leader(
+    lua: &Lua,
+    keymaps: SharedKeymapRegistry,
+    keymap_tbl: &Table,
+) -> mlua::Result<()> {
+    keymap_tbl.set(
+        "set_leader",
+        lua.create_function(move |_lua_inner, leader: String| {
+            keymaps.borrow_mut().set_leader(leader);
+            Ok(())
+        })?,
+    )?;
     Ok(())
 }
 

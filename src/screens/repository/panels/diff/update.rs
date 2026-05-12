@@ -19,7 +19,24 @@ use super::super::super::{
     RepositoryMessage,
 };
 use super::super::ScreenCtx;
-use super::{conflict_resolution_output_text, ConflictScrollTarget, DiffPanel};
+use super::conflict::{
+    conflict_resolution_output_lines, displayed_conflict_hunk_len, CONFLICT_RESOLUTION_LINE_HEIGHT,
+};
+use super::{
+    conflict_resolution_output_text, ConflictFileResolutionState, ConflictScrollTarget,
+    ConflictSide, DiffPanel,
+};
+
+const KEYBOARD_DIFF_SCROLL_DELTA_Y: f32 = crate::widgets::text::DEFAULT_CONTENT_LINE_HEIGHT;
+const SCROLL_TO_BOTTOM_Y: f32 = 1_000_000_000.0;
+
+#[derive(Debug, Clone, Copy)]
+enum DiffKeyboardScroll {
+    Up,
+    Down,
+    Top,
+    Bottom,
+}
 
 pub(in crate::screens::repository) fn update(
     panel: &mut DiffPanel,
@@ -27,6 +44,10 @@ pub(in crate::screens::repository) fn update(
     ctx: &mut ScreenCtx<'_>,
 ) -> Task<Message> {
     match action {
+        DiffPanelAction::ScrollUp => scroll_focused_diff(panel, DiffKeyboardScroll::Up),
+        DiffPanelAction::ScrollDown => scroll_focused_diff(panel, DiffKeyboardScroll::Down),
+        DiffPanelAction::ScrollTop => scroll_focused_diff(panel, DiffKeyboardScroll::Top),
+        DiffPanelAction::ScrollBottom => scroll_focused_diff(panel, DiffKeyboardScroll::Bottom),
         DiffPanelAction::NavigateFileUp => {
             let merged_files = ctx.merged_diff.result().map(|m| m.files.as_slice());
             if let Some(follow_up) = panel.navigate_file(
@@ -546,6 +567,159 @@ pub(in crate::screens::repository) fn update(
 
 fn build_highlight_document(content: Option<String>, file_path: &str) -> Option<HighlightDocument> {
     content.map(|content| HighlightDocument::from_path(content, file_path))
+}
+
+fn scroll_focused_diff(panel: &mut DiffPanel, direction: DiffKeyboardScroll) -> Task<Message> {
+    if panel.conflict_file_resolution.is_some() {
+        return scroll_focused_conflict_buffer(panel, direction);
+    }
+
+    if !panel.is_active() {
+        return Task::none();
+    }
+
+    let max_y = single_file_max_scroll_y(panel);
+    let target_y = keyboard_scroll_y(panel.diff_scroll_y, direction, max_y);
+
+    if should_mirror_keyboard_scroll(direction, max_y) {
+        panel.diff_scroll_y = target_y;
+    }
+
+    iced::widget::operation::scroll_to(
+        diff_content_scroll_id(),
+        iced::widget::scrollable::AbsoluteOffset {
+            x: panel.diff_scroll_x,
+            y: target_y,
+        },
+    )
+}
+
+fn scroll_focused_conflict_buffer(
+    panel: &mut DiffPanel,
+    direction: DiffKeyboardScroll,
+) -> Task<Message> {
+    use crate::widgets::conflict_canvas::{CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS};
+
+    let Some(state) = panel.conflict_file_resolution.as_mut() else {
+        return Task::none();
+    };
+
+    let target = match panel.hovered_canvas {
+        Some(CANVAS_ID_OURS) => ConflictScrollTarget::Ours,
+        Some(CANVAS_ID_THEIRS) => ConflictScrollTarget::Theirs,
+        Some(CANVAS_ID_OUTPUT) => ConflictScrollTarget::Output,
+        _ => ConflictScrollTarget::Output,
+    };
+
+    let (scroll_id, current_x, current_y) = match target {
+        ConflictScrollTarget::Ours => (
+            conflict_ours_scroll_id(),
+            state.ours_scroll_offset_x,
+            state.ours_scroll_offset_y,
+        ),
+        ConflictScrollTarget::Theirs => (
+            conflict_theirs_scroll_id(),
+            state.theirs_scroll_offset_x,
+            state.theirs_scroll_offset_y,
+        ),
+        ConflictScrollTarget::Output => (
+            conflict_output_scroll_id(),
+            state.output_scroll_offset_x,
+            state.output_scroll_offset_y,
+        ),
+    };
+
+    let max_y = conflict_max_scroll_y(state, target);
+    let target_y = keyboard_scroll_y(current_y, direction, max_y);
+    if should_mirror_keyboard_scroll(direction, max_y) {
+        match target {
+            ConflictScrollTarget::Ours => state.ours_scroll_offset_y = target_y,
+            ConflictScrollTarget::Theirs => state.theirs_scroll_offset_y = target_y,
+            ConflictScrollTarget::Output => state.output_scroll_offset_y = target_y,
+        }
+    }
+
+    iced::widget::operation::scroll_to(
+        scroll_id,
+        iced::widget::scrollable::AbsoluteOffset {
+            x: current_x,
+            y: target_y,
+        },
+    )
+}
+
+fn single_file_max_scroll_y(panel: &DiffPanel) -> Option<f32> {
+    let viewport_height = panel.diff_viewport_height?;
+    let content_height = panel
+        .active_single_file_diff()?
+        .render_data()?
+        .total_height();
+    Some(max_scroll_y(content_height, viewport_height))
+}
+
+fn conflict_max_scroll_y(
+    state: &ConflictFileResolutionState,
+    target: ConflictScrollTarget,
+) -> Option<f32> {
+    let result = state.result.as_ref()?;
+    let (content_height, viewport_height) = match target {
+        ConflictScrollTarget::Ours => (
+            conflict_side_row_count(result, ConflictSide::Ours) as f32
+                * CONFLICT_RESOLUTION_LINE_HEIGHT,
+            state.ours_viewport_height?,
+        ),
+        ConflictScrollTarget::Theirs => (
+            conflict_side_row_count(result, ConflictSide::Theirs) as f32
+                * CONFLICT_RESOLUTION_LINE_HEIGHT,
+            state.theirs_viewport_height?,
+        ),
+        ConflictScrollTarget::Output => (
+            conflict_resolution_output_lines(result, &state.selections).len() as f32
+                * CONFLICT_RESOLUTION_LINE_HEIGHT,
+            state.output_viewport_height?,
+        ),
+    };
+
+    Some(max_scroll_y(content_height, viewport_height))
+}
+
+fn conflict_side_row_count(
+    result: &crate::services::ConflictResolutionResult,
+    side: ConflictSide,
+) -> usize {
+    result
+        .blocks
+        .iter()
+        .map(|block| match block {
+            crate::services::ConflictBlock::Context(lines) => lines.len(),
+            crate::services::ConflictBlock::Conflict(hunk) => match side {
+                ConflictSide::Ours => displayed_conflict_hunk_len(&hunk.ours_lines),
+                ConflictSide::Theirs => displayed_conflict_hunk_len(&hunk.theirs_lines),
+            },
+        })
+        .sum()
+}
+
+fn max_scroll_y(content_height: f32, viewport_height: f32) -> f32 {
+    (content_height - viewport_height).max(0.0)
+}
+
+fn keyboard_scroll_y(current_y: f32, direction: DiffKeyboardScroll, max_y: Option<f32>) -> f32 {
+    let raw_y = match direction {
+        DiffKeyboardScroll::Up => (current_y - KEYBOARD_DIFF_SCROLL_DELTA_Y).max(0.0),
+        DiffKeyboardScroll::Down => current_y + KEYBOARD_DIFF_SCROLL_DELTA_Y,
+        DiffKeyboardScroll::Top => 0.0,
+        DiffKeyboardScroll::Bottom => SCROLL_TO_BOTTOM_Y,
+    };
+
+    match direction {
+        DiffKeyboardScroll::Bottom => max_y.unwrap_or(raw_y),
+        _ => max_y.map_or(raw_y, |max_y| raw_y.min(max_y)),
+    }
+}
+
+fn should_mirror_keyboard_scroll(direction: DiffKeyboardScroll, max_y: Option<f32>) -> bool {
+    max_y.is_some() || matches!(direction, DiffKeyboardScroll::Up | DiffKeyboardScroll::Top)
 }
 
 fn continue_visible_highlighting_task(tab_id: crate::core::TabId) -> Task<Message> {

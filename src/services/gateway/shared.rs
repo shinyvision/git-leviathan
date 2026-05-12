@@ -380,12 +380,26 @@ impl WorkingTreeOps for GitRepositoryGateway {
         self.write_then_load_dirty(|service| service.stage_file(path))
     }
 
+    fn stage_files_and_load_dirty(
+        &self,
+        paths: &[String],
+    ) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.stage_files(paths))
+    }
+
     fn stage_all_dirty_changes_and_load_dirty(&self) -> Result<Option<DirtySnapshot>, GitError> {
         self.write_then_load_dirty(|service| service.stage_all_dirty_changes())
     }
 
     fn unstage_file_and_load_dirty(&self, path: &str) -> Result<Option<DirtySnapshot>, GitError> {
         self.write_then_load_dirty(|service| service.unstage_file(path))
+    }
+
+    fn unstage_files_and_load_dirty(
+        &self,
+        paths: &[String],
+    ) -> Result<Option<DirtySnapshot>, GitError> {
+        self.write_then_load_dirty(|service| service.unstage_files(paths))
     }
 
     fn unstage_all_dirty_changes_and_load_dirty(&self) -> Result<Option<DirtySnapshot>, GitError> {
@@ -420,6 +434,15 @@ impl WorkingTreeOps for GitRepositoryGateway {
     fn discard_file(&self, path: &str) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
             service.discard_file(path)?;
+            Ok(service.load_repo(COMMIT_LOAD_LIMIT))
+        })
+    }
+
+    fn discard_files(&self, paths: &[String]) -> Result<RepoSnapshot, GitError> {
+        self.with_service(|service| {
+            for path in paths {
+                service.discard_file(path)?;
+            }
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }

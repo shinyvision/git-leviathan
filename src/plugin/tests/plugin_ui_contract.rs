@@ -155,6 +155,81 @@ fn ui_region_describe_context_and_feature_gates_work() {
 }
 
 #[test]
+fn lua_command_bodies_see_active_selection_context() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "cmd_ctx",
+        &manifest("cmd_ctx", "[]"),
+        r#"
+        leviathan.command.create("cmd_ctx.capture", {
+            run = function()
+                local ctx, err = leviathan.ui.context.current()
+                assert(ctx, err)
+                _G.ctx_kind = ctx.selection.kind
+                _G.ctx_commit = ctx.selection.selected_commit_id or ""
+            end,
+        })
+        "#,
+    )
+    .expect("command context plugin loads");
+
+    host.host_mut()
+        .sync_selection(crate::plugin::ui::context::SelectionContextSnapshot {
+            available: true,
+            kind: "commit".to_string(),
+            selected_commit_id: Some("abc123".to_string()),
+            selected_file_path: None,
+        });
+
+    let outcome = host.invoke_command("cmd_ctx.capture", serde_json::json!({}));
+    assert!(matches!(
+        outcome,
+        crate::plugin::commands::InvokeOutcome::Ok
+    ));
+    assert_eq!(
+        host.read_global_string("cmd_ctx", "ctx_kind").as_deref(),
+        Some("commit")
+    );
+    assert_eq!(
+        host.read_global_string("cmd_ctx", "ctx_commit").as_deref(),
+        Some("abc123")
+    );
+}
+
+#[test]
+fn overlay_scrollable_scroll_y_queues_ui_scroll_effect() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "overlay_scroll",
+        &manifest("overlay_scroll", r#"["ui:overlay"]"#),
+        r##"
+        leviathan.ui.overlay({
+            id = "picker",
+            widget = {
+                kind = "scrollable",
+                id = "list",
+                scroll_y = 84,
+                child = { kind = "text", value = "body" },
+            },
+        })
+        "##,
+    )
+    .expect("overlay scroll plugin loads");
+
+    let requests = host.host_mut().take_pending_ui_scrolls();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].id,
+        crate::plugin::ui::effects::plugin_scrollable_id(
+            "overlay_scroll",
+            "overlay:picker",
+            "list"
+        )
+    );
+    assert_eq!(requests[0].y, 84.0);
+}
+
+#[test]
 fn ui_dynamic_widgets_receive_typed_context_for_mounted_regions() {
     let mut host = MockHost::new();
     host.load_inline(
@@ -213,23 +288,23 @@ fn ui_dynamic_widgets_receive_typed_context_for_mounted_regions() {
     let expected = [
         (
             "main_ctx",
-            "MainBarContext|main_bar|main_bar||left|main|repo|MainBarContext|main_bar|true|#e1e5f4",
+            "MainBarContext|main_bar||||main|repo|MainBarContext|main_bar|true|#e1e5f4",
         ),
         (
             "tab_ctx",
-            "TabBarContext|tab_bar|tab_bar||right|main|repo|TabBarContext|tab_bar|true|#e1e5f4",
+            "TabBarContext|tab_bar||||main|repo|TabBarContext|tab_bar|true|#e1e5f4",
         ),
         (
             "sidebar_ctx",
-            "RepositorySidebarContext|repository.sidebar|repository|sidebar|top|main|repo|RepositorySidebarContext|repository.sidebar|true|#e1e5f4",
+            "RepositorySidebarContext|repository.sidebar||||main|repo|RepositorySidebarContext|repository.sidebar|true|#e1e5f4",
         ),
         (
             "graph_ctx",
-            "RepositoryGraphContext|repository.graph|repository|graph|bottom|main|repo|RepositoryGraphContext|repository.graph|true|#e1e5f4",
+            "RepositoryGraphContext|repository.graph||||main|repo|RepositoryGraphContext|repository.graph|true|#e1e5f4",
         ),
         (
             "details_ctx",
-            "RepositoryDetailsContext|repository.details|repository|details|top|main|repo|RepositoryDetailsContext|repository.details|true|#e1e5f4",
+            "RepositoryDetailsContext|repository.details||||main|repo|RepositoryDetailsContext|repository.details|true|#e1e5f4",
         ),
     ];
     for (global, value) in expected {

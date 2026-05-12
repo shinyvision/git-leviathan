@@ -18,6 +18,7 @@ mod performance_budgets;
 mod persistence_settings;
 mod phase16_hardening;
 mod plugin_services;
+mod plugin_ui_chrome;
 mod plugin_ui_contract;
 mod plugin_ui_v1_contract;
 mod reload_transactions;

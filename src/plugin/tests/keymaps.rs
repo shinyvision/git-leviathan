@@ -92,6 +92,32 @@ fn chord_with_leader_only_fires_after_full_sequence() {
 }
 
 #[test]
+fn lua_can_set_space_as_keymap_leader() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p",
+        &manifest("p"),
+        r#"
+        leviathan.keymap.set_leader("<Space>")
+        _G.fired = 0
+        leviathan.command.create("p.pull", { run = function() _G.fired = _G.fired + 1 end })
+        leviathan.keymap.set("repository.graph", "<leader>gp", "p.pull")
+        "#,
+    )
+    .expect("p loads");
+
+    let registry = host.keymap_registry();
+    let pending = registry
+        .borrow()
+        .match_chord("repository.graph", &ks("<Space>"));
+    assert!(matches!(pending, MatchOutcome::Pending));
+
+    let out = host.dispatch_key("repository.graph", &ks("<Space>gp"));
+    assert!(matches!(out, KeymapDispatchOutcome::Dispatched { .. }));
+    assert_eq!(host.read_global_i64("p", "fired"), Some(1));
+}
+
+#[test]
 fn chord_prefix_wins_over_single_key_when_prefix_present() {
     // Acceptance: with both `g` and `gl` bound, typing `g` is
     // `Pending`, typing `gl` matches the chord — `g` alone never
@@ -122,12 +148,7 @@ fn chord_prefix_wins_over_single_key_when_prefix_present() {
     // outside keymaps scope.)
     let registry = host.keymap_registry();
     let out = registry.borrow().match_chord("global", &ks("g"));
-    // Note: with both `g` and `gl` bound, our matcher returns
-    // `Match` for the exact `g` (because there's a literal binding)
-    // *and* a prefix match. Acceptance requires that `gl` works as
-    // a chord — confirm here that two-key dispatch finds `gl`, not
-    // `g` followed by an unhandled `l`.
-    let _ = out;
+    assert!(matches!(out, MatchOutcome::Pending));
     let out = host.dispatch_key("global", &ks("gl"));
     assert!(matches!(out, KeymapDispatchOutcome::Dispatched { .. }));
     assert_eq!(host.read_global_i64("p", "gl_fired"), Some(1));
@@ -136,6 +157,62 @@ fn chord_prefix_wins_over_single_key_when_prefix_present() {
         Some(0),
         "the `gl` chord must NOT also fire `g`"
     );
+}
+
+#[test]
+fn prefix_hints_group_next_keys_for_overlay() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p",
+        &manifest("p"),
+        r#"
+        leviathan.command.create("p.top", { run = function() end })
+        leviathan.command.create("p.deep", { run = function() end })
+        leviathan.keymap.set("repository", "gg", "p.top", { description = "Back to top" })
+        leviathan.keymap.set("repository", "glrmn", "p.deep")
+        "#,
+    )
+    .expect("p loads");
+
+    let registry = host.keymap_registry();
+    let hints = registry.borrow().prefix_hints("repository.graph", &ks("g"));
+    let labels: Vec<_> = hints.iter().map(|hint| hint.key.as_str()).collect();
+    assert_eq!(labels, vec!["g", "l"]);
+    let gg = hints.iter().find(|hint| hint.key == "g").unwrap();
+    assert_eq!(gg.description, "Back to top");
+    assert_eq!(gg.command, "p.top");
+
+    let gl = hints.iter().find(|hint| hint.key == "l").unwrap();
+    assert!(gl.is_group);
+    assert_eq!(gl.child_count, 1);
+}
+
+#[test]
+fn detail_dirty_keymap_does_not_match_plain_details_context() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p",
+        &manifest("p"),
+        r#"
+        leviathan.command.create("p.focus_commit_message", { run = function() end })
+        leviathan.keymap.set("repository.details.dirty", "gc", "p.focus_commit_message")
+        "#,
+    )
+    .expect("p loads");
+
+    let registry = host.keymap_registry();
+    assert!(matches!(
+        registry
+            .borrow()
+            .match_chord("repository.details", &ks("gc")),
+        MatchOutcome::None
+    ));
+    assert!(matches!(
+        registry
+            .borrow()
+            .match_chord("repository.details.dirty", &ks("gc")),
+        MatchOutcome::Match { .. }
+    ));
 }
 
 #[test]

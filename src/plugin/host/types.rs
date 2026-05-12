@@ -34,8 +34,10 @@ use crate::plugin::slots::SlotAddress;
 use crate::plugin::storage::PluginStorageRoots;
 use crate::plugin::tab_snapshot::{TabRegistryOp, TabsSnapshot};
 use crate::plugin::timers::{PluginTimerCallbacks, TimerRegistry};
+use crate::plugin::ui::chrome::ChromeRegistration;
 use crate::plugin::ui::context::UiContextStore;
 use crate::plugin::ui::contribution_overrides::ContributionOverrides;
+use crate::plugin::ui::focus::FocusSnapshot;
 use crate::plugin::ui::main_bar_slots::{DynamicWidgetRegistration, PreparedSlotOp};
 use crate::plugin::ui::widget_ast::WidgetAst;
 use crate::plugin::watchers::{FileWatcherRegistry, PluginWatcherCallbacks};
@@ -96,6 +98,7 @@ pub(super) struct LoadedPlugin {
     pub(super) settings_panel: Option<SettingsPanelDef>,
     pub(super) screen_state: HashMap<String, RegistryKey>,
     pub(super) dynamic_widgets: HashMap<SlotAddress, DynamicWidgetRegistration>,
+    pub(super) chrome_widgets: Rc<RefCell<HashMap<String, ChromeRegistration>>>,
     pub(super) ui_context: UiContextStore,
     pub(super) deferred: Rc<RefCell<DeferredQueue>>,
     pub(super) user_commands: Rc<RefCell<UserCommands>>,
@@ -163,6 +166,7 @@ pub struct PluginHost {
     pub(super) destructive_policy: DestructiveConfirmPolicy,
     pub(super) pending_git_writes: PendingGitWrites,
     pub(super) pending_git_events: PendingGitEvents,
+    pub(super) pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects,
     pub(super) async_jobs: AsyncJobRegistry,
     pub(super) timers: TimerRegistry,
     pub(super) watchers: FileWatcherRegistry,
@@ -171,6 +175,7 @@ pub struct PluginHost {
     pub(super) lazy_registry: activation::LazyRegistry,
     pub(super) lazy_ledgers: HashMap<String, ResourceLedger>,
     pub(super) last_repository_shape: Option<RepositoryShapeFacts>,
+    pub(super) last_selection_snapshot: crate::plugin::ui::context::SelectionContextSnapshot,
     pub(super) extension_registry: ExtensionRegistry,
     pub(super) dock_manager: DockManager,
     pub(super) contribution_overrides: ContributionOverrides,
@@ -181,6 +186,7 @@ pub struct PluginHost {
     pub(super) last_devtools_result: Option<serde_json::Value>,
     pub(super) core_command_actions: CoreCommandActions,
     pub(super) pending_navigation_effects: Vec<PluginNavigationEffect>,
+    pub(super) last_focus_snapshot: FocusSnapshot,
 }
 
 /// Cached repository facts evaluated against lazy activation predicates.

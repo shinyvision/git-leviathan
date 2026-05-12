@@ -301,10 +301,18 @@ Selection summary in a UI context.
 
 Focus summary in a UI context.
 
-- `surface` (`string`; required) - Focused surface.
-- `region` (`string`; optional) - Focused region.
-- `pane` (`string`; optional) - Focused pane.
-- `section` (`string`; optional) - Focused section.
+- `surface` (`string`; required) - Active focus surface id (e.g. `repository.graph`).
+- `kind` (`string`; required) - Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.
+- `region` (`string`; optional) - Focused region when applicable.
+- `pane` (`string`; optional) - Focused pane when applicable.
+- `section` (`string`; optional) - Focused section when applicable.
+- `plugin_id` (`string`; optional) - Focused plugin id when focus is on a plugin screen or overlay.
+- `screen_id` (`string`; optional) - Focused plugin screen id when focus is on a plugin screen.
+- `overlay_id` (`string`; optional) - Focused overlay id when focus is on an overlay.
+- `reason` (`string`; optional) - Last focus-change reason as a snake_case string.
+- `matches_surface` (`boolean`; required) - True when the active focus surface equals the rendered context surface.
+- `matches_region` (`boolean`; required) - True when the active focus shares a region with the rendered context.
+- `matches_pane` (`boolean`; required) - True when the active focus shares a pane with the rendered context.
 
 ### `LeviathanViewportSummary`
 

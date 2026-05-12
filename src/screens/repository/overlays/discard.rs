@@ -14,6 +14,7 @@ use super::widgets::{
 pub(crate) enum Target {
     All,
     File(String),
+    Files { paths: Vec<String>, count: usize },
 }
 
 #[derive(Debug, Clone)]
@@ -64,6 +65,29 @@ pub(crate) fn view_file(file_name: String, slide_offset: f32) -> Element<'static
     )
 }
 
+pub(crate) fn view_files(count: usize, slide_offset: f32) -> Element<'static, Message> {
+    let label = text(format!(
+        "Are you sure you want to discard selected changes in {}?",
+        plural_files(count)
+    ))
+    .size(theme::FONT_SM)
+    .style(style::primary_text);
+
+    let reset_btn = overlay_button(
+        "Reset Files",
+        DANGER_BUTTON,
+        RepositoryMessage::OverlayPanel(OverlayPanelAction::DiscardConfirmed),
+    );
+    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
+        OverlayPanelAction::DiscardCanceled,
+    ));
+
+    sliding_main_bar_overlay(
+        overlay_row(vec![label.into(), reset_btn, cancel_btn]),
+        slide_offset,
+    )
+}
+
 pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
     match &state.target {
         Target::All => view_all(slide_offset),
@@ -75,5 +99,14 @@ pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Messa
                 .to_string();
             view_file(file_name, slide_offset)
         }
+        Target::Files { count, .. } => view_files(*count, slide_offset),
+    }
+}
+
+fn plural_files(count: usize) -> String {
+    if count == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{count} files")
     }
 }

@@ -26,9 +26,9 @@ use crate::{
 use std::sync::Arc;
 
 use crate::screens::repository::{
-    panel_messages::{DetailAction, DiffPanelAction},
+    panel_messages::{CenterAction, DetailAction, DiffPanelAction},
     panels::diff::DiffGrammarStatusView,
-    state::diff_content_scroll_id,
+    state::{diff_content_scroll_id, FocusedPanel},
     RepositoryMessage,
 };
 
@@ -274,19 +274,28 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
     };
 
     let body = crate::widgets::search_widget::overlay(body, search_bar);
-    let body = MouseArea::new(body).on_enter(Message::repo(RepositoryMessage::DiffPanel(
-        DiffPanelAction::CanvasHoverEntered(diff_canvas::CANVAS_ID),
-    )));
+    let body = MouseArea::new(body)
+        .on_enter(Message::repo(RepositoryMessage::DiffPanel(
+            DiffPanelAction::CanvasHoverEntered(diff_canvas::CANVAS_ID),
+        )))
+        .on_press(Message::repo(RepositoryMessage::Center(
+            CenterAction::PanelFocused(FocusedPanel::Center),
+        )));
 
     let full = column![header_container, body]
         .spacing(0)
         .height(Length::Fill);
 
-    container(full)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(style::panel_container)
-        .into()
+    MouseArea::new(
+        container(full)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(style::panel_container),
+    )
+    .on_press(Message::repo(RepositoryMessage::Center(
+        CenterAction::PanelFocused(FocusedPanel::Center),
+    )))
+    .into()
 }
 
 pub(in crate::screens::repository) fn conflict_center_view<'a>(
@@ -402,9 +411,14 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
         .spacing(0)
         .height(Length::Fill);
 
-    container(full)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(style::panel_container)
-        .into()
+    MouseArea::new(
+        container(full)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(style::panel_container),
+    )
+    .on_press(Message::repo(RepositoryMessage::Center(
+        CenterAction::PanelFocused(FocusedPanel::Center),
+    )))
+    .into()
 }

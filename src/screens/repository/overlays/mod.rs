@@ -91,13 +91,13 @@ pub(crate) struct DialogCtx<'a> {
 }
 
 /// Outcome of dispatching an [`OverlayPanelAction`]. The screen applies any
-/// remaining side-effects (focus change, list-scroll restore) so the overlay
-/// layer never reaches across into sibling panels.
+/// remaining side-effects (such as list-scroll restore) so the overlay layer
+/// never reaches across into sibling panels.
 pub(crate) enum DialogDispatch {
     /// Plain task — may be `Task::none()` for local-only state changes.
     Task(Task<Message>),
-    /// Cancel path: caller must reset `focused_panel` to Center.
-    CancelCloseFocus,
+    /// Cancel path: caller closes the dialog without changing panel focus.
+    CancelClosed,
     /// Opened a new dialog that requires restoring center-list scroll.
     RestoreCenterListScroll,
 }
@@ -140,6 +140,36 @@ impl OverlayManager {
         self.active
             .as_ref()
             .is_some_and(|d| d.captures_text_input())
+    }
+
+    pub(crate) fn cancel_confirmation_action(&self) -> Option<OverlayPanelAction> {
+        match self.active.as_ref()? {
+            ActiveDialog::DeleteBranch(_) => Some(OverlayPanelAction::BranchDeleteCanceled),
+            ActiveDialog::StashDelete(_) => Some(OverlayPanelAction::StashDeleteCanceled),
+            ActiveDialog::Discard(_) => Some(OverlayPanelAction::DiscardCanceled),
+            ActiveDialog::PushBehind(_) => Some(OverlayPanelAction::PushBehindCanceled),
+            ActiveDialog::ForcePush(_) => Some(OverlayPanelAction::ForcePushCanceled),
+            ActiveDialog::DeleteTag(_) => Some(OverlayPanelAction::DeleteTagCanceled),
+            ActiveDialog::CherryPick(_) => Some(OverlayPanelAction::CherryPickCanceled),
+            ActiveDialog::Revert(_) => Some(OverlayPanelAction::RevertCanceled),
+            ActiveDialog::RemoveWorktree(_) => Some(OverlayPanelAction::WorktreeRemoveCanceled),
+            ActiveDialog::ModifyDeleteConflict(_) => Some(OverlayPanelAction::ModifyDeleteCancel),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn cancel_active_action(&self) -> Option<OverlayPanelAction> {
+        match self.active.as_ref()? {
+            ActiveDialog::CreateBranchHere(_) => Some(OverlayPanelAction::CreateBranchHereCanceled),
+            _ => self.cancel_confirmation_action(),
+        }
+    }
+
+    pub(crate) fn confirm_confirmation_action(&self) -> Option<OverlayPanelAction> {
+        match self.active.as_ref()? {
+            ActiveDialog::Discard(_) => Some(OverlayPanelAction::DiscardConfirmed),
+            _ => None,
+        }
     }
 
     pub(crate) fn is_animating(&self) -> bool {
@@ -444,7 +474,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::ConflictCancel => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::ModifyDeleteKeepModified => {
                 self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepModified, ctx)
@@ -457,7 +487,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::ModifyDeleteCancel => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::BranchDeleteConfirmed => {
                 let Some(ActiveDialog::DeleteBranch(state)) = self.active.as_ref() else {
@@ -539,7 +569,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::BranchDeleteCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::StashDeleteConfirmed => {
                 let Some(ActiveDialog::StashDelete(state)) = self.active.as_ref() else {
@@ -576,7 +606,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::StashDeleteCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::BranchRenameConfirmed => {
                 let Some(ActiveDialog::RenameBranch(state)) = self.active.as_ref() else {
@@ -628,7 +658,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::BranchRenameCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::RenameNewBranchInput(value) => {
                 if let Some(ActiveDialog::RenameBranch(state)) = self.active.as_mut() {
@@ -677,7 +707,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::CreateBranchHereCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::CreateBranchHereInput(value) => {
                 if let Some(ActiveDialog::CreateBranchHere(state)) = self.active.as_mut() {
@@ -694,7 +724,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::DiscardCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::AddRemoteOpen => {
                 self.open(ActiveDialog::AddRemote(add_remote::State::new()));
@@ -824,7 +854,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::SetUpstreamCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::PushBehindPullRequested => {
                 let Some(operation_id) = ctx.operations.begin_write() else {
@@ -874,7 +904,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::PushBehindCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::ForcePushConfirmed => {
                 let Some(ActiveDialog::ForcePush(_)) = self.active.as_ref() else {
@@ -910,7 +940,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::ForcePushCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::CreateTagHereInput(value) => {
                 if let Some(ActiveDialog::CreateTagHere(state)) = self.active.as_mut() {
@@ -959,7 +989,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::CreateTagHereCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::DeleteTagConfirmed => {
                 let Some(ActiveDialog::DeleteTag(state)) = self.active.as_ref() else {
@@ -997,7 +1027,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::DeleteTagCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::CherryPickImmediateConfirmed => {
                 let Some(ActiveDialog::CherryPick(state)) = self.active.as_ref() else {
@@ -1017,7 +1047,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::CherryPickCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::RevertImmediateConfirmed => {
                 let Some(ActiveDialog::Revert(state)) = self.active.as_ref() else {
@@ -1037,7 +1067,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::RevertCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::CreateWorktreeOpen {
                 available_refs,
@@ -1207,7 +1237,7 @@ impl OverlayManager {
             }
             OverlayPanelAction::WorktreeRemoveCanceled => {
                 self.close();
-                DialogDispatch::CancelCloseFocus
+                DialogDispatch::CancelClosed
             }
             OverlayPanelAction::None => DialogDispatch::Task(Task::none()),
         }
@@ -1229,6 +1259,7 @@ fn spawn_discard_task(target: discard::Target, ctx: DialogCtx<'_>) -> Task<Messa
             let snapshot = match target {
                 discard::Target::All => repository.discard_all_dirty_changes(),
                 discard::Target::File(path) => repository.discard_file(&path),
+                discard::Target::Files { paths, .. } => repository.discard_files(&paths),
             }?;
             Ok(presenter.project_loaded(snapshot))
         }),
@@ -1371,6 +1402,22 @@ mod tests {
             needs_focus: false,
         }));
         assert!(m.is_text_input_active());
+    }
+
+    #[test]
+    fn escape_cancel_action_cancels_create_branch_without_yes_no_shortcuts() {
+        let mut m = OverlayManager::new();
+        m.open(ActiveDialog::CreateBranchHere(create_branch::State {
+            commit_hash: "deadbeef".into(),
+            branch_name_input: String::new(),
+            needs_focus: false,
+        }));
+
+        assert!(matches!(
+            m.cancel_active_action(),
+            Some(OverlayPanelAction::CreateBranchHereCanceled)
+        ));
+        assert!(m.cancel_confirmation_action().is_none());
     }
 
     #[test]

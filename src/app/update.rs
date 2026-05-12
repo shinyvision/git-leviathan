@@ -147,7 +147,10 @@ impl App {
             }
             AppMessage::RepoFilesChanged { tab_id, path } => self.reload_refs_for_tab(tab_id, path),
             AppMessage::WindowFocused => self.on_window_focused(),
-            AppMessage::WindowUnfocused => Task::none(),
+            AppMessage::WindowUnfocused => {
+                self.key_chord.clear();
+                Task::none()
+            }
             AppMessage::FetchTick(_) => {
                 if !self.tabs.is_empty() {
                     self.try_start_fetch()

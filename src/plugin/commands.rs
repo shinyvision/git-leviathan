@@ -1006,6 +1006,7 @@ struct CommandPluginRegistryInner {
 pub struct CommandPluginContext {
     pub lua: Rc<Lua>,
     pub capability_guard: Rc<crate::plugin::capabilities::CapabilityGuard>,
+    pub ui_context: crate::plugin::ui::context::UiContextStore,
     pub generation_id: GenerationId,
 }
 
@@ -1181,6 +1182,7 @@ impl CommandRunner for DispatchEnvRunner {
                             entry.descriptor.plugin_id
                         )
                     })?;
+                ctx.ui_context.set(self.active_context.borrow().clone());
                 run_lua_body(&ctx.lua, callback, args)
             }
         }

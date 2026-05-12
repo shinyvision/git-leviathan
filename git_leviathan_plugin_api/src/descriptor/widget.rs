@@ -559,6 +559,18 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 required: false,
                 doc: "Fixed pixels, fill, or shrink.",
             },
+            WidgetFieldDescriptor {
+                name: "id",
+                lua_type: "string",
+                required: false,
+                doc: "Stable scrollable id, scoped to the plugin surface.",
+            },
+            WidgetFieldDescriptor {
+                name: "scroll_y",
+                lua_type: "number",
+                required: false,
+                doc: "Absolute vertical scroll offset in pixels.",
+            },
         ],
     },
     WidgetDescriptor {

@@ -2,8 +2,10 @@ mod animation;
 mod commands;
 mod fetch_ops;
 mod fetch_policy;
+mod focus;
 mod git_queue;
 mod input;
+mod key_chord;
 mod subscription;
 mod tabs;
 mod update;
@@ -27,12 +29,13 @@ use crate::{
     },
     toast::ToastManager,
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
-    widgets::chrome::repo_region::RepoRegionRegistry,
+    widgets::chrome::repo_region::{RepoChromeRegistry, RepoRegionRegistry},
     widgets::chrome::tab_bar_slots::{builtins as tab_bar_builtins, TabBarRegistry},
 };
 
 use fetch_policy::FetchPolicy;
 use git_queue::GitOperationQueue;
+use key_chord::KeyChordState;
 use tabs::TabManager;
 
 /// Delay between Ctrl+Tab settling on a tab and kicking off its auto-fetch.
@@ -56,6 +59,7 @@ pub struct App {
     /// latest snapshot ever reaches the main thread.
     pub(super) reload_refs_abort: Option<iced::task::Handle>,
     pub(super) plugin_host: PluginHost,
+    pub(in crate::app) key_chord: KeyChordState,
     /// Authoritative slot registry for the main bar. Rebuilt from built-ins
     /// + current plugin contributions after plugin host mutations.
     pub(super) main_bar_registry: MainBarRegistry,
@@ -65,7 +69,9 @@ pub struct App {
     /// Authoritative slot registry for the repository region. Rebuilt from
     /// current plugin contributions after plugin host mutations.
     pub(super) repo_region_registry: RepoRegionRegistry,
+    pub(super) repo_chrome_registry: RepoChromeRegistry,
     pub(super) slot_registry_revision: u64,
+    pub(super) pending_focus_reason: Option<crate::plugin::ui::focus::FocusReason>,
 }
 
 impl App {
@@ -86,7 +92,7 @@ impl App {
         plugin_host.drop_breaker_state_for_plugin("");
         plugin_host.drop_breaker_state_for_generation("", 0);
 
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&plugin_host);
         let slot_registry_revision = plugin_host.slot_ops_revision();
 
@@ -100,10 +106,13 @@ impl App {
             git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
+            key_chord: KeyChordState::new(),
             main_bar_registry,
             tab_bar_registry,
             repo_region_registry,
+            repo_chrome_registry,
             slot_registry_revision,
+            pending_focus_reason: None,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -264,10 +273,30 @@ impl App {
         let command_actions = self.drain_core_command_actions();
         let drain = self.drain_pending_tab_ops();
         let git_drain = self.drain_git_operation_queue();
+        let ui_effects = self.drain_plugin_ui_effects();
         self.persist_plugin_tabs();
+        let snapshot = self.compute_focus_snapshot();
+        let _ = self.plugin_host.sync_focus(snapshot);
         self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
-        Task::batch(vec![task, command_actions, drain, git_drain])
+        Task::batch(vec![task, command_actions, drain, git_drain, ui_effects])
+    }
+
+    fn drain_plugin_ui_effects(&mut self) -> Task<Message> {
+        Task::batch(
+            self.plugin_host
+                .take_pending_ui_scrolls()
+                .into_iter()
+                .map(|request| {
+                    iced::widget::operation::scroll_to(
+                        iced::widget::Id::from(request.id),
+                        iced::widget::scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: request.y,
+                        },
+                    )
+                }),
+        )
     }
 
     fn rebuild_slot_registries(&mut self) {
@@ -275,11 +304,12 @@ impl App {
         if self.slot_registry_revision == revision {
             return;
         }
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&self.plugin_host);
         self.main_bar_registry = main_bar_registry;
         self.tab_bar_registry = tab_bar_registry;
         self.repo_region_registry = repo_region_registry;
+        self.repo_chrome_registry = repo_chrome_registry;
         self.slot_registry_revision = revision;
     }
 
@@ -317,6 +347,9 @@ impl App {
             .active_screen()
             .or_else(|| bound_repo_tab.and_then(|id| self.tabs.screen(id)));
         let active_gateway = source_screen.map(|screen| screen.active_gateway());
+        let selection = source_screen
+            .map(|screen| screen.selection_context_snapshot())
+            .unwrap_or_else(crate::plugin::ui::context::SelectionContextSnapshot::none);
         let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) =
             source_screen
                 .map(|screen| {
@@ -352,6 +385,7 @@ impl App {
             &default_remote,
             &refs,
         );
+        self.plugin_host.sync_selection(selection);
     }
 
     pub(super) fn fetch_all_remotes_payload() -> EventPayload {
@@ -553,7 +587,12 @@ fn parse_force_screen() -> Option<ForceScreen> {
 
 fn build_slot_registries(
     plugin_host: &PluginHost,
-) -> (MainBarRegistry, TabBarRegistry, RepoRegionRegistry) {
+) -> (
+    MainBarRegistry,
+    TabBarRegistry,
+    RepoRegionRegistry,
+    RepoChromeRegistry,
+) {
     let mut main_bar_registry = MainBarRegistry::new();
     main_bar_builtins::register_all(&mut main_bar_registry);
     plugin_host.apply_main_bar_slots(&mut main_bar_registry);
@@ -565,7 +604,15 @@ fn build_slot_registries(
     let mut repo_region_registry = RepoRegionRegistry::new();
     plugin_host.apply_repo_region_slots(&mut repo_region_registry);
 
-    (main_bar_registry, tab_bar_registry, repo_region_registry)
+    let mut repo_chrome_registry = RepoChromeRegistry::new();
+    plugin_host.apply_repo_chrome_slots(&mut repo_chrome_registry);
+
+    (
+        main_bar_registry,
+        tab_bar_registry,
+        repo_region_registry,
+        repo_chrome_registry,
+    )
 }
 
 #[cfg(test)]
@@ -620,7 +667,7 @@ leviathan.ui.slot.add{
         let load_revision = host.host().slot_ops_revision();
         assert!(load_revision > 0);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("builtin.repo_info"));
         assert!(tabs.contains_display_id("builtin.plus_button"));
         assert!(main.contains_display_id("plugin.slots.main"));
@@ -631,7 +678,7 @@ leviathan.ui.slot.add{
         let disable_revision = host.host().slot_ops_revision();
         assert!(disable_revision > load_revision);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("builtin.repo_info"));
         assert!(tabs.contains_display_id("builtin.plus_button"));
         assert!(!main.contains_display_id("plugin.slots.main"));
@@ -645,7 +692,7 @@ leviathan.ui.slot.add{
         assert!(reloaded);
         assert!(host.host().slot_ops_revision() > disable_revision);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("plugin.slots.main"));
         assert!(tabs.contains_display_id("plugin.slots.tab"));
         assert!(repo.contains_display_id("plugin.slots.repo"));
@@ -693,7 +740,7 @@ capabilities = ["ui:region:main_bar"]
             .load_plugin(&dir)
             .expect("load missing-remove plugin");
 
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&plugin_host);
         let slot_registry_revision = plugin_host.slot_ops_revision();
         let initial_missing_count = plugin_host
@@ -714,10 +761,13 @@ capabilities = ["ui:region:main_bar"]
             git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
+            key_chord: KeyChordState::new(),
             main_bar_registry,
             tab_bar_registry,
             repo_region_registry,
+            repo_chrome_registry,
             slot_registry_revision,
+            pending_focus_reason: None,
         };
 
         app.rebuild_slot_registries();

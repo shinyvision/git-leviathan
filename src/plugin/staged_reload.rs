@@ -120,6 +120,8 @@ pub struct StageInputs<'a> {
     /// Cheap-clone outbound queue of typed git events the
     /// staged generation's API will push to.
     pub pending_git_events: crate::plugin::api::git::PendingGitEvents,
+    /// Cheap-clone queue of UI operations requested by plugin widgets.
+    pub pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects,
     /// Cheap-clone async runtime registries shared across
     /// generations. The staged generation's `leviathan.async`,
     /// `leviathan.timer`, and `leviathan.fs.watch` shims push into
@@ -193,6 +195,7 @@ pub struct StagingArtifacts {
     pub timer_callbacks: Rc<RefCell<PluginTimerCallbacks>>,
     pub watcher_callbacks: Rc<RefCell<PluginWatcherCallbacks>>,
     pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
+    pub chrome_widgets: crate::plugin::api::ui_ext::ChromeWidgetMap,
 }
 
 /// Staged autocmd registration ready for `commit_staging` to install
@@ -520,6 +523,8 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         Rc::new(RefCell::new(OverlayCallbacks::new()));
     let decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>> =
         Rc::new(RefCell::new(DecorationProviderCallbacks::new()));
+    let chrome_widgets: crate::plugin::api::ui_ext::ChromeWidgetMap =
+        Rc::new(RefCell::new(std::collections::HashMap::new()));
     let ui_context = crate::plugin::ui::context::UiContextStore::new(
         inputs.plugin_id.as_str(),
         inputs.generation_id,
@@ -549,6 +554,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             keymaps: Rc::clone(&inputs.keymap_registry),
             git_ctx: inputs.git_ctx.clone(),
             pending_git_events: inputs.pending_git_events.clone(),
+            pending_ui_effects: inputs.pending_ui_effects.clone(),
             async_ctx,
             plugin_id: inputs.plugin_id.clone(),
             generation_id: inputs.generation_id,
@@ -557,6 +563,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             overlay_callbacks: Rc::clone(&overlay_callbacks),
             decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
             ui_context: ui_context.clone(),
+            chrome_widgets: Rc::clone(&chrome_widgets),
         },
     )
     .map_err(|e| {
@@ -699,6 +706,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             address,
             None,
             &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+            None,
         );
         ui_context.set(ctx.clone());
         let arg = lua.to_value(&ctx).map_err(|e| {
@@ -890,6 +898,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
                             crate::plugin::ui::context::UiContextSurface::Screen,
                             None,
                             &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+                            None,
                         );
                         let ctx_lua = lua.to_value(&ctx).unwrap_or(LuaValue::Nil);
                         if let Ok(state_lua) = de_fn.call::<LuaValue>((snap_lua, ctx_lua)) {
@@ -911,6 +920,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
                     crate::plugin::ui::context::UiContextSurface::Screen,
                     None,
                     &crate::plugin::tab_snapshot::TabsSnapshot::default(),
+                    None,
                 );
                 let ctx_lua = lua.to_value(&ctx).unwrap_or(LuaValue::Nil);
                 if let Ok(state) = init_fn.call::<LuaValue>(ctx_lua) {
@@ -992,6 +1002,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         timer_callbacks,
         watcher_callbacks,
         extension_registry: inputs.extension_registry,
+        chrome_widgets,
     })
 }
 

@@ -52,6 +52,16 @@ Reference to the winning binding for a conflict-lost keymap row.
 
 ## Functions
 
+### `leviathan.keymap.set_leader(leader)`
+
+Set the active keymap leader sequence used to expand `<leader>` bindings.
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `leader` (`string`; required) - Vim-style key sequence used as leader, e.g. `<Space>` or `,`.
+
 ### `leviathan.keymap.set(context, key, command, opts)`
 
 Bind a key chord to a registered command in a context.

@@ -9,6 +9,7 @@ pub enum UiDependency {
     Diff,
     Theme,
     Layout,
+    Focus,
 }
 
 impl UiDependency {
@@ -21,6 +22,7 @@ impl UiDependency {
             Self::Diff => "diff",
             Self::Theme => "theme",
             Self::Layout => "layout",
+            Self::Focus => "focus",
         }
     }
 
@@ -33,6 +35,7 @@ impl UiDependency {
             "diff" | "diff_loaded" => Some(Self::Diff),
             "theme" => Some(Self::Theme),
             "layout" => Some(Self::Layout),
+            "focus" => Some(Self::Focus),
             _ => None,
         }
     }
@@ -48,6 +51,7 @@ pub enum UiInvalidationCause {
     DiffLoaded,
     ThemeChanged,
     LayoutChanged,
+    FocusChanged,
     TimerCallbackChangedPluginState,
     JobCallbackChangedPluginState,
     WatchCallbackChangedPluginState,
@@ -64,6 +68,7 @@ impl UiInvalidationCause {
             Self::DiffLoaded => "diff_loaded",
             Self::ThemeChanged => "theme_changed",
             Self::LayoutChanged => "layout_changed",
+            Self::FocusChanged => "focus_changed",
             Self::TimerCallbackChangedPluginState => "timer_callback_changed_plugin_state",
             Self::JobCallbackChangedPluginState => "job_callback_changed_plugin_state",
             Self::WatchCallbackChangedPluginState => "watch_callback_changed_plugin_state",
@@ -83,6 +88,7 @@ impl UiInvalidationCause {
             Self::DiffLoaded => Some(UiDependency::Diff),
             Self::ThemeChanged => Some(UiDependency::Theme),
             Self::LayoutChanged => Some(UiDependency::Layout),
+            Self::FocusChanged => Some(UiDependency::Focus),
         }
     }
 }
@@ -129,12 +135,14 @@ pub fn default_dependencies_for_region(region: &str) -> Vec<UiDependency> {
             UiDependency::Diff,
             UiDependency::Theme,
             UiDependency::Layout,
+            UiDependency::Focus,
         ],
         _ => vec![
             UiDependency::PluginState,
             UiDependency::Repository,
             UiDependency::Tab,
             UiDependency::Theme,
+            UiDependency::Focus,
         ],
     }
 }

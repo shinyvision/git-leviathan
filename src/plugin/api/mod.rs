@@ -186,6 +186,7 @@ pub struct InstallAllContext {
     pub keymaps: keymap::SharedKeymapRegistry,
     pub git_ctx: GitOpsContext,
     pub pending_git_events: git::PendingGitEvents,
+    pub pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects,
     pub async_ctx: AsyncRuntimeContext,
     pub plugin_id: PluginId,
     pub generation_id: GenerationId,
@@ -194,6 +195,7 @@ pub struct InstallAllContext {
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
     pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub ui_context: crate::plugin::ui::context::UiContextStore,
+    pub chrome_widgets: ui_ext::ChromeWidgetMap,
 }
 
 pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
@@ -211,6 +213,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         keymaps,
         git_ctx,
         pending_git_events,
+        pending_ui_effects,
         async_ctx,
         plugin_id,
         generation_id,
@@ -219,6 +222,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         overlay_callbacks,
         decoration_provider_callbacks,
         ui_context,
+        chrome_widgets,
     } = ctx;
 
     let leviathan = lua.create_table()?;
@@ -275,11 +279,15 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         ui_ext::install(
             lua,
             &ui_table,
-            ledger.clone(),
-            Rc::clone(&guard),
-            extension_registry,
-            Rc::clone(&overlay_callbacks),
-            Rc::clone(&decoration_provider_callbacks),
+            ui_ext::UiExtInstall {
+                ledger: ledger.clone(),
+                guard: Rc::clone(&guard),
+                registry: extension_registry,
+                ui_effects: pending_ui_effects,
+                overlay_callbacks: Rc::clone(&overlay_callbacks),
+                decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
+                chrome_widgets,
+            },
         )?;
     }
     keymap::install(lua, Rc::clone(&build), ledger.clone(), &leviathan, keymaps)?;
@@ -443,11 +451,14 @@ mod tests {
         let persist_ctx = PersistContext { storage };
         let ledger = ResourceLedger::new("coverage".into(), GenerationId::new(1));
         let plugin_registry = CommandPluginRegistry::new();
+        let ui_context =
+            crate::plugin::ui::context::UiContextStore::new("coverage", GenerationId::new(1));
         plugin_registry.insert(
             "coverage",
             CommandPluginContext {
                 lua: Rc::clone(&lua),
                 capability_guard: Rc::clone(&guard),
+                ui_context: ui_context.clone(),
                 generation_id: GenerationId::new(1),
             },
         );
@@ -501,6 +512,7 @@ mod tests {
                 keymaps,
                 git_ctx,
                 pending_git_events,
+                pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects::new(),
                 async_ctx,
                 plugin_id: PluginId::from("coverage"),
                 generation_id: GenerationId::new(1),
@@ -510,10 +522,8 @@ mod tests {
                 decoration_provider_callbacks: Rc::new(RefCell::new(
                     DecorationProviderCallbacks::new(),
                 )),
-                ui_context: crate::plugin::ui::context::UiContextStore::new(
-                    "coverage",
-                    GenerationId::new(1),
-                ),
+                ui_context,
+                chrome_widgets: Rc::new(RefCell::new(std::collections::HashMap::new())),
             },
         )
         .unwrap();

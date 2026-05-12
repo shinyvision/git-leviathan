@@ -95,7 +95,10 @@ pub(super) fn view<'a>(
     if let Some(bottom) = bottom_slot {
         col_items.push(bottom);
     }
-    let full_sidebar = column(col_items).spacing(0).height(Length::Fill);
+    let full_sidebar = column(col_items)
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     let sidebar_container = container(full_sidebar)
         .width(Length::Fixed(sidebar_width))
@@ -117,7 +120,7 @@ fn resize_handle_view(is_resizing: bool, effective_width: f32) -> Element<'stati
     use iced::widget::mouse_area;
 
     let handle = container(horizontal_space())
-        .width(Length::Fixed(5.0))
+        .width(Length::Fixed(theme::PANE_SPLITTER_SIZE))
         .height(Length::Fill)
         .style(move |_: &Theme| container::Style {
             background: if is_resizing {

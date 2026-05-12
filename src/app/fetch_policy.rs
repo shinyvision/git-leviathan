@@ -52,13 +52,6 @@ impl FetchPolicy {
         self.active.map(|active| active.started_at)
     }
 
-    pub(super) fn active(&self) -> Option<FetchCancellation> {
-        self.active.map(|active| FetchCancellation {
-            tab_id: active.tab_id,
-            operation_id: active.operation_id,
-        })
-    }
-
     /// Kick off a fetch. Asserts no fetch is already in flight (caller checks
     /// `is_fetching` first). Wraps the task as abortable so `cancel` can
     /// drop the pending `FetchCompleted` message on Ctrl+Tab away.

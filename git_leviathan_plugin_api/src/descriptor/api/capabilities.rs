@@ -267,6 +267,11 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
         doc: "Contribute menu items to a target such as `repository.diff.context_menu`.",
     },
     ApiCapability {
+        name: "ui:chrome:<point>",
+        since: "1.0",
+        doc: "Contribute non-layout chrome layered over a repository panel (e.g. `ui:chrome:repository.graph.chrome`).",
+    },
+    ApiCapability {
         name: "ui:decoration:graph",
         since: "1.0",
         doc: "Draw decorations in the commit graph view.",

@@ -41,6 +41,9 @@ pub struct ConflictFileResolutionState {
     pub ours_scroll_offset_x: f32,
     pub theirs_scroll_offset_x: f32,
     pub output_scroll_offset_x: f32,
+    pub ours_viewport_height: Option<f32>,
+    pub theirs_viewport_height: Option<f32>,
+    pub output_viewport_height: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -201,6 +204,14 @@ impl DiffPanel {
         side: ConflictSide,
         viewport: scrollable::Viewport,
     ) -> Task<Message> {
+        if let Some(state) = self.conflict_file_resolution.as_mut() {
+            let viewport_height = viewport.bounds().height;
+            match side {
+                ConflictSide::Ours => state.ours_viewport_height = Some(viewport_height),
+                ConflictSide::Theirs => state.theirs_viewport_height = Some(viewport_height),
+            }
+        }
+
         let should_initial_scroll = self
             .conflict_file_resolution
             .as_ref()
@@ -261,6 +272,7 @@ impl DiffPanel {
             let off = viewport.absolute_offset();
             state.output_scroll_offset_y = off.y;
             state.output_scroll_offset_x = off.x;
+            state.output_viewport_height = Some(viewport.bounds().height);
         }
         Task::none()
     }

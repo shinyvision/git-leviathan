@@ -20,6 +20,7 @@ use super::super::center::CenterPanel;
 use super::super::diff::{update_diff, DiffPanel};
 use super::super::sidebar::try_resolve_pending_focus;
 use super::super::ScreenCtx;
+use super::state::{DetailFileNavigation, DirtyFileSelectionMode, DirtyFileStatus};
 use super::{dirty_commit_message_text, split_commit_message, DetailPanel};
 
 pub(in crate::screens::repository) fn update(
@@ -30,69 +31,90 @@ pub(in crate::screens::repository) fn update(
     diff_panel: &mut DiffPanel,
 ) -> Task<Message> {
     match action {
+        DetailAction::NavigateFileUp => panel.select_file(
+            DetailFileNavigation::Previous,
+            ctx.data,
+            &ctx.data.selection,
+            ctx.merged_diff.result(),
+        ),
+        DetailAction::NavigateFileDown => panel.select_file(
+            DetailFileNavigation::Next,
+            ctx.data,
+            &ctx.data.selection,
+            ctx.merged_diff.result(),
+        ),
+        DetailAction::NavigateFileFirst => panel.select_file(
+            DetailFileNavigation::First,
+            ctx.data,
+            &ctx.data.selection,
+            ctx.merged_diff.result(),
+        ),
+        DetailAction::NavigateFileLast => panel.select_file(
+            DetailFileNavigation::Last,
+            ctx.data,
+            &ctx.data.selection,
+            ctx.merged_diff.result(),
+        ),
+        DetailAction::ExtendFileSelectionUp => extend_file_selection(
+            panel,
+            DetailFileNavigation::Previous,
+            ctx,
+            repository_panel,
+            diff_panel,
+        ),
+        DetailAction::ExtendFileSelectionDown => extend_file_selection(
+            panel,
+            DetailFileNavigation::Next,
+            ctx,
+            repository_panel,
+            diff_panel,
+        ),
+        DetailAction::ExtendFileSelectionFirst => extend_file_selection(
+            panel,
+            DetailFileNavigation::First,
+            ctx,
+            repository_panel,
+            diff_panel,
+        ),
+        DetailAction::ExtendFileSelectionLast => extend_file_selection(
+            panel,
+            DetailFileNavigation::Last,
+            ctx,
+            repository_panel,
+            diff_panel,
+        ),
+        DetailAction::OpenSelectedFile => {
+            let Some(action) = panel.open_selected_file_action(
+                ctx.data,
+                &ctx.data.selection,
+                ctx.merged_diff.result(),
+            ) else {
+                return Task::none();
+            };
+            update(panel, action, ctx, repository_panel, diff_panel)
+        }
         DetailAction::DirtyFileClicked { path, is_staged } => {
-            if diff_panel.is_active() {
-                let already_shown = diff_panel
-                    .dirty_file_diff
-                    .as_ref()
-                    .is_some_and(|d| d.file_path == path && d.is_staged == is_staged)
-                    || diff_panel
-                        .conflict_file_resolution
-                        .as_ref()
-                        .is_some_and(|d| d.file_path == path);
-                if already_shown {
+            ctx.input.focused_panel = FocusedPanel::Detail;
+            let mode = dirty_selection_mode(ctx.input.modifiers);
+            panel.select_dirty_file_from_click(
+                path.clone(),
+                is_staged,
+                ctx.data,
+                &ctx.data.selection,
+                mode,
+            );
+            if mode != DirtyFileSelectionMode::Replace {
+                if diff_panel.is_active() {
                     diff_panel.close();
                     return repository_panel.restore_center_list_scroll();
                 }
-            }
-            let Some(dirty_commit) = ctx.data.snapshot.commits().first() else {
-                return Task::none();
-            };
-            if dirty_commit.kind != CommitKind::Dirty {
                 return Task::none();
             }
-
-            let all_files = dirty_commit
-                .conflicted_files
-                .iter()
-                .chain(dirty_commit.unstaged_files.iter())
-                .chain(dirty_commit.staged_files.iter());
-            let selected_idx = all_files
-                .enumerate()
-                .find(|(_, f)| f.path == path)
-                .map(|(i, _)| i)
-                .unwrap_or(0);
-
-            let is_conflicted = dirty_commit
-                .conflicted_files
-                .iter()
-                .any(|file| file.path == path);
-
-            if is_conflicted {
-                match ctx.repository.load_modify_delete_conflict(&path) {
-                    Ok(Some(_)) => {
-                        ctx.data.commit_search = None;
-                        diff_panel.close();
-                        ctx.overlay_manager.open(ActiveDialog::ModifyDeleteConflict(
-                            modify_delete_conflict::State { path },
-                        ));
-                        return repository_panel.restore_center_list_scroll();
-                    }
-                    Ok(None) => {}
-                    Err(e) => {
-                        eprintln!("git_leviathan: conflict inspection failed: {}", e);
-                        return Task::done(Message::show_toast(ToastData::error(
-                            "Open Conflict Failed",
-                            e.to_string(),
-                        )));
-                    }
-                }
-            }
-
-            ctx.data.commit_search = None;
-            let follow_up =
-                diff_panel.open_dirty_file_view(path, is_staged, selected_idx, is_conflicted);
-            update_diff(diff_panel, follow_up, ctx)
+            open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
+        }
+        DetailAction::DirtyFileOpened { path, is_staged } => {
+            ctx.input.focused_panel = FocusedPanel::Detail;
+            open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
         }
         DetailAction::DirtyFileRightClicked(path) => {
             if matches!(
@@ -120,6 +142,13 @@ pub(in crate::screens::repository) fn update(
             else {
                 return Task::none();
             };
+            panel.prepare_dirty_reselection_after_write(
+                operation_id,
+                std::slice::from_ref(&path),
+                DirtyFileStatus::Unstaged,
+                ctx.data,
+                &ctx.data.selection,
+            );
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
@@ -177,6 +206,54 @@ pub(in crate::screens::repository) fn update(
                 },
             )
         }
+        DetailAction::StageSelectedFiles => {
+            let paths = panel.selected_dirty_paths_for_status(
+                ctx.data,
+                &ctx.data.selection,
+                DirtyFileStatus::Unstaged,
+            );
+            if paths.is_empty() {
+                return Task::none();
+            }
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::StageFile)
+            else {
+                return Task::none();
+            };
+            panel.prepare_dirty_reselection_after_write(
+                operation_id,
+                &paths,
+                DirtyFileStatus::Unstaged,
+                ctx.data,
+                &ctx.data.selection,
+            );
+            let repo = ctx.repository.clone();
+            let presenter = ctx.presenter.clone();
+            let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let count = paths.len();
+            Task::perform(
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.stage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path_count", count);
+                    repo.stage_files_and_load_dirty(&paths)
+                        .map(|s| presenter.project_dirty_index(s))
+                }),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
+            )
+        }
         DetailAction::UnstageFile(path) => {
             let Some(operation_id) = ctx
                 .data
@@ -185,6 +262,13 @@ pub(in crate::screens::repository) fn update(
             else {
                 return Task::none();
             };
+            panel.prepare_dirty_reselection_after_write(
+                operation_id,
+                std::slice::from_ref(&path),
+                DirtyFileStatus::Staged,
+                ctx.data,
+                &ctx.data.selection,
+            );
             let repo = ctx.repository.clone();
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
@@ -229,6 +313,54 @@ pub(in crate::screens::repository) fn update(
                         .field("repo", &repo_path)
                         .field("path", "*");
                     repo.unstage_all_dirty_changes_and_load_dirty()
+                        .map(|s| presenter.project_dirty_index(s))
+                }),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::DirtyIndexReloaded {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
+            )
+        }
+        DetailAction::UnstageSelectedFiles => {
+            let paths = panel.selected_dirty_paths_for_status(
+                ctx.data,
+                &ctx.data.selection,
+                DirtyFileStatus::Staged,
+            );
+            if paths.is_empty() {
+                return Task::none();
+            }
+            let Some(operation_id) = ctx
+                .data
+                .operations
+                .begin_write_kind(OperationKind::UnstageFile)
+            else {
+                return Task::none();
+            };
+            panel.prepare_dirty_reselection_after_write(
+                operation_id,
+                &paths,
+                DirtyFileStatus::Staged,
+                ctx.data,
+                &ctx.data.selection,
+            );
+            let repo = ctx.repository.clone();
+            let presenter = ctx.presenter.clone();
+            let tab_id = ctx.tab_id;
+            let repo_path = ctx.fleet.active_path().display().to_string();
+            let count = paths.len();
+            Task::perform(
+                git_write_work(move || {
+                    let _span = crate::perf::Span::new("git.unstage")
+                        .field("tab", tab_id)
+                        .field("repo", &repo_path)
+                        .field("path_count", count);
+                    repo.unstage_files_and_load_dirty(&paths)
                         .map(|s| presenter.project_dirty_index(s))
                 }),
                 move |result| {
@@ -297,7 +429,7 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DetailAction::DiscardAllRequested => {
-            if ctx.data.operations.is_writing() {
+            if ctx.data.operations.is_blocking_write() {
                 return Task::none();
             }
             ctx.data.branch_popout.close_context_menu();
@@ -307,8 +439,24 @@ pub(in crate::screens::repository) fn update(
                 }));
             Task::none()
         }
+        DetailAction::DiscardSelectedFilesRequested => {
+            if ctx.data.operations.is_blocking_write() {
+                return Task::none();
+            }
+            let paths = panel.selected_dirty_paths_for_discard(ctx.data, &ctx.data.selection);
+            let count = panel.selected_dirty_count(ctx.data, &ctx.data.selection);
+            if paths.is_empty() || count == 0 {
+                return Task::none();
+            }
+            ctx.data.branch_popout.close_context_menu();
+            ctx.overlay_manager
+                .open(ActiveDialog::Discard(discard::State {
+                    target: discard::Target::Files { paths, count },
+                }));
+            Task::none()
+        }
         DetailAction::DiscardFileRequested(path) => {
-            if ctx.data.operations.is_writing() {
+            if ctx.data.operations.is_blocking_write() {
                 return Task::none();
             }
             ctx.data.branch_popout.close_context_menu();
@@ -398,6 +546,8 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DetailAction::CommitFileClicked { commit_idx, path } => {
+            ctx.input.focused_panel = FocusedPanel::Detail;
+            panel.select_commit_file(commit_idx, path.clone());
             if diff_panel.is_active() {
                 let already_shown = diff_panel
                     .commit_file_diff
@@ -436,6 +586,8 @@ pub(in crate::screens::repository) fn update(
             repository_panel.restore_center_list_scroll()
         }
         DetailAction::MergedFileClicked { path } => {
+            ctx.input.focused_panel = FocusedPanel::Detail;
+            panel.select_merged_file(path.clone());
             if diff_panel.is_active() {
                 let already_shown = diff_panel
                     .merged_file_diff
@@ -463,7 +615,7 @@ pub(in crate::screens::repository) fn update(
             update_diff(diff_panel, follow_up, ctx)
         }
         DetailAction::FileListScrolled { kind, viewport } => {
-            panel.set_file_list_scroll_y(kind, viewport.absolute_offset().y);
+            panel.set_file_list_viewport(kind, viewport);
             Task::none()
         }
         DetailAction::CommitMessageAction(action) => {
@@ -538,4 +690,106 @@ pub(in crate::screens::repository) fn update(
         }
         DetailAction::None => Task::none(),
     }
+}
+
+fn dirty_selection_mode(modifiers: iced::keyboard::Modifiers) -> DirtyFileSelectionMode {
+    if modifiers.shift() {
+        DirtyFileSelectionMode::Range
+    } else if modifiers.control() {
+        DirtyFileSelectionMode::Toggle
+    } else {
+        DirtyFileSelectionMode::Replace
+    }
+}
+
+fn extend_file_selection(
+    panel: &mut DetailPanel,
+    navigation: DetailFileNavigation,
+    ctx: &mut ScreenCtx<'_>,
+    repository_panel: &mut CenterPanel,
+    diff_panel: &mut DiffPanel,
+) -> Task<Message> {
+    let task = panel.extend_file_selection(
+        navigation,
+        ctx.data,
+        &ctx.data.selection,
+        ctx.merged_diff.result(),
+    );
+
+    if panel.selected_dirty_count(ctx.data, &ctx.data.selection) > 1 && diff_panel.is_active() {
+        diff_panel.close();
+        return Task::batch([task, repository_panel.restore_center_list_scroll()]);
+    }
+
+    task
+}
+
+fn open_dirty_file(
+    path: String,
+    is_staged: bool,
+    ctx: &mut ScreenCtx<'_>,
+    repository_panel: &mut CenterPanel,
+    diff_panel: &mut DiffPanel,
+) -> Task<Message> {
+    if diff_panel.is_active() {
+        let already_shown = diff_panel
+            .dirty_file_diff
+            .as_ref()
+            .is_some_and(|d| d.file_path == path && d.is_staged == is_staged)
+            || diff_panel
+                .conflict_file_resolution
+                .as_ref()
+                .is_some_and(|d| d.file_path == path);
+        if already_shown {
+            diff_panel.close();
+            return repository_panel.restore_center_list_scroll();
+        }
+    }
+    let Some(dirty_commit) = ctx.data.snapshot.commits().first() else {
+        return Task::none();
+    };
+    if dirty_commit.kind != CommitKind::Dirty {
+        return Task::none();
+    }
+
+    let all_files = dirty_commit
+        .conflicted_files
+        .iter()
+        .chain(dirty_commit.unstaged_files.iter())
+        .chain(dirty_commit.staged_files.iter());
+    let selected_idx = all_files
+        .enumerate()
+        .find(|(_, f)| f.path == path)
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let is_conflicted = dirty_commit
+        .conflicted_files
+        .iter()
+        .any(|file| file.path == path);
+
+    if is_conflicted {
+        match ctx.repository.load_modify_delete_conflict(&path) {
+            Ok(Some(_)) => {
+                ctx.data.commit_search = None;
+                diff_panel.close();
+                ctx.overlay_manager.open(ActiveDialog::ModifyDeleteConflict(
+                    modify_delete_conflict::State { path },
+                ));
+                return repository_panel.restore_center_list_scroll();
+            }
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("git_leviathan: conflict inspection failed: {}", e);
+                return Task::done(Message::show_toast(ToastData::error(
+                    "Open Conflict Failed",
+                    e.to_string(),
+                )));
+            }
+        }
+    }
+
+    ctx.data.commit_search = None;
+    let follow_up = diff_panel.open_dirty_file_view(path, is_staged, selected_idx, is_conflicted);
+    update_diff(diff_panel, follow_up, ctx)
 }

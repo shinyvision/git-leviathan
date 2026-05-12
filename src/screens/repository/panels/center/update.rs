@@ -52,6 +52,28 @@ pub(in crate::screens::repository) fn update(
             ctx.input.modifiers = mods;
             Task::none()
         }
+        CenterAction::NavigateFirst => {
+            if ctx.data.snapshot.commits().is_empty() {
+                return Task::none();
+            }
+            let follow_up =
+                panel.select_commit(0, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+            Task::batch(vec![
+                update(panel, detail_panel, follow_up, ctx),
+                panel.scroll_to_commit(0).unwrap_or(Task::none()),
+            ])
+        }
+        CenterAction::NavigateLast => {
+            let Some(last) = ctx.data.snapshot.commits().len().checked_sub(1) else {
+                return Task::none();
+            };
+            let follow_up =
+                panel.select_commit(last, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+            Task::batch(vec![
+                update(panel, detail_panel, follow_up, ctx),
+                panel.scroll_to_commit(last).unwrap_or(Task::none()),
+            ])
+        }
         CenterAction::NavigateUp => {
             let current = ctx.data.selection.selected_commit();
             if current > 0 {

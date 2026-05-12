@@ -242,7 +242,7 @@ function LeviathanShellJobHandle:id() end
 ---@field id string Overlay id.
 ---@field priority? integer Higher priority renders above lower priority overlays.
 ---@field dismissible? boolean When true, Escape sends the overlay an `escape` event.
----@field key_events? string[] Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.
+---@field key_events? string[] Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.
 ---@field widget LeviathanWidget Overlay widget tree.
 ---@field on_event? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Overlay callback.
 ---@field update? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Alias for `on_event`.
@@ -255,6 +255,33 @@ function LeviathanShellJobHandle:id() end
 ---@field alt boolean Whether Alt was held.
 ---@field logo boolean Whether the platform logo key was held.
 ---@field command boolean Whether the platform command modifier was held.
+
+---Top-bar plugin overlay dialog.
+---@class LeviathanDialogSpec
+---@field id string Dialog id.
+---@field text string Dialog body text.
+---@field title? string Optional dialog title for hosts that display one.
+---@field priority? integer Higher priority renders above lower priority overlays.
+---@field dismissible? boolean When true, Escape can dismiss the dialog.
+---@field dropdown? LeviathanDialogDropdown Optional dropdown content.
+---@field buttons LeviathanDialogButton[] Dialog buttons.
+
+---Optional dialog dropdown content.
+---@class LeviathanDialogDropdown
+---@field options LeviathanDialogDropdownOption[] Dropdown options.
+
+---Dialog dropdown option.
+---@class LeviathanDialogDropdownOption
+---@field icon? string Plugin-owned SVG path.
+---@field text string Option label.
+
+---Dialog button.
+---@class LeviathanDialogButton
+---@field id? string Button id passed to its callback.
+---@field style "red"|"green"|"blue"|"white" Button color style.
+---@field text string Button label.
+---@field on_click fun(id: string) Callback invoked by clicking the button or pressing one of its keys.
+---@field keys? string[] Keys that trigger this button, e.g. `y`, `n`, `Esc`.
 
 ---Plugin screen.
 ---@class LeviathanScreenSpec
@@ -591,10 +618,18 @@ function LeviathanContributionHandle:remove() end
 
 ---Focus summary in a UI context.
 ---@class LeviathanFocusSummary
----@field surface string Focused surface.
----@field region? string Focused region.
----@field pane? string Focused pane.
----@field section? string Focused section.
+---@field surface string Active focus surface id (e.g. `repository.graph`).
+---@field kind string Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.
+---@field region? string Focused region when applicable.
+---@field pane? string Focused pane when applicable.
+---@field section? string Focused section when applicable.
+---@field plugin_id? string Focused plugin id when focus is on a plugin screen or overlay.
+---@field screen_id? string Focused plugin screen id when focus is on a plugin screen.
+---@field overlay_id? string Focused overlay id when focus is on an overlay.
+---@field reason? string Last focus-change reason as a snake_case string.
+---@field matches_surface boolean True when the active focus surface equals the rendered context surface.
+---@field matches_region boolean True when the active focus shares a region with the rendered context.
+---@field matches_pane boolean True when the active focus shares a pane with the rendered context.
 
 ---Viewport summary in a UI context.
 ---@class LeviathanViewportSummary
@@ -821,6 +856,8 @@ function LeviathanHealthContext:error(message) end
 ---@field kind "space"
 ---@field width? number|string Fixed pixels, fill, or shrink.
 ---@field height? number|string Fixed pixels, fill, or shrink.
+---@field id? string Stable scrollable id, scoped to the plugin surface.
+---@field scroll_y? number Absolute vertical scroll offset in pixels.
 
 ---SVG icon loaded from plugin assets.
 ---@class LeviathanIconWidget
@@ -1450,6 +1487,10 @@ function leviathan.command.invoke(name, args) end
 ---@return LeviathanCommandSummary[] Array of command summaries.
 function leviathan.command.list() end
 
+---Set the active keymap leader sequence used to expand `<leader>` bindings.
+---@param leader string Vim-style key sequence used as leader, e.g. `<Space>` or `,`.
+function leviathan.keymap.set_leader(leader) end
+
 ---Bind a key chord to a registered command in a context.
 ---@param context string Activation context (`global`, `repository`, `repository.graph`, `tab_bar`, etc.).
 ---@param key string Vim-style key sequence (e.g. `gl`, `<C-r>`, `<leader>gh`).
@@ -1484,6 +1525,10 @@ function leviathan.autocmd.clear(group) end
 ---Register an overlay widget the host renders above the active screen.
 ---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority, key_events).
 function leviathan.ui.overlay(spec) end
+
+---Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.
+---@param spec LeviathanDialogSpec Dialog descriptor (id, text, optional dropdown, buttons).
+function leviathan.ui.dialog(spec) end
 
 ---Remove an overlay owned by the calling plugin.
 ---@param id string Overlay id to remove.

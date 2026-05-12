@@ -155,6 +155,139 @@ fn v1_dynamic_widgets_refresh_on_load_event_and_tab_sync() {
 }
 
 #[test]
+fn v1_dynamic_widgets_refresh_on_focus_change() {
+    use crate::plugin::ui::focus::{
+        FocusReason, FocusSnapshot, FocusSurface, RepositoryFocusSurface,
+    };
+
+    let mut host = MockHost::new();
+    host.load_inline(
+        "focus_widget",
+        &manifest("focus_widget"),
+        r#"
+        _G.widget_refreshes = 0
+        _G.last_focus_surface = ""
+
+        leviathan.ui.slot.add{
+            region = "repository", pane = "graph", section = "top",
+            id = "plugin.focus_widget.bar", priority = 1,
+            widget = function(ctx)
+                _G.widget_refreshes = _G.widget_refreshes + 1
+                _G.last_focus_surface = ctx.focus.surface
+                return { kind = "text", value = ctx.focus.surface }
+            end,
+        }
+        "#,
+    )
+    .expect("load");
+
+    let initial_refreshes = host
+        .read_global_i64("focus_widget", "widget_refreshes")
+        .unwrap_or(0);
+
+    let first = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(first.clone()));
+    let after_first = host
+        .read_global_i64("focus_widget", "widget_refreshes")
+        .unwrap_or(0);
+    assert!(after_first > initial_refreshes);
+    assert_eq!(
+        host.read_global_string("focus_widget", "last_focus_surface")
+            .as_deref(),
+        Some("repository.graph")
+    );
+
+    assert!(!host.host_mut().sync_focus(first));
+    let after_resync = host
+        .read_global_i64("focus_widget", "widget_refreshes")
+        .unwrap_or(0);
+    assert_eq!(after_resync, after_first);
+
+    let next = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Details),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(next));
+    let after_change = host
+        .read_global_i64("focus_widget", "widget_refreshes")
+        .unwrap_or(0);
+    assert!(after_change > after_first);
+    assert_eq!(
+        host.read_global_string("focus_widget", "last_focus_surface")
+            .as_deref(),
+        Some("repository.details")
+    );
+}
+
+#[test]
+fn v1_focus_indicator_pattern_through_existing_slots() {
+    use crate::plugin::ui::focus::{
+        FocusReason, FocusSnapshot, FocusSurface, RepositoryFocusSurface,
+    };
+
+    let mut host = MockHost::new();
+    host.load_inline(
+        "focus_bars",
+        &manifest("focus_bars"),
+        r#"
+        _G.graph_active = 0
+        _G.details_active = 0
+
+        local function bar(ctx)
+            if ctx.focus.matches_pane then
+                return { kind = "text", value = "BAR" }
+            end
+            return { kind = "text", value = "" }
+        end
+
+        leviathan.ui.slot.add{
+            region = "repository", pane = "graph", section = "top",
+            id = "plugin.focus_bars.graph", priority = 1,
+            widget = function(ctx)
+                _G.graph_active = ctx.focus.matches_pane and 1 or 0
+                return bar(ctx)
+            end,
+        }
+
+        leviathan.ui.slot.add{
+            region = "repository", pane = "details", section = "top",
+            id = "plugin.focus_bars.details", priority = 1,
+            widget = function(ctx)
+                _G.details_active = ctx.focus.matches_pane and 1 or 0
+                return bar(ctx)
+            end,
+        }
+        "#,
+    )
+    .expect("load focus_bars");
+
+    let graph_focus = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(graph_focus));
+    assert_eq!(host.read_global_i64("focus_bars", "graph_active"), Some(1));
+    assert_eq!(
+        host.read_global_i64("focus_bars", "details_active"),
+        Some(0)
+    );
+
+    let details_focus = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Details),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(details_focus));
+    assert_eq!(host.read_global_i64("focus_bars", "graph_active"), Some(0));
+    assert_eq!(
+        host.read_global_i64("focus_bars", "details_active"),
+        Some(1)
+    );
+}
+
+#[test]
 fn v1_dynamic_widgets_refresh_only_declared_dependencies() {
     let mut host = MockHost::new();
     host.load_inline(

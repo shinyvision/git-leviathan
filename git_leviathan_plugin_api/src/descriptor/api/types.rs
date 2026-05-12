@@ -408,7 +408,7 @@ const TYPE_OVERLAY_FIELDS: &[ApiTypeField] = &[
         name: "key_events",
         lua_type: "string[]",
         required: false,
-        doc: "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+        doc: "Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.",
     },
     ApiTypeField {
         name: "widget",
@@ -465,6 +465,102 @@ const TYPE_OVERLAY_KEY_EVENT_FIELDS: &[ApiTypeField] = &[
         lua_type: "boolean",
         required: true,
         doc: "Whether the platform command modifier was held.",
+    },
+];
+const TYPE_DIALOG_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog id.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog body text.",
+    },
+    ApiTypeField {
+        name: "title",
+        lua_type: "string",
+        required: false,
+        doc: "Optional dialog title for hosts that display one.",
+    },
+    ApiTypeField {
+        name: "priority",
+        lua_type: "integer",
+        required: false,
+        doc: "Higher priority renders above lower priority overlays.",
+    },
+    ApiTypeField {
+        name: "dismissible",
+        lua_type: "boolean",
+        required: false,
+        doc: "When true, Escape can dismiss the dialog.",
+    },
+    ApiTypeField {
+        name: "dropdown",
+        lua_type: "LeviathanDialogDropdown",
+        required: false,
+        doc: "Optional dropdown content.",
+    },
+    ApiTypeField {
+        name: "buttons",
+        lua_type: "LeviathanDialogButton[]",
+        required: true,
+        doc: "Dialog buttons.",
+    },
+];
+const TYPE_DIALOG_DROPDOWN_FIELDS: &[ApiTypeField] = &[ApiTypeField {
+    name: "options",
+    lua_type: "LeviathanDialogDropdownOption[]",
+    required: true,
+    doc: "Dropdown options.",
+}];
+const TYPE_DIALOG_DROPDOWN_OPTION_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "icon",
+        lua_type: "string",
+        required: false,
+        doc: "Plugin-owned SVG path.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Option label.",
+    },
+];
+const TYPE_DIALOG_BUTTON_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: false,
+        doc: "Button id passed to its callback.",
+    },
+    ApiTypeField {
+        name: "style",
+        lua_type: "\"red\"|\"green\"|\"blue\"|\"white\"",
+        required: true,
+        doc: "Button color style.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Button label.",
+    },
+    ApiTypeField {
+        name: "on_click",
+        lua_type: "fun(id: string)",
+        required: true,
+        doc: "Callback invoked by clicking the button or pressing one of its keys.",
+    },
+    ApiTypeField {
+        name: "keys",
+        lua_type: "string[]",
+        required: false,
+        doc: "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
     },
 ];
 const TYPE_CONTEXT_MENU_ITEM_FIELDS: &[ApiTypeField] = &[
@@ -841,25 +937,73 @@ const TYPE_FOCUS_SUMMARY_FIELDS: &[ApiTypeField] = &[
         name: "surface",
         lua_type: "string",
         required: true,
-        doc: "Focused surface.",
+        doc: "Active focus surface id (e.g. `repository.graph`).",
+    },
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.",
     },
     ApiTypeField {
         name: "region",
         lua_type: "string",
         required: false,
-        doc: "Focused region.",
+        doc: "Focused region when applicable.",
     },
     ApiTypeField {
         name: "pane",
         lua_type: "string",
         required: false,
-        doc: "Focused pane.",
+        doc: "Focused pane when applicable.",
     },
     ApiTypeField {
         name: "section",
         lua_type: "string",
         required: false,
-        doc: "Focused section.",
+        doc: "Focused section when applicable.",
+    },
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused plugin id when focus is on a plugin screen or overlay.",
+    },
+    ApiTypeField {
+        name: "screen_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused plugin screen id when focus is on a plugin screen.",
+    },
+    ApiTypeField {
+        name: "overlay_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused overlay id when focus is on an overlay.",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string",
+        required: false,
+        doc: "Last focus-change reason as a snake_case string.",
+    },
+    ApiTypeField {
+        name: "matches_surface",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus surface equals the rendered context surface.",
+    },
+    ApiTypeField {
+        name: "matches_region",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus shares a region with the rendered context.",
+    },
+    ApiTypeField {
+        name: "matches_pane",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus shares a pane with the rendered context.",
     },
 ];
 
@@ -1540,6 +1684,34 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.0",
         doc: "Payload passed to overlay `on_event` when `event == \"key\"`.",
         fields: TYPE_OVERLAY_KEY_EVENT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogSpec",
+        since: "1.0",
+        doc: "Top-bar plugin overlay dialog.",
+        fields: TYPE_DIALOG_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogDropdown",
+        since: "1.0",
+        doc: "Optional dialog dropdown content.",
+        fields: TYPE_DIALOG_DROPDOWN_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogDropdownOption",
+        since: "1.0",
+        doc: "Dialog dropdown option.",
+        fields: TYPE_DIALOG_DROPDOWN_OPTION_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogButton",
+        since: "1.0",
+        doc: "Dialog button.",
+        fields: TYPE_DIALOG_BUTTON_FIELDS,
         methods: &[],
     },
     ApiType {

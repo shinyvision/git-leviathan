@@ -5,6 +5,7 @@ use std::path::Path;
 use git_leviathan_plugin_api::api_version::plugin_api_compatibility_error;
 use git_leviathan_plugin_api::capability::is_known_capability;
 use git_leviathan_plugin_api::descriptor::api;
+use git_leviathan_plugin_api::descriptor::extension_point::extension_point;
 use git_leviathan_plugin_api::descriptor::region::REGIONS;
 use git_leviathan_plugin_api::descriptor::widget::WIDGETS;
 use git_leviathan_plugin_api::manifest::PluginManifest;
@@ -177,6 +178,7 @@ pub(super) fn lint_path(path: &Path) -> LintReport {
                 lint_widgets(&file, &source, &mut report);
                 lint_decoration_specs(&file, &source, &mut report);
                 lint_slot_specs(&file, &source, &declared_caps, &mut report);
+                lint_contribute_specs(&file, &source, &declared_caps, &mut report);
                 lint_command_ids(&file, &source, &declared_caps, &mut report);
                 lint_context_fields(&file, &source, &mut report);
                 lint_services(&file, &source, &provides, &consumes, &mut report);
@@ -255,7 +257,10 @@ fn lint_undeclared_capabilities(
         if function.capabilities.is_empty() || !source_calls_path(source, function.path) {
             continue;
         }
-        if matches!(function.path, "leviathan.command.invoke" | "leviathan.log") {
+        if matches!(
+            function.path,
+            "leviathan.command.invoke" | "leviathan.log" | "leviathan.ui.contribute"
+        ) {
             continue;
         }
         for required in function.capabilities {
@@ -398,6 +403,35 @@ fn lint_slot_specs(
                 path.display().to_string(),
                 format!("slot replace requires undeclared capability `{required}`"),
             );
+        }
+    }
+}
+
+fn lint_contribute_specs(
+    path: &Path,
+    source: &str,
+    declared: &BTreeSet<String>,
+    report: &mut LintReport,
+) {
+    for point_id in detect_string_first_arg(source, "leviathan.ui.contribute") {
+        let Some(point) = extension_point(&point_id) else {
+            report.push(
+                Level::Error,
+                path.display().to_string(),
+                format!("unknown extension point `{point_id}`"),
+            );
+            continue;
+        };
+        for required in point.capabilities {
+            if !capability_declared(required, declared) {
+                report.push(
+                    Level::Error,
+                    path.display().to_string(),
+                    format!(
+                        "ui contribution `{point_id}` requires undeclared capability `{required}`"
+                    ),
+                );
+            }
         }
     }
 }
@@ -1021,6 +1055,12 @@ fn built_in_command_ids() -> BTreeSet<String> {
         "repository.pull",
         "repository.push",
         "repository.open_search",
+        "repository.jump_top",
+        "repository.jump_bottom",
+        "repository.stage_selected_file",
+        "repository.unstage_selected_file",
+        "repository.discard_selected_file",
+        "repository.focus_panel",
         "git.checkout",
         "git.create_branch",
         "git.delete_branch",
@@ -1190,9 +1230,22 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
     );
     map.insert(
         "ctx.focus",
-        ["surface", "region", "pane", "section"]
-            .into_iter()
-            .collect(),
+        [
+            "surface",
+            "kind",
+            "region",
+            "pane",
+            "section",
+            "plugin_id",
+            "screen_id",
+            "overlay_id",
+            "reason",
+            "matches_surface",
+            "matches_region",
+            "matches_pane",
+        ]
+        .into_iter()
+        .collect(),
     );
     map.insert(
         "ctx.viewport",
@@ -1237,9 +1290,22 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
     );
     map.insert(
         "context.focus",
-        ["surface", "region", "pane", "section"]
-            .into_iter()
-            .collect(),
+        [
+            "surface",
+            "kind",
+            "region",
+            "pane",
+            "section",
+            "plugin_id",
+            "screen_id",
+            "overlay_id",
+            "reason",
+            "matches_surface",
+            "matches_region",
+            "matches_pane",
+        ]
+        .into_iter()
+        .collect(),
     );
     map.insert(
         "context.viewport",
@@ -1395,6 +1461,40 @@ mod tests {
     }
 
     #[test]
+    fn validates_contribute_capability_by_extension_point() {
+        let mut missing = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_contribute_specs(
+            Path::new("init.lua"),
+            r#"leviathan.ui.contribute("repository.graph.chrome", { id = "focus", widget = function() return nil end })"#,
+            &BTreeSet::new(),
+            &mut missing,
+        );
+        assert!(missing
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("ui:chrome:repository.graph.chrome")));
+        assert!(!missing
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("ui:decoration:graph")));
+
+        let mut declared = BTreeSet::new();
+        declared.insert("ui:chrome:repository.graph.chrome".to_string());
+        let mut ok = LintReport {
+            diagnostics: Vec::new(),
+        };
+        lint_contribute_specs(
+            Path::new("init.lua"),
+            r#"leviathan.ui.contribute("repository.graph.chrome", { id = "focus", widget = function() return nil end })"#,
+            &declared,
+            &mut ok,
+        );
+        assert!(ok.diagnostics.is_empty());
+    }
+
+    #[test]
     fn lint_rejects_incompatible_manifest_api_version() {
         let tmp =
             std::env::temp_dir().join(format!("git-leviathan-xtask-lint-{}", std::process::id()));
@@ -1433,13 +1533,14 @@ api_version = "1.1"
             Path::new("init.lua"),
             r#"leviathan.command.create("local.ok", { run = function() end })
                leviathan.command.invoke("missing.cmd")
-               leviathan.keymap.set("global", "x", "local.ok")"#,
+               leviathan.keymap.set("global", "x", "local.ok")
+               leviathan.keymap.set("repository", "l", "repository.focus_panel")"#,
             &BTreeSet::new(),
             &mut report,
         );
         lint_context_fields(
             Path::new("init.lua"),
-            "return ctx.repository.nope .. ctx.focus.region",
+            "return ctx.repository.nope .. tostring(ctx.focus.matches_pane)",
             &mut report,
         );
         assert!(report

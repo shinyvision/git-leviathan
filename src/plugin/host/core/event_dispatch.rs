@@ -609,8 +609,42 @@ impl PluginHost {
         Some(change)
     }
 
+    pub fn sync_selection(
+        &mut self,
+        snapshot: crate::plugin::ui::context::SelectionContextSnapshot,
+    ) -> bool {
+        if self.last_selection_snapshot == snapshot {
+            return false;
+        }
+        self.last_selection_snapshot = snapshot;
+        self.refresh_command_active_context();
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::SelectionChanged], None);
+        true
+    }
+
+    pub fn take_pending_ui_scrolls(&mut self) -> Vec<crate::plugin::ui::effects::ScrollToRequest> {
+        self.pending_ui_effects.take_scroll_to()
+    }
+
     pub fn tab_snapshot(&self) -> &TabsSnapshot {
         &self.last_tab_snapshot
+    }
+
+    pub fn sync_focus(&mut self, snapshot: crate::plugin::ui::focus::FocusSnapshot) -> bool {
+        if self.last_focus_snapshot == snapshot {
+            return false;
+        }
+        let prev = std::mem::replace(&mut self.last_focus_snapshot, snapshot);
+        let next = self.last_focus_snapshot.clone();
+        self.refresh_command_active_context();
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::FocusChanged], None);
+        let payload = crate::plugin::ui::focus::focus_event_payload(&prev, &next);
+        self.fire_event_typed("FocusChanged", payload);
+        true
+    }
+
+    pub fn last_focus_snapshot(&self) -> &crate::plugin::ui::focus::FocusSnapshot {
+        &self.last_focus_snapshot
     }
 }
 

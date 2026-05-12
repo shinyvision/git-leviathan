@@ -10,45 +10,20 @@ use crate::plugin::commands::{
 };
 use crate::plugin::diagnostic::DiagnosticStore;
 use crate::screens::repository::panel_messages::{CenterAction, DetailAction, DiffPanelAction};
-use crate::screens::repository::RepositoryMessage;
+use crate::screens::repository::{RepositoryFocusTarget, RepositoryMessage};
 
 #[derive(Debug, Clone)]
 pub enum CoreCommandAction {
     App(AppMessage),
     Repository(Box<RepositoryMessage>),
     OpenRepositoryPath(String),
-    CloseTab {
-        path: Option<String>,
-    },
-    SelectTab {
-        path: String,
-    },
-    ReorderTabs {
-        paths: Vec<String>,
-    },
-    Refresh,
-    Fetch,
-    CreateBranchAtSelected {
-        commit_idx: Option<usize>,
-        hash: Option<String>,
-    },
-    CopyCommitHash {
-        hash: Option<String>,
-    },
-    OpenSelectedDiff,
-    StartRewordSelected,
-    RefreshGrammarRegistry {
-        path: String,
-    },
-    InstallGrammar {
-        language: String,
-    },
-    UpdateGrammar {
-        language: String,
-    },
-    UninstallGrammar {
-        language: String,
-    },
+    CloseTab { path: Option<String> },
+    SelectTab { path: String },
+    ReorderTabs { paths: Vec<String> },
+    RefreshGrammarRegistry { path: String },
+    InstallGrammar { language: String },
+    UpdateGrammar { language: String },
+    UninstallGrammar { language: String },
 }
 
 fn repository(message: RepositoryMessage) -> CoreCommandAction {
@@ -198,7 +173,7 @@ fn specs() -> Vec<CoreCommandSpec> {
             "repository",
         )
         .cap("git:write:fetch")
-        .action(|_| Ok(CoreCommandAction::Fetch)),
+        .action(|_| Ok(repository(RepositoryMessage::FetchRequested))),
         spec(
             "repository.refresh",
             "Repository: Refresh",
@@ -206,7 +181,7 @@ fn specs() -> Vec<CoreCommandSpec> {
             "repository",
         )
         .cap("repo:read")
-        .action(|_| Ok(CoreCommandAction::Refresh)),
+        .action(|_| Ok(repository(RepositoryMessage::RefreshRequested))),
         spec(
             "repository.pull",
             "Repository: Pull",
@@ -268,9 +243,42 @@ fn specs() -> Vec<CoreCommandSpec> {
             "Has remote branch.",
         )
         .arg("remote_name", StringArg, false, None, "Remote name.")
+        .arg("remote_ref", StringArg, false, None, "Exact remote ref.")
         .cap("git:write:branch")
         .destructive()
         .action(delete_branch),
+        spec(
+            "branch.delete.local",
+            "Branch: Delete Local",
+            "Delete a local branch without opening a confirmation.",
+            "repository",
+        )
+        .arg("name", StringArg, true, None, "Branch name.")
+        .cap("git:write:branch")
+        .destructive()
+        .action(delete_branch_local_direct),
+        spec(
+            "branch.delete.remote",
+            "Branch: Delete Remote",
+            "Delete a remote branch without opening a confirmation.",
+            "repository",
+        )
+        .arg("name", StringArg, true, None, "Branch name.")
+        .arg("remote_name", StringArg, false, None, "Remote name.")
+        .arg("remote_ref", StringArg, false, None, "Exact remote ref.")
+        .cap("git:write:branch")
+        .destructive()
+        .action(delete_branch_remote_direct),
+        spec(
+            "branch.delete.local_and_remote",
+            "Branch: Delete Local And Remote",
+            "Delete a local branch and matching remote branch without opening a confirmation.",
+            "repository",
+        )
+        .arg("name", StringArg, true, None, "Branch name.")
+        .cap("git:write:branch")
+        .destructive()
+        .action(delete_branch_local_and_remote_direct),
         spec(
             "branch.rename",
             "Branch: Rename",
@@ -286,6 +294,7 @@ fn specs() -> Vec<CoreCommandSpec> {
             "Remote branch.",
         )
         .arg("remote_name", StringArg, false, None, "Remote name.")
+        .arg("remote_ref", StringArg, false, None, "Exact remote ref.")
         .cap("git:write:branch")
         .action(rename_branch),
         spec(
@@ -331,7 +340,7 @@ fn specs() -> Vec<CoreCommandSpec> {
         )
         .cap("git:write:commit")
         .cap("git:write:rebase")
-        .action(|_| Ok(CoreCommandAction::StartRewordSelected)),
+        .action(|_| Ok(repository(RepositoryMessage::StartRewordSelected))),
         spec(
             "repository.open_search",
             "Repository: Open Search",
@@ -341,13 +350,115 @@ fn specs() -> Vec<CoreCommandSpec> {
         .cap("command:invoke:repository.open_search")
         .action(|_| Ok(repository(RepositoryMessage::OpenCommitSearch))),
         spec(
+            "repository.jump_top",
+            "Repository: Jump Top",
+            "Select the first item in the focused repository pane.",
+            "repository",
+        )
+        .cap("repo:read")
+        .action(|_| stash(CenterAction::NavigateFirst)),
+        spec(
+            "repository.jump_bottom",
+            "Repository: Jump Bottom",
+            "Select the last item in the focused repository pane.",
+            "repository",
+        )
+        .cap("repo:read")
+        .action(|_| stash(CenterAction::NavigateLast)),
+        spec(
             "repository.open_diff",
             "Repository: Open Diff",
             "Open the selected commit diff.",
             "repository",
         )
         .cap("repo:read")
-        .action(|_| Ok(CoreCommandAction::OpenSelectedDiff)),
+        .action(|_| Ok(repository(RepositoryMessage::OpenSelectedDiff))),
+        spec(
+            "repository.move_selection",
+            "Repository: Move Selection",
+            "Move or extend the selection in the focused repository pane.",
+            "repository",
+        )
+        .arg(
+            "direction",
+            StringArg,
+            true,
+            None,
+            "first | last | previous | next",
+        )
+        .arg(
+            "extend",
+            Boolean,
+            false,
+            Some(json!(false)),
+            "Extend the current selection instead of replacing it.",
+        )
+        .cap("repo:read")
+        .action(move_selection),
+        spec(
+            "repository.clear_multi_selection",
+            "Repository: Clear Multi Selection",
+            "Collapse the active repository multi-selection to the focused item.",
+            "repository",
+        )
+        .cap("command:invoke:repository.clear_multi_selection")
+        .action(|_| Ok(repository(RepositoryMessage::ClearMultiSelection))),
+        spec(
+            "repository.escape",
+            "Repository: Escape",
+            "Run the repository screen's native Escape behavior.",
+            "repository",
+        )
+        .cap("command:invoke:repository.escape")
+        .action(|_| Ok(repository(RepositoryMessage::EscapePressed))),
+        spec(
+            "repository.stage_selected_file",
+            "Repository: Stage Selected File",
+            "Stage the selected dirty file.",
+            "repository",
+        )
+        .cap("git:write:commit")
+        .action(|_| Ok(repository(RepositoryMessage::StageSelectedDirtyFile))),
+        spec(
+            "repository.unstage_selected_file",
+            "Repository: Unstage Selected File",
+            "Unstage the selected dirty file.",
+            "repository",
+        )
+        .cap("git:write:reset")
+        .action(|_| Ok(repository(RepositoryMessage::UnstageSelectedDirtyFile))),
+        spec(
+            "repository.discard_selected_file",
+            "Repository: Discard Selected File",
+            "Open discard confirmation for the selected dirty file.",
+            "repository",
+        )
+        .cap("git:write:reset")
+        .destructive()
+        .action(|_| Ok(repository(RepositoryMessage::DiscardSelectedDirtyFile))),
+        spec(
+            "repository.focus_panel",
+            "Repository: Focus Panel",
+            "Move focus to a repository panel.",
+            "repository",
+        )
+        .arg(
+            "panel",
+            StringArg,
+            true,
+            None,
+            "sidebar | center | graph | details | diff",
+        )
+        .cap("command:invoke:repository.focus_panel")
+        .action(focus_panel),
+        spec(
+            "repository.focus_commit_message",
+            "Repository: Focus Commit Message",
+            "Focus the dirty commit-message editor when the details panel is active.",
+            "repository.details.dirty",
+        )
+        .cap("command:invoke:repository.focus_commit_message")
+        .action(|_| Ok(repository(RepositoryMessage::FocusCommitMessage))),
         spec(
             "syntax.grammar.refresh_registry",
             "Syntax: Refresh Grammar Registry",
@@ -533,13 +644,13 @@ fn reorder_tabs(args: &Value) -> Result<CoreCommandAction, String> {
 }
 
 fn create_branch(args: &Value) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::CreateBranchAtSelected {
+    Ok(repository(RepositoryMessage::CreateBranchAtSelected {
         commit_idx: args
             .get("commit_idx")
             .and_then(|v| v.as_i64())
             .map(|v| v.max(0) as usize),
         hash: string_arg(args, "hash"),
-    })
+    }))
 }
 
 fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
@@ -560,6 +671,36 @@ fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
             remote_ref,
         },
     )))
+}
+
+fn delete_branch_local_direct(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(repository(RepositoryMessage::DeleteBranchDirect {
+        branch_name: required_string_arg(args, "name")?,
+        is_remote: false,
+        remote_ref: None,
+    }))
+}
+
+fn delete_branch_remote_direct(args: &Value) -> Result<CoreCommandAction, String> {
+    let remote_name = string_arg(args, "remote_name");
+    let branch_name = required_string_arg(args, "name")?;
+    let remote_ref = string_arg(args, "remote_ref").or_else(|| {
+        remote_name
+            .as_ref()
+            .filter(|remote| !remote.trim().is_empty())
+            .map(|remote| format!("{}/{}", remote.trim(), branch_name.trim()))
+    });
+    Ok(repository(RepositoryMessage::DeleteBranchDirect {
+        branch_name,
+        is_remote: true,
+        remote_ref,
+    }))
+}
+
+fn delete_branch_local_and_remote_direct(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(repository(RepositoryMessage::DeleteBranchLocalAndRemote {
+        branch_name: required_string_arg(args, "name")?,
+    }))
 }
 
 fn rename_branch(args: &Value) -> Result<CoreCommandAction, String> {
@@ -598,6 +739,25 @@ fn stash(action: CenterAction) -> Result<CoreCommandAction, String> {
     Ok(repository(RepositoryMessage::Center(action)))
 }
 
+fn move_selection(args: &Value) -> Result<CoreCommandAction, String> {
+    let direction = required_string_arg(args, "direction")?;
+    let action = match direction.as_str() {
+        "first" | "top" => CenterAction::NavigateFirst,
+        "last" | "bottom" => CenterAction::NavigateLast,
+        "previous" | "prev" | "up" => CenterAction::NavigateUp,
+        "next" | "down" => CenterAction::NavigateDown,
+        other => {
+            return Err(format!(
+                "unknown direction `{other}`; expected first, last, previous, or next"
+            ));
+        }
+    };
+    Ok(repository(RepositoryMessage::MoveSelection {
+        action,
+        extend: bool_arg(args, "extend"),
+    }))
+}
+
 fn stash_pop(args: &Value) -> Result<CoreCommandAction, String> {
     stash(CenterAction::StashPopRequested {
         stash_index: args
@@ -617,9 +777,9 @@ fn diff(action: DiffPanelAction) -> Result<CoreCommandAction, String> {
 }
 
 fn copy_hash(args: &Value) -> Result<CoreCommandAction, String> {
-    Ok(CoreCommandAction::CopyCommitHash {
+    Ok(repository(RepositoryMessage::CopyCommitHash {
         hash: string_arg(args, "hash"),
-    })
+    }))
 }
 
 fn refresh_grammar_registry(args: &Value) -> Result<CoreCommandAction, String> {
@@ -644,6 +804,23 @@ fn uninstall_grammar(args: &Value) -> Result<CoreCommandAction, String> {
     Ok(CoreCommandAction::UninstallGrammar {
         language: required_string_arg(args, "language")?,
     })
+}
+
+fn focus_panel(args: &Value) -> Result<CoreCommandAction, String> {
+    let raw = required_string_arg(args, "panel")?;
+    let target = match raw.as_str() {
+        "sidebar" => RepositoryFocusTarget::Sidebar,
+        "center" => RepositoryFocusTarget::Center,
+        "graph" => RepositoryFocusTarget::Graph,
+        "details" => RepositoryFocusTarget::Details,
+        "diff" => RepositoryFocusTarget::Diff,
+        other => {
+            return Err(format!(
+                "unknown panel `{other}` (expected sidebar | center | graph | details | diff)"
+            ))
+        }
+    };
+    Ok(repository(RepositoryMessage::FocusPanel(target)))
 }
 
 fn mark_file_resolved(args: &Value) -> Result<CoreCommandAction, String> {
@@ -690,8 +867,21 @@ mod tests {
             "repository.push",
             "branch.create",
             "branch.delete",
+            "branch.delete.local",
+            "branch.delete.remote",
+            "branch.delete.local_and_remote",
             "stash.pop",
             "repository.open_search",
+            "repository.jump_top",
+            "repository.jump_bottom",
+            "repository.move_selection",
+            "repository.clear_multi_selection",
+            "repository.escape",
+            "repository.stage_selected_file",
+            "repository.unstage_selected_file",
+            "repository.discard_selected_file",
+            "repository.focus_panel",
+            "repository.focus_commit_message",
             "commit.copy_hash",
             "conflict.save_resolution",
             "syntax.grammar.install",
@@ -717,6 +907,276 @@ mod tests {
             queued.as_slice(),
             [CoreCommandAction::Repository(message)]
                 if matches!(message.as_ref(), RepositoryMessage::PullRequested)
+        ));
+    }
+
+    #[test]
+    fn fetch_command_queues_repository_request() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("repository.fetch").unwrap().descriptor;
+        match &desc.run {
+            CommandBody::Host(run) => run(&Value::Null).unwrap(),
+            _ => panic!("expected host command"),
+        }
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(message.as_ref(), RepositoryMessage::FetchRequested)
+        ));
+    }
+
+    fn is_stage_selected_dirty_file(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::StageSelectedDirtyFile)
+    }
+
+    fn is_unstage_selected_dirty_file(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::UnstageSelectedDirtyFile)
+    }
+
+    fn is_discard_selected_dirty_file(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::DiscardSelectedDirtyFile)
+    }
+
+    fn is_clear_multi_selection(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::ClearMultiSelection)
+    }
+
+    fn is_escape_pressed(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::EscapePressed)
+    }
+
+    fn is_focus_commit_message(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::FocusCommitMessage)
+    }
+
+    #[test]
+    fn selected_file_commands_queue_native_repository_messages() {
+        for (command, matches_expected) in [
+            (
+                "repository.stage_selected_file",
+                is_stage_selected_dirty_file as fn(&RepositoryMessage) -> bool,
+            ),
+            (
+                "repository.unstage_selected_file",
+                is_unstage_selected_dirty_file,
+            ),
+            (
+                "repository.discard_selected_file",
+                is_discard_selected_dirty_file,
+            ),
+        ] {
+            let actions = CoreCommandActions::new();
+            let mut registry = CommandRegistry::new();
+            register(&mut registry, actions.clone(), &store());
+            let desc = &registry.find(command).unwrap().descriptor;
+            match &desc.run {
+                CommandBody::Host(run) => run(&Value::Null).unwrap(),
+                _ => panic!("expected host command"),
+            }
+            let queued = actions.drain();
+            assert!(matches!(
+                queued.as_slice(),
+                [CoreCommandAction::Repository(message)] if matches_expected(message.as_ref())
+            ));
+        }
+    }
+
+    #[test]
+    fn repository_ui_commands_queue_native_repository_messages() {
+        for (command, matches_expected) in [
+            (
+                "repository.clear_multi_selection",
+                is_clear_multi_selection as fn(&RepositoryMessage) -> bool,
+            ),
+            ("repository.escape", is_escape_pressed),
+            ("repository.focus_commit_message", is_focus_commit_message),
+        ] {
+            let actions = CoreCommandActions::new();
+            let mut registry = CommandRegistry::new();
+            register(&mut registry, actions.clone(), &store());
+            let desc = &registry.find(command).unwrap().descriptor;
+            match &desc.run {
+                CommandBody::Host(run) => run(&Value::Null).unwrap(),
+                _ => panic!("expected host command"),
+            }
+            let queued = actions.drain();
+            assert!(matches!(
+                queued.as_slice(),
+                [CoreCommandAction::Repository(message)] if matches_expected(message.as_ref())
+            ));
+        }
+    }
+
+    #[test]
+    fn branch_delete_command_accepts_exact_remote_ref() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("branch.delete").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            desc,
+            &json!({
+                "name": "feature",
+                "is_remote": true,
+                "remote_name": "origin",
+                "remote_ref": "origin/feature"
+            }),
+        )
+        .expect("branch.delete args should validate");
+
+        match &desc.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::Center(CenterAction::BranchDeleteRequested {
+                        branch_name,
+                        is_remote: true,
+                        has_remote: false,
+                        remote_name: Some(remote_name),
+                        remote_ref: Some(remote_ref),
+                    }) if branch_name == "feature"
+                        && remote_name == "origin"
+                        && remote_ref == "origin/feature"
+                )
+        ));
+    }
+
+    #[test]
+    fn direct_branch_delete_commands_queue_exact_repository_messages() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+
+        let local = &registry.find("branch.delete.local").unwrap().descriptor;
+        match &local.run {
+            CommandBody::Host(run) => run(&json!({ "name": "feature" })).unwrap(),
+            _ => panic!("expected host command"),
+        }
+        let remote = &registry.find("branch.delete.remote").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            remote,
+            &json!({
+                "name": "feature",
+                "remote_name": "origin",
+                "remote_ref": "origin/feature"
+            }),
+        )
+        .expect("remote delete args should validate");
+        match &remote.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+        let all = &registry
+            .find("branch.delete.local_and_remote")
+            .unwrap()
+            .descriptor;
+        match &all.run {
+            CommandBody::Host(run) => run(&json!({ "name": "feature" })).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [
+                CoreCommandAction::Repository(local_msg),
+                CoreCommandAction::Repository(remote_msg),
+                CoreCommandAction::Repository(all_msg),
+            ] if matches!(
+                local_msg.as_ref(),
+                RepositoryMessage::DeleteBranchDirect {
+                    branch_name,
+                    is_remote: false,
+                    remote_ref: None,
+                } if branch_name == "feature"
+            ) && matches!(
+                remote_msg.as_ref(),
+                RepositoryMessage::DeleteBranchDirect {
+                    branch_name,
+                    is_remote: true,
+                    remote_ref: Some(remote_ref),
+                } if branch_name == "feature" && remote_ref == "origin/feature"
+            ) && matches!(
+                all_msg.as_ref(),
+                RepositoryMessage::DeleteBranchLocalAndRemote { branch_name }
+                    if branch_name == "feature"
+            )
+        ));
+    }
+
+    fn run_focus_panel(args: Value) -> (Result<(), String>, Vec<CoreCommandAction>) {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("repository.focus_panel").unwrap().descriptor;
+        let result = match &desc.run {
+            CommandBody::Host(run) => run(&args),
+            _ => panic!("expected host command"),
+        };
+        (result, actions.drain())
+    }
+
+    #[test]
+    fn focus_panel_command_queues_focus_panel_action() {
+        let (result, queued) = run_focus_panel(json!({ "panel": "details" }));
+        result.unwrap();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(message.as_ref(), RepositoryMessage::FocusPanel(RepositoryFocusTarget::Details))
+        ));
+    }
+
+    #[test]
+    fn focus_panel_command_rejects_unknown_panel() {
+        let (result, queued) = run_focus_panel(json!({ "panel": "weird" }));
+        let err = result.unwrap_err();
+        assert!(err.contains("unknown panel"), "{err}");
+        assert!(queued.is_empty());
+    }
+
+    #[test]
+    fn focus_panel_command_requires_panel_arg() {
+        let (result, queued) = run_focus_panel(Value::Null);
+        let err = result.unwrap_err();
+        assert!(err.contains("missing required arg"), "{err}");
+        assert!(queued.is_empty());
+    }
+
+    #[test]
+    fn move_selection_command_queues_generic_selection_action() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry
+            .find("repository.move_selection")
+            .unwrap()
+            .descriptor;
+        match &desc.run {
+            CommandBody::Host(run) => run(&json!({ "direction": "next", "extend": true })).unwrap(),
+            _ => panic!("expected host command"),
+        }
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::MoveSelection {
+                        action: CenterAction::NavigateDown,
+                        extend: true,
+                    }
+                )
         ));
     }
 }

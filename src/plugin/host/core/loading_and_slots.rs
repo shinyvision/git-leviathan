@@ -249,6 +249,8 @@ impl PluginHost {
             Rc::new(RefCell::new(OverlayCallbacks::new()));
         let decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>> =
             Rc::new(RefCell::new(DecorationProviderCallbacks::new()));
+        let chrome_widgets: crate::plugin::api::ui_ext::ChromeWidgetMap =
+            Rc::new(RefCell::new(HashMap::new()));
         let ui_context =
             crate::plugin::ui::context::UiContextStore::new(manifest.id.as_str(), generation_id);
         let async_ctx = self.build_async_runtime_context(
@@ -273,6 +275,7 @@ impl PluginHost {
                 keymaps: Rc::clone(&self.keymap_registry),
                 git_ctx: self.git_ops_context(),
                 pending_git_events: self.pending_git_events.clone(),
+                pending_ui_effects: self.pending_ui_effects.clone(),
                 async_ctx,
                 plugin_id: plugin_id.clone(),
                 generation_id,
@@ -281,6 +284,7 @@ impl PluginHost {
                 overlay_callbacks: Rc::clone(&overlay_callbacks),
                 decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
                 ui_context: ui_context.clone(),
+                chrome_widgets: Rc::clone(&chrome_widgets),
             },
         ) {
             self.diagnostics.record(
@@ -503,6 +507,7 @@ impl PluginHost {
             CommandPluginContext {
                 lua: Rc::clone(&lua),
                 capability_guard: Rc::clone(&guard),
+                ui_context: ui_context.clone(),
                 generation_id,
             },
         );
@@ -543,6 +548,7 @@ impl PluginHost {
             settings_panel,
             screen_state: HashMap::new(),
             dynamic_widgets,
+            chrome_widgets,
             ui_context,
             deferred,
             user_commands,
@@ -564,10 +570,12 @@ impl PluginHost {
         self.last_plugin_roots
             .insert(manifest.id.clone(), dir.to_path_buf());
 
-        // Populate dynamic widget caches so the first render has a real
-        // tree instead of a placeholder null.
+        let installed_chrome = !self.plugins[&manifest.id]
+            .chrome_widgets
+            .borrow()
+            .is_empty();
         self.refresh_dynamic_widgets_for_plugin(&manifest.id);
-        if installed_slot_ops {
+        if installed_slot_ops || installed_chrome {
             self.mark_slot_ops_changed();
         }
         Ok(())
@@ -631,6 +639,76 @@ impl PluginHost {
     pub fn apply_tab_bar_slots(&self, registry: &mut TabBarRegistry) {
         crate::plugin::host::region_mount::REGION_MOUNT_REGISTRY
             .apply_tab_bar_slots(self, registry);
+    }
+
+    pub fn apply_repo_chrome_slots(
+        &self,
+        registry: &mut crate::widgets::chrome::repo_region::RepoChromeRegistry,
+    ) {
+        use crate::widgets::chrome::repo_region::RepoChromeSlot;
+        let mut plugin_ids: Vec<&String> = self.plugins.keys().collect();
+        plugin_ids.sort();
+        for plugin_id in plugin_ids {
+            let plugin = &self.plugins[plugin_id];
+            let chrome_widgets = plugin.chrome_widgets.borrow();
+            for chrome in chrome_widgets.values() {
+                let cache = Rc::clone(&chrome.cache);
+                let plugin_id = plugin.id().to_string();
+                let contribution_id = chrome.contribution_id.clone();
+                let plugin_root = plugin.root.clone();
+                let pane = chrome.pane;
+                let priority = chrome.priority;
+                let handle = crate::plugin::ui::chrome::ChromeRegistration::handle(
+                    pane.point_id(),
+                    &contribution_id,
+                );
+                let slot = RepoChromeSlot {
+                    plugin_id: plugin_id.clone(),
+                    id: contribution_id.clone(),
+                    priority,
+                    builder: Box::new(move |_ctx| {
+                        let guard = cache.borrow();
+                        let ast = guard.as_ref()?;
+                        let empty_splits: HashMap<String, Vec<f32>> = HashMap::new();
+                        let bc = crate::plugin::bridge::widget_tree::BuildCtx {
+                            plugin_id: &plugin_id,
+                            scope: crate::plugin::bridge::widget_tree::DispatchScope::Slot {
+                                region: "repository",
+                                container: pane.as_str(),
+                                slot_id: &handle,
+                            },
+                            plugin_root: plugin_root.as_path(),
+                            split_states: &empty_splits,
+                            active_drag: None,
+                        };
+                        Some(crate::plugin::bridge::widget_tree::build(ast, &bc))
+                    }),
+                };
+                registry.insert(pane, slot);
+            }
+        }
+    }
+
+    pub fn chrome_contributions(&self) -> Vec<(String, String, String, i32)> {
+        let mut rows = Vec::new();
+        for plugin in self.plugins.values() {
+            let chrome_widgets = plugin.chrome_widgets.borrow();
+            for chrome in chrome_widgets.values() {
+                rows.push((
+                    plugin.id().to_string(),
+                    chrome.pane.point_id().to_string(),
+                    chrome.contribution_id.clone(),
+                    chrome.priority,
+                ));
+            }
+        }
+        rows.sort_by(|a, b| {
+            a.3.cmp(&b.3)
+                .then(a.0.cmp(&b.0))
+                .then(a.1.cmp(&b.1))
+                .then(a.2.cmp(&b.2))
+        });
+        rows
     }
 
     pub fn extension_context_menu_items(
@@ -778,12 +856,14 @@ impl PluginHost {
 
     fn graph_row_context(&self, plugin: &LoadedPlugin, commit_hash: &str) -> serde_json::Value {
         let repository = self.repository_context_snapshot();
-        let mut ctx = crate::plugin::ui::context::context_for_surface(
+        let mut ctx = crate::plugin::ui::context::context_for_surface_with_selection(
             plugin.id(),
             plugin.generation.generation_id,
             crate::plugin::ui::context::UiContextSurface::RepositoryGraphRow,
             repository.as_ref(),
+            Some(&self.last_selection_snapshot),
             &self.last_tab_snapshot,
+            Some(&self.last_focus_snapshot),
         );
         ctx["payload"] = serde_json::json!({ "graph_row": { "commit_hash": commit_hash } });
         ctx
@@ -791,12 +871,14 @@ impl PluginHost {
 
     fn diff_line_context(&self, plugin: &LoadedPlugin, file: &str, line: u32) -> serde_json::Value {
         let repository = self.repository_context_snapshot();
-        let mut ctx = crate::plugin::ui::context::context_for_surface(
+        let mut ctx = crate::plugin::ui::context::context_for_surface_with_selection(
             plugin.id(),
             plugin.generation.generation_id,
             crate::plugin::ui::context::UiContextSurface::RepositoryDiffLine,
             repository.as_ref(),
+            Some(&self.last_selection_snapshot),
             &self.last_tab_snapshot,
+            Some(&self.last_focus_snapshot),
         );
         ctx["payload"] = serde_json::json!({ "diff_line": { "file": file, "line": line } });
         ctx

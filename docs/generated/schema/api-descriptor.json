@@ -266,6 +266,11 @@
       "since": "1.0"
     },
     {
+      "doc": "Contribute non-layout chrome layered over a repository panel (e.g. `ui:chrome:repository.graph.chrome`).",
+      "name": "ui:chrome:<point>",
+      "since": "1.0"
+    },
+    {
       "doc": "Draw decorations in the commit graph view.",
       "name": "ui:decoration:graph",
       "since": "1.0"
@@ -314,6 +319,10 @@
         "repository.graph.context_menu",
         "repository.graph.row_badge",
         "repository.diff.line_gutter",
+        "repository.sidebar.chrome",
+        "repository.graph.chrome",
+        "repository.details.chrome",
+        "repository.diff.chrome",
         "overlays",
         "screens",
         "commands",
@@ -779,6 +788,46 @@
       ],
       "payload_type": "table",
       "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when the active focus surface changes.",
+      "is_alias": false,
+      "name": "FocusChanged",
+      "payload_fields": [
+        {
+          "doc": "Previous active focus surface id.",
+          "lua_type": "string",
+          "name": "old_surface",
+          "required": true
+        },
+        {
+          "doc": "New active focus surface id.",
+          "lua_type": "string",
+          "name": "new_surface",
+          "required": true
+        },
+        {
+          "doc": "Previous focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+          "lua_type": "table",
+          "name": "old",
+          "required": false
+        },
+        {
+          "doc": "New focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+          "lua_type": "table",
+          "name": "new",
+          "required": false
+        },
+        {
+          "doc": "Normalized reason for the focus change.",
+          "lua_type": "string",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
     }
   ],
   "experimental_apis": [],
@@ -1018,6 +1067,54 @@
       "ordering_model": "area order, then plugin/id",
       "ownership_rules": "owned by plugin + dock panel id",
       "render_mount_handler": "DockManager"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.sidebar.chrome"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.sidebar.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.graph.chrome"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.graph.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.details.chrome"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.details.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.diff.chrome"
+      ],
+      "context_schema": "RepositoryDiffContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.diff.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
     }
   ],
   "host_api_version": {
@@ -1372,6 +1469,32 @@
         {
           "capabilities": [],
           "compatibility": "v1",
+          "doc": "Set the active keymap leader sequence used to expand `<leader>` bindings.",
+          "name": "set_leader",
+          "params": [
+            {
+              "doc": "Vim-style key sequence used as leader, e.g. `<Space>` or `,`.",
+              "lua_type": "string",
+              "name": "leader",
+              "required": true
+            }
+          ],
+          "path": "leviathan.keymap.set_leader",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "leader must parse as a vim-style key sequence when `<leader>` bindings are installed"
+            ],
+            "notes": [
+              "The leader is host-global for the active keymap registry."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [],
+          "compatibility": "v1",
           "doc": "Bind a key chord to a registered command in a context.",
           "name": "set",
           "params": [
@@ -1663,11 +1786,48 @@
               "spec.widget must be a LeviathanWidget table",
               "spec.dismissible must be boolean",
               "spec.priority must be a number",
-              "spec.key_events must be an array of supported named keys when present"
+              "spec.key_events must be an array of supported keys when present"
             ],
             "notes": [
               "Host owns Esc / click-outside dismissal.",
               "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.",
+          "name": "dialog",
+          "params": [
+            {
+              "doc": "Dialog descriptor (id, text, optional dropdown, buttons).",
+              "lua_type": "LeviathanDialogSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.text must be a string",
+              "spec.buttons must contain one or more button specs",
+              "button.style must be red, green, blue, or white",
+              "button.text must be a string",
+              "button.on_click or button.action must be a function",
+              "button.keys must be an array of supported keys when present"
+            ],
+            "notes": [
+              "Button clicks call the matching button function.",
+              "Configured keys call the same button function as a click.",
+              "Escape is routed as key `esc` when a button declares it; otherwise a dismissible dialog closes.",
+              "The dialog is rendered in the main toolbar band, matching native confirmation overlays."
             ],
             "returns": []
           }
@@ -6945,7 +7105,7 @@
           "required": false
         },
         {
-          "doc": "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+          "doc": "Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.",
           "lua_type": "string[]",
           "name": "key_events",
           "required": false
@@ -7015,6 +7175,128 @@
       ],
       "methods": [],
       "name": "LeviathanOverlayKeyEvent",
+      "since": "1.0"
+    },
+    {
+      "doc": "Top-bar plugin overlay dialog.",
+      "fields": [
+        {
+          "doc": "Dialog id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Dialog body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Optional dialog title for hosts that display one.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "Higher priority renders above lower priority overlays.",
+          "lua_type": "integer",
+          "name": "priority",
+          "required": false
+        },
+        {
+          "doc": "When true, Escape can dismiss the dialog.",
+          "lua_type": "boolean",
+          "name": "dismissible",
+          "required": false
+        },
+        {
+          "doc": "Optional dropdown content.",
+          "lua_type": "LeviathanDialogDropdown",
+          "name": "dropdown",
+          "required": false
+        },
+        {
+          "doc": "Dialog buttons.",
+          "lua_type": "LeviathanDialogButton[]",
+          "name": "buttons",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Optional dialog dropdown content.",
+      "fields": [
+        {
+          "doc": "Dropdown options.",
+          "lua_type": "LeviathanDialogDropdownOption[]",
+          "name": "options",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogDropdown",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog dropdown option.",
+      "fields": [
+        {
+          "doc": "Plugin-owned SVG path.",
+          "lua_type": "string",
+          "name": "icon",
+          "required": false
+        },
+        {
+          "doc": "Option label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogDropdownOption",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog button.",
+      "fields": [
+        {
+          "doc": "Button id passed to its callback.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Button color style.",
+          "lua_type": "\"red\"|\"green\"|\"blue\"|\"white\"",
+          "name": "style",
+          "required": true
+        },
+        {
+          "doc": "Button label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Callback invoked by clicking the button or pressing one of its keys.",
+          "lua_type": "fun(id: string)",
+          "name": "on_click",
+          "required": true
+        },
+        {
+          "doc": "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
+          "lua_type": "string[]",
+          "name": "keys",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogButton",
       "since": "1.0"
     },
     {
@@ -8706,28 +8988,76 @@
       "doc": "Focus summary in a UI context.",
       "fields": [
         {
-          "doc": "Focused surface.",
+          "doc": "Active focus surface id (e.g. `repository.graph`).",
           "lua_type": "string",
           "name": "surface",
           "required": true
         },
         {
-          "doc": "Focused region.",
+          "doc": "Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Focused region when applicable.",
           "lua_type": "string",
           "name": "region",
           "required": false
         },
         {
-          "doc": "Focused pane.",
+          "doc": "Focused pane when applicable.",
           "lua_type": "string",
           "name": "pane",
           "required": false
         },
         {
-          "doc": "Focused section.",
+          "doc": "Focused section when applicable.",
           "lua_type": "string",
           "name": "section",
           "required": false
+        },
+        {
+          "doc": "Focused plugin id when focus is on a plugin screen or overlay.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": false
+        },
+        {
+          "doc": "Focused plugin screen id when focus is on a plugin screen.",
+          "lua_type": "string",
+          "name": "screen_id",
+          "required": false
+        },
+        {
+          "doc": "Focused overlay id when focus is on an overlay.",
+          "lua_type": "string",
+          "name": "overlay_id",
+          "required": false
+        },
+        {
+          "doc": "Last focus-change reason as a snake_case string.",
+          "lua_type": "string",
+          "name": "reason",
+          "required": false
+        },
+        {
+          "doc": "True when the active focus surface equals the rendered context surface.",
+          "lua_type": "boolean",
+          "name": "matches_surface",
+          "required": true
+        },
+        {
+          "doc": "True when the active focus shares a region with the rendered context.",
+          "lua_type": "boolean",
+          "name": "matches_region",
+          "required": true
+        },
+        {
+          "doc": "True when the active focus shares a pane with the rendered context.",
+          "lua_type": "boolean",
+          "name": "matches_pane",
+          "required": true
         }
       ],
       "methods": [],
@@ -9649,6 +9979,18 @@
           "doc": "Fixed pixels, fill, or shrink.",
           "lua_type": "number|string",
           "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Stable scrollable id, scoped to the plugin surface.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Absolute vertical scroll offset in pixels.",
+          "lua_type": "number",
+          "name": "scroll_y",
           "required": false
         }
       ],

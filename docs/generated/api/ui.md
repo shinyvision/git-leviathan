@@ -98,6 +98,18 @@ Register an overlay widget the host renders above the active screen.
 **Parameters:**
 - `spec` (`LeviathanOverlaySpec`; required) - Overlay descriptor (id, widget, dismissible, priority, key_events).
 
+### `leviathan.ui.dialog(spec)`
+
+Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `spec` (`LeviathanDialogSpec`; required) - Dialog descriptor (id, text, optional dropdown, buttons).
+
 ### `leviathan.ui.remove_overlay(id)`
 
 Remove an overlay owned by the calling plugin.

@@ -2,12 +2,14 @@ use super::*;
 
 impl PluginHost {
     pub fn current_ui_context_snapshot(&self) -> serde_json::Value {
-        crate::plugin::ui::context::context_for_surface(
+        crate::plugin::ui::context::context_for_surface_with_selection(
             crate::plugin::commands::HOST_COMMAND_PLUGIN_ID,
             GenerationId::new(0),
             crate::plugin::ui::context::UiContextSurface::Screen,
             self.repository_context_snapshot().as_ref(),
+            Some(&self.last_selection_snapshot),
             &self.last_tab_snapshot,
+            Some(&self.last_focus_snapshot),
         )
     }
 
@@ -1530,6 +1532,7 @@ impl PluginHost {
         plugin_id: &str,
         causes: &[UiInvalidationCause],
     ) {
+        self.refresh_chrome_widgets_for_plugin_caused(plugin_id, causes);
         let Some(plugin) = self.plugins.get(plugin_id) else {
             return;
         };
@@ -1594,12 +1597,14 @@ impl PluginHost {
                     continue;
                 }
             };
-            let ctx = crate::plugin::ui::context::context_for_slot(
+            let ctx = crate::plugin::ui::context::context_for_slot_with_selection(
                 plugin_id,
                 generation_id,
                 address,
                 repository.as_ref(),
+                Some(&self.last_selection_snapshot),
                 &self.last_tab_snapshot,
+                Some(&self.last_focus_snapshot),
             );
             plugin.ui_context.set(ctx.clone());
             let started = std::time::Instant::now();
@@ -1678,6 +1683,171 @@ impl PluginHost {
                 }
             }
         }
+    }
+
+    pub(super) fn refresh_chrome_widgets_for_plugin_caused(
+        &self,
+        plugin_id: &str,
+        causes: &[UiInvalidationCause],
+    ) {
+        let Some(plugin) = self.plugins.get(plugin_id) else {
+            return;
+        };
+        let generation_id = plugin.generation.generation_id;
+        let chunk_name = format!("plugins/{plugin_id}/init.lua");
+        let repository = self.repository_context_snapshot();
+        let chrome_widgets = Rc::clone(&plugin.chrome_widgets);
+        let chrome_widgets = chrome_widgets.borrow();
+        for (handle, chrome) in chrome_widgets.iter() {
+            if !crate::plugin::ui::invalidation::dependencies_match(&chrome.dependencies, causes) {
+                continue;
+            }
+            let cause_labels = crate::plugin::ui::invalidation::cause_labels(causes);
+            let pid = PluginId::from(plugin_id);
+            let cb_id = format!("chrome:{handle}");
+            let func: Function = match plugin.lua().registry_value(&chrome.key) {
+                Ok(f) => f,
+                Err(e) => {
+                    record_chrome_error(
+                        chrome,
+                        &cause_labels,
+                        format!("handler lookup failed: {e}"),
+                    );
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            pid,
+                            DiagnosticSeverity::Error,
+                            "lua.handler_lookup_failed",
+                            format!("chrome widget fn lookup failed for {handle}: {e}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_source(PluginSourceSpan::ApiFunction {
+                            name: format!("chrome:{handle}"),
+                        }),
+                    );
+                    continue;
+                }
+            };
+            let surface = chrome_pane_surface(chrome.pane);
+            let ctx = crate::plugin::ui::context::context_for_surface_with_selection(
+                plugin_id,
+                generation_id,
+                surface,
+                repository.as_ref(),
+                Some(&self.last_selection_snapshot),
+                &self.last_tab_snapshot,
+                Some(&self.last_focus_snapshot),
+            );
+            plugin.ui_context.set(ctx.clone());
+            let started = std::time::Instant::now();
+            let perf_outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
+                CallbackKind::UiCallback,
+                &pid,
+                generation_id,
+                &cb_id,
+                || {
+                    let arg = plugin.lua().to_value(&ctx)?;
+                    func.call(arg)
+                },
+            );
+            let duration_ms = started.elapsed().as_millis();
+            let lua_val: LuaValue = match perf_outcome {
+                PerfOutcome::Ok(v) => v,
+                PerfOutcome::Skipped => {
+                    let mut telemetry = chrome.telemetry.borrow_mut();
+                    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
+                    telemetry.last_causes = cause_labels.clone();
+                    telemetry.last_status = "skipped".to_string();
+                    telemetry.last_error = Some("callback circuit breaker tripped".to_string());
+                    telemetry.diagnostic_badge = true;
+                    continue;
+                }
+                PerfOutcome::Err(e) => {
+                    record_chrome_error(chrome, &cause_labels, e.to_string());
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            format!("chrome widget fn error for {handle}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                    continue;
+                }
+            };
+            if matches!(lua_val, LuaValue::Nil | LuaValue::Boolean(false)) {
+                *chrome.cache.borrow_mut() = None;
+                let mut telemetry = chrome.telemetry.borrow_mut();
+                telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
+                telemetry.last_duration_ms = duration_ms;
+                telemetry.last_causes = cause_labels;
+                telemetry.last_status = "ok".to_string();
+                telemetry.last_error = None;
+                telemetry.diagnostic_badge = false;
+                continue;
+            }
+            let json: serde_json::Value = match plugin.lua().from_value(lua_val) {
+                Ok(v) => v,
+                Err(e) => {
+                    record_chrome_error(chrome, &cause_labels, e.to_string());
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "widget.invalid_tree",
+                            format!("chrome widget returned non-serialisable value: {e}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_source(PluginSourceSpan::Widget {
+                            path: format!("chrome:{handle}"),
+                        }),
+                    );
+                    continue;
+                }
+            };
+            match widget_ast::decode(&json) {
+                Ok(ast) => {
+                    *chrome.cache.borrow_mut() = Some(ast);
+                    let mut telemetry = chrome.telemetry.borrow_mut();
+                    telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
+                    telemetry.last_duration_ms = duration_ms;
+                    telemetry.last_causes = cause_labels;
+                    telemetry.last_status = "ok".to_string();
+                    telemetry.last_error = None;
+                    telemetry.diagnostic_badge = false;
+                }
+                Err(decode_err) => {
+                    record_chrome_error(chrome, &cause_labels, decode_err.message.clone());
+                    self.diagnostics.record(widget_decode_diagnostic(
+                        plugin_id,
+                        generation_id,
+                        &format!("chrome:{handle}"),
+                        &decode_err,
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn chrome_pane_surface(
+    pane: crate::widgets::chrome::repo_region::ChromePane,
+) -> crate::plugin::ui::context::UiContextSurface {
+    use crate::plugin::ui::context::UiContextSurface;
+    use crate::widgets::chrome::repo_region::ChromePane;
+    match pane {
+        ChromePane::Sidebar => UiContextSurface::RepositorySidebar {
+            section: "chrome".into(),
+        },
+        ChromePane::Graph => UiContextSurface::RepositoryGraph {
+            section: "chrome".into(),
+        },
+        ChromePane::Details => UiContextSurface::RepositoryDetails {
+            section: "chrome".into(),
+        },
+        ChromePane::Diff => UiContextSurface::RepositoryDiff,
     }
 }
 
@@ -1877,6 +2047,23 @@ fn record_dynamic_skip(
     telemetry.last_causes = causes.to_vec();
     telemetry.last_status = "skipped".to_string();
     telemetry.last_error = Some(reason.to_string());
+    telemetry.diagnostic_badge = true;
+}
+
+fn record_chrome_error(
+    chrome: &crate::plugin::ui::chrome::ChromeRegistration,
+    causes: &[String],
+    error: String,
+) {
+    let mut telemetry = chrome.telemetry.borrow_mut();
+    telemetry.last_causes = causes.to_vec();
+    telemetry.last_status = if chrome.cache.borrow().is_some() {
+        telemetry.stale_count = telemetry.stale_count.saturating_add(1);
+        "stale".to_string()
+    } else {
+        "error".to_string()
+    };
+    telemetry.last_error = Some(error);
     telemetry.diagnostic_badge = true;
 }
 

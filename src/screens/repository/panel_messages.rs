@@ -8,6 +8,8 @@ pub enum CenterAction {
     CommitSelected(usize),
     /// Tracked for multi-select clicks (Ctrl/Shift etc.).
     ModifiersChanged(iced::keyboard::Modifiers),
+    NavigateFirst,
+    NavigateLast,
     NavigateUp,
     NavigateDown,
     /// Single click — double-click gate applies.
@@ -167,18 +169,34 @@ pub enum DetailFileListKind {
 
 #[derive(Debug, Clone)]
 pub enum DetailAction {
+    NavigateFileUp,
+    NavigateFileDown,
+    NavigateFileFirst,
+    NavigateFileLast,
+    ExtendFileSelectionUp,
+    ExtendFileSelectionDown,
+    ExtendFileSelectionFirst,
+    ExtendFileSelectionLast,
+    OpenSelectedFile,
     DirtyFileClicked {
+        path: String,
+        is_staged: bool,
+    },
+    DirtyFileOpened {
         path: String,
         is_staged: bool,
     },
     DirtyFileRightClicked(String),
     StageFile(String),
     StageAll,
+    StageSelectedFiles,
     UnstageFile(String),
     UnstageAll,
+    UnstageSelectedFiles,
     MarkConflictResolved(String),
     MarkAllConflictsResolved,
     DiscardAllRequested,
+    DiscardSelectedFilesRequested,
     DiscardFileRequested(String),
     DiscardConfirmed,
     DiscardCanceled,
@@ -264,6 +282,11 @@ pub enum DiffPanelAction {
     DiffShiftWheel {
         delta_lines: f32,
     },
+    /// Keyboard-driven vertical scrolling for the focused diff panel.
+    ScrollUp,
+    ScrollDown,
+    ScrollTop,
+    ScrollBottom,
     NavigateFileUp,
     NavigateFileDown,
     ConflictHunkSideToggled {

@@ -11,6 +11,7 @@
 //! registries are deliberately small — value-typed entries with
 //! deterministic ordering.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -42,7 +43,7 @@ impl OverlayRecord {
     }
 }
 
-pub fn normalize_overlay_key_event(raw: &str) -> Option<&'static str> {
+pub fn normalize_overlay_key_event(raw: &str) -> Option<Cow<'static, str>> {
     let compact: String = raw
         .trim()
         .chars()
@@ -50,7 +51,11 @@ pub fn normalize_overlay_key_event(raw: &str) -> Option<&'static str> {
         .flat_map(char::to_lowercase)
         .collect();
 
-    Some(match compact.as_str() {
+    if compact.chars().count() == 1 && compact.chars().all(|c| !c.is_control()) {
+        return Some(Cow::Owned(compact));
+    }
+
+    Some(Cow::Borrowed(match compact.as_str() {
         "enter" | "return" => "enter",
         "esc" | "escape" => "esc",
         "tab" => "tab",
@@ -90,7 +95,7 @@ pub fn normalize_overlay_key_event(raw: &str) -> Option<&'static str> {
         "f23" => "f23",
         "f24" => "f24",
         _ => return None,
-    })
+    }))
 }
 
 /// Lua callbacks owned by plugin overlays. Shared between the Lua API
@@ -768,10 +773,17 @@ mod tests {
 
     #[test]
     fn overlay_key_names_normalize_common_named_aliases() {
-        assert_eq!(normalize_overlay_key_event("Tab"), Some("tab"));
-        assert_eq!(normalize_overlay_key_event("ArrowUp"), Some("up"));
-        assert_eq!(normalize_overlay_key_event("page-down"), Some("pagedown"));
-        assert_eq!(normalize_overlay_key_event("F12"), Some("f12"));
+        assert_eq!(normalize_overlay_key_event("Tab").as_deref(), Some("tab"));
+        assert_eq!(
+            normalize_overlay_key_event("ArrowUp").as_deref(),
+            Some("up")
+        );
+        assert_eq!(
+            normalize_overlay_key_event("page-down").as_deref(),
+            Some("pagedown")
+        );
+        assert_eq!(normalize_overlay_key_event("F12").as_deref(), Some("f12"));
+        assert_eq!(normalize_overlay_key_event("j").as_deref(), Some("j"));
         assert_eq!(normalize_overlay_key_event("nope"), None);
     }
 
