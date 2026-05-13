@@ -55,7 +55,7 @@ Log a message via the host.
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `message` (`string`; required) - Message to log to host stderr.
+- `message` (`string`; required) - Message to log to host stdout when the manifest has debug = true.
 
 ### `leviathan.schedule(callback)`
 

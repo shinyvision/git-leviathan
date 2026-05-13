@@ -264,22 +264,6 @@ impl std::error::Error for StagingFailure {}
 pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, StagingFailure> {
     let started_at = Instant::now();
 
-    inputs.diagnostics.record(
-        PluginDiagnostic::new(
-            inputs.plugin_id.clone(),
-            DiagnosticSeverity::Info,
-            "reload.staging_started",
-            format!(
-                "staging generation {} (previous {})",
-                inputs.generation_id, inputs.previous_generation_id
-            ),
-        )
-        .with_generation(inputs.generation_id)
-        .with_context(serde_json::json!({
-            "previous_generation_id": inputs.previous_generation_id.get(),
-        })),
-    );
-
     let manifest_path = inputs.plugin_dir.join("plugin.toml");
     let manifest_str = std::fs::read_to_string(&manifest_path).map_err(|e| {
         StagingFailure::new(
@@ -305,6 +289,24 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             ),
         ));
     }
+    inputs
+        .diagnostics
+        .set_plugin_debug(&manifest.id, manifest.debug);
+    inputs.diagnostics.record(
+        PluginDiagnostic::new(
+            inputs.plugin_id.clone(),
+            DiagnosticSeverity::Info,
+            "reload.staging_started",
+            format!(
+                "staging generation {} (previous {})",
+                inputs.generation_id, inputs.previous_generation_id
+            ),
+        )
+        .with_generation(inputs.generation_id)
+        .with_context(serde_json::json!({
+            "previous_generation_id": inputs.previous_generation_id.get(),
+        })),
+    );
     if let Some(msg) =
         git_leviathan_plugin_api::api_version::plugin_api_compatibility_error(manifest.api_version)
     {

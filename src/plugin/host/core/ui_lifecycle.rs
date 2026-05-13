@@ -596,6 +596,7 @@ impl PluginHost {
             self.lazy_registry
                 .entries_mut()
                 .retain(|e| e.plugin_id != plugin_id);
+            self.diagnostics.clear_plugin_debug(plugin_id);
             return Ok(());
         }
         let mut plugin = self.plugins.remove(plugin_id).ok_or_else(|| {
@@ -674,6 +675,7 @@ impl PluginHost {
         }
         self.last_reload_errors.remove(plugin_id);
         self.runtime_path_registry.unregister(plugin_id);
+        self.diagnostics.clear_plugin_debug(plugin_id);
         drop(plugin);
         Ok(())
     }

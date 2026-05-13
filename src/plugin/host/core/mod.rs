@@ -177,6 +177,7 @@ impl Default for PluginHost {
 
 impl PluginHost {
     pub fn new() -> Self {
+        let diagnostics = DiagnosticStore::default();
         let mut host = Self {
             plugins: HashMap::new(),
             slot_ops: Vec::new(),
@@ -193,7 +194,7 @@ impl PluginHost {
             last_reload_errors: HashMap::new(),
             service_registry: Rc::new(RefCell::new(ServiceRegistry::new())),
             next_generation_ids: HashMap::new(),
-            diagnostics: DiagnosticStore::default(),
+            diagnostics: diagnostics.clone(),
             runtime_path_registry: RuntimePathRegistry::new(),
             reload_history: HashMap::new(),
             command_registry: Rc::new(RefCell::new(CommandRegistry::new())),
@@ -232,7 +233,7 @@ impl PluginHost {
             dock_manager: DockManager::new(),
             contribution_overrides:
                 crate::plugin::ui::contribution_overrides::ContributionOverrides::new(),
-            budget_tracker: BudgetTracker::new(DiagnosticStore::default()),
+            budget_tracker: BudgetTracker::new(diagnostics),
             disabled_plugins: std::collections::HashSet::new(),
             last_plugin_roots: HashMap::new(),
             devtools_action_queue: Rc::new(RefCell::new(Vec::new())),

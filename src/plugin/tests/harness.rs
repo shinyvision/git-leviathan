@@ -29,7 +29,7 @@ impl MockHost {
         // Tests don't want diagnostics on stderr — they want to assert
         // against the in-memory store. The `NullSink` keeps the
         // emission path identical to production while suppressing
-        // stderr noise for `cargo test` output.
+        // terminal noise for `cargo test` output.
         let mut host = PluginHost::new();
         host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
         host.set_plugin_storage_base(tmp.path().join("plugin-storage"));

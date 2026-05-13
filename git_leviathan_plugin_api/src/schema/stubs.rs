@@ -309,6 +309,11 @@ pub fn emit_manifest_schema_json() -> String {
                 "enum": ["1.0"],
                 "description": "Stable plugin API version supported by this host."
             },
+            "debug": {
+                "type": "boolean",
+                "default": false,
+                "description": "When true, forward this plugin's diagnostics and leviathan.log messages to stdout. Diagnostics are retained in devtools either way."
+            },
             "description": { "type": "string" },
             "capabilities": {
                 "type": "array",

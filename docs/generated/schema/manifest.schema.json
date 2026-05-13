@@ -166,6 +166,11 @@
     "description": {
       "type": "string"
     },
+    "debug": {
+      "default": false,
+      "description": "When true, forward this plugin's diagnostics and leviathan.log messages to stdout. Diagnostics are retained in devtools either way.",
+      "type": "boolean"
+    },
     "id": {
       "type": "string"
     },

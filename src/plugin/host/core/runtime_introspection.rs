@@ -643,6 +643,7 @@ impl PluginHost {
                 name: m.name.clone(),
                 version: m.version.to_string(),
                 api_version: format!("{}.{}", m.api_version.major, m.api_version.minor),
+                debug: m.debug,
                 last_reload_error: self.last_reload_errors.get(id).cloned(),
                 provides_services: m
                     .provides_services

@@ -10,6 +10,12 @@ pub struct PluginManifest {
     pub name: String,
     pub version: Version,
     pub api_version: ApiVersion,
+    /// Opt in to forwarding this plugin's diagnostics and explicit
+    /// `leviathan.log` messages to the host process' stdout. Diagnostics are
+    /// always retained in the host diagnostic store; this only controls noisy
+    /// terminal output for development.
+    #[serde(default)]
+    pub debug: bool,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -247,6 +253,7 @@ mod tests {
         let m: PluginManifest = toml::from_str(toml).unwrap();
         assert_eq!(m.id, "demo");
         assert!(m.capabilities.is_empty());
+        assert!(!m.debug);
     }
 
     #[test]
@@ -256,6 +263,7 @@ mod tests {
             name = "Git Tools"
             version = "1.2.0"
             api_version = "1.0"
+            debug = true
             capabilities = ["fs:read", "fs:write:state", "process:spawn", "net:fetch"]
             provides_services = ["diff_viewer@1"]
             consumes_services = ["repository@1"]
@@ -276,6 +284,7 @@ mod tests {
             m.requires_plugins,
             vec!["repository_info".to_string(), "common_utils".to_string()]
         );
+        assert!(m.debug);
         assert!(!m.runtime.strict_globals);
     }
 

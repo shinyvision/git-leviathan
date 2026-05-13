@@ -1211,7 +1211,7 @@
           "name": "log",
           "params": [
             {
-              "doc": "Message to log to host stderr.",
+              "doc": "Message to log to host stdout when the manifest has debug = true.",
               "lua_type": "string",
               "name": "message",
               "required": true

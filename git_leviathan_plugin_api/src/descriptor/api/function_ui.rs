@@ -32,7 +32,7 @@ pub(super) const ROOT_FUNCTIONS: &[ApiFunction] = &[
             name: "message",
             lua_type: "string",
             required: true,
-            doc: "Message to log to host stderr.",
+            doc: "Message to log to host stdout when the manifest has debug = true.",
         }],
         returns: &[],
         capabilities: &["ui:screen"],

@@ -55,6 +55,8 @@ impl PluginHost {
                 return Err(PluginLoadError::Toml(e));
             }
         };
+        self.diagnostics
+            .set_plugin_debug(&manifest.id, manifest.debug);
         // Short-circuit when the plugin is on the
         // disabled-plugins list. The diagnostic carries enough
         // context to debug a "why isn't my plugin loading" question

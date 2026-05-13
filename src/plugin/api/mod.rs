@@ -378,18 +378,21 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         git_ctx,
         pending_git_events,
         Rc::clone(&guard),
-        plugin_id,
+        plugin_id.clone(),
         generation_id,
     )?;
 
     // `leviathan.log` is plugin-callable; the host treats it as a
     // request to surface a developer-facing message and forwards it
-    // verbatim to stderr. Plugins MUST NOT use this to fabricate host
+    // verbatim to stdout only when this plugin's manifest enables
+    // `debug = true`. Plugins MUST NOT use this to fabricate host
     // diagnostics — diagnostic emission stays host-owned.
+    let log_plugin_id = plugin_id.to_string();
+    let log_diagnostics = diagnostics.clone();
     leviathan.set(
         "log",
-        lua.create_function(|_, msg: String| {
-            eprintln!("git_leviathan plugin: {msg}");
+        lua.create_function(move |_, msg: String| {
+            log_diagnostics.emit_plugin_log(&log_plugin_id, &msg);
             Ok(())
         })?,
     )?;
