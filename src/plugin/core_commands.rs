@@ -335,12 +335,37 @@ fn specs() -> Vec<CoreCommandSpec> {
         spec(
             "commit.reword",
             "Commit: Reword",
-            "Start rewording a commit.",
+            "Start rewording the selected commit.",
             "repository",
         )
         .cap("git:write:commit")
         .cap("git:write:rebase")
         .action(|_| Ok(repository(RepositoryMessage::StartRewordSelected))),
+        spec(
+            "commit.reword.focus_message",
+            "Commit: Focus Reword Message",
+            "Focus the active reword message editor.",
+            "repository.details",
+        )
+        .cap("command:invoke:commit.reword.focus_message")
+        .action(|_| Ok(repository(RepositoryMessage::FocusRewordMessage))),
+        spec(
+            "commit.reword.confirm",
+            "Commit: Confirm Reword",
+            "Confirm the active commit reword.",
+            "repository.details",
+        )
+        .cap("git:write:commit")
+        .cap("git:write:rebase")
+        .action(|_| detail(DetailAction::RewordConfirmed)),
+        spec(
+            "commit.reword.cancel",
+            "Commit: Cancel Reword",
+            "Cancel the active commit reword.",
+            "repository.details",
+        )
+        .cap("command:invoke:commit.reword.cancel")
+        .action(|_| detail(DetailAction::RewordCanceled)),
         spec(
             "repository.open_search",
             "Repository: Open Search",
@@ -952,6 +977,28 @@ mod tests {
         matches!(message, RepositoryMessage::FocusCommitMessage)
     }
 
+    fn is_focus_reword_message(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::FocusRewordMessage)
+    }
+
+    fn is_start_reword_selected(message: &RepositoryMessage) -> bool {
+        matches!(message, RepositoryMessage::StartRewordSelected)
+    }
+
+    fn is_reword_confirmed(message: &RepositoryMessage) -> bool {
+        matches!(
+            message,
+            RepositoryMessage::Detail(DetailAction::RewordConfirmed)
+        )
+    }
+
+    fn is_reword_canceled(message: &RepositoryMessage) -> bool {
+        matches!(
+            message,
+            RepositoryMessage::Detail(DetailAction::RewordCanceled)
+        )
+    }
+
     #[test]
     fn selected_file_commands_queue_native_repository_messages() {
         for (command, matches_expected) in [
@@ -1151,6 +1198,37 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.contains("missing required arg"), "{err}");
         assert!(queued.is_empty());
+    }
+
+    #[test]
+    fn reword_commands_queue_native_repository_messages() {
+        for (command, matches_expected) in [
+            (
+                "commit.reword",
+                is_start_reword_selected as fn(&RepositoryMessage) -> bool,
+            ),
+            (
+                "commit.reword.focus_message",
+                is_focus_reword_message as fn(&RepositoryMessage) -> bool,
+            ),
+            ("commit.reword.confirm", is_reword_confirmed),
+            ("commit.reword.cancel", is_reword_canceled),
+        ] {
+            let actions = CoreCommandActions::new();
+            let mut registry = CommandRegistry::new();
+            register(&mut registry, actions.clone(), &store());
+            let desc = &registry.find(command).unwrap().descriptor;
+            match &desc.run {
+                CommandBody::Host(run) => run(&Value::Null).unwrap(),
+                _ => panic!("expected host command"),
+            }
+
+            let queued = actions.drain();
+            assert!(matches!(
+                queued.as_slice(),
+                [CoreCommandAction::Repository(message)] if matches_expected(message.as_ref())
+            ));
+        }
     }
 
     #[test]

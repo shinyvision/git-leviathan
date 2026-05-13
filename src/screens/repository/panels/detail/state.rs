@@ -72,6 +72,7 @@ pub(in crate::screens::repository) struct DetailPanel {
 struct RewordEditState {
     hash: String,
     content: text_editor::Content,
+    needs_focus: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -608,6 +609,7 @@ impl DetailPanel {
         self.reword_state = Some(RewordEditState {
             hash,
             content: text_editor::Content::with_text(&original_message),
+            needs_focus: true,
         });
     }
 
@@ -628,6 +630,27 @@ impl DetailPanel {
     pub(in crate::screens::repository) fn reword_active(&self) -> Option<(&str, String)> {
         let s = self.reword_state.as_ref()?;
         Some((&s.hash, dirty_commit_message_text(&s.content)))
+    }
+
+    pub(in crate::screens::repository) fn request_reword_focus(&mut self) {
+        if let Some(s) = self.reword_state.as_mut() {
+            s.needs_focus = true;
+        }
+    }
+
+    pub(in crate::screens::repository) fn take_reword_needs_focus(&mut self) -> bool {
+        let Some(s) = self.reword_state.as_mut() else {
+            return false;
+        };
+        let needs_focus = s.needs_focus;
+        s.needs_focus = false;
+        needs_focus
+    }
+
+    pub(in crate::screens::repository) fn reword_needs_focus(&self) -> bool {
+        self.reword_state
+            .as_ref()
+            .is_some_and(|state| state.needs_focus)
     }
 
     pub(in crate::screens::repository) fn perform_reword_action(
@@ -1563,6 +1586,10 @@ pub(in crate::screens::repository) fn detail_file_list_scroll_id() -> iced::widg
 
 pub(in crate::screens::repository) fn dirty_commit_message_editor_id() -> iced::widget::Id {
     iced::widget::Id::new("dirty-commit-message-editor")
+}
+
+pub(in crate::screens::repository) fn reword_commit_message_editor_id() -> iced::widget::Id {
+    iced::widget::Id::new("reword-commit-message-editor")
 }
 
 pub(in crate::screens::repository) fn dirty_commit_message_text(

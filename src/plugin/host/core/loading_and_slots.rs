@@ -870,7 +870,11 @@ impl PluginHost {
             &self.last_tab_snapshot,
             Some(&self.last_focus_snapshot),
         );
-        ctx["payload"] = serde_json::json!({ "graph_row": { "commit_hash": commit_hash } });
+        ctx["payload"] = serde_json::json!({
+            "graph_row": {
+                "commit": crate::plugin::commit_data::CommitData::from_hash(commit_hash),
+            },
+        });
         ctx
     }
 

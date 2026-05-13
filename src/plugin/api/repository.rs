@@ -37,19 +37,20 @@
 //! Mutations made by a plugin to the table are not propagated back — the
 //! table is rebuilt on every sync.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-use mlua::{Lua, Table, Value as LuaValue};
+use mlua::{Lua, LuaSerdeExt, Table, Value as LuaValue};
 use serde_json;
 
 use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::commit_data::{CommitActionAvailability, CommitData};
 use crate::plugin::diagnostic::{
     DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
 };
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId};
-use crate::services::{RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
+use crate::services::{CommitSnapshot, RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
 
 /// Build the full `leviathan.repository` table from the latest refs.
 ///
@@ -185,6 +186,56 @@ fn resolve_upstream(
     remote_lookup
         .get(&(remote_name.to_string(), branch_name.to_string()))
         .cloned()
+}
+
+fn rewordable_commit_hashes(
+    head_hash: Option<&str>,
+    commits: &[CommitSnapshot],
+) -> HashSet<String> {
+    let lookup: HashMap<&str, &CommitSnapshot> = commits
+        .iter()
+        .map(|commit| (commit.hash.as_str(), commit))
+        .collect();
+    let mut result = HashSet::new();
+    let Some(mut hash) = head_hash else {
+        return result;
+    };
+
+    while result.insert(hash.to_string()) {
+        let Some(commit) = lookup.get(hash) else {
+            break;
+        };
+        let Some(parent) = commit.parent_hashes.first() else {
+            break;
+        };
+        hash = parent;
+    }
+    result
+}
+
+fn commit_hash_arg(opts: &Table, missing: &str) -> Result<String, String> {
+    match opts.get::<LuaValue>("commit").map_err(|e| e.to_string())? {
+        LuaValue::Nil => Err(missing.to_string()),
+        LuaValue::String(value) => {
+            let hash = value.to_str().map_err(|e| e.to_string())?.to_string();
+            if hash.is_empty() {
+                Err(missing.to_string())
+            } else {
+                Ok(hash)
+            }
+        }
+        LuaValue::Table(table) => {
+            let hash: String = table
+                .get("hash")
+                .map_err(|_| "commit.hash must be a non-empty string".to_string())?;
+            if hash.is_empty() {
+                Err("commit.hash must be a non-empty string".to_string())
+            } else {
+                Ok(hash)
+            }
+        }
+        _ => Err("commit must be a LeviathanCommit table".to_string()),
+    }
 }
 
 /// typed read APIs.
@@ -355,24 +406,25 @@ pub fn install_read_functions(
                     None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
                     Some(gw) => match gw.load_repo(limit.min(COMMIT_LOAD_LIMIT)) {
                         Ok(snap) => {
-                            let arr = lua_inner.create_table()?;
-                            for (i, c) in snap.commits.iter().take(limit).enumerate() {
-                                let row = lua_inner.create_table()?;
-                                row.set("hash", c.hash.as_str())?;
-                                row.set(
-                                    "summary",
-                                    c.message.lines().next().unwrap_or("").to_string(),
-                                )?;
-                                row.set("author", c.author_name.as_str())?;
-                                row.set("timestamp", c.authored_at)?;
-                                let parents = lua_inner.create_table()?;
-                                for (j, ph) in c.parent_hashes.iter().enumerate() {
-                                    parents.set(j + 1, ph.as_str())?;
-                                }
-                                row.set("parents", parents)?;
-                                arr.set(i + 1, row)?;
-                            }
-                            Ok((LuaValue::Table(arr), None::<String>))
+                            let rewordable =
+                                rewordable_commit_hashes(snap.head_hash.as_deref(), &snap.commits);
+                            let commits: Vec<_> = snap
+                                .commits
+                                .iter()
+                                .take(limit)
+                                .enumerate()
+                                .map(|(index, commit)| {
+                                    let reword = if rewordable.contains(&commit.hash) {
+                                        CommitActionAvailability::enabled()
+                                    } else {
+                                        CommitActionAvailability::disabled(
+                                            "commit_not_on_first_parent_chain",
+                                        )
+                                    };
+                                    CommitData::from_snapshot(commit, Some(index), reword)
+                                })
+                                .collect();
+                            Ok((lua_inner.to_value(&commits)?, None::<String>))
                         }
                         Err(e) => {
                             record_read_failed(
@@ -402,14 +454,9 @@ pub fn install_read_functions(
                 if let Err(reason) = g.check_named("git:read:diff") {
                     return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
                 }
-                let commit: String = match opts.get::<Option<String>>("commit") {
-                    Ok(Some(s)) if !s.is_empty() => s,
-                    _ => {
-                        return Ok((
-                            LuaValue::Nil,
-                            Some("missing required arg `commit`".to_string()),
-                        ))
-                    }
+                let commit = match commit_hash_arg(&opts, "missing required arg `commit`") {
+                    Ok(hash) => hash,
+                    Err(err) => return Ok((LuaValue::Nil, Some(err))),
                 };
                 match ctx.gateway.get() {
                     None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
@@ -423,7 +470,10 @@ pub fn install_read_functions(
                                 arr.set(i + 1, row)?;
                             }
                             let wrap = lua_inner.create_table()?;
-                            wrap.set("commit", diff.hash.as_str())?;
+                            wrap.set(
+                                "commit",
+                                lua_inner.to_value(&CommitData::from_hash(&diff.hash))?,
+                            )?;
                             wrap.set("modified_count", diff.modified_count)?;
                             wrap.set("added_count", diff.added_count)?;
                             wrap.set("deleted_count", diff.deleted_count)?;
@@ -452,9 +502,9 @@ pub fn install_read_functions(
                 if let Err(reason) = g.check_named("git:read:show") {
                     return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
                 }
-                let commit: String = match opts.get::<Option<String>>("commit") {
-                    Ok(Some(s)) if !s.is_empty() => s,
-                    _ => return Ok((LuaValue::Nil, Some("missing arg `commit`".to_string()))),
+                let commit = match commit_hash_arg(&opts, "missing arg `commit`") {
+                    Ok(hash) => hash,
+                    Err(err) => return Ok((LuaValue::Nil, Some(err))),
                 };
                 let path: String = match opts.get::<Option<String>>("path") {
                     Ok(Some(s)) if !s.is_empty() => s,
@@ -465,7 +515,10 @@ pub fn install_read_functions(
                     Some(gw) => match gw.load_commit_file_diff(&commit, &path) {
                         Ok(d) => {
                             let t = lua_inner.create_table()?;
-                            t.set("commit", commit.as_str())?;
+                            t.set(
+                                "commit",
+                                lua_inner.to_value(&CommitData::from_hash(&commit))?,
+                            )?;
                             t.set("path", path.as_str())?;
                             let lines_tbl = lua_inner.create_table()?;
                             for (i, line) in d.lines.iter().enumerate() {

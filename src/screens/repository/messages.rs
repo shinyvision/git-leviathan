@@ -86,6 +86,7 @@ pub enum RepositoryMessage {
     EscapePressed,
     FocusCommitMessage,
     StartRewordSelected,
+    FocusRewordMessage,
     FocusPanel(RepositoryFocusTarget),
     StageSelectedDirtyFile,
     UnstageSelectedDirtyFile,

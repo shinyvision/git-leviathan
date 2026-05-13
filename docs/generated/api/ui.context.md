@@ -307,8 +307,39 @@ Selection summary in a UI context.
 
 - `available` (`boolean`; required) - Whether selection data is available for this surface.
 - `kind` (`string`; required) - Selection kind.
-- `selected_commit_id` (`string|nil`; required) - Selected commit id when available.
+- `commit` (`LeviathanCommit|nil`; required) - Selected commit data when a commit row is selected.
 - `selected_file_path` (`string|nil`; required) - Selected file path when available.
+
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
 
 ### `LeviathanToolbarDialogSummary`
 

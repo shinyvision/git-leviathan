@@ -377,7 +377,7 @@ function LeviathanSlotHandle:replace(spec) end
 ---Static or dynamic graph-row decoration contribution.
 ---@class LeviathanGraphDecorationContribution
 ---@field id string Contribution id.
----@field commit_hash? string Static target commit hash.
+---@field commit? LeviathanCommit Static target commit.
 ---@field decoration? LeviathanGraphDecoration Static graph decoration.
 ---@field provider? fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil Dynamic provider called per graph row.
 
@@ -658,7 +658,7 @@ function LeviathanContributionHandle:remove() end
 ---@class LeviathanSelectionSummary
 ---@field available boolean Whether selection data is available for this surface.
 ---@field kind string Selection kind.
----@field selected_commit_id string|nil Selected commit id when available.
+---@field commit LeviathanCommit|nil Selected commit data when a commit row is selected.
 ---@field selected_file_path string|nil Selected file path when available.
 
 ---Active repository toolbar dialog summary in a UI context.
@@ -770,6 +770,52 @@ function LeviathanContributionHandle:remove() end
 ---@class LeviathanTag
 ---@field name string Tag name.
 ---@field hash string Target hash.
+
+---Commit data exposed to Lua APIs.
+---@class LeviathanCommit
+---@field kind string Commit row kind: commit, dirty, or stash.
+---@field hash string Full commit hash, or empty for an uncommitted dirty row.
+---@field short_hash string Short display hash.
+---@field summary string First line of the commit message.
+---@field message string Full commit message when available.
+---@field author string Commit author display name.
+---@field date string Host-formatted commit date when available.
+---@field timestamp integer|nil Author timestamp in seconds when available.
+---@field parents string[] Full parent hashes in git parent order.
+---@field index integer|nil Zero-based visible commit row index when available.
+---@field is_merge boolean Whether the commit has multiple parents.
+---@field is_merge_in_progress boolean Whether the dirty row represents an in-progress merge.
+---@field actions LeviathanCommitActions Host-computed commit actions.
+
+---Host-computed actions for a commit.
+---@class LeviathanCommitActions
+---@field reword LeviathanActionAvailability Reword availability for this commit in the current tree.
+
+---Availability state for a host action.
+---@class LeviathanActionAvailability
+---@field enabled boolean Whether the action can run.
+---@field reason string|nil Stable disabled reason when available.
+
+---Diff loaded for a commit.
+---@class LeviathanCommitDiff
+---@field commit LeviathanCommit Commit this diff was loaded for.
+---@field modified_count integer Modified file count.
+---@field added_count integer Added file count.
+---@field deleted_count integer Deleted file count.
+---@field files LeviathanCommitDiffFile[] Changed files in the commit diff.
+
+---File row in a commit diff.
+---@class LeviathanCommitDiffFile
+---@field path string Repository-relative file path.
+---@field status string Change status.
+
+---File snapshot loaded at a commit.
+---@class LeviathanCommitFile
+---@field commit LeviathanCommit Commit this file snapshot was loaded for.
+---@field path string Repository-relative file path.
+---@field lines string[] Per-line diff content.
+---@field old_content string Old file content when available.
+---@field new_content string New file content when available.
 
 ---Persistence open options.
 ---@class LeviathanPersistOpenOpts
@@ -1637,9 +1683,9 @@ function leviathan.ui.contribute(point_id, spec) end
 function leviathan.ui.context_menu(region, item) end
 
 ---Attach a decoration to a commit row (badge / icon / marker / lane).
----@param commit_hash string Commit row hash the decoration applies to.
+---@param commit LeviathanCommit Commit row the decoration applies to.
 ---@param decoration LeviathanGraphDecoration Decoration AST: badge / icon / marker / lane.
-function leviathan.ui.graph_decoration(commit_hash, decoration) end
+function leviathan.ui.graph_decoration(commit, decoration) end
 
 ---Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).
 ---@param decoration LeviathanDiffDecoration Decoration AST: line_hint / hunk_badge / line_gutter.
@@ -2042,21 +2088,21 @@ function leviathan.repository.head() end
 ---@return string|nil Error message on failure.
 function leviathan.repository.status() end
 
----Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.
+---Return up to `limit` commits from the active repository as `LeviathanCommit` rows.
 ---@param opts table Options table: { limit = 100, rev = "HEAD" }.
----@return table[]|nil Commit list on success.
+---@return LeviathanCommit[]|nil Commit list on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.commits(opts) end
 
----Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.
----@param opts table Options table: { commit = hash }.
----@return table[]|nil Diff snapshot on success.
+---Return per-file diff for `commit`. The result carries `commit` as `LeviathanCommit`.
+---@param opts table Options table: { commit = LeviathanCommit }.
+---@return LeviathanCommitDiff|nil Diff snapshot on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.diff(opts) end
 
----Return the file at a given commit/path as { lines = string[] } (per-line diff content).
----@param opts table Options table: { commit = hash, path = "src/main.rs" }.
----@return table|nil File-at-commit snapshot on success.
+---Return the file at a given commit/path. The result carries `commit` as `LeviathanCommit`.
+---@param opts table Options table: { commit = LeviathanCommit, path = "src/main.rs" }.
+---@return LeviathanCommitFile|nil File-at-commit snapshot on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.file_at(opts) end
 

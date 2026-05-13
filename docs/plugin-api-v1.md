@@ -87,7 +87,7 @@ No experimental APIs are exposed in plugin API 1.0.
     - `head_hash` (`string`; required) - Resolved HEAD commit hash.
 - `CommitSelected` (table) - Fired after the user selects a commit in the history view.
   - payload:
-    - `hash` (`string`; required) - Selected commit hash.
+    - `commit` (`LeviathanCommit`; required) - Selected commit.
 - `CommitListChanged` (table) - Fired after the visible commit list changes.
   - payload:
     - `count` (`integer`; required) - Number of commits in the new list.

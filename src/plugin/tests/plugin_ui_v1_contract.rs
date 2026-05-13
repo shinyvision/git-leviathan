@@ -314,7 +314,7 @@ fn v1_dynamic_widgets_refresh_only_declared_dependencies() {
     assert_eq!(host.read_global_i64("deps", "widget_refreshes"), Some(1));
     host.host_mut().sync_tab_registry(&tab_snapshot());
     assert_eq!(host.read_global_i64("deps", "widget_refreshes"), Some(1));
-    host.dispatch_test_event("CommitSelected", json!({ "hash": "abc123" }));
+    host.dispatch_test_event("CommitSelected", json!({ "commit": { "hash": "abc123" } }));
     assert_eq!(host.read_global_i64("deps", "widget_refreshes"), Some(2));
 
     let snap = host.introspect();
@@ -435,7 +435,7 @@ fn v1_unload_cleans_slots_and_extension_points() {
         leviathan.ui.context_menu("repository.diff.context_menu", {
             id = "owned_menu", label = "Owned", command = "owned.run", priority = 1,
         })
-        leviathan.ui.graph_decoration("abc123", {
+        leviathan.ui.graph_decoration({ hash = "abc123" }, {
             kind = "marker", shape = "dot", color = "#ffffff",
         })
         leviathan.ui.diff_decoration({
@@ -618,7 +618,7 @@ fn v1_overlay_context_menu_and_decorations_project_to_devtools() {
             id = "stage", label = "Stage", command = "git.stage", priority = 3,
             condition_capability = "git:write",
         })
-        leviathan.ui.graph_decoration("abc123", {
+        leviathan.ui.graph_decoration({ hash = "abc123" }, {
             kind = "badge", text = "WIP", fg = "#ffffff", bg = "#000000",
         })
         leviathan.ui.diff_decoration({

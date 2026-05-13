@@ -50,10 +50,10 @@ const PAYLOAD_HEAD: &[ApiTypeField] = &[ApiTypeField {
 }];
 
 const PAYLOAD_COMMIT: &[ApiTypeField] = &[ApiTypeField {
-    name: "hash",
-    lua_type: "string",
+    name: "commit",
+    lua_type: "LeviathanCommit",
     required: true,
-    doc: "Selected commit hash.",
+    doc: "Selected commit.",
 }];
 
 const PAYLOAD_COMMIT_LIST: &[ApiTypeField] = &[ApiTypeField {

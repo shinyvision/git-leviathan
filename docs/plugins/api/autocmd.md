@@ -39,6 +39,64 @@ Typed event payload table handed to autocmd callbacks.
 - `alias` (`string`; optional) - Alias the listener subscribed under, when different from `event`.
 - `payload` (`table`; required) - Typed payload table for the event.
 
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
+
+### `LeviathanCommitDiff`
+
+Diff loaded for a commit.
+
+- `commit` (`LeviathanCommit`; required) - Commit this diff was loaded for.
+- `modified_count` (`integer`; required) - Modified file count.
+- `added_count` (`integer`; required) - Added file count.
+- `deleted_count` (`integer`; required) - Deleted file count.
+- `files` (`LeviathanCommitDiffFile[]`; required) - Changed files in the commit diff.
+
+### `LeviathanCommitDiffFile`
+
+File row in a commit diff.
+
+- `path` (`string`; required) - Repository-relative file path.
+- `status` (`string`; required) - Change status.
+
+### `LeviathanCommitFile`
+
+File snapshot loaded at a commit.
+
+- `commit` (`LeviathanCommit`; required) - Commit this file snapshot was loaded for.
+- `path` (`string`; required) - Repository-relative file path.
+- `lines` (`string[]`; required) - Per-line diff content.
+- `old_content` (`string`; required) - Old file content when available.
+- `new_content` (`string`; required) - New file content when available.
+
 ## Events
 
 - `AppStarted` (table) - Fired once after the host app finishes starting up.
@@ -60,7 +118,7 @@ Typed event payload table handed to autocmd callbacks.
   - `name` (`string`; required) - Branch name.
   - `head_hash` (`string`; required) - Resolved HEAD commit hash.
 - `CommitSelected` (table) - Fired after the user selects a commit in the history view.
-  - `hash` (`string`; required) - Selected commit hash.
+  - `commit` (`LeviathanCommit`; required) - Selected commit.
 - `CommitListChanged` (table) - Fired after the visible commit list changes.
   - `count` (`integer`; required) - Number of commits in the new list.
 - `DiffLoaded` (table) - Fired after a diff finishes loading.

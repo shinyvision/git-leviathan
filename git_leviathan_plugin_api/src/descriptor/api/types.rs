@@ -265,6 +265,190 @@ const TYPE_TAG_FIELDS: &[ApiTypeField] = &[
     },
 ];
 
+const TYPE_COMMIT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Commit row kind: commit, dirty, or stash.",
+    },
+    ApiTypeField {
+        name: "hash",
+        lua_type: "string",
+        required: true,
+        doc: "Full commit hash, or empty for an uncommitted dirty row.",
+    },
+    ApiTypeField {
+        name: "short_hash",
+        lua_type: "string",
+        required: true,
+        doc: "Short display hash.",
+    },
+    ApiTypeField {
+        name: "summary",
+        lua_type: "string",
+        required: true,
+        doc: "First line of the commit message.",
+    },
+    ApiTypeField {
+        name: "message",
+        lua_type: "string",
+        required: true,
+        doc: "Full commit message when available.",
+    },
+    ApiTypeField {
+        name: "author",
+        lua_type: "string",
+        required: true,
+        doc: "Commit author display name.",
+    },
+    ApiTypeField {
+        name: "date",
+        lua_type: "string",
+        required: true,
+        doc: "Host-formatted commit date when available.",
+    },
+    ApiTypeField {
+        name: "timestamp",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Author timestamp in seconds when available.",
+    },
+    ApiTypeField {
+        name: "parents",
+        lua_type: "string[]",
+        required: true,
+        doc: "Full parent hashes in git parent order.",
+    },
+    ApiTypeField {
+        name: "index",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Zero-based visible commit row index when available.",
+    },
+    ApiTypeField {
+        name: "is_merge",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the commit has multiple parents.",
+    },
+    ApiTypeField {
+        name: "is_merge_in_progress",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the dirty row represents an in-progress merge.",
+    },
+    ApiTypeField {
+        name: "actions",
+        lua_type: "LeviathanCommitActions",
+        required: true,
+        doc: "Host-computed commit actions.",
+    },
+];
+
+const TYPE_COMMIT_ACTIONS_FIELDS: &[ApiTypeField] = &[ApiTypeField {
+    name: "reword",
+    lua_type: "LeviathanActionAvailability",
+    required: true,
+    doc: "Reword availability for this commit in the current tree.",
+}];
+
+const TYPE_ACTION_AVAILABILITY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the action can run.",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Stable disabled reason when available.",
+    },
+];
+
+const TYPE_COMMIT_DIFF_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "commit",
+        lua_type: "LeviathanCommit",
+        required: true,
+        doc: "Commit this diff was loaded for.",
+    },
+    ApiTypeField {
+        name: "modified_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Modified file count.",
+    },
+    ApiTypeField {
+        name: "added_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Added file count.",
+    },
+    ApiTypeField {
+        name: "deleted_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Deleted file count.",
+    },
+    ApiTypeField {
+        name: "files",
+        lua_type: "LeviathanCommitDiffFile[]",
+        required: true,
+        doc: "Changed files in the commit diff.",
+    },
+];
+
+const TYPE_COMMIT_DIFF_FILE_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Repository-relative file path.",
+    },
+    ApiTypeField {
+        name: "status",
+        lua_type: "string",
+        required: true,
+        doc: "Change status.",
+    },
+];
+
+const TYPE_COMMIT_FILE_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "commit",
+        lua_type: "LeviathanCommit",
+        required: true,
+        doc: "Commit this file snapshot was loaded for.",
+    },
+    ApiTypeField {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Repository-relative file path.",
+    },
+    ApiTypeField {
+        name: "lines",
+        lua_type: "string[]",
+        required: true,
+        doc: "Per-line diff content.",
+    },
+    ApiTypeField {
+        name: "old_content",
+        lua_type: "string",
+        required: true,
+        doc: "Old file content when available.",
+    },
+    ApiTypeField {
+        name: "new_content",
+        lua_type: "string",
+        required: true,
+        doc: "New file content when available.",
+    },
+];
+
 const TYPE_TAB_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "path",
@@ -728,10 +912,10 @@ const TYPE_GRAPH_CONTRIBUTION_FIELDS: &[ApiTypeField] = &[
         doc: "Contribution id.",
     },
     ApiTypeField {
-        name: "commit_hash",
-        lua_type: "string",
+        name: "commit",
+        lua_type: "LeviathanCommit",
         required: false,
-        doc: "Static target commit hash.",
+        doc: "Static target commit.",
     },
     ApiTypeField {
         name: "decoration",
@@ -1055,10 +1239,10 @@ const TYPE_SELECTION_SUMMARY_FIELDS: &[ApiTypeField] = &[
         doc: "Selection kind.",
     },
     ApiTypeField {
-        name: "selected_commit_id",
-        lua_type: "string|nil",
+        name: "commit",
+        lua_type: "LeviathanCommit|nil",
         required: true,
-        doc: "Selected commit id when available.",
+        doc: "Selected commit data when a commit row is selected.",
     },
     ApiTypeField {
         name: "selected_file_path",
@@ -2286,6 +2470,48 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.0",
         doc: "Git tag.",
         fields: TYPE_TAG_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommit",
+        since: "1.0",
+        doc: "Commit data exposed to Lua APIs.",
+        fields: TYPE_COMMIT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitActions",
+        since: "1.0",
+        doc: "Host-computed actions for a commit.",
+        fields: TYPE_COMMIT_ACTIONS_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanActionAvailability",
+        since: "1.0",
+        doc: "Availability state for a host action.",
+        fields: TYPE_ACTION_AVAILABILITY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitDiff",
+        since: "1.0",
+        doc: "Diff loaded for a commit.",
+        fields: TYPE_COMMIT_DIFF_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitDiffFile",
+        since: "1.0",
+        doc: "File row in a commit diff.",
+        fields: TYPE_COMMIT_DIFF_FILE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitFile",
+        since: "1.0",
+        doc: "File snapshot loaded at a commit.",
+        fields: TYPE_COMMIT_FILE_FIELDS,
         methods: &[],
     },
     ApiType {

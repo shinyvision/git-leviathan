@@ -34,6 +34,11 @@ pub(super) fn tick(screen: &mut RepositoryScreen, delta_ms: f32) -> Option<Task<
             ));
         }
     }
+    if screen.panels.detail.take_reword_needs_focus() {
+        return Some(iced::widget::operation::focus(
+            panels::detail::reword_commit_message_editor_id(),
+        ));
+    }
     None
 }
 
@@ -53,4 +58,5 @@ pub(super) fn is_animating(screen: &RepositoryScreen) -> bool {
             .text_search
             .as_ref()
             .is_some_and(|w| w.needs_focus())
+        || screen.panels.detail.reword_needs_focus()
 }

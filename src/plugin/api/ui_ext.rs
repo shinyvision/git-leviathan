@@ -465,9 +465,9 @@ fn add_graph_contribution(
             DecorationProviderTarget::GraphRowBadge,
         );
     }
-    let commit_hash: String = spec.get("commit_hash").map_err(|e| e.to_string())?;
+    let commit_hash = graph_target_commit_hash(&spec)?;
     if commit_hash.is_empty() {
-        return Err("commit_hash must be a non-empty string".into());
+        return Err("commit.hash must be a non-empty string".into());
     }
     check_decoration_capability(state, point_id, "graph", "leviathan.ui.contribute", lua)?;
     let explicit_id: String = spec.get("id").map_err(|e| e.to_string())?;
@@ -504,6 +504,23 @@ fn add_graph_contribution(
         },
     )
     .map_err(|e| e.to_string())
+}
+
+fn graph_target_commit_hash(spec: &Table) -> Result<String, String> {
+    match spec.get::<LuaValue>("commit").map_err(|e| e.to_string())? {
+        LuaValue::Nil => spec.get("commit_hash").map_err(|e| e.to_string()),
+        value => commit_hash_from_value(value),
+    }
+}
+
+fn commit_hash_from_value(value: LuaValue) -> Result<String, String> {
+    match value {
+        LuaValue::String(value) => Ok(value.to_str().map_err(|e| e.to_string())?.to_string()),
+        LuaValue::Table(table) => table
+            .get::<String>("hash")
+            .map_err(|_| "commit.hash must be a non-empty string".to_string()),
+        _ => Err("commit must be a LeviathanCommit table".to_string()),
+    }
 }
 
 fn add_diff_contribution(
@@ -1268,44 +1285,43 @@ fn install_graph_decoration(
     let plugin_id = ledger.plugin_id().as_str().to_string();
     ui.set(
         "graph_decoration",
-        lua.create_function(
-            move |lua_inner, (commit_hash, decoration): (String, Table)| {
-                if commit_hash.is_empty() {
-                    return Err(mlua::Error::external(
-                        "graph_decoration: commit_hash must be a non-empty string",
-                    ));
-                }
-                let explicit_id: Option<String> = decoration.get("id")?;
-                let source = ResourceLedger::source_location(lua_inner);
-                let id_for_target = explicit_id.as_deref().unwrap_or("auto").to_string();
-                guard
-                    .check_any_named_for_target(
-                        &["ui:decoration:graph".to_string()],
-                        &format!("graph_decoration:{commit_hash}:{id_for_target}"),
-                        "leviathan.ui.graph_decoration",
-                        source.as_deref(),
-                        "Declare and grant `ui:decoration:graph`.",
-                    )
-                    .map_err(mlua::Error::external)?;
-                let value: serde_json::Value = lua_inner
-                    .from_value(LuaValue::Table(decoration))
-                    .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
-                let parsed: GraphDecoration = serde_json::from_value(value)
-                    .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
-                let id = explicit_id.unwrap_or_else(|| format!("{}:{commit_hash}", parsed.kind()));
-                let handle = format!("graph_decoration:{commit_hash}:{id}");
-                ledger.remove_by_kind_handle(PluginResourceKind::GraphDecoration, &handle);
-                ledger.record(PluginResourceKind::GraphDecoration, handle, source.clone());
-                registry.add_graph_decoration(GraphDecorationRecord {
-                    plugin_id: plugin_id.clone(),
-                    id,
-                    commit_hash,
-                    decoration: parsed,
-                    source_location: source,
-                });
-                Ok(())
-            },
-        )?,
+        lua.create_function(move |lua_inner, (commit, decoration): (LuaValue, Table)| {
+            let commit_hash = commit_hash_from_value(commit).map_err(mlua::Error::external)?;
+            if commit_hash.is_empty() {
+                return Err(mlua::Error::external(
+                    "graph_decoration: commit.hash must be a non-empty string",
+                ));
+            }
+            let explicit_id: Option<String> = decoration.get("id")?;
+            let source = ResourceLedger::source_location(lua_inner);
+            let id_for_target = explicit_id.as_deref().unwrap_or("auto").to_string();
+            guard
+                .check_any_named_for_target(
+                    &["ui:decoration:graph".to_string()],
+                    &format!("graph_decoration:{commit_hash}:{id_for_target}"),
+                    "leviathan.ui.graph_decoration",
+                    source.as_deref(),
+                    "Declare and grant `ui:decoration:graph`.",
+                )
+                .map_err(mlua::Error::external)?;
+            let value: serde_json::Value = lua_inner
+                .from_value(LuaValue::Table(decoration))
+                .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
+            let parsed: GraphDecoration = serde_json::from_value(value)
+                .map_err(|e| mlua::Error::external(format!("invalid graph decoration: {e}")))?;
+            let id = explicit_id.unwrap_or_else(|| format!("{}:{commit_hash}", parsed.kind()));
+            let handle = format!("graph_decoration:{commit_hash}:{id}");
+            ledger.remove_by_kind_handle(PluginResourceKind::GraphDecoration, &handle);
+            ledger.record(PluginResourceKind::GraphDecoration, handle, source.clone());
+            registry.add_graph_decoration(GraphDecorationRecord {
+                plugin_id: plugin_id.clone(),
+                id,
+                commit_hash,
+                decoration: parsed,
+                source_location: source,
+            });
+            Ok(())
+        })?,
     )?;
     Ok(())
 }

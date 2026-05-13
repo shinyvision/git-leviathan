@@ -480,9 +480,9 @@
       "name": "CommitSelected",
       "payload_fields": [
         {
-          "doc": "Selected commit hash.",
-          "lua_type": "string",
-          "name": "hash",
+          "doc": "Selected commit.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
           "required": true
         }
       ],
@@ -1748,7 +1748,13 @@
         "leviathan.autocmd",
         "LeviathanAutocmdOpts",
         "LeviathanAutocmdGroupOpts",
-        "LeviathanAutocmdEvent"
+        "LeviathanAutocmdEvent",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
+        "LeviathanCommitDiff",
+        "LeviathanCommitDiffFile",
+        "LeviathanCommitFile"
       ],
       "version": {
         "compatibility": "v1",
@@ -2090,9 +2096,9 @@
           "name": "graph_decoration",
           "params": [
             {
-              "doc": "Commit row hash the decoration applies to.",
-              "lua_type": "string",
-              "name": "commit_hash",
+              "doc": "Commit row the decoration applies to.",
+              "lua_type": "LeviathanCommit",
+              "name": "commit",
               "required": true
             },
             {
@@ -2110,7 +2116,7 @@
               "decoration.kind must be one of badge / icon / marker / lane"
             ],
             "notes": [
-              "Bound to repository.graph.row:<commit_hash>."
+              "Bound to repository.graph.row:<commit.hash>."
             ],
             "returns": []
           }
@@ -2162,7 +2168,10 @@
         "LeviathanDialogButton",
         "LeviathanContextMenuItem",
         "LeviathanGraphDecorationContribution",
-        "LeviathanDiffDecorationContribution"
+        "LeviathanDiffDecorationContribution",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability"
       ],
       "version": {
         "compatibility": "v1",
@@ -2509,6 +2518,9 @@
         "LeviathanRepositorySummary",
         "LeviathanTabSummary",
         "LeviathanSelectionSummary",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
         "LeviathanToolbarDialogSummary",
         "LeviathanToolbarDialogData",
         "LeviathanToolbarDialogControl",
@@ -4714,7 +4726,7 @@
             "git:read:log"
           ],
           "compatibility": "v1",
-          "doc": "Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.",
+          "doc": "Return up to `limit` commits from the active repository as `LeviathanCommit` rows.",
           "name": "commits",
           "params": [
             {
@@ -4728,7 +4740,7 @@
           "returns": [
             {
               "doc": "Commit list on success.",
-              "lua_type": "table[]|nil"
+              "lua_type": "LeviathanCommit[]|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4747,11 +4759,11 @@
             "git:read:diff"
           ],
           "compatibility": "v1",
-          "doc": "Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.",
+          "doc": "Return per-file diff for `commit`. The result carries `commit` as `LeviathanCommit`.",
           "name": "diff",
           "params": [
             {
-              "doc": "Options table: { commit = hash }.",
+              "doc": "Options table: { commit = LeviathanCommit }.",
               "lua_type": "table",
               "name": "opts",
               "required": true
@@ -4761,7 +4773,7 @@
           "returns": [
             {
               "doc": "Diff snapshot on success.",
-              "lua_type": "table[]|nil"
+              "lua_type": "LeviathanCommitDiff|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4780,11 +4792,11 @@
             "git:read:show"
           ],
           "compatibility": "v1",
-          "doc": "Return the file at a given commit/path as { lines = string[] } (per-line diff content).",
+          "doc": "Return the file at a given commit/path. The result carries `commit` as `LeviathanCommit`.",
           "name": "file_at",
           "params": [
             {
-              "doc": "Options table: { commit = hash, path = \"src/main.rs\" }.",
+              "doc": "Options table: { commit = LeviathanCommit, path = \"src/main.rs\" }.",
               "lua_type": "table",
               "name": "opts",
               "required": true
@@ -4794,7 +4806,7 @@
           "returns": [
             {
               "doc": "File-at-commit snapshot on success.",
-              "lua_type": "table|nil"
+              "lua_type": "LeviathanCommitFile|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4848,7 +4860,13 @@
         "leviathan.repository",
         "LeviathanLocalBranch",
         "LeviathanRemoteBranch",
-        "LeviathanTag"
+        "LeviathanTag",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
+        "LeviathanCommitDiff",
+        "LeviathanCommitDiffFile",
+        "LeviathanCommitFile"
       ],
       "version": {
         "compatibility": "v1",
@@ -7881,9 +7899,9 @@
           "required": true
         },
         {
-          "doc": "Static target commit hash.",
-          "lua_type": "string",
-          "name": "commit_hash",
+          "doc": "Static target commit.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
           "required": false
         },
         {
@@ -9342,9 +9360,9 @@
           "required": true
         },
         {
-          "doc": "Selected commit id when available.",
-          "lua_type": "string|nil",
-          "name": "selected_commit_id",
+          "doc": "Selected commit data when a commit row is selected.",
+          "lua_type": "LeviathanCommit|nil",
+          "name": "commit",
           "required": true
         },
         {
@@ -9862,6 +9880,222 @@
       ],
       "methods": [],
       "name": "LeviathanTag",
+      "since": "1.0"
+    },
+    {
+      "doc": "Commit data exposed to Lua APIs.",
+      "fields": [
+        {
+          "doc": "Commit row kind: commit, dirty, or stash.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Full commit hash, or empty for an uncommitted dirty row.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        },
+        {
+          "doc": "Short display hash.",
+          "lua_type": "string",
+          "name": "short_hash",
+          "required": true
+        },
+        {
+          "doc": "First line of the commit message.",
+          "lua_type": "string",
+          "name": "summary",
+          "required": true
+        },
+        {
+          "doc": "Full commit message when available.",
+          "lua_type": "string",
+          "name": "message",
+          "required": true
+        },
+        {
+          "doc": "Commit author display name.",
+          "lua_type": "string",
+          "name": "author",
+          "required": true
+        },
+        {
+          "doc": "Host-formatted commit date when available.",
+          "lua_type": "string",
+          "name": "date",
+          "required": true
+        },
+        {
+          "doc": "Author timestamp in seconds when available.",
+          "lua_type": "integer|nil",
+          "name": "timestamp",
+          "required": true
+        },
+        {
+          "doc": "Full parent hashes in git parent order.",
+          "lua_type": "string[]",
+          "name": "parents",
+          "required": true
+        },
+        {
+          "doc": "Zero-based visible commit row index when available.",
+          "lua_type": "integer|nil",
+          "name": "index",
+          "required": true
+        },
+        {
+          "doc": "Whether the commit has multiple parents.",
+          "lua_type": "boolean",
+          "name": "is_merge",
+          "required": true
+        },
+        {
+          "doc": "Whether the dirty row represents an in-progress merge.",
+          "lua_type": "boolean",
+          "name": "is_merge_in_progress",
+          "required": true
+        },
+        {
+          "doc": "Host-computed commit actions.",
+          "lua_type": "LeviathanCommitActions",
+          "name": "actions",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommit",
+      "since": "1.0"
+    },
+    {
+      "doc": "Host-computed actions for a commit.",
+      "fields": [
+        {
+          "doc": "Reword availability for this commit in the current tree.",
+          "lua_type": "LeviathanActionAvailability",
+          "name": "reword",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitActions",
+      "since": "1.0"
+    },
+    {
+      "doc": "Availability state for a host action.",
+      "fields": [
+        {
+          "doc": "Whether the action can run.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": true
+        },
+        {
+          "doc": "Stable disabled reason when available.",
+          "lua_type": "string|nil",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanActionAvailability",
+      "since": "1.0"
+    },
+    {
+      "doc": "Diff loaded for a commit.",
+      "fields": [
+        {
+          "doc": "Commit this diff was loaded for.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
+          "required": true
+        },
+        {
+          "doc": "Modified file count.",
+          "lua_type": "integer",
+          "name": "modified_count",
+          "required": true
+        },
+        {
+          "doc": "Added file count.",
+          "lua_type": "integer",
+          "name": "added_count",
+          "required": true
+        },
+        {
+          "doc": "Deleted file count.",
+          "lua_type": "integer",
+          "name": "deleted_count",
+          "required": true
+        },
+        {
+          "doc": "Changed files in the commit diff.",
+          "lua_type": "LeviathanCommitDiffFile[]",
+          "name": "files",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitDiff",
+      "since": "1.0"
+    },
+    {
+      "doc": "File row in a commit diff.",
+      "fields": [
+        {
+          "doc": "Repository-relative file path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Change status.",
+          "lua_type": "string",
+          "name": "status",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitDiffFile",
+      "since": "1.0"
+    },
+    {
+      "doc": "File snapshot loaded at a commit.",
+      "fields": [
+        {
+          "doc": "Commit this file snapshot was loaded for.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
+          "required": true
+        },
+        {
+          "doc": "Repository-relative file path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Per-line diff content.",
+          "lua_type": "string[]",
+          "name": "lines",
+          "required": true
+        },
+        {
+          "doc": "Old file content when available.",
+          "lua_type": "string",
+          "name": "old_content",
+          "required": true
+        },
+        {
+          "doc": "New file content when available.",
+          "lua_type": "string",
+          "name": "new_content",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitFile",
       "since": "1.0"
     },
     {

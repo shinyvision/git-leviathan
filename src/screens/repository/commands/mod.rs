@@ -90,6 +90,7 @@ pub(in crate::screens::repository) fn dispatch_result(
         | RepositoryMessage::EscapePressed
         | RepositoryMessage::FocusCommitMessage
         | RepositoryMessage::StartRewordSelected
+        | RepositoryMessage::FocusRewordMessage
         | RepositoryMessage::FocusPanel(_)
         | RepositoryMessage::StageSelectedDirtyFile
         | RepositoryMessage::UnstageSelectedDirtyFile

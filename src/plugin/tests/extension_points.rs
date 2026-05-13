@@ -289,7 +289,7 @@ fn contribute_registers_static_and_dynamic_decorations() {
         assert(menu and not menu_err)
 
         local static_g, static_g_err = leviathan.ui.contribute("repository.graph.row_badge", {
-            id = "reviewed", commit_hash = "abc1234",
+            id = "reviewed", commit = { hash = "abc1234" },
             decoration = { kind = "badge", text = "OK", fg = "#fff", bg = "#047857" },
         })
         assert(static_g and not static_g_err)
@@ -303,7 +303,7 @@ fn contribute_registers_static_and_dynamic_decorations() {
         local graph_provider, graph_err = leviathan.ui.contribute("repository.graph.row_badge", {
             id = "dynamic-review",
             provider = function(ctx)
-                return { kind = "badge", text = ctx.payload.graph_row.commit_hash }
+                return { kind = "badge", text = ctx.payload.graph_row.commit.hash }
             end,
         })
         assert(graph_provider and not graph_err)
@@ -361,7 +361,10 @@ fn contribute_registers_static_and_dynamic_decorations() {
 fn decoration_invalidation_tracks_required_refresh_events() {
     let mut host = MockHost::new();
     let before = host.introspect().decoration_revision;
-    host.dispatch_test_event("CommitSelected", serde_json::json!({ "hash": "a" }));
+    host.dispatch_test_event(
+        "CommitSelected",
+        serde_json::json!({ "commit": { "hash": "a" } }),
+    );
     host.dispatch_test_event("DiffLoaded", serde_json::json!({ "hash": "b" }));
     host.dispatch_test_event("RefsChanged", serde_json::json!({ "count": 2 }));
     let snap = host.introspect();
@@ -383,13 +386,13 @@ fn graph_decoration_returned_for_commit_row() {
         "gd",
         &manifest_with_caps("gd", ALL_EXT_CAPS),
         r##"
-        leviathan.ui.graph_decoration("abc1234", {
+        leviathan.ui.graph_decoration({ hash = "abc1234" }, {
             kind = "badge",
             text = "WIP",
             fg = "#fff",
             bg = "#aa0000",
         })
-        leviathan.ui.graph_decoration("abc1234", {
+        leviathan.ui.graph_decoration({ hash = "abc1234" }, {
             id = "lane-decor",
             kind = "lane",
             index = 2,
@@ -488,7 +491,7 @@ fn unload_clears_overlays_context_menus_and_decorations() {
         leviathan.ui.context_menu("repository.graph.context_menu", {
             id = "rebase", label = "Rebase", command = "git.rebase", priority = 0,
         })
-        leviathan.ui.graph_decoration("deadbeef", {
+        leviathan.ui.graph_decoration({ hash = "deadbeef" }, {
             kind = "marker", shape = "dot", color = "#fff",
         })
         leviathan.ui.diff_decoration({

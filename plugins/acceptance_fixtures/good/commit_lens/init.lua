@@ -18,7 +18,7 @@ leviathan.settings.define_schema({
 })
 leviathan.settings.set({ enabled = true, refreshes = store:get("refreshes") or 0 })
 
-leviathan.ui.graph_decoration("abc1234", {
+leviathan.ui.graph_decoration({ hash = "abc1234" }, {
   id = "commit-lens.issue",
   kind = "badge",
   text = labels.badge(issue),
@@ -72,7 +72,7 @@ leviathan.keymap.set("repository", "gl", "commit_lens.refresh", {
 leviathan.autocmd.create("CommitSelected", {
   callback = function(ev)
     _G.commit_events = _G.commit_events + 1
-    _G.last_commit = ev.payload and ev.payload.hash or ""
+    _G.last_commit = ev.payload and ev.payload.commit and ev.payload.commit.hash or ""
   end,
 })
 

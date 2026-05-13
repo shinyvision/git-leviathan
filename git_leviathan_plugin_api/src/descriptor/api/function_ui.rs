@@ -345,7 +345,7 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
         validation: ApiValidation {
             args: &["decoration.kind must be one of badge / icon / marker / lane"],
             returns: &[],
-            notes: &["Bound to repository.graph.row:<commit_hash>."],
+            notes: &["Bound to repository.graph.row:<commit.hash>."],
         },
     },
     ApiFunction {
@@ -738,10 +738,10 @@ const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[
 
 const UI_GRAPH_DECORATION_PARAMS: &[ApiParam] = &[
     ApiParam {
-        name: "commit_hash",
-        lua_type: "string",
+        name: "commit",
+        lua_type: "LeviathanCommit",
         required: true,
-        doc: "Commit row hash the decoration applies to.",
+        doc: "Commit row the decoration applies to.",
     },
     ApiParam {
         name: "decoration",

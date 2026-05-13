@@ -15,8 +15,9 @@ use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;
 
 use crate::{
-    core::TabId,
+    core::{Commit, CommitKind, TabId},
     message::{AppMessage, Message},
+    plugin::commit_data::{commit_kind_name, CommitActionAvailability, CommitActions, CommitData},
     screens::screen_trait::{Screen, ToolbarCtx},
     services::{presenter::Presenter, SettingsService, COMMIT_LOAD_LIMIT},
     view_model::SidebarSectionKind,
@@ -252,31 +253,76 @@ impl RepositoryScreen {
         &self,
     ) -> crate::plugin::ui::context::SelectionContextSnapshot {
         let available = !self.data.snapshot.commits().is_empty();
-        let selected_commit_id = self.selected_commit_hash().map(|(_, hash)| hash);
+        let selected_commit_idx = self.data.selection.selected_commit();
+        let selected_commit = self.data.selected_commit(selected_commit_idx);
         let selected_file_path = self
             .panels
             .detail
             .selected_file_path()
             .map(ToOwned::to_owned);
         let kind = if !available {
-            "none"
+            "none".to_string()
         } else if selected_file_path.is_some() {
-            "file"
+            "file".to_string()
         } else if self.data.selection.is_multi() {
-            "commits"
+            "commits".to_string()
         } else {
-            "commit"
+            selected_commit
+                .map(|commit| commit_kind_name(commit.kind).to_string())
+                .unwrap_or_else(|| "commit".to_string())
         };
+        let commit = selected_commit.map(|commit| {
+            CommitData::from_commit(
+                commit,
+                Some(selected_commit_idx),
+                None,
+                self.selected_commit_actions(commit),
+            )
+        });
 
         crate::plugin::ui::context::SelectionContextSnapshot {
             available,
-            kind: kind.to_string(),
-            selected_commit_id,
+            kind,
+            commit,
             selected_file_path,
         }
     }
 
+    pub(crate) fn selected_commit_can_reword(&self) -> bool {
+        if self.data.selection.is_multi() {
+            return false;
+        }
+        let Some((_, hash)) = self.selected_commit_hash() else {
+            return false;
+        };
+        self.data
+            .snapshot
+            .first_parent_distance_from_head(&hash)
+            .is_some()
+    }
+
+    fn selected_commit_actions(&self, commit: &Commit) -> CommitActions {
+        let reword = if self.data.selection.is_multi() {
+            CommitActionAvailability::disabled("multiple_commits_selected")
+        } else if commit.kind != CommitKind::Commit {
+            CommitActionAvailability::disabled("selection_is_not_a_commit")
+        } else if self
+            .data
+            .snapshot
+            .first_parent_distance_from_head(&commit.hash)
+            .is_some()
+        {
+            CommitActionAvailability::enabled()
+        } else {
+            CommitActionAvailability::disabled("commit_not_on_first_parent_chain")
+        };
+        CommitActions::with_reword(reword)
+    }
+
     pub(crate) fn selected_commit_reword_seed(&self) -> Option<(String, String)> {
+        if !self.selected_commit_can_reword() {
+            return None;
+        }
         let idx = self.data.selection.selected_commit();
         let commit = self.data.selected_commit(idx)?;
         if commit.kind == crate::core::CommitKind::Commit {
@@ -481,10 +527,20 @@ impl RepositoryScreen {
         let Some((hash, message)) = self.selected_commit_reword_seed() else {
             return Task::none();
         };
+        self.input.focused_panel = FocusedPanel::Detail;
         self.handle_detail_action(DetailAction::RewordStarted {
             hash,
             original_message: message,
         })
+    }
+
+    pub(crate) fn focus_reword_message(&mut self) -> Task<Message> {
+        if self.panels.detail.reword_active().is_none() {
+            return Task::none();
+        }
+        self.input.focused_panel = FocusedPanel::Detail;
+        self.panels.detail.request_reword_focus();
+        Task::none()
     }
 
     pub(crate) fn focus_panel(&mut self, target: RepositoryFocusTarget) -> Task<Message> {
@@ -838,6 +894,7 @@ impl RepositoryScreen {
             RepositoryMessage::EscapePressed => self.escape_pressed(),
             RepositoryMessage::FocusCommitMessage => self.focus_commit_message(),
             RepositoryMessage::StartRewordSelected => self.start_reword_selected(),
+            RepositoryMessage::FocusRewordMessage => self.focus_reword_message(),
             RepositoryMessage::FocusPanel(target) => self.focus_panel(target),
             RepositoryMessage::StageSelectedDirtyFile => self.stage_selected_dirty_file(),
             RepositoryMessage::UnstageSelectedDirtyFile => self.unstage_selected_dirty_file(),
@@ -995,14 +1052,40 @@ mod tests {
     }
 
     fn commit_snapshot(hash: &str) -> CommitSnapshot {
+        commit_snapshot_with_parents(hash, vec![])
+    }
+
+    fn commit_snapshot_with_parents(hash: &str, parent_hashes: Vec<&str>) -> CommitSnapshot {
         CommitSnapshot {
             hash: hash.to_string(),
             message: "initial".to_string(),
             author_name: "Ada".to_string(),
             authored_at: 1_700_000_000,
             authored_offset_minutes: 0,
-            parent_hashes: vec![],
+            parent_hashes: parent_hashes.into_iter().map(str::to_string).collect(),
         }
+    }
+
+    fn loaded_repo_with_first_parent_chain() -> crate::view_model::LoadedRepo {
+        projection::project_loaded(RepoSnapshot {
+            commits: vec![
+                commit_snapshot_with_parents("head", vec!["parent"]),
+                commit_snapshot_with_parents("parent", vec!["root"]),
+                commit_snapshot("side"),
+            ],
+            refs: Vec::<RepoRef>::new(),
+            dirty: None,
+            stashes: vec![],
+            repo_name: "repo".to_string(),
+            current_branch: Some("main".to_string()),
+            head_hash: Some("head".to_string()),
+            has_more_commits: false,
+            default_remote_name: None,
+            remote_names: Vec::new(),
+            fast_forward_candidates: Default::default(),
+            worktrees: vec![],
+            active_worktree_path: Default::default(),
+        })
     }
 
     fn loaded_repo_with_dirty_commit() -> crate::view_model::LoadedRepo {
@@ -1045,6 +1128,40 @@ mod tests {
         screen.data.selection.select_commit(0);
         screen.data.selection.extend_range_to(1);
         assert_eq!(screen.keymap_context(), "repository.details");
+    }
+
+    #[test]
+    fn selection_context_reports_rewordable_selected_commit() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.data.selection.select_commit(1);
+
+        let ctx = screen.selection_context_snapshot();
+        assert!(ctx.commit.unwrap().actions.reword.enabled);
+
+        screen.data.selection.select_commit(2);
+        let ctx = screen.selection_context_snapshot();
+        assert!(!ctx.commit.unwrap().actions.reword.enabled);
+    }
+
+    #[test]
+    fn start_reword_selected_only_starts_for_first_parent_chain_commit() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.data.selection.select_commit(2);
+
+        let _ = screen.start_reword_selected();
+        assert!(screen.panels.detail.reword_active().is_none());
+
+        screen.data.selection.select_commit(1);
+        let _ = screen.start_reword_selected();
+        assert!(screen.panels.detail.reword_active().is_some());
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Detail);
+        assert!(screen.panels.detail.reword_needs_focus());
     }
 
     #[test]

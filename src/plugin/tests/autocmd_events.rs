@@ -50,13 +50,16 @@ fn typed_event_payload_deserialises_in_lua() {
             callback = function(ev)
                 _G.last_event = ev.event
                 _G.last_alias = ev.alias or ""
-                _G.last_hash = ev.payload.hash
+                _G.last_hash = ev.payload.commit.hash
             end,
         })
         "#,
     )
     .expect("load");
-    host.dispatch_test_event("CommitSelected", serde_json::json!({ "hash": "deadbeef" }));
+    host.dispatch_test_event(
+        "CommitSelected",
+        serde_json::json!({ "commit": { "hash": "deadbeef" } }),
+    );
     assert_eq!(
         host.read_global_string("typed", "last_event").as_deref(),
         Some("CommitSelected")

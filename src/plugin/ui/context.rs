@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use serde_json::{json, Value};
 
+use crate::plugin::commit_data::CommitData;
 use crate::plugin::resources::GenerationId;
 use crate::plugin::slots::{Container, SlotAddress};
 use crate::plugin::tab_snapshot::TabsSnapshot;
@@ -28,7 +29,7 @@ pub struct RepositoryContextSnapshot {
 pub struct SelectionContextSnapshot {
     pub available: bool,
     pub kind: String,
-    pub selected_commit_id: Option<String>,
+    pub commit: Option<CommitData>,
     pub selected_file_path: Option<String>,
 }
 
@@ -68,7 +69,7 @@ impl SelectionContextSnapshot {
         Self {
             available: false,
             kind: "none".to_string(),
-            selected_commit_id: None,
+            commit: None,
             selected_file_path: None,
         }
     }
@@ -565,7 +566,7 @@ fn selection_summary(selection: Option<&SelectionContextSnapshot>) -> Value {
         Some(selection) => json!({
             "available": selection.available,
             "kind": selection.kind,
-            "selected_commit_id": selection.selected_commit_id,
+            "commit": selection.commit,
             "selected_file_path": selection.selected_file_path,
         }),
         None => {
@@ -573,7 +574,7 @@ fn selection_summary(selection: Option<&SelectionContextSnapshot>) -> Value {
             json!({
                 "available": none.available,
                 "kind": none.kind,
-                "selected_commit_id": none.selected_commit_id,
+                "commit": none.commit,
                 "selected_file_path": none.selected_file_path,
             })
         }

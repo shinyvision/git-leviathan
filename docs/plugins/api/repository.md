@@ -53,6 +53,64 @@ Git tag.
 - `name` (`string`; required) - Tag name.
 - `hash` (`string`; required) - Target hash.
 
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
+
+### `LeviathanCommitDiff`
+
+Diff loaded for a commit.
+
+- `commit` (`LeviathanCommit`; required) - Commit this diff was loaded for.
+- `modified_count` (`integer`; required) - Modified file count.
+- `added_count` (`integer`; required) - Added file count.
+- `deleted_count` (`integer`; required) - Deleted file count.
+- `files` (`LeviathanCommitDiffFile[]`; required) - Changed files in the commit diff.
+
+### `LeviathanCommitDiffFile`
+
+File row in a commit diff.
+
+- `path` (`string`; required) - Repository-relative file path.
+- `status` (`string`; required) - Change status.
+
+### `LeviathanCommitFile`
+
+File snapshot loaded at a commit.
+
+- `commit` (`LeviathanCommit`; required) - Commit this file snapshot was loaded for.
+- `path` (`string`; required) - Repository-relative file path.
+- `lines` (`string[]`; required) - Per-line diff content.
+- `old_content` (`string`; required) - Old file content when available.
+- `new_content` (`string`; required) - New file content when available.
+
 ## Events
 
 - `BranchChanged` (table) - Fired after the current branch or its head hash changes.
@@ -114,7 +172,7 @@ Return the working-tree status: { staged[], unstaged[], conflicted[] }.
 
 ### `leviathan.repository.commits(opts)`
 
-Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.
+Return up to `limit` commits from the active repository as `LeviathanCommit` rows.
 
 **Capabilities:** `git:read:log`
 
@@ -125,12 +183,12 @@ Return up to `limit` commits from the active repository. Each entry: { hash, sum
 - `opts` (`table`; optional) - Options table: { limit = 100, rev = "HEAD" }.
 
 **Returns:**
-- `table[]|nil` - Commit list on success.
+- `LeviathanCommit[]|nil` - Commit list on success.
 - `string|nil` - Error message on failure.
 
 ### `leviathan.repository.diff(opts)`
 
-Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.
+Return per-file diff for `commit`. The result carries `commit` as `LeviathanCommit`.
 
 **Capabilities:** `git:read:diff`
 
@@ -138,15 +196,15 @@ Return per-file diff for `commit`. Each entry: { path, status, additions, deleti
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `opts` (`table`; required) - Options table: { commit = hash }.
+- `opts` (`table`; required) - Options table: { commit = LeviathanCommit }.
 
 **Returns:**
-- `table[]|nil` - Diff snapshot on success.
+- `LeviathanCommitDiff|nil` - Diff snapshot on success.
 - `string|nil` - Error message on failure.
 
 ### `leviathan.repository.file_at(opts)`
 
-Return the file at a given commit/path as { lines = string[] } (per-line diff content).
+Return the file at a given commit/path. The result carries `commit` as `LeviathanCommit`.
 
 **Capabilities:** `git:read:show`
 
@@ -154,10 +212,10 @@ Return the file at a given commit/path as { lines = string[] } (per-line diff co
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `opts` (`table`; required) - Options table: { commit = hash, path = "src/main.rs" }.
+- `opts` (`table`; required) - Options table: { commit = LeviathanCommit, path = "src/main.rs" }.
 
 **Returns:**
-- `table|nil` - File-at-commit snapshot on success.
+- `LeviathanCommitFile|nil` - File-at-commit snapshot on success.
 - `string|nil` - Error message on failure.
 
 ### `leviathan.repository.blame(opts)`

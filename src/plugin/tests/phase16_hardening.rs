@@ -62,9 +62,9 @@ fn public_ui_spec_fuzz_denies_or_errors_without_crashing() {
         local calls = {
             function() return leviathan.ui.overlay{ id = "o", widget = { kind = "text", value = "x" } } end,
             function() return leviathan.ui.context_menu("repository.diff.context_menu", { id = "m", label = "M", command = "x" }) end,
-            function() return leviathan.ui.graph_decoration("abc", { kind = "marker", shape = "dot", color = "#fff" }) end,
+            function() return leviathan.ui.graph_decoration({ hash = "abc" }, { kind = "marker", shape = "dot", color = "#fff" }) end,
             function() return leviathan.ui.diff_decoration({ kind = "line_gutter", file = "f", line = 1, glyph = "!" }) end,
-            function() return leviathan.ui.contribute("repository.graph.row_badge", { id = "g", commit_hash = "abc", kind = "badge", text = "G" }) end,
+            function() return leviathan.ui.contribute("repository.graph.row_badge", { id = "g", commit = { hash = "abc" }, kind = "badge", text = "G" }) end,
         }
         for _, call in ipairs(calls) do pcall(call) end
 
@@ -117,7 +117,7 @@ fn stress_many_plugins_slots_decorations_and_reloads() {
                 }}
             end
             for i = 1, 4 do
-                leviathan.ui.graph_decoration("commit-" .. i, {{
+                leviathan.ui.graph_decoration({{ hash = "commit-" .. i }}, {{
                     id = "g" .. i, kind = "badge", text = "G" .. i,
                 }})
                 leviathan.ui.diff_decoration({{

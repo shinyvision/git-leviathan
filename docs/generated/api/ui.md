@@ -147,7 +147,7 @@ Context-menu contribution spec.
 Static or dynamic graph-row decoration contribution.
 
 - `id` (`string`; required) - Contribution id.
-- `commit_hash` (`string`; optional) - Static target commit hash.
+- `commit` (`LeviathanCommit`; optional) - Static target commit.
 - `decoration` (`LeviathanGraphDecoration`; optional) - Static graph decoration.
 - `provider` (`fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil`; optional) - Dynamic provider called per graph row.
 
@@ -158,6 +158,37 @@ Static or dynamic diff decoration contribution.
 - `id` (`string`; required) - Contribution id.
 - `decoration` (`LeviathanDiffDecoration`; optional) - Static diff decoration.
 - `provider` (`fun(ctx: RepositoryDiffLineContext): LeviathanDiffDecoration|LeviathanDiffDecoration[]|nil`; optional) - Dynamic provider called per diff line.
+
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
 
 ## Functions
 
@@ -273,7 +304,7 @@ Contribute a context-menu item at an extension point.
 - `region` (`string`; required) - Extension point address (e.g. "repository.diff.context_menu").
 - `item` (`LeviathanContextMenuItem`; required) - Menu item (id, label, command, priority, condition_capability).
 
-### `leviathan.ui.graph_decoration(commit_hash, decoration)`
+### `leviathan.ui.graph_decoration(commit, decoration)`
 
 Attach a decoration to a commit row (badge / icon / marker / lane).
 
@@ -283,7 +314,7 @@ Attach a decoration to a commit row (badge / icon / marker / lane).
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `commit_hash` (`string`; required) - Commit row hash the decoration applies to.
+- `commit` (`LeviathanCommit`; required) - Commit row the decoration applies to.
 - `decoration` (`LeviathanGraphDecoration`; required) - Decoration AST: badge / icon / marker / lane.
 
 ### `leviathan.ui.diff_decoration(decoration)`

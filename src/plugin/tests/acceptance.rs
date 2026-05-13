@@ -290,7 +290,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     );
     assert_eq!(host.read_global_i64("commit_lens", "keymap_runs"), Some(1));
 
-    host.dispatch_test_event("CommitSelected", json!({ "hash": "abc1234" }));
+    host.dispatch_test_event("CommitSelected", json!({ "commit": { "hash": "abc1234" } }));
     assert_eq!(
         host.read_global_i64("commit_lens", "commit_events"),
         Some(1)

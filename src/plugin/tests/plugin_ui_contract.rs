@@ -1,4 +1,5 @@
 use crate::core::TabId;
+use crate::plugin::commit_data::{CommitActionAvailability, CommitActions, CommitData};
 use crate::plugin::slots::Container;
 use crate::plugin::tab_snapshot::{TabSnapshotEntry, TabsSnapshot};
 use crate::plugin::tests::harness::MockHost;
@@ -166,7 +167,7 @@ fn lua_command_bodies_see_active_selection_context() {
                 local ctx, err = leviathan.ui.context.current()
                 assert(ctx, err)
                 _G.ctx_kind = ctx.selection.kind
-                _G.ctx_commit = ctx.selection.selected_commit_id or ""
+                _G.ctx_commit = ctx.selection.commit and ctx.selection.commit.hash or ""
             end,
         })
         "#,
@@ -177,7 +178,21 @@ fn lua_command_bodies_see_active_selection_context() {
         .sync_selection(crate::plugin::ui::context::SelectionContextSnapshot {
             available: true,
             kind: "commit".to_string(),
-            selected_commit_id: Some("abc123".to_string()),
+            commit: Some(CommitData {
+                kind: "commit".to_string(),
+                hash: "abc123".to_string(),
+                short_hash: "abc123".to_string(),
+                summary: "summary".to_string(),
+                message: "summary".to_string(),
+                author: "Author".to_string(),
+                date: String::new(),
+                timestamp: Some(0),
+                parents: Vec::new(),
+                index: Some(0),
+                is_merge: false,
+                is_merge_in_progress: false,
+                actions: CommitActions::with_reword(CommitActionAvailability::enabled()),
+            }),
             selected_file_path: None,
         });
 
