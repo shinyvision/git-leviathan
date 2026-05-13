@@ -1061,6 +1061,7 @@ fn built_in_command_ids() -> BTreeSet<String> {
         "repository.unstage_selected_file",
         "repository.discard_selected_file",
         "repository.focus_panel",
+        "branch.merge",
         "git.checkout",
         "git.create_branch",
         "git.delete_branch",

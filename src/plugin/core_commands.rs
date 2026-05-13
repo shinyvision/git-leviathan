@@ -313,6 +313,29 @@ fn specs() -> Vec<CoreCommandSpec> {
         )
         .cap("git:write:checkout")
         .action(checkout_branch),
+        spec(
+            "branch.merge",
+            "Branch: Merge",
+            "Merge a branch into another branch.",
+            "repository",
+        )
+        .arg(
+            "source_branch",
+            StringArg,
+            true,
+            None,
+            "Branch to merge from.",
+        )
+        .arg(
+            "target_branch",
+            StringArg,
+            true,
+            None,
+            "Branch to merge into.",
+        )
+        .cap("git:write:merge")
+        .destructive()
+        .action(merge_branch),
         spec("stash.push", "Stash: Push", "Create a stash.", "repository")
             .cap("git:write:stash")
             .action(|_| stash(CenterAction::StashCreateRequested)),
@@ -760,6 +783,15 @@ fn checkout_branch(args: &Value) -> Result<CoreCommandAction, String> {
     stash(action)
 }
 
+fn merge_branch(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(repository(RepositoryMessage::Center(
+        CenterAction::BranchMergeRequested {
+            source_branch: required_string_arg(args, "source_branch")?,
+            target_branch: required_string_arg(args, "target_branch")?,
+        },
+    )))
+}
+
 fn stash(action: CenterAction) -> Result<CoreCommandAction, String> {
     Ok(repository(RepositoryMessage::Center(action)))
 }
@@ -895,6 +927,7 @@ mod tests {
             "branch.delete.local",
             "branch.delete.remote",
             "branch.delete.local_and_remote",
+            "branch.merge",
             "stash.pop",
             "repository.open_search",
             "repository.jump_top",
@@ -1055,6 +1088,40 @@ mod tests {
                 [CoreCommandAction::Repository(message)] if matches_expected(message.as_ref())
             ));
         }
+    }
+
+    #[test]
+    fn branch_merge_command_queues_native_merge_request() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("branch.merge").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            desc,
+            &json!({
+                "source_branch": "feature",
+                "target_branch": "main",
+            }),
+        )
+        .expect("branch.merge args should validate");
+
+        match &desc.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::Center(CenterAction::BranchMergeRequested {
+                        source_branch,
+                        target_branch,
+                    }) if source_branch == "feature" && target_branch == "main"
+                )
+        ));
     }
 
     #[test]
