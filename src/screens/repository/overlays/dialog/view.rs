@@ -119,9 +119,7 @@ fn text_input_element<'a>(
             }));
     }
 
-    if dialog.autofocus.as_ref() == Some(&control.id) {
-        input_widget = input_widget.id(input_id(dialog, &control.id));
-    }
+    input_widget = input_widget.id(input_id(dialog, &control.id));
 
     input_widget.into()
 }
