@@ -383,23 +383,30 @@ impl PluginHost {
     /// Cheap no-op when the repository snapshot hash matches the last sync — callers can
     /// invoke liberally from app-level update hooks without tracking
     /// change detection themselves.
-    pub fn sync_repository(
-        &mut self,
-        repo_name: &str,
-        workdir_path: &str,
-        current_branch_name: &str,
-        head_hash: &str,
-        default_remote_name: &str,
-        refs: &[RepoRef],
-    ) {
-        let hash = compute_repo_hash(
-            repo_name,
-            workdir_path,
-            current_branch_name,
-            head_hash,
-            default_remote_name,
-            refs,
-        );
+    pub(crate) fn sync_repository(&mut self, state: crate::plugin::host::RepositorySyncState<'_>) {
+        let mut tag_remote_names = std::collections::BTreeMap::new();
+        if let Some(gateway) = self.active_gateway.get() {
+            for repo_ref in state
+                .refs
+                .iter()
+                .filter(|r| matches!(r.kind, crate::services::RepoRefKind::Tag))
+            {
+                let remote_names = gateway.tag_remotes_for(&repo_ref.name);
+                if !remote_names.is_empty() {
+                    tag_remote_names.insert(repo_ref.name.clone(), remote_names);
+                }
+            }
+        }
+        let hash = compute_repo_hash(&(
+            state.repo_name,
+            state.workdir_path,
+            state.current_branch_name,
+            state.head_hash,
+            state.default_remote_name,
+            state.remote_names,
+            state.refs,
+            &tag_remote_names,
+        ));
         if self.last_repository_hash == Some(hash) {
             return;
         }
@@ -408,14 +415,18 @@ impl PluginHost {
         for plugin in self.plugins.values() {
             let plugin_id = plugin.id().to_string();
             let generation_id = plugin.generation.generation_id;
-            let table = match api::repository::build_table(
+            let table = match api::repository::build_table_with_tag_remotes(
                 plugin.lua(),
-                repo_name,
-                workdir_path,
-                current_branch_name,
-                head_hash,
-                default_remote_name,
-                refs,
+                api::repository::RepositoryTableInput {
+                    repo_name: state.repo_name,
+                    workdir_path: state.workdir_path,
+                    current_branch_name: state.current_branch_name,
+                    head_hash: state.head_hash,
+                    default_remote_name: state.default_remote_name,
+                    remote_names: state.remote_names,
+                    refs: state.refs,
+                    tag_remote_names: &tag_remote_names,
+                },
             ) {
                 Ok(t) => t,
                 Err(e) => {
@@ -468,13 +479,13 @@ impl PluginHost {
             }
         }
 
-        let has_remote = !default_remote_name.is_empty();
-        let workdir_buf = PathBuf::from(workdir_path);
+        let has_remote = !state.default_remote_name.is_empty();
+        let workdir_buf = PathBuf::from(state.workdir_path);
         self.last_repository_shape = Some(RepositoryShapeFacts {
-            repo_name: repo_name.to_string(),
-            current_branch: current_branch_name.to_string(),
-            head_hash: head_hash.to_string(),
-            default_remote: default_remote_name.to_string(),
+            repo_name: state.repo_name.to_string(),
+            current_branch: state.current_branch_name.to_string(),
+            head_hash: state.head_hash.to_string(),
+            default_remote: state.default_remote_name.to_string(),
             has_remote,
             workdir: workdir_buf,
         });
@@ -487,11 +498,11 @@ impl PluginHost {
         let mut payload = EventPayload::new();
         payload.insert(
             "name".into(),
-            serde_json::Value::String(current_branch_name.to_string()),
+            serde_json::Value::String(state.current_branch_name.to_string()),
         );
         payload.insert(
             "head_hash".into(),
-            serde_json::Value::String(head_hash.to_string()),
+            serde_json::Value::String(state.head_hash.to_string()),
         );
         self.fire_event_typed("BranchChanged", payload);
 

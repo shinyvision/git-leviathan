@@ -111,7 +111,7 @@ impl RepositoryScreen {
         }
     }
 
-    /// Branch refs (local + remote) from the latest snapshot. Exposed so
+    /// Refs from the latest snapshot. Exposed so
     /// `App::sync_repository_to_plugins` can rebuild the plugin-host
     /// `leviathan.repository` tables without reaching into screen internals.
     pub(crate) fn branch_refs(&self) -> &[crate::services::RepoRef] {

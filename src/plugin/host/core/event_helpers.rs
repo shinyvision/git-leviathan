@@ -31,27 +31,12 @@ pub(super) fn now_unix_ms() -> u128 {
 /// produce the same table anyway. Cheap on typical repos (a few dozen
 /// refs); kept self-contained so the host doesn't depend on the
 /// projection-layer `ProjectionSignature`.
-pub(super) fn compute_repo_hash(
-    repo_name: &str,
-    workdir_path: &str,
-    current_branch_name: &str,
-    head_hash: &str,
-    default_remote_name: &str,
-    refs: &[RepoRef],
-) -> u64 {
+pub(super) fn compute_repo_hash<T: std::hash::Hash>(input: &T) -> u64 {
     use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use std::hash::Hasher;
 
     let mut h = DefaultHasher::new();
-    (
-        repo_name,
-        workdir_path,
-        current_branch_name,
-        head_hash,
-        default_remote_name,
-        refs,
-    )
-        .hash(&mut h);
+    input.hash(&mut h);
     h.finish()
 }
 

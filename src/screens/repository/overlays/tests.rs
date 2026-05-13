@@ -538,6 +538,27 @@ fn delete_tag_confirm_button_starts_native_delete_and_keeps_dialog_data() {
 }
 
 #[test]
+fn delete_tag_confirm_accepts_y_key() {
+    let mut m = OverlayManager::new();
+    m.open_toolbar_dialog(delete_tag::dialog(delete_tag::State {
+        tag_name: "v1.0.0".into(),
+        tag_remote_names: Vec::new(),
+    }));
+
+    let action = m
+        .toolbar_dialog_key_action(&keyboard::Key::Character("y".into()))
+        .expect("y should trigger delete-tag confirmation");
+
+    assert!(matches!(
+        action,
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id: DialogId(ref dialog_id),
+            button_id: DialogButtonId(ref button_id),
+        } if dialog_id == delete_tag::DIALOG_ID && button_id == delete_tag::CONFIRM_BUTTON_ID
+    ));
+}
+
+#[test]
 fn cherry_pick_and_revert_confirm_buttons_start_native_operations() {
     let mut m = OverlayManager::new();
     m.open_toolbar_dialog(cherry_pick_confirm::dialog(cherry_pick_confirm::State {

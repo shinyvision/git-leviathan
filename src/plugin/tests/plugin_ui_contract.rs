@@ -1,5 +1,6 @@
 use crate::core::TabId;
 use crate::plugin::commit_data::{CommitActionAvailability, CommitActions, CommitData};
+use crate::plugin::host::RepositorySyncState;
 use crate::plugin::slots::Container;
 use crate::plugin::tab_snapshot::{TabSnapshotEntry, TabsSnapshot};
 use crate::plugin::tests::harness::MockHost;
@@ -631,8 +632,15 @@ fn ui_dynamic_widgets_receive_typed_context_for_mounted_regions() {
 
     let tabs = tab_snapshot();
     host.host_mut().sync_tab_registry(&tabs);
-    host.host_mut()
-        .sync_repository("repo", "/tmp/repo", "main", "abc123", "origin", &[]);
+    host.host_mut().sync_repository(RepositorySyncState {
+        repo_name: "repo",
+        workdir_path: "/tmp/repo",
+        current_branch_name: "main",
+        head_hash: "abc123",
+        default_remote_name: "origin",
+        remote_names: &[],
+        refs: &[],
+    });
 
     let expected = [
         (

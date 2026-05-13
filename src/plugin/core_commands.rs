@@ -222,6 +222,42 @@ fn specs() -> Vec<CoreCommandSpec> {
         .cap("git:write:branch")
         .action(create_branch),
         spec(
+            "tag.create",
+            "Tag: Create",
+            "Create a tag at a commit.",
+            "repository",
+        )
+        .arg("hash", StringArg, true, None, "Commit hash.")
+        .cap("git:write:tag")
+        .action(create_tag),
+        spec(
+            "tag.delete",
+            "Tag: Delete",
+            "Open delete-tag confirmation.",
+            "repository",
+        )
+        .arg("name", StringArg, true, None, "Tag name.")
+        .arg(
+            "remote_names",
+            StringArg,
+            false,
+            Some(json!("")),
+            "Comma-separated remote names that hold the tag.",
+        )
+        .cap("git:write:tag")
+        .destructive()
+        .action(delete_tag),
+        spec(
+            "tag.push",
+            "Tag: Push",
+            "Push a tag to a remote.",
+            "repository",
+        )
+        .arg("tag_name", StringArg, true, None, "Tag name.")
+        .arg("remote_name", StringArg, true, None, "Remote name.")
+        .cap("git:write:push")
+        .action(push_tag),
+        spec(
             "branch.delete",
             "Branch: Delete",
             "Open delete-branch confirmation.",
@@ -712,6 +748,30 @@ fn create_branch(args: &Value) -> Result<CoreCommandAction, String> {
     }))
 }
 
+fn create_tag(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(repository(RepositoryMessage::Center(
+        CenterAction::CreateTagHereRequested {
+            commit_hash: required_string_arg(args, "hash")?,
+        },
+    )))
+}
+
+fn delete_tag(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(repository(RepositoryMessage::Center(
+        CenterAction::DeleteTagRequested {
+            tag_name: required_string_arg(args, "name")?,
+            tag_remote_names: string_list_arg(args, "remote_names"),
+        },
+    )))
+}
+
+fn push_tag(args: &Value) -> Result<CoreCommandAction, String> {
+    stash(CenterAction::PushTagRequested {
+        tag_name: required_string_arg(args, "tag_name")?,
+        remote_name: required_string_arg(args, "remote_name")?,
+    })
+}
+
 fn delete_branch(args: &Value) -> Result<CoreCommandAction, String> {
     let remote_name = string_arg(args, "remote_name");
     let branch_name = required_string_arg(args, "name")?;
@@ -908,6 +968,19 @@ fn required_string_arg(args: &Value, key: &str) -> Result<String, String> {
     string_arg(args, key).ok_or_else(|| format!("missing required arg `{key}`"))
 }
 
+fn string_list_arg(args: &Value, key: &str) -> Vec<String> {
+    string_arg(args, key)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn bool_arg(args: &Value, key: &str) -> bool {
     args.get(key).and_then(|v| v.as_bool()).unwrap_or(false)
 }
@@ -934,6 +1007,9 @@ mod tests {
             "repository.pull",
             "repository.push",
             "branch.create",
+            "tag.create",
+            "tag.delete",
+            "tag.push",
             "branch.delete",
             "branch.delete.local",
             "branch.delete.remote",
@@ -1049,6 +1125,107 @@ mod tests {
             message,
             RepositoryMessage::Center(CenterAction::SquashSelectedCommitsRequested)
         )
+    }
+
+    #[test]
+    fn tag_create_command_queues_native_create_dialog() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("tag.create").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            desc,
+            &json!({
+                "hash": "abc123",
+            }),
+        )
+        .expect("tag.create args should validate");
+
+        match &desc.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::Center(CenterAction::CreateTagHereRequested {
+                        commit_hash,
+                    }) if commit_hash == "abc123"
+                )
+        ));
+    }
+
+    #[test]
+    fn tag_delete_command_queues_native_delete_confirmation() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("tag.delete").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            desc,
+            &json!({
+                "name": "v1.0.0",
+                "remote_names": "origin, upstream,",
+            }),
+        )
+        .expect("tag.delete args should validate");
+
+        match &desc.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::Center(CenterAction::DeleteTagRequested {
+                        tag_name,
+                        tag_remote_names,
+                    }) if tag_name == "v1.0.0"
+                        && tag_remote_names == &vec!["origin".to_string(), "upstream".to_string()]
+                )
+        ));
+    }
+
+    #[test]
+    fn tag_push_command_queues_native_push_request() {
+        let actions = CoreCommandActions::new();
+        let mut registry = CommandRegistry::new();
+        register(&mut registry, actions.clone(), &store());
+        let desc = &registry.find("tag.push").unwrap().descriptor;
+        let args = CommandRegistry::validate_args(
+            desc,
+            &json!({
+                "tag_name": "v1.0.0",
+                "remote_name": "origin",
+            }),
+        )
+        .expect("tag.push args should validate");
+
+        match &desc.run {
+            CommandBody::Host(run) => run(&args).unwrap(),
+            _ => panic!("expected host command"),
+        }
+
+        let queued = actions.drain();
+        assert!(matches!(
+            queued.as_slice(),
+            [CoreCommandAction::Repository(message)]
+                if matches!(
+                    message.as_ref(),
+                    RepositoryMessage::Center(CenterAction::PushTagRequested {
+                        tag_name,
+                        remote_name,
+                    }) if tag_name == "v1.0.0" && remote_name == "origin"
+                )
+        ));
     }
 
     #[test]

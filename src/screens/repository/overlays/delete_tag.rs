@@ -60,7 +60,7 @@ pub(crate) fn dialog(state: State) -> Dialog {
                 id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
                 text: "Delete".into(),
                 style: DialogButtonStyle("danger".into()),
-                keys: Vec::new(),
+                keys: vec![DialogKey("y".into())],
                 closes_dialog: false,
                 enabled: true,
             },

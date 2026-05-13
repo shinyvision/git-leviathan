@@ -24,7 +24,7 @@ use crate::{
     plugin::resources::PluginId,
     plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
     plugin::ui::effects::PluginUiEffect,
-    plugin::PluginHost,
+    plugin::{host::RepositorySyncState, PluginHost},
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
     services::{
@@ -424,41 +424,51 @@ impl App {
         let selection = source_screen
             .map(|screen| screen.selection_context_snapshot())
             .unwrap_or_else(crate::plugin::ui::context::SelectionContextSnapshot::none);
-        let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) =
-            source_screen
-                .map(|screen| {
-                    (
-                        screen.repo_name().to_string(),
-                        screen.active_worktree_path().to_string_lossy().into_owned(),
-                        screen.current_branch().to_string(),
-                        screen.head_hash().unwrap_or("").to_string(),
-                        screen.default_remote_name().unwrap_or("").to_string(),
-                        screen.branch_refs().to_vec(),
-                    )
-                })
-                .unwrap_or_else(|| {
-                    (
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        Vec::new(),
-                    )
-                });
+        let (
+            repo_name,
+            workdir_path,
+            current_branch,
+            head_hash,
+            default_remote,
+            remote_names,
+            refs,
+        ) = source_screen
+            .map(|screen| {
+                (
+                    screen.repo_name().to_string(),
+                    screen.active_worktree_path().to_string_lossy().into_owned(),
+                    screen.current_branch().to_string(),
+                    screen.head_hash().unwrap_or("").to_string(),
+                    screen.default_remote_name().unwrap_or("").to_string(),
+                    screen.remote_names().to_vec(),
+                    screen.branch_refs().to_vec(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+            });
         // Keep the plugin host's view of the active gateway
         // in sync with the active tab. None when no repository is open;
         // plugin git reads/writes then surface "no repository open"
         // instead of silently routing to a stale gateway.
         self.plugin_host.set_repository_gateway(active_gateway);
-        self.plugin_host.sync_repository(
-            &repo_name,
-            &workdir_path,
-            &current_branch,
-            &head_hash,
-            &default_remote,
-            &refs,
-        );
+        self.plugin_host.sync_repository(RepositorySyncState {
+            repo_name: &repo_name,
+            workdir_path: &workdir_path,
+            current_branch_name: &current_branch,
+            head_hash: &head_hash,
+            default_remote_name: &default_remote,
+            remote_names: &remote_names,
+            refs: &refs,
+        });
         self.plugin_host.sync_selection(selection);
     }
 

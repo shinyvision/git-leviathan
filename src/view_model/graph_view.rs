@@ -63,9 +63,9 @@ pub struct RepositoryProjection {
     pub remote_names: Vec<String>,
     pub fast_forward_candidates: HashSet<String>,
     pub worktrees: Vec<crate::core::WorktreeInfo>,
-    /// Local + remote branch refs (tags filtered out). Kept on the
-    /// projection so the plugin-host `leviathan.repository` tables can be
-    /// rebuilt without re-running libgit2 on every sync.
+    /// Refs kept on the projection so the plugin-host
+    /// `leviathan.repository` tables can be rebuilt without re-running
+    /// libgit2 on every sync.
     pub branch_refs: Vec<crate::services::RepoRef>,
 }
 

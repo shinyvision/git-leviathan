@@ -2,6 +2,7 @@ use serde_json::json;
 
 use crate::plugin::commands::{InvokeOutcome, PaletteState, HOST_COMMAND_PLUGIN_ID};
 use crate::plugin::core_commands::CoreCommandAction;
+use crate::plugin::host::RepositorySyncState;
 use crate::plugin::tests::harness::MockHost;
 use crate::screens::repository::RepositoryMessage;
 
@@ -58,8 +59,15 @@ fn built_in_core_commands_feed_devtools_palette_and_keymaps() {
 #[test]
 fn plugin_can_invoke_allowed_built_in_command() {
     let mut host = MockHost::new();
-    host.host_mut()
-        .sync_repository("repo", "/tmp/repo", "main", "abc123", "origin", &[]);
+    host.host_mut().sync_repository(RepositorySyncState {
+        repo_name: "repo",
+        workdir_path: "/tmp/repo",
+        current_branch_name: "main",
+        head_hash: "abc123",
+        default_remote_name: "origin",
+        remote_names: &[],
+        refs: &[],
+    });
     host.load_inline(
         "allowed",
         &manifest("allowed", &["command:invoke:repository.open_search"]),
@@ -109,8 +117,15 @@ fn plugin_invoke_denies_without_required_context() {
 #[test]
 fn plugin_invoke_denies_without_capability() {
     let mut host = MockHost::new();
-    host.host_mut()
-        .sync_repository("repo", "/tmp/repo", "main", "abc123", "origin", &[]);
+    host.host_mut().sync_repository(RepositorySyncState {
+        repo_name: "repo",
+        workdir_path: "/tmp/repo",
+        current_branch_name: "main",
+        head_hash: "abc123",
+        default_remote_name: "origin",
+        remote_names: &[],
+        refs: &[],
+    });
     host.load_inline(
         "denied",
         &manifest("denied", &[]),

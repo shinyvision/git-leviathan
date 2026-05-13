@@ -66,7 +66,6 @@ use crate::plugin::ui::main_bar_slots::PreparedSlotOp;
 use crate::plugin::ui::split;
 use crate::plugin::ui::widget_ast::{self, WidgetAst};
 use crate::plugin::watchers::{FileWatcherRegistry, PluginWatcherCallbacks};
-use crate::services::RepoRef;
 use crate::widgets::chrome::main_bar::MainBarRegistry;
 use crate::widgets::chrome::repo_region::RepoRegionRegistry;
 use crate::widgets::chrome::tab_bar_slots::TabBarRegistry;

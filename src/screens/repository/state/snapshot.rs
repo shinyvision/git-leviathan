@@ -33,8 +33,8 @@ pub(in crate::screens::repository) struct RepositorySnapshot {
     remote_names: Vec<String>,
     fast_forward_candidates: HashSet<String>,
     worktrees: Vec<WorktreeInfo>,
-    /// Local + remote branch refs. Read by `App::sync_repository_to_plugins`
-    /// to populate the plugin-host `leviathan.repository` tables.
+    /// Refs read by `App::sync_repository_to_plugins` to populate the
+    /// plugin-host `leviathan.repository` tables.
     branch_refs: Vec<RepoRef>,
     tracker: SignatureTracker,
 }
@@ -226,9 +226,9 @@ impl RepositorySnapshot {
         &self.current_branch
     }
 
-    /// Local + remote branch refs from the latest projection. Exposed
-    /// crate-wide so `App::sync_repository_to_plugins` can rebuild the
-    /// plugin-host `leviathan.repository` tables without re-reading libgit2.
+    /// Refs from the latest projection. Exposed crate-wide so
+    /// `App::sync_repository_to_plugins` can rebuild the plugin-host
+    /// `leviathan.repository` tables without re-reading libgit2.
     pub(crate) fn branch_refs(&self) -> &[RepoRef] {
         &self.branch_refs
     }

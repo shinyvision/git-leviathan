@@ -20,13 +20,14 @@
 //!   is_bare = false,                        -- true when a repo is open but has no working tree
 //!   head_hash = "abc123...",                -- "" when no repo / unborn HEAD
 //!   default_remote_name = "origin",         -- "" when no remotes configured
+//!   remote_names = { "origin", ... },
 //!   local_branches = { <LocalBranch>, ... },
 //!   remote_branches = { <RemoteBranch>, ... },
 //!   tags = { <Tag>, ... },
 //! }
 //! LocalBranch  = { name, hash, is_current, upstream_branch = <RemoteBranch | nil> }
 //! RemoteBranch = { name, remote_name, hash }
-//! Tag          = { name, hash }
+//! Tag          = { name, hash, remote_names = { "origin", ... } }
 //! ```
 //!
 //! `current_branch` is the same `LocalBranch` table (same identity) as
@@ -37,7 +38,7 @@
 //! Mutations made by a plugin to the table are not propagated back — the
 //! table is rebuilt on every sync.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
 use mlua::{Lua, LuaSerdeExt, Table, Value as LuaValue};
@@ -56,6 +57,17 @@ use crate::services::{CommitSnapshot, RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
 ///
 /// Returns the fresh table to the caller; installing it onto the
 /// `leviathan` global is the host's job.
+pub struct RepositoryTableInput<'a> {
+    pub repo_name: &'a str,
+    pub workdir_path: &'a str,
+    pub current_branch_name: &'a str,
+    pub head_hash: &'a str,
+    pub default_remote_name: &'a str,
+    pub remote_names: &'a [String],
+    pub refs: &'a [RepoRef],
+    pub tag_remote_names: &'a BTreeMap<String, Vec<String>>,
+}
+
 pub fn build_table(
     lua: &Lua,
     repo_name: &str,
@@ -65,6 +77,37 @@ pub fn build_table(
     default_remote_name: &str,
     refs: &[RepoRef],
 ) -> mlua::Result<Table> {
+    let tag_remote_names = BTreeMap::new();
+    let remote_names = Vec::new();
+    build_table_with_tag_remotes(
+        lua,
+        RepositoryTableInput {
+            repo_name,
+            workdir_path,
+            current_branch_name,
+            head_hash,
+            default_remote_name,
+            remote_names: &remote_names,
+            refs,
+            tag_remote_names: &tag_remote_names,
+        },
+    )
+}
+
+pub fn build_table_with_tag_remotes(
+    lua: &Lua,
+    input: RepositoryTableInput<'_>,
+) -> mlua::Result<Table> {
+    let RepositoryTableInput {
+        repo_name,
+        workdir_path,
+        current_branch_name,
+        head_hash,
+        default_remote_name,
+        remote_names,
+        refs,
+        tag_remote_names,
+    } = input;
     let locals: Vec<&RepoRef> = refs
         .iter()
         .filter(|r| matches!(r.kind, RepoRefKind::LocalBranch))
@@ -108,7 +151,11 @@ pub fn build_table(
 
     let tags_table = lua.create_table()?;
     for (i, tag) in tags.iter().enumerate() {
-        tags_table.raw_set(i + 1, build_tag(lua, tag)?)?;
+        let remote_names = tag_remote_names
+            .get(&tag.name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        tags_table.raw_set(i + 1, build_tag(lua, tag, remote_names)?)?;
     }
 
     let repo = lua.create_table()?;
@@ -117,6 +164,7 @@ pub fn build_table(
     repo.set("current_branch_name", current_branch_name)?;
     repo.set("head_hash", head_hash)?;
     repo.set("default_remote_name", default_remote_name)?;
+    repo.set("remote_names", build_string_array(lua, remote_names)?)?;
     let is_open = !repo_name.is_empty();
     repo.set("is_open", is_open)?;
     let is_detached = !head_hash.is_empty() && current_branch.is_none();
@@ -135,10 +183,19 @@ pub fn build_table(
     Ok(repo)
 }
 
-fn build_tag(lua: &Lua, tag: &RepoRef) -> mlua::Result<Table> {
+fn build_string_array(lua: &Lua, values: &[String]) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    for (i, value) in values.iter().enumerate() {
+        table.raw_set(i + 1, value.as_str())?;
+    }
+    Ok(table)
+}
+
+fn build_tag(lua: &Lua, tag: &RepoRef, remote_names: &[String]) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("name", tag.name.as_str())?;
     t.set("hash", tag.target_hash.as_str())?;
+    t.set("remote_names", build_string_array(lua, remote_names)?)?;
     Ok(t)
 }
 
@@ -712,6 +769,30 @@ mod tests {
     }
 
     #[test]
+    fn configured_remote_names_are_exposed_on_table() {
+        let lua = Lua::new();
+        let remote_names = vec!["origin".to_string(), "upstream".to_string()];
+        let tag_remote_names = BTreeMap::new();
+        let t = build_table_with_tag_remotes(
+            &lua,
+            RepositoryTableInput {
+                repo_name: "repo",
+                workdir_path: "/tmp/repo",
+                current_branch_name: "main",
+                head_hash: "",
+                default_remote_name: "origin",
+                remote_names: &remote_names,
+                refs: &[],
+                tag_remote_names: &tag_remote_names,
+            },
+        )
+        .unwrap();
+        let remotes: mlua::Table = t.get("remote_names").unwrap();
+        assert_eq!(remotes.get::<String>(1).unwrap(), "origin");
+        assert_eq!(remotes.get::<String>(2).unwrap(), "upstream");
+    }
+
+    #[test]
     fn empty_default_remote_name_round_trips_as_empty_string() {
         let lua = Lua::new();
         let t = build_table(&lua, "", "", "", "", "", &[]).unwrap();
@@ -949,6 +1030,41 @@ mod tests {
         let t2: mlua::Table = tags.get(2).unwrap();
         assert_eq!(t2.get::<String>("name").unwrap(), "v1.1.0");
         assert_eq!(t2.get::<String>("hash").unwrap(), "cccc");
+    }
+
+    #[test]
+    fn tags_include_known_remote_names() {
+        let lua = Lua::new();
+        let refs = vec![tag("v1.0.0", "bbbb"), tag("v1.1.0", "cccc")];
+        let mut tag_remote_names = BTreeMap::new();
+        tag_remote_names.insert(
+            "v1.0.0".to_string(),
+            vec!["origin".to_string(), "upstream".to_string()],
+        );
+
+        let t = build_table_with_tag_remotes(
+            &lua,
+            RepositoryTableInput {
+                repo_name: "repo",
+                workdir_path: "/tmp/repo",
+                current_branch_name: "main",
+                head_hash: "",
+                default_remote_name: "",
+                remote_names: &[],
+                refs: &refs,
+                tag_remote_names: &tag_remote_names,
+            },
+        )
+        .unwrap();
+        let tags: mlua::Table = t.get("tags").unwrap();
+        let t1: mlua::Table = tags.get(1).unwrap();
+        let remote_names: mlua::Table = t1.get("remote_names").unwrap();
+        assert_eq!(remote_names.get::<String>(1).unwrap(), "origin");
+        assert_eq!(remote_names.get::<String>(2).unwrap(), "upstream");
+
+        let t2: mlua::Table = tags.get(2).unwrap();
+        let remote_names: mlua::Table = t2.get("remote_names").unwrap();
+        assert_eq!(remote_names.len().unwrap(), 0);
     }
 
     #[test]
