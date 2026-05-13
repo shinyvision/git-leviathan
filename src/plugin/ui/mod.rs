@@ -1,6 +1,7 @@
 pub mod chrome;
 pub mod context;
 pub mod contribution_overrides;
+pub mod dialog;
 pub mod effects;
 pub mod focus;
 pub mod invalidation;

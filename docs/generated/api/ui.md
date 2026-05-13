@@ -58,6 +58,81 @@ Ledger-backed UI contribution handle.
 
 - `LeviathanContributionHandle:remove()` - Remove this contribution if the handle is still live.
 
+### `LeviathanDialogSpec`
+
+Repository-owned toolbar dialog request.
+
+- `id` (`string`; required) - Dialog id.
+- `text` (`string`; required) - Dialog body text.
+- `title` (`string`; optional) - Optional dialog title for hosts that display one.
+- `dismissible` (`boolean`; optional) - When true, Escape can close the dialog if no button handles it.
+- `data` (`LeviathanDialogData[]`; optional) - Opaque string data stored on the dialog.
+- `controls` (`LeviathanDialogControl[]`; optional) - Optional dialog controls.
+- `autofocus` (`string`; optional) - Control id to focus after the dialog opens.
+- `buttons` (`LeviathanDialogButton[]`; required) - Dialog buttons.
+
+### `LeviathanDialogData`
+
+Dialog data item.
+
+- `id` (`string`; required) - Data id.
+- `value` (`string`; required) - Data value.
+
+### `LeviathanDialogControl`
+
+Dialog control.
+
+- `id` (`string`; required) - Control id.
+- `label` (`LeviathanDialogLabel`; optional) - Optional label shown before the control.
+- `text_input` (`LeviathanDialogTextInput`; optional) - Optional text input.
+- `dropdown` (`LeviathanDialogDropdown`; optional) - Optional dropdown.
+
+### `LeviathanDialogLabel`
+
+Dialog control label.
+
+- `text` (`string`; required) - Label text.
+- `style` (`string`; optional) - Label style token.
+
+### `LeviathanDialogTextInput`
+
+Dialog text input.
+
+- `placeholder` (`string`; optional) - Placeholder text.
+- `value` (`string`; optional) - Initial value.
+- `submit_button_id` (`string`; optional) - Button id triggered by Enter from this input.
+- `width` (`integer`; optional) - Control width in pixels.
+
+### `LeviathanDialogDropdown`
+
+Optional dialog dropdown content.
+
+- `placeholder` (`string`; optional) - Placeholder text.
+- `options` (`LeviathanDialogDropdownOption[]`; required) - Dropdown options.
+- `selected_option_id` (`string`; optional) - Initially selected option id.
+- `open` (`boolean`; optional) - Initial open state.
+- `width` (`integer`; optional) - Control width in pixels.
+- `leading_icon` (`string`; optional) - Optional leading icon name.
+
+### `LeviathanDialogDropdownOption`
+
+Dialog dropdown option.
+
+- `id` (`string`; required) - Option id.
+- `text` (`string`; required) - Option label.
+
+### `LeviathanDialogButton`
+
+Dialog button.
+
+- `id` (`string`; optional) - Button id passed to its callback.
+- `style` (`"red"|"green"|"blue"|"white"`; required) - Button color style.
+- `text` (`string`; required) - Button label.
+- `on_click` (`fun(id: string)`; required) - Callback invoked by clicking the button or pressing one of its keys.
+- `keys` (`string[]`; optional) - Keys that trigger this button, e.g. `y`, `n`, `Esc`.
+- `closes_dialog` (`boolean`; optional) - Whether the dialog closes before the callback runs.
+- `enabled` (`boolean`; optional) - Whether the button is initially enabled.
+
 ### `LeviathanContextMenuItem`
 
 Context-menu contribution spec.
@@ -100,7 +175,7 @@ Register an overlay widget the host renders above the active screen.
 
 ### `leviathan.ui.dialog(spec)`
 
-Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.
+Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.
 
 **Capabilities:** `ui:overlay`
 
@@ -108,7 +183,7 @@ Register a top-bar overlay dialog with text, optional dropdown content, and call
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `spec` (`LeviathanDialogSpec`; required) - Dialog descriptor (id, text, optional dropdown, buttons).
+- `spec` (`LeviathanDialogSpec`; required) - Repository toolbar dialog descriptor (id, text, optional controls, buttons).
 
 ### `leviathan.ui.remove_overlay(id)`
 

@@ -6,7 +6,6 @@ use git_leviathan_plugin_api::descriptor::decoration::{DiffDecoration, GraphDeco
 use git_leviathan_plugin_api::descriptor::extension_point::extension_point;
 use git_leviathan_plugin_api::descriptor::region::REGIONS;
 use mlua::{Function, Lua, LuaSerdeExt, Table, Value as LuaValue};
-use serde_json::{json, Value as JsonValue};
 
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::extensions::{
@@ -17,6 +16,11 @@ use crate::plugin::extensions::{
 use crate::plugin::host::region_mount::REGION_MOUNT_REGISTRY;
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::ui::chrome::ChromeRegistration;
+use crate::plugin::ui::dialog::{
+    DialogButtonRequest, DialogCallbacks, DialogControlRequest, DialogDataRequest,
+    DialogDropdownOptionRequest, DialogDropdownRequest, DialogLabelRequest, DialogRequest,
+    DialogTextInputRequest,
+};
 use crate::plugin::ui::invalidation::{
     default_dependencies_for_region, DynamicWidgetTelemetry, UiDependency,
 };
@@ -31,6 +35,7 @@ pub struct UiExtInstall {
     pub registry: ExtensionRegistry,
     pub ui_effects: crate::plugin::ui::effects::PendingUiEffects,
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub dialog_callbacks: Rc<RefCell<DialogCallbacks>>,
     pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub chrome_widgets: ChromeWidgetMap,
 }
@@ -47,6 +52,7 @@ pub fn install(lua: &Lua, ui: &Table, ctx: UiExtInstall) -> mlua::Result<()> {
         registry,
         ui_effects,
         overlay_callbacks,
+        dialog_callbacks,
         decoration_provider_callbacks,
         chrome_widgets,
     } = ctx;
@@ -77,9 +83,8 @@ pub fn install(lua: &Lua, ui: &Table, ctx: UiExtInstall) -> mlua::Result<()> {
         ui,
         ledger.clone(),
         Rc::clone(&guard),
-        registry.clone(),
         ui_effects,
-        Rc::clone(&overlay_callbacks),
+        dialog_callbacks,
     )?;
     install_remove_overlay(
         lua,
@@ -828,180 +833,104 @@ fn install_overlay(
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-struct DialogButton {
-    id: String,
-    text: String,
-    style: DialogButtonStyle,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum DialogButtonStyle {
-    Red,
-    Green,
-    Blue,
-    White,
-}
-
-impl DialogButtonStyle {
-    fn parse(raw: &str) -> Result<Self, String> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "red" => Ok(Self::Red),
-            "green" => Ok(Self::Green),
-            "blue" => Ok(Self::Blue),
-            "white" => Ok(Self::White),
-            other => Err(format!(
-                "dialog button style `{other}` is not supported; expected red, green, blue, or white"
-            )),
-        }
-    }
-
-    fn colors(self) -> (&'static str, &'static str, &'static str, &'static str) {
-        match self {
-            Self::Red => ("#a03232", "#d9413d", "#e1e5f4", "#d9413d"),
-            Self::Green => ("#30463b", "#448847", "#e1e5f4", "#448847"),
-            Self::Blue => ("#2b3d58", "#4284ed", "#e1e5f4", "#4472b8"),
-            Self::White => ("#101119", "#171822", "#e1e5f4", "#cdd1d8"),
-        }
-    }
-}
-
 fn install_dialog(
     lua: &Lua,
     ui: &Table,
     ledger: ResourceLedger,
     guard: Rc<CapabilityGuard>,
-    registry: ExtensionRegistry,
     ui_effects: crate::plugin::ui::effects::PendingUiEffects,
-    overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    dialog_callbacks: Rc<RefCell<DialogCallbacks>>,
 ) -> mlua::Result<()> {
     let plugin_id = ledger.plugin_id().as_str().to_string();
     ui.set(
         "dialog",
         lua.create_function(move |lua_inner, spec: Table| {
-            let id: String = spec.get("id")?;
+            let dialog_id = required_non_empty_string(&spec, "id", "dialog.id")?;
             let source = ResourceLedger::source_location(lua_inner);
             guard
                 .check_named_for_target(
                     "ui:overlay",
-                    &format!("dialog:{id}"),
+                    &format!("dialog:{dialog_id}"),
                     "leviathan.ui.dialog",
                     source.as_deref(),
                     "Declare and grant `ui:overlay`.",
                 )
                 .map_err(mlua::Error::external)?;
 
-            let text: String = spec.get("text")?;
-            let title: Option<String> = spec.get("title")?;
-            let dismissible: bool = spec.get::<Option<bool>>("dismissible")?.unwrap_or(true);
-            let priority: i32 = spec.get::<Option<i32>>("priority")?.unwrap_or(100);
-            let dropdown = dialog_dropdown_widget(&spec)?;
+            let mut callbacks = Vec::new();
+            let request =
+                dialog_request_from_lua(lua_inner, &plugin_id, &dialog_id, &spec, &mut callbacks)?;
 
-            let button_callbacks: Rc<RefCell<HashMap<String, mlua::RegistryKey>>> =
-                Rc::new(RefCell::new(HashMap::new()));
-            let mut key_to_button = HashMap::new();
-            let mut key_events = Vec::new();
-            let buttons = read_dialog_buttons(
-                lua_inner,
-                &spec,
-                Rc::clone(&button_callbacks),
-                &mut key_to_button,
-                &mut key_events,
-            )?;
-
-            let widget_json = dialog_widget_json(title.as_deref(), &text, dropdown, &buttons);
-            let widget = widget_ast::decode(&widget_json)
-                .map_err(|e| mlua::Error::external(format!("invalid dialog widget: {e}")))?;
-
-            let callbacks_for_wrapper = Rc::clone(&button_callbacks);
-            let key_to_button_for_wrapper = key_to_button;
-            let registry_for_wrapper = registry.clone();
-            let plugin_for_wrapper = plugin_id.clone();
-            let overlay_id_for_wrapper = id.clone();
-            let callback = lua_inner.create_function(
-                move |lua_cb, (_overlay_id, event, value): (String, String, LuaValue)| {
-                    let button_id = match event.as_str() {
-                        "dialog_button" => dialog_button_id_from_value(&value)?,
-                        "key" => dialog_key_from_value(&value)
-                            .and_then(|key| key_to_button_for_wrapper.get(&key).cloned()),
-                        "escape" => key_to_button_for_wrapper.get("esc").cloned(),
-                        _ => None,
-                    };
-
-                    let Some(button_id) = button_id else {
-                        if event == "escape" {
-                            registry_for_wrapper
-                                .remove_overlay(&plugin_for_wrapper, &overlay_id_for_wrapper);
-                        }
-                        return Ok(());
-                    };
-
-                    let callbacks = callbacks_for_wrapper.borrow();
-                    let Some(callback_key) = callbacks.get(&button_id) else {
-                        return Ok(());
-                    };
-                    let callback: Function = lua_cb.registry_value(callback_key)?;
-                    callback.call::<()>((button_id,))?;
-                    Ok(())
-                },
-            )?;
-
-            let handle = format!("overlay:{id}");
-            ledger.remove_by_kind_handle(PluginResourceKind::Overlay, &handle);
-            ledger.record(PluginResourceKind::Overlay, handle, source.clone());
-            overlay_callbacks.borrow_mut().remove(&id);
-            let callback_key = lua_inner.create_registry_value(callback)?;
-            ledger.record(
-                PluginResourceKind::LuaRegistryKey,
-                format!("overlay:{id}:on_event"),
-                source.clone(),
-            );
-            overlay_callbacks
+            ledger.remove_by_handle_prefix(&format!("dialog:{dialog_id}:button:"));
+            dialog_callbacks
                 .borrow_mut()
-                .insert(id.clone(), callback_key);
-
-            ui_effects.queue_widget_scroll_positions(&plugin_id, &format!("overlay:{id}"), &widget);
-            registry.add_overlay(OverlayRecord {
-                plugin_id: plugin_id.clone(),
-                id,
-                priority,
-                dismissible,
-                key_events,
-                widget,
-                source_location: source,
-            });
+                .remove_dialog(&plugin_id, &dialog_id);
+            for (button_id, callback_key) in callbacks {
+                ledger.record(
+                    PluginResourceKind::LuaRegistryKey,
+                    format!("dialog:{dialog_id}:button:{button_id}:on_click"),
+                    source.clone(),
+                );
+                dialog_callbacks.borrow_mut().insert(
+                    plugin_id.clone(),
+                    dialog_id.clone(),
+                    button_id,
+                    callback_key,
+                );
+            }
+            ui_effects.queue_open_repository_dialog(request);
             Ok(())
         })?,
     )?;
     Ok(())
 }
 
+fn dialog_request_from_lua(
+    lua: &Lua,
+    plugin_id: &str,
+    dialog_id: &str,
+    spec: &Table,
+    callbacks: &mut Vec<(String, mlua::RegistryKey)>,
+) -> mlua::Result<DialogRequest> {
+    let text = required_non_empty_string(spec, "text", "dialog.text")?;
+    let title = optional_non_empty_string(spec, "title", "dialog.title")?;
+    let dismissible = spec.get::<Option<bool>>("dismissible")?.unwrap_or(true);
+    let data = read_dialog_data(spec)?;
+    let controls = read_dialog_controls(spec)?;
+    let buttons = read_dialog_buttons(lua, spec, callbacks)?;
+    let autofocus = optional_non_empty_string(spec, "autofocus", "dialog.autofocus")?;
+
+    Ok(DialogRequest {
+        plugin_id: plugin_id.to_string(),
+        dialog_id: dialog_id.to_string(),
+        text,
+        title,
+        data,
+        controls,
+        buttons,
+        dismissible,
+        autofocus,
+    })
+}
+
 fn read_dialog_buttons(
     lua: &Lua,
     spec: &Table,
-    button_callbacks: Rc<RefCell<HashMap<String, mlua::RegistryKey>>>,
-    key_to_button: &mut HashMap<String, String>,
-    key_events: &mut Vec<String>,
-) -> mlua::Result<Vec<DialogButton>> {
+    callbacks: &mut Vec<(String, mlua::RegistryKey)>,
+) -> mlua::Result<Vec<DialogButtonRequest>> {
     let table: Table = spec.get("buttons")?;
     let mut buttons = Vec::new();
     for (index, raw_button) in table.sequence_values::<Table>().enumerate() {
         let button = raw_button?;
         let id = button
             .get::<Option<String>>("id")?
+            .map(|id| validate_non_empty_string(id, "dialog button id"))
+            .transpose()?
             .unwrap_or_else(|| format!("button_{}", index + 1));
-        let text: String = button.get("text")?;
-        let style = DialogButtonStyle::parse(&button.get::<String>("style")?)
-            .map_err(mlua::Error::external)?;
-        let callback = match button.get::<Option<Function>>("on_click")? {
-            Some(callback) => callback,
-            None => button.get("action")?,
-        };
-        let callback_key = lua.create_registry_value(callback)?;
-        button_callbacks
-            .borrow_mut()
-            .insert(id.clone(), callback_key);
+        let text = required_non_empty_string(&button, "text", "dialog button text")?;
+        let style = normalize_dialog_button_style(&button.get::<String>("style")?)?;
         if let Some(keys) = button.get::<Option<Table>>("keys")? {
+            let mut normalized_keys = Vec::new();
             for raw in keys.sequence_values::<String>() {
                 let raw = raw?;
                 let Some(normalized) = normalize_overlay_key_event(&raw) else {
@@ -1009,14 +938,32 @@ fn read_dialog_buttons(
                         "dialog button `{id}` contains unsupported key `{raw}`"
                     )));
                 };
-                let normalized = normalized.into_owned();
-                if !key_to_button.contains_key(&normalized) {
-                    key_events.push(normalized.clone());
-                }
-                key_to_button.insert(normalized, id.clone());
+                normalized_keys.push(normalized.into_owned());
             }
+            buttons.push(DialogButtonRequest {
+                id: id.clone(),
+                text,
+                style,
+                keys: normalized_keys,
+                closes_dialog: button.get::<Option<bool>>("closes_dialog")?.unwrap_or(true),
+                enabled: button.get::<Option<bool>>("enabled")?.unwrap_or(true),
+            });
+        } else {
+            buttons.push(DialogButtonRequest {
+                id: id.clone(),
+                text,
+                style,
+                keys: Vec::new(),
+                closes_dialog: button.get::<Option<bool>>("closes_dialog")?.unwrap_or(true),
+                enabled: button.get::<Option<bool>>("enabled")?.unwrap_or(true),
+            });
         }
-        buttons.push(DialogButton { id, text, style });
+
+        let callback = button.get::<Option<Function>>("on_click")?.ok_or_else(|| {
+            mlua::Error::external(format!("dialog button `{id}` requires on_click"))
+        })?;
+        let callback_key = lua.create_registry_value(callback)?;
+        callbacks.push((id, callback_key));
     }
 
     if buttons.is_empty() {
@@ -1028,182 +975,141 @@ fn read_dialog_buttons(
     Ok(buttons)
 }
 
-fn dialog_button_id_from_value(value: &LuaValue) -> mlua::Result<Option<String>> {
-    let LuaValue::Table(table) = value else {
+fn read_dialog_data(spec: &Table) -> mlua::Result<Vec<DialogDataRequest>> {
+    let Some(table) = spec.get::<Option<Table>>("data")? else {
+        return Ok(Vec::new());
+    };
+    table
+        .sequence_values::<Table>()
+        .map(|item| {
+            let item = item?;
+            Ok(DialogDataRequest {
+                id: required_non_empty_string(&item, "id", "dialog data id")?,
+                value: item.get("value")?,
+            })
+        })
+        .collect()
+}
+
+fn read_dialog_controls(spec: &Table) -> mlua::Result<Vec<DialogControlRequest>> {
+    let Some(table) = spec.get::<Option<Table>>("controls")? else {
+        return Ok(Vec::new());
+    };
+    table
+        .sequence_values::<Table>()
+        .map(|control| {
+            let control = control?;
+            Ok(DialogControlRequest {
+                id: required_non_empty_string(&control, "id", "dialog control id")?,
+                label: read_dialog_label(&control)?,
+                text_input: read_dialog_text_input(&control)?,
+                dropdown: read_dialog_dropdown(&control)?,
+            })
+        })
+        .collect()
+}
+
+fn read_dialog_label(control: &Table) -> mlua::Result<Option<DialogLabelRequest>> {
+    let Some(label) = control.get::<Option<Table>>("label")? else {
         return Ok(None);
     };
-    table.get("id")
+    Ok(Some(DialogLabelRequest {
+        text: required_non_empty_string(&label, "text", "dialog label text")?,
+        style: label
+            .get::<Option<String>>("style")?
+            .unwrap_or_else(|| "secondary".to_string()),
+    }))
 }
 
-fn dialog_key_from_value(value: &LuaValue) -> Option<String> {
-    let LuaValue::Table(table) = value else {
-        return None;
+fn read_dialog_text_input(control: &Table) -> mlua::Result<Option<DialogTextInputRequest>> {
+    let Some(input) = control.get::<Option<Table>>("text_input")? else {
+        return Ok(None);
     };
-    table.get::<String>("key").ok()
+    Ok(Some(DialogTextInputRequest {
+        placeholder: input
+            .get::<Option<String>>("placeholder")?
+            .unwrap_or_default(),
+        value: input.get::<Option<String>>("value")?.unwrap_or_default(),
+        submit_button_id: optional_non_empty_string(
+            &input,
+            "submit_button_id",
+            "dialog text input submit_button_id",
+        )?,
+        width: input.get::<Option<u16>>("width")?,
+    }))
 }
 
-fn dialog_dropdown_widget(spec: &Table) -> mlua::Result<Option<JsonValue>> {
-    let Some(dropdown) = spec.get::<Option<Table>>("dropdown")? else {
+fn read_dialog_dropdown(control: &Table) -> mlua::Result<Option<DialogDropdownRequest>> {
+    let Some(dropdown) = control.get::<Option<Table>>("dropdown")? else {
         return Ok(None);
     };
     let options: Table = dropdown.get("options")?;
-    let mut rows = Vec::new();
-    for option in options.sequence_values::<Table>() {
-        let option = option?;
-        let text: String = option.get("text")?;
-        let icon_path: Option<String> = option.get("icon")?;
-        let mut children = Vec::new();
-        if let Some(icon_path) = icon_path {
-            children.push(json!({
-                "kind": "icon",
-                "path": icon_path,
-                "size": 14,
-                "color": { "token": "text.secondary" }
-            }));
-        }
-        children.push(json!({
-            "kind": "text",
-            "value": text,
-            "size": 13,
-            "color": { "token": "text.secondary" }
-        }));
-        rows.push(json!({
-            "kind": "row",
-            "spacing": 8,
-            "width": "fill",
-            "align_y": "center",
-            "children": children
-        }));
-    }
-
-    if rows.is_empty() {
+    let options: Vec<DialogDropdownOptionRequest> = options
+        .sequence_values::<Table>()
+        .map(|option| {
+            let option = option?;
+            Ok(DialogDropdownOptionRequest {
+                id: required_non_empty_string(&option, "id", "dialog dropdown option id")?,
+                text: required_non_empty_string(&option, "text", "dialog dropdown option text")?,
+            })
+        })
+        .collect::<mlua::Result<_>>()?;
+    if options.is_empty() {
         return Err(mlua::Error::external(
-            "dialog.dropdown.options must contain at least one option",
+            "dialog dropdown must contain at least one option",
         ));
     }
-
-    Ok(Some(json!({
-        "kind": "container",
-        "bg": "#20212b",
-        "width": "fill",
-        "child": {
-            "kind": "padding",
-            "top": 8,
-            "right": 10,
-            "bottom": 8,
-            "left": 10,
-            "width": "fill",
-            "child": {
-                "kind": "column",
-                "spacing": 6,
-                "width": "fill",
-                "children": rows
-            }
-        }
-    })))
+    Ok(Some(DialogDropdownRequest {
+        placeholder: dropdown
+            .get::<Option<String>>("placeholder")?
+            .unwrap_or_default(),
+        options,
+        selected_option_id: optional_non_empty_string(
+            &dropdown,
+            "selected_option_id",
+            "dialog dropdown selected_option_id",
+        )?,
+        open: dropdown.get::<Option<bool>>("open")?.unwrap_or(false),
+        width: dropdown.get::<Option<u16>>("width")?,
+        leading_icon: optional_non_empty_string(
+            &dropdown,
+            "leading_icon",
+            "dialog dropdown leading_icon",
+        )?,
+    }))
 }
 
-fn dialog_widget_json(
-    _title: Option<&str>,
-    text: &str,
-    dropdown: Option<JsonValue>,
-    buttons: &[DialogButton],
-) -> JsonValue {
-    let fill_space = || {
-        json!({
-            "kind": "space",
-            "width": "fill",
-            "height": "shrink"
-        })
-    };
-
-    let mut row_children = vec![fill_space()];
-    row_children.push(json!({
-        "kind": "text",
-        "value": text,
-        "size": 11,
-        "color": { "token": "text.primary" }
-    }));
-    if let Some(dropdown) = dropdown {
-        row_children.push(dropdown);
+fn normalize_dialog_button_style(raw: &str) -> mlua::Result<String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "red" | "green" | "blue" | "white" => Ok(raw.trim().to_ascii_lowercase()),
+        other => Err(mlua::Error::external(format!(
+            "dialog button style `{other}` is not supported; expected red, green, blue, or white"
+        ))),
     }
-    row_children.extend(buttons.iter().map(dialog_button_widget_json));
-    row_children.push(fill_space());
-
-    let tab_spacer = json!({
-        "kind": "space",
-        "width": "fill",
-        "height": crate::theme::TAB_HEIGHT as f32
-    });
-    let toolbar_bar = json!({
-        "kind": "container",
-        "bg": "#101119",
-        "width": "fill",
-        "height": crate::theme::TOOLBAR_HEIGHT as f32,
-        "child": {
-            "kind": "padding",
-            "top": 0,
-            "right": 16,
-            "bottom": 0,
-            "left": 16,
-            "width": "fill",
-            "height": "fill",
-            "child": {
-                "kind": "row",
-                "spacing": 10,
-                "width": "fill",
-                "height": "fill",
-                "align_y": "center",
-                "children": row_children
-            }
-        }
-    });
-
-    json!({
-        "kind": "column",
-        "width": "fill",
-        "height": "shrink",
-        "children": [tab_spacer, toolbar_bar]
-    })
 }
 
-fn dialog_button_widget_json(button: &DialogButton) -> JsonValue {
-    let (background, background_hover, text_color, border_color) = button.style.colors();
-    json!({
-        "kind": "button",
-        "on_click": "dialog_button",
-        "value": { "id": button.id.clone() },
-        "height": 28,
-        "style": {
-            "background": background,
-            "background_hover": background_hover,
-            "text_color": text_color,
-            "border": {
-                "color": border_color,
-                "width": 1,
-                "radius": 4
-            }
-        },
-        "child": {
-            "kind": "padding",
-            "top": 0,
-            "right": 10,
-            "bottom": 0,
-            "left": 10,
-            "height": "fill",
-            "child": {
-                "kind": "container",
-                "height": "fill",
-                "center_y": true,
-                "child": {
-                    "kind": "text",
-                    "value": button.text.clone(),
-                    "size": 11,
-                    "color": text_color
-                }
-            }
-        }
-    })
+fn required_non_empty_string(table: &Table, field: &str, label: &str) -> mlua::Result<String> {
+    let value: String = table.get(field)?;
+    validate_non_empty_string(value, label)
+}
+
+fn optional_non_empty_string(
+    table: &Table,
+    field: &str,
+    label: &str,
+) -> mlua::Result<Option<String>> {
+    table
+        .get::<Option<String>>(field)?
+        .map(|value| validate_non_empty_string(value, label))
+        .transpose()
+}
+
+fn validate_non_empty_string(value: String, label: &str) -> mlua::Result<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(mlua::Error::external(format!("{label} must not be empty")));
+    }
+    Ok(value)
 }
 
 fn install_remove_overlay(

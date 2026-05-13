@@ -1,22 +1,20 @@
-//! Overlay dialogs shown over the top toolbar (confirmations, text prompts)
-//! plus the AddRemote side panel. The [`OverlayManager`] enforces that at most
-//! one dialog is active at any moment via [`Option<ActiveDialog>`] — there is
-//! no way to "smuggle" a second dialog through mutual-exclusion convention.
+//! Repository toolbar dialogs and side-panel overlays.
 
 use std::sync::Arc;
 
-use iced::{Element, Task};
+use iced::{keyboard, Element, Task};
 
 use crate::{
     core::TabId,
     message::Message,
     services::{presenter::Presenter, ModifyDeleteConflictChoice, SharedRepositoryGateway},
     theme,
-    work::git_write_work,
 };
 
-use super::state::{OperationCoordinator, OperationKind, RepositoryData};
-use super::{panel_messages::OverlayPanelAction, RepositoryMessage};
+use self::dialog::model::{Dialog, DialogButtonId, DialogControlId, DialogId, DialogOwner};
+use self::native_dialog_kind::NativeDialogKind;
+use super::panel_messages::OverlayPanelAction;
+use super::state::{OperationCoordinator, RepositoryData};
 
 pub(crate) mod add_remote;
 pub(crate) mod cherry_pick_confirm;
@@ -26,14 +24,19 @@ pub(crate) mod create_tag;
 pub(crate) mod create_worktree;
 pub(crate) mod delete_branch;
 pub(crate) mod delete_tag;
+pub(crate) mod dialog;
+mod dialog_requests;
 pub(crate) mod discard;
 pub(crate) mod force_push;
 pub(crate) mod modify_delete_conflict;
+mod native_actions;
+mod native_dialog_kind;
 pub(crate) mod push_behind;
 pub(crate) mod remove_worktree;
 pub(crate) mod rename_branch;
 pub(crate) mod revert_confirm;
 pub(crate) mod set_upstream;
+mod side_panel_dispatch;
 pub(crate) mod stash_delete;
 pub(crate) mod validation;
 pub(crate) mod widgets;
@@ -42,40 +45,16 @@ pub(crate) use widgets::{CREATE_BUTTON, OVERLAY_ENTER_OFFSET};
 
 const OVERLAY_SLIDE_SPEED_PX_PER_MS: f32 = 6.25;
 
-/// Exactly one dialog is open at a time; this enum carries the active state.
-/// AddRemote uses a distinct animation timeline (its own `Instant`); everything
-/// else rides on [`OverlayManager::slide_offset`].
-pub(crate) enum ActiveDialog {
-    ConflictCheckout(conflict_checkout::State),
-    DeleteBranch(delete_branch::State),
-    StashDelete(stash_delete::State),
-    RenameBranch(rename_branch::State),
-    CreateBranchHere(create_branch::State),
-    Discard(discard::State),
+pub(crate) enum SidePanelOverlay {
     AddRemote(add_remote::State),
     CreateWorktree(create_worktree::State),
-    SetUpstream(set_upstream::State),
-    PushBehind(push_behind::State),
-    ForcePush(force_push::State),
-    CreateTagHere(create_tag::State),
-    DeleteTag(delete_tag::State),
-    CherryPick(cherry_pick_confirm::State),
-    Revert(revert_confirm::State),
-    RemoveWorktree(remove_worktree::State),
-    ModifyDeleteConflict(modify_delete_conflict::State),
 }
 
-impl ActiveDialog {
+impl SidePanelOverlay {
     fn captures_text_input(&self) -> bool {
         matches!(
             self,
-            ActiveDialog::ConflictCheckout(_)
-                | ActiveDialog::RenameBranch(_)
-                | ActiveDialog::CreateBranchHere(_)
-                | ActiveDialog::CreateTagHere(_)
-                | ActiveDialog::AddRemote(_)
-                | ActiveDialog::CreateWorktree(_)
-                | ActiveDialog::SetUpstream(_)
+            SidePanelOverlay::AddRemote(_) | SidePanelOverlay::CreateWorktree(_)
         )
     }
 }
@@ -96,92 +75,147 @@ pub(crate) struct DialogCtx<'a> {
 pub(crate) enum DialogDispatch {
     /// Plain task — may be `Task::none()` for local-only state changes.
     Task(Task<Message>),
+    /// Plugin-owned toolbar dialog button callback. The screen turns this into
+    /// a top-level plugin message; it never calls the plugin host directly.
+    PluginDialogButtonPressed {
+        plugin_id: String,
+        dialog_id: String,
+        button_id: String,
+    },
     /// Cancel path: caller closes the dialog without changing panel focus.
     CancelClosed,
     /// Opened a new dialog that requires restoring center-list scroll.
     RestoreCenterListScroll,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DialogOwnerRoute {
+    Native,
+    Plugin,
+}
+
+enum DialogEvent {
+    ButtonPressed {
+        button_id: DialogButtonId,
+    },
+    InputChanged {
+        control_id: DialogControlId,
+        value: String,
+    },
+    DropdownToggled {
+        control_id: DialogControlId,
+    },
+    DropdownChanged {
+        control_id: DialogControlId,
+        option_id: String,
+    },
+    Dismissed,
+}
+
 pub(crate) struct OverlayManager {
-    active: Option<ActiveDialog>,
-    slide_offset: f32,
+    toolbar_dialog: Option<Dialog>,
+    side_panel: Option<SidePanelOverlay>,
+    toolbar_slide_offset: f32,
+}
+
+fn dialog_owner_route(owner: &DialogOwner) -> DialogOwnerRoute {
+    match owner {
+        DialogOwner::Native(_) => DialogOwnerRoute::Native,
+        DialogOwner::Plugin { .. } => DialogOwnerRoute::Plugin,
+    }
 }
 
 impl OverlayManager {
     pub(crate) fn new() -> Self {
         Self {
-            active: None,
-            slide_offset: 0.0,
+            toolbar_dialog: None,
+            side_panel: None,
+            toolbar_slide_offset: 0.0,
         }
     }
 
-    pub(crate) fn active(&self) -> Option<&ActiveDialog> {
-        self.active.as_ref()
+    pub(crate) fn has_toolbar_dialog(&self) -> bool {
+        self.toolbar_dialog.is_some()
     }
 
-    /// Open a new dialog, replacing any previously-active dialog. Sets the
-    /// slide offset appropriate for the dialog's animation timeline.
-    pub(crate) fn open(&mut self, dialog: ActiveDialog) {
-        self.slide_offset = match &dialog {
-            ActiveDialog::AddRemote(_) => 0.0,      // uses its own animation
-            ActiveDialog::CreateWorktree(_) => 0.0, // uses its own animation
-            _ => OVERLAY_ENTER_OFFSET,
-        };
-        self.active = Some(dialog);
+    pub(crate) fn open_toolbar_dialog(&mut self, dialog: Dialog) {
+        self.side_panel = None;
+        self.toolbar_slide_offset = OVERLAY_ENTER_OFFSET;
+        self.toolbar_dialog = Some(dialog);
     }
 
-    /// Close the active dialog (if any) and reset animation state.
+    pub(crate) fn close_plugin_toolbar_dialog(&mut self, plugin_id: &str, dialog_id: &str) -> bool {
+        if self.plugin_toolbar_dialog_matches(plugin_id, dialog_id) {
+            self.close();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn plugin_toolbar_dialog_matches(&self, plugin_id: &str, dialog_id: &str) -> bool {
+        self.toolbar_dialog.as_ref().is_some_and(|dialog| {
+            dialog.id.0 == dialog_id && dialog.owner.plugin_id() == Some(plugin_id)
+        })
+    }
+
+    fn open_side_panel(&mut self, side_panel: SidePanelOverlay) {
+        self.toolbar_dialog = None;
+        self.toolbar_slide_offset = 0.0;
+        self.side_panel = Some(side_panel);
+    }
+
     pub(crate) fn close(&mut self) {
-        self.active = None;
-        self.slide_offset = 0.0;
+        self.toolbar_dialog = None;
+        self.side_panel = None;
+        self.toolbar_slide_offset = 0.0;
     }
 
     pub(crate) fn is_text_input_active(&self) -> bool {
-        self.active
+        self.toolbar_dialog.as_ref().is_some_and(|dialog| {
+            dialog
+                .controls
+                .iter()
+                .any(|control| control.text_input.is_some())
+        }) || self
+            .side_panel
             .as_ref()
-            .is_some_and(|d| d.captures_text_input())
+            .is_some_and(|panel| panel.captures_text_input())
     }
 
-    pub(crate) fn cancel_confirmation_action(&self) -> Option<OverlayPanelAction> {
-        match self.active.as_ref()? {
-            ActiveDialog::DeleteBranch(_) => Some(OverlayPanelAction::BranchDeleteCanceled),
-            ActiveDialog::StashDelete(_) => Some(OverlayPanelAction::StashDeleteCanceled),
-            ActiveDialog::Discard(_) => Some(OverlayPanelAction::DiscardCanceled),
-            ActiveDialog::PushBehind(_) => Some(OverlayPanelAction::PushBehindCanceled),
-            ActiveDialog::ForcePush(_) => Some(OverlayPanelAction::ForcePushCanceled),
-            ActiveDialog::DeleteTag(_) => Some(OverlayPanelAction::DeleteTagCanceled),
-            ActiveDialog::CherryPick(_) => Some(OverlayPanelAction::CherryPickCanceled),
-            ActiveDialog::Revert(_) => Some(OverlayPanelAction::RevertCanceled),
-            ActiveDialog::RemoveWorktree(_) => Some(OverlayPanelAction::WorktreeRemoveCanceled),
-            ActiveDialog::ModifyDeleteConflict(_) => Some(OverlayPanelAction::ModifyDeleteCancel),
-            _ => None,
+    pub(crate) fn toolbar_dialog_key_action(
+        &self,
+        key: &keyboard::Key,
+    ) -> Option<OverlayPanelAction> {
+        let dialog = self.toolbar_dialog.as_ref()?;
+        let key_name = dialog_requests::dialog_key_name(key)?;
+        if let Some(button) = dialog.enabled_button_for_key(&key_name) {
+            return Some(OverlayPanelAction::DialogButtonPressed {
+                dialog_id: dialog.id.clone(),
+                button_id: button.id.clone(),
+            });
         }
-    }
-
-    pub(crate) fn cancel_active_action(&self) -> Option<OverlayPanelAction> {
-        match self.active.as_ref()? {
-            ActiveDialog::CreateBranchHere(_) => Some(OverlayPanelAction::CreateBranchHereCanceled),
-            _ => self.cancel_confirmation_action(),
+        if key_name == "esc" && dialog.dismissible {
+            return Some(OverlayPanelAction::DialogDismissed {
+                dialog_id: dialog.id.clone(),
+            });
         }
-    }
-
-    pub(crate) fn confirm_confirmation_action(&self) -> Option<OverlayPanelAction> {
-        match self.active.as_ref()? {
-            ActiveDialog::Discard(_) => Some(OverlayPanelAction::DiscardConfirmed),
-            _ => None,
-        }
+        None
     }
 
     pub(crate) fn is_animating(&self) -> bool {
-        if self.slide_offset > 0.0 {
+        if self.toolbar_dialog.is_some() && self.toolbar_slide_offset > 0.0 {
             return true;
         }
-        if let Some(ActiveDialog::AddRemote(state)) = &self.active {
+        if self.toolbar_slide_offset > 0.0 {
+            return true;
+        }
+        if let Some(SidePanelOverlay::AddRemote(state)) = &self.side_panel {
             if !state.is_animation_done() {
                 return true;
             }
         }
-        if let Some(ActiveDialog::CreateWorktree(state)) = &self.active {
+        if let Some(SidePanelOverlay::CreateWorktree(state)) = &self.side_panel {
             if !state.is_animation_done() {
                 return true;
             }
@@ -190,98 +224,141 @@ impl OverlayManager {
     }
 
     pub(crate) fn as_add_remote_mut(&mut self) -> Option<&mut add_remote::State> {
-        match &mut self.active {
-            Some(ActiveDialog::AddRemote(state)) => Some(state),
+        match &mut self.side_panel {
+            Some(SidePanelOverlay::AddRemote(state)) => Some(state),
             _ => None,
         }
     }
 
     pub(crate) fn as_create_worktree_mut(&mut self) -> Option<&mut create_worktree::State> {
-        match &mut self.active {
-            Some(ActiveDialog::CreateWorktree(state)) => Some(state),
+        match &mut self.side_panel {
+            Some(SidePanelOverlay::CreateWorktree(state)) => Some(state),
             _ => None,
         }
     }
 
-    pub(crate) fn as_set_upstream_mut(&mut self) -> Option<&mut set_upstream::State> {
-        match &mut self.active {
-            Some(ActiveDialog::SetUpstream(state)) => Some(state),
-            _ => None,
-        }
+    pub(crate) fn is_add_remote_open(&self) -> bool {
+        matches!(
+            self.side_panel.as_ref(),
+            Some(SidePanelOverlay::AddRemote(_))
+        )
+    }
+
+    pub(crate) fn is_create_worktree_open(&self) -> bool {
+        matches!(
+            self.side_panel.as_ref(),
+            Some(SidePanelOverlay::CreateWorktree(_))
+        )
     }
 
     pub(crate) fn tick_animation(&mut self, delta_ms: f32) -> Option<Task<Message>> {
-        // AddRemote runs on its own clock — check before the shared decay.
-        if let Some(ActiveDialog::AddRemote(state)) = &self.active {
+        if let Some(SidePanelOverlay::AddRemote(state)) = &self.side_panel {
             if state.is_animation_done() {
                 if state.direction == add_remote::Direction::Opening && state.needs_focus {
-                    if let Some(ActiveDialog::AddRemote(s)) = self.active.as_mut() {
+                    if let Some(SidePanelOverlay::AddRemote(s)) = self.side_panel.as_mut() {
                         s.needs_focus = false;
                     }
                     return Some(iced::widget::operation::focus(add_remote::input_id()));
                 }
                 if state.direction == add_remote::Direction::Closing {
-                    self.active = None;
+                    self.side_panel = None;
                     return None;
                 }
             }
         }
 
-        // CreateWorktree runs on its own clock — parallel to AddRemote.
-        if let Some(ActiveDialog::CreateWorktree(state)) = &self.active {
+        if let Some(SidePanelOverlay::CreateWorktree(state)) = &self.side_panel {
             if state.is_animation_done() {
                 if state.direction == create_worktree::Direction::Opening && state.needs_focus {
-                    if let Some(ActiveDialog::CreateWorktree(s)) = self.active.as_mut() {
+                    if let Some(SidePanelOverlay::CreateWorktree(s)) = self.side_panel.as_mut() {
                         s.needs_focus = false;
                     }
                     return Some(iced::widget::operation::focus(create_worktree::input_id()));
                 }
                 if state.direction == create_worktree::Direction::Closing {
-                    self.active = None;
+                    self.side_panel = None;
                     return None;
                 }
             }
         }
 
-        let was_animating = self.slide_offset > 0.0;
-        self.slide_offset = (self.slide_offset - OVERLAY_SLIDE_SPEED_PX_PER_MS * delta_ms).max(0.0);
-        let still_animating = self.slide_offset > 0.0;
+        let was_animating = self.toolbar_slide_offset > 0.0;
+        self.toolbar_slide_offset =
+            (self.toolbar_slide_offset - OVERLAY_SLIDE_SPEED_PX_PER_MS * delta_ms).max(0.0);
+        let still_animating = self.toolbar_slide_offset > 0.0;
 
         if was_animating && !still_animating {
-            match self.active.as_mut() {
-                Some(ActiveDialog::CreateBranchHere(state)) if state.needs_focus => {
-                    state.needs_focus = false;
-                    return Some(iced::widget::operation::focus(create_branch::input_id()));
+            if let Some(dialog) = self.toolbar_dialog.as_mut() {
+                if let Some(control_id) = dialog.autofocus.take() {
+                    return Some(iced::widget::operation::focus(dialog::view::input_id(
+                        dialog,
+                        &control_id,
+                    )));
                 }
-                Some(ActiveDialog::RenameBranch(state)) if state.needs_focus => {
-                    state.needs_focus = false;
-                    return Some(iced::widget::operation::focus(rename_branch::input_id()));
-                }
-                Some(ActiveDialog::SetUpstream(state)) if state.needs_focus => {
-                    state.needs_focus = false;
-                    return Some(iced::widget::operation::focus(set_upstream::input_id()));
-                }
-                Some(ActiveDialog::CreateTagHere(state)) if state.needs_focus => {
-                    state.needs_focus = false;
-                    return Some(iced::widget::operation::focus(create_tag::input_id()));
-                }
-                _ => {}
             }
         }
 
         None
     }
 
-    /// Confirm the discard dialog (called from the DetailAction path). Returns
-    /// the task spawned for the git discard, or `Task::none()` if no discard
-    /// dialog is currently active.
-    pub(crate) fn confirm_discard(&mut self, ctx: DialogCtx<'_>) -> Task<Message> {
-        let Some(ActiveDialog::Discard(state)) = &self.active else {
-            return Task::none();
-        };
-        let target = state.target.clone();
-        self.close();
-        spawn_discard_task(target, ctx)
+    pub(crate) fn is_discard_dialog_open(&self) -> bool {
+        self.toolbar_dialog.as_ref().is_some_and(discard::is_dialog)
+    }
+
+    pub(crate) fn delete_tag_remote_names(&self) -> Vec<String> {
+        self.toolbar_dialog
+            .as_ref()
+            .map(delete_tag::remote_names)
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn is_delete_tag_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(delete_tag::is_dialog)
+    }
+
+    pub(crate) fn is_conflict_checkout_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(conflict_checkout::is_dialog)
+    }
+
+    pub(crate) fn is_delete_branch_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(delete_branch::is_dialog)
+    }
+
+    pub(crate) fn is_rename_branch_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(rename_branch::is_dialog)
+    }
+
+    pub(crate) fn is_create_branch_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(create_branch::is_dialog)
+    }
+
+    pub(crate) fn is_set_upstream_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(set_upstream::is_dialog)
+    }
+
+    pub(crate) fn is_create_tag_dialog_open(&self) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .is_some_and(create_tag::is_dialog)
+    }
+
+    pub(crate) fn reset_set_upstream_submitting(&mut self) {
+        if let Some(dialog) = self.toolbar_dialog.as_mut() {
+            set_upstream::set_submitting(dialog, false);
+            set_upstream::refresh_enabled(dialog);
+        }
     }
 
     fn resolve_modify_delete_conflict(
@@ -289,40 +366,7 @@ impl OverlayManager {
         choice: ModifyDeleteConflictChoice,
         ctx: DialogCtx<'_>,
     ) -> DialogDispatch {
-        let Some(ActiveDialog::ModifyDeleteConflict(state)) = self.active.as_ref() else {
-            return DialogDispatch::Task(Task::none());
-        };
-        let path = state.path.clone();
-        let Some(operation_id) = ctx
-            .operations
-            .begin_write_kind(OperationKind::ResolveConflict)
-        else {
-            return DialogDispatch::Task(Task::none());
-        };
-        self.close();
-        let DialogCtx {
-            repository,
-            presenter,
-            tab_id,
-            ..
-        } = ctx;
-        let task = Task::perform(
-            git_write_work(move || {
-                repository
-                    .resolve_modify_delete_conflict(&path, choice)
-                    .map(|s| presenter.project_loaded(s))
-            }),
-            move |result| {
-                Message::tab(
-                    tab_id,
-                    RepositoryMessage::DirtyIndexChanged {
-                        operation_id: Some(operation_id),
-                        result,
-                    },
-                )
-            },
-        );
-        DialogDispatch::Task(task)
+        native_actions::resolve_modify_delete_conflict(self, choice, ctx)
     }
 
     /// Checks whether deleting a branch is safe (can't delete HEAD locally).
@@ -340,52 +384,808 @@ impl OverlayManager {
     pub(crate) fn toolbar_overlay<'a>(
         &'a self,
         main_bar: Element<'a, Message>,
-        data: &RepositoryData,
+        _data: &RepositoryData,
     ) -> Element<'a, Message> {
-        let Some(active) = self.active.as_ref() else {
-            return main_bar;
-        };
-        let slide = self.slide_offset;
+        if let Some(dialog) = self.toolbar_dialog.as_ref() {
+            let slide = self.toolbar_slide_offset;
+            let overlay_elem = dialog::view::view(dialog, slide);
+            return bar_with_overlay(main_bar, overlay_elem, slide);
+        }
 
-        let overlay_elem = match active {
-            ActiveDialog::ConflictCheckout(state) => conflict_checkout::view(state, slide),
-            ActiveDialog::DeleteBranch(state) => delete_branch::view(state, slide),
-            ActiveDialog::StashDelete(state) => stash_delete::view(state, slide),
-            ActiveDialog::RenameBranch(state) => rename_branch::view(state, slide),
-            ActiveDialog::CreateBranchHere(state) => {
-                let existing = existing_branches(data);
-                create_branch::view(state, slide, &existing)
-            }
-            ActiveDialog::Discard(state) => discard::view(state, slide),
-            ActiveDialog::SetUpstream(state) => set_upstream::view(state, slide),
-            ActiveDialog::PushBehind(state) => push_behind::view(state, slide),
-            ActiveDialog::ForcePush(state) => force_push::view(state, slide),
-            ActiveDialog::CreateTagHere(state) => create_tag::view(state, slide),
-            ActiveDialog::DeleteTag(state) => delete_tag::view(state, slide),
-            ActiveDialog::CherryPick(_) => cherry_pick_confirm::view(slide),
-            ActiveDialog::Revert(_) => revert_confirm::view(slide),
-            ActiveDialog::RemoveWorktree(state) => remove_worktree::view(state, slide),
-            ActiveDialog::ModifyDeleteConflict(_) => modify_delete_conflict::view(slide),
-            // AddRemote and CreateWorktree render as side panels via overlay_layers(),
-            // not in the toolbar row.
-            ActiveDialog::AddRemote(_) => return main_bar,
-            ActiveDialog::CreateWorktree(_) => return main_bar,
-        };
-
-        bar_with_overlay(main_bar, overlay_elem, slide)
+        main_bar
     }
 
-    /// Any additional overlay layers rendered on top of the main view (e.g.
-    /// the AddRemote side panel with its click-anywhere backdrop).
     pub(crate) fn overlay_layers<'a>(&'a self, sidebar_width: f32) -> Vec<Element<'a, Message>> {
-        match &self.active {
-            Some(ActiveDialog::AddRemote(state)) => {
+        match &self.side_panel {
+            Some(SidePanelOverlay::AddRemote(state)) => {
                 add_remote::overlay_layers(state, sidebar_width)
             }
-            Some(ActiveDialog::CreateWorktree(state)) => {
+            Some(SidePanelOverlay::CreateWorktree(state)) => {
                 create_worktree::overlay_layers(state, sidebar_width)
             }
             _ => Vec::new(),
+        }
+    }
+
+    fn dispatch_toolbar_dialog_event_with_ctx(
+        &mut self,
+        dialog_id: DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        let route = self
+            .toolbar_dialog
+            .as_ref()
+            .filter(|dialog| dialog.id == dialog_id)
+            .map(|dialog| dialog_owner_route(&dialog.owner));
+
+        match route {
+            Some(DialogOwnerRoute::Native) => {
+                self.dispatch_native_dialog_event(&dialog_id, event, ctx)
+            }
+            Some(DialogOwnerRoute::Plugin) => self.dispatch_plugin_dialog_event(&dialog_id, event),
+            None => DialogDispatch::Task(Task::none()),
+        }
+    }
+
+    fn dispatch_native_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        let Some(dialog_kind) = self
+            .toolbar_dialog
+            .as_ref()
+            .filter(|dialog| &dialog.id == dialog_id)
+            .map(NativeDialogKind::from_dialog)
+        else {
+            return DialogDispatch::Task(Task::none());
+        };
+
+        match dialog_kind {
+            Some(NativeDialogKind::ForcePush) => {
+                self.dispatch_force_push_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::StashDelete) => {
+                self.dispatch_stash_delete_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::DeleteTag) => {
+                self.dispatch_delete_tag_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::CherryPick) => {
+                self.dispatch_cherry_pick_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::Revert) => {
+                self.dispatch_revert_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::RemoveWorktree) => {
+                self.dispatch_remove_worktree_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::Discard) => {
+                self.dispatch_discard_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::DeleteBranch) => {
+                self.dispatch_delete_branch_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::RenameBranch) => {
+                self.dispatch_rename_branch_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::CreateBranch) => {
+                self.dispatch_create_branch_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::ConflictCheckout) => {
+                self.dispatch_conflict_checkout_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::SetUpstream) => {
+                self.dispatch_set_upstream_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::PushBehind) => {
+                self.dispatch_push_behind_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::CreateTag) => {
+                self.dispatch_create_tag_dialog_event(dialog_id, event, ctx)
+            }
+            Some(NativeDialogKind::ModifyDeleteConflict) => {
+                self.dispatch_modify_delete_conflict_dialog_event(dialog_id, event, ctx)
+            }
+            None => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_force_push_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && force_push::is_confirm_button(&button_id) =>
+            {
+                self.confirm_force_push(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && force_push::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_stash_delete_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && stash_delete::is_confirm_button(&button_id) =>
+            {
+                self.confirm_stash_delete(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && stash_delete::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_delete_tag_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && delete_tag::is_confirm_button(&button_id) =>
+            {
+                self.confirm_delete_tag(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && delete_tag::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_cherry_pick_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && cherry_pick_confirm::is_immediate_button(&button_id) =>
+            {
+                self.confirm_cherry_pick(true, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && cherry_pick_confirm::is_staged_button(&button_id) =>
+            {
+                self.confirm_cherry_pick(false, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && cherry_pick_confirm::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_revert_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && revert_confirm::is_immediate_button(&button_id) =>
+            {
+                self.confirm_revert(true, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && revert_confirm::is_in_place_button(&button_id) =>
+            {
+                self.confirm_revert(false, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && revert_confirm::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_remove_worktree_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && remove_worktree::is_confirm_button(&button_id) =>
+            {
+                self.confirm_remove_worktree(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && remove_worktree::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_discard_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && discard::is_confirm_button(&button_id) =>
+            {
+                self.confirm_discard_dialog(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && discard::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_delete_branch_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && delete_branch::is_confirm_button(&button_id) =>
+            {
+                self.confirm_delete_branch(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && delete_branch::is_confirm_all_button(&button_id) =>
+            {
+                self.confirm_delete_branch_all(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && delete_branch::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_rename_branch_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && rename_branch::is_confirm_button(&button_id) =>
+            {
+                self.confirm_rename_branch(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && rename_branch::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_create_branch_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && create_branch::is_confirm_button(&button_id) =>
+            {
+                self.confirm_create_branch(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && create_branch::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_conflict_checkout_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && conflict_checkout::is_create_button(&button_id) =>
+            {
+                self.confirm_conflict_create_branch(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && conflict_checkout::is_reset_button(&button_id) =>
+            {
+                self.confirm_conflict_reset_local(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && conflict_checkout::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_set_upstream_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && set_upstream::is_confirm_button(&button_id) =>
+            {
+                self.confirm_set_upstream(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && set_upstream::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_push_behind_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && push_behind::is_pull_button(&button_id) =>
+            {
+                self.confirm_push_behind_pull(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && push_behind::is_force_button(&button_id) =>
+            {
+                self.confirm_push_behind_force_push()
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && push_behind::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_create_tag_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && create_tag::is_confirm_button(&button_id) =>
+            {
+                self.confirm_create_tag(ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && create_tag::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn dispatch_modify_delete_conflict_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        match event {
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && modify_delete_conflict::is_keep_modified_button(&button_id) =>
+            {
+                let Some(ctx) = ctx else {
+                    return DialogDispatch::Task(Task::none());
+                };
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepModified, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && modify_delete_conflict::is_delete_file_button(&button_id) =>
+            {
+                let Some(ctx) = ctx else {
+                    return DialogDispatch::Task(Task::none());
+                };
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::DeleteFile, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && modify_delete_conflict::is_keep_base_button(&button_id) =>
+            {
+                let Some(ctx) = ctx else {
+                    return DialogDispatch::Task(Task::none());
+                };
+                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepBase, ctx)
+            }
+            DialogEvent::ButtonPressed { button_id }
+                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
+                    && modify_delete_conflict::is_cancel_button(&button_id) =>
+            {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            DialogEvent::Dismissed => {
+                self.close();
+                DialogDispatch::CancelClosed
+            }
+            event => self.apply_local_dialog_event(dialog_id, event),
+        }
+    }
+
+    fn has_enabled_toolbar_dialog_button(
+        &self,
+        dialog_id: &DialogId,
+        button_id: &DialogButtonId,
+    ) -> bool {
+        self.toolbar_dialog
+            .as_ref()
+            .filter(|dialog| &dialog.id == dialog_id)
+            .is_some_and(|dialog| {
+                dialog
+                    .buttons
+                    .iter()
+                    .any(|button| &button.id == button_id && button.enabled)
+            })
+    }
+
+    fn confirm_force_push(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_force_push(self, ctx)
+    }
+
+    fn confirm_stash_delete(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_stash_delete(self, ctx)
+    }
+
+    fn confirm_delete_tag(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_delete_tag(self, ctx)
+    }
+
+    fn confirm_cherry_pick(
+        &mut self,
+        commit_now: bool,
+        ctx: Option<DialogCtx<'_>>,
+    ) -> DialogDispatch {
+        native_actions::confirm_cherry_pick(self, commit_now, ctx)
+    }
+
+    fn confirm_revert(&mut self, commit_now: bool, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_revert(self, commit_now, ctx)
+    }
+
+    fn confirm_remove_worktree(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_remove_worktree(self, ctx)
+    }
+
+    fn confirm_discard_dialog(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_discard_dialog(self, ctx)
+    }
+
+    fn confirm_delete_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_delete_branch(self, ctx)
+    }
+
+    fn confirm_delete_branch_all(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_delete_branch_all(self, ctx)
+    }
+
+    fn confirm_rename_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_rename_branch(self, ctx)
+    }
+
+    fn confirm_create_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_create_branch(self, ctx)
+    }
+
+    fn confirm_conflict_create_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_conflict_create_branch(self, ctx)
+    }
+
+    fn confirm_conflict_reset_local(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_conflict_reset_local(self, ctx)
+    }
+
+    fn confirm_set_upstream(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_set_upstream(self, ctx)
+    }
+
+    fn confirm_push_behind_pull(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_push_behind_pull(self, ctx)
+    }
+
+    fn confirm_push_behind_force_push(&mut self) -> DialogDispatch {
+        native_actions::confirm_push_behind_force_push(self)
+    }
+
+    fn confirm_create_tag(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
+        native_actions::confirm_create_tag(self, ctx)
+    }
+
+    fn dispatch_plugin_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+    ) -> DialogDispatch {
+        let DialogEvent::ButtonPressed { button_id } = event else {
+            return self.apply_local_dialog_event(dialog_id, event);
+        };
+
+        let Some(dialog) = self.toolbar_dialog.as_ref() else {
+            return DialogDispatch::Task(Task::none());
+        };
+        if &dialog.id != dialog_id {
+            return DialogDispatch::Task(Task::none());
+        }
+        let Some(plugin_id) = dialog.owner.plugin_id().map(ToOwned::to_owned) else {
+            return DialogDispatch::Task(Task::none());
+        };
+        let closes_dialog = match dialog
+            .buttons
+            .iter()
+            .find(|button| button.id == button_id && button.enabled)
+        {
+            Some(button) => button.closes_dialog,
+            None => return DialogDispatch::Task(Task::none()),
+        };
+
+        let dialog_id = dialog_id.0.clone();
+        let button_id = button_id.0;
+        if closes_dialog {
+            self.close();
+        }
+
+        DialogDispatch::PluginDialogButtonPressed {
+            plugin_id,
+            dialog_id,
+            button_id,
+        }
+    }
+
+    fn apply_local_dialog_event(
+        &mut self,
+        dialog_id: &DialogId,
+        event: DialogEvent,
+    ) -> DialogDispatch {
+        if matches!(event, DialogEvent::Dismissed) {
+            let should_close = self
+                .toolbar_dialog
+                .as_ref()
+                .is_some_and(|dialog| &dialog.id == dialog_id && dialog.dismissible);
+            if should_close {
+                self.close();
+            }
+            return DialogDispatch::Task(Task::none());
+        }
+
+        let Some(dialog) = self.toolbar_dialog.as_mut() else {
+            return DialogDispatch::Task(Task::none());
+        };
+        if &dialog.id != dialog_id {
+            return DialogDispatch::Task(Task::none());
+        }
+
+        match event {
+            DialogEvent::ButtonPressed { button_id } => {
+                let closes_dialog = match dialog
+                    .buttons
+                    .iter()
+                    .find(|button| button.id == button_id && button.enabled)
+                {
+                    Some(button) => button.closes_dialog,
+                    None => return DialogDispatch::Task(Task::none()),
+                };
+                if closes_dialog {
+                    self.close();
+                }
+            }
+            DialogEvent::InputChanged { control_id, value } => {
+                if let Some(input) = dialog
+                    .controls
+                    .iter_mut()
+                    .find(|control| control.id == control_id)
+                    .and_then(|control| control.text_input.as_mut())
+                {
+                    input.value = value;
+                }
+            }
+            DialogEvent::DropdownToggled { control_id } => {
+                if let Some(dropdown) = dialog
+                    .controls
+                    .iter_mut()
+                    .find(|control| control.id == control_id)
+                    .and_then(|control| control.dropdown.as_mut())
+                {
+                    dropdown.open = !dropdown.open;
+                }
+            }
+            DialogEvent::DropdownChanged {
+                control_id,
+                option_id,
+            } => {
+                if let Some(dropdown) = dialog
+                    .controls
+                    .iter_mut()
+                    .find(|control| control.id == control_id)
+                    .and_then(|control| control.dropdown.as_mut())
+                {
+                    if dropdown.options.iter().any(|option| option.id == option_id) {
+                        dropdown.selected_option_id = Some(option_id);
+                        dropdown.open = false;
+                    }
+                }
+            }
+            DialogEvent::Dismissed => {}
+        }
+
+        self.refresh_current_dialog();
+        DialogDispatch::Task(Task::none())
+    }
+
+    fn refresh_current_dialog(&mut self) {
+        let Some(dialog) = self.toolbar_dialog.as_mut() else {
+            return;
+        };
+        if conflict_checkout::is_dialog(dialog) {
+            conflict_checkout::refresh_enabled(dialog);
+        } else if create_branch::is_dialog(dialog) {
+            create_branch::refresh_enabled(dialog);
+        } else if rename_branch::is_dialog(dialog) {
+            rename_branch::refresh_enabled(dialog);
+        } else if create_tag::is_dialog(dialog) {
+            create_tag::refresh_enabled(dialog);
+        } else if set_upstream::is_dialog(dialog) {
+            set_upstream::refresh_enabled(dialog);
         }
     }
 
@@ -397,945 +1197,73 @@ impl OverlayManager {
         ctx: DialogCtx<'_>,
     ) -> DialogDispatch {
         match action {
-            OverlayPanelAction::ConflictNewBranchInput(value) => {
-                if let Some(ActiveDialog::ConflictCheckout(state)) = self.active.as_mut() {
-                    state.new_branch_input = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::ConflictCreateBranch => {
-                let Some(ActiveDialog::ConflictCheckout(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let new_name = state.new_branch_input.trim().to_string();
-                if new_name.is_empty() {
-                    return DialogDispatch::Task(Task::none());
-                }
-                let remote_ref = state.remote_ref.clone();
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .create_branch_from_remote(&new_name, &remote_ref)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::WriteRepoLoaded {
-                                operation_id,
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::ConflictResetLocal => {
-                let Some(ActiveDialog::ConflictCheckout(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let branch_name = state.branch_name.clone();
-                let remote_ref = state.remote_ref.clone();
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .reset_branch_to_remote(&branch_name, &remote_ref)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::WriteRepoLoaded {
-                                operation_id,
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::ConflictCancel => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::ModifyDeleteKeepModified => {
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepModified, ctx)
-            }
-            OverlayPanelAction::ModifyDeleteDeleteFile => {
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::DeleteFile, ctx)
-            }
-            OverlayPanelAction::ModifyDeleteKeepBase => {
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepBase, ctx)
-            }
-            OverlayPanelAction::ModifyDeleteCancel => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::BranchDeleteConfirmed => {
-                let Some(ActiveDialog::DeleteBranch(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let branch_name = state.branch_name.clone();
-                let is_remote = state.is_remote;
-                let branch_ref = if is_remote {
-                    state
-                        .remote_ref
-                        .clone()
-                        .unwrap_or_else(|| branch_name.clone())
-                } else {
-                    branch_name.clone()
-                };
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .delete_branch(&branch_ref, is_remote)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::BranchDeleted {
-                                operation_id: Some(operation_id),
-                                branch_name: branch_name.clone(),
-                                is_remote,
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::BranchDeleteAllConfirmed => {
-                let Some(ActiveDialog::DeleteBranch(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let branch_name = state.branch_name.clone();
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let delete_branch_name = branch_name.clone();
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .delete_branch_all(&delete_branch_name)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::BranchDeleted {
-                                operation_id: Some(operation_id),
-                                branch_name: branch_name.clone(),
-                                is_remote: false,
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::BranchDeleteCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::StashDeleteConfirmed => {
-                let Some(ActiveDialog::StashDelete(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let stash_index = state.stash_index;
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.close();
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .drop_stash(stash_index)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::DirtyIndexChanged {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::StashDeleteCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::BranchRenameConfirmed => {
-                let Some(ActiveDialog::RenameBranch(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let old_name = state.branch_name.clone();
-                let new_name = state.new_branch_input.trim().to_string();
-                let is_remote = state.is_remote;
-                let old_ref = if is_remote {
-                    state.remote_ref.clone().unwrap_or_else(|| old_name.clone())
-                } else {
-                    old_name.clone()
-                };
-                if new_name.is_empty() || new_name == old_name {
-                    self.close();
-                    return DialogDispatch::Task(Task::none());
-                }
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let old_name_clone = old_ref;
-                let new_name_clone = new_name.clone();
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .rename_branch(&old_name_clone, &new_name_clone, is_remote)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::BranchRenamed {
-                                operation_id: Some(operation_id),
-                                old_name: old_name.clone(),
-                                new_name: new_name.clone(),
-                                is_remote,
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::BranchRenameCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::RenameNewBranchInput(value) => {
-                if let Some(ActiveDialog::RenameBranch(state)) = self.active.as_mut() {
-                    state.new_branch_input = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateBranchHereConfirmed => {
-                let Some(ActiveDialog::CreateBranchHere(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let branch_name = state.branch_name_input.trim().to_string();
-                let commit_hash = state.commit_hash.clone();
-                if branch_name.is_empty() {
-                    self.close();
-                    return DialogDispatch::Task(Task::none());
-                }
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let branch_name_clone = branch_name.clone();
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .create_branch_at_commit(&branch_name_clone, &commit_hash)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::BranchCreated {
-                                operation_id: Some(operation_id),
-                                branch_name: branch_name.clone(),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::CreateBranchHereCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::CreateBranchHereInput(value) => {
-                if let Some(ActiveDialog::CreateBranchHere(state)) = self.active.as_mut() {
-                    state.branch_name_input = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::DiscardConfirmed => {
-                let Some(ActiveDialog::Discard(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let target = state.target.clone();
-                DialogDispatch::Task(spawn_discard_task(target, ctx))
-            }
-            OverlayPanelAction::DiscardCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::AddRemoteOpen => {
-                self.open(ActiveDialog::AddRemote(add_remote::State::new()));
-                DialogDispatch::RestoreCenterListScroll
-            }
-            OverlayPanelAction::AddRemoteClose => {
-                if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
-                    state.start_close();
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::AddRemoteNameChanged(value) => {
-                if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
-                    state.name = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::AddRemotePullUrlChanged(value) => {
-                if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
-                    state.pull_url = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::AddRemotePushUrlChanged(value) => {
-                if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
-                    state.push_url = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::AddRemoteConfirmed => {
-                let Some(ActiveDialog::AddRemote(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let name = state.name.trim().to_string();
-                let pull_url = state.pull_url.trim().to_string();
-                let push_url = state.push_url.trim().to_string();
-                if name.is_empty() || pull_url.is_empty() {
-                    return DialogDispatch::Task(Task::none());
-                }
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                if let Some(ActiveDialog::AddRemote(state)) = self.active.as_mut() {
-                    state.submitting = true;
-                }
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .add_remote(&name, &pull_url, &push_url)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::RemoteAdded {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::SetUpstreamInput(value) => {
-                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
-                    state.new_branch_input = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::SetUpstreamRemoteChanged(remote_name) => {
-                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
-                    state.select_remote(remote_name);
-                    state.remote_dropdown_open = false;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::SetUpstreamRemoteDropdownToggled => {
-                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
-                    state.remote_dropdown_open = !state.remote_dropdown_open;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::SetUpstreamConfirmed => {
-                let Some(ActiveDialog::SetUpstream(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let remote_branch = state.new_branch_input.trim().to_string();
-                let remote_name = state.selected_remote_name.trim().to_string();
-                if remote_branch.is_empty() || remote_name.is_empty() {
-                    return DialogDispatch::Task(Task::none());
-                }
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                if let Some(ActiveDialog::SetUpstream(state)) = self.active.as_mut() {
-                    state.submitting = true;
-                }
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .push_and_set_upstream(&remote_name, &remote_branch)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::SetUpstreamPushCompleted {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::SetUpstreamCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::PushBehindPullRequested => {
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.close();
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .pull_current_branch()
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::PullCompleted {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::PushBehindForcePushRequested => {
-                let taken = match self.active.take() {
-                    Some(ActiveDialog::PushBehind(s)) => Some(s),
-                    other => {
-                        self.active = other;
-                        None
-                    }
-                };
-                self.slide_offset = 0.0;
-                if let Some(push_behind) = taken {
-                    self.open(ActiveDialog::ForcePush(force_push::State {
-                        branch_name: push_behind.branch_name,
-                        remote_name: push_behind.remote_name,
-                    }));
-                }
-                DialogDispatch::RestoreCenterListScroll
-            }
-            OverlayPanelAction::PushBehindCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::ForcePushConfirmed => {
-                let Some(ActiveDialog::ForcePush(_)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.close();
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .force_push_current_branch()
-                            .map(|o| presenter.project_push(o))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::ForcePushCompleted {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::ForcePushCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::CreateTagHereInput(value) => {
-                if let Some(ActiveDialog::CreateTagHere(state)) = self.active.as_mut() {
-                    state.tag_name_input = value;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateTagHereConfirmed => {
-                let Some(ActiveDialog::CreateTagHere(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let tag_name = state.tag_name_input.trim().to_string();
-                let commit_hash = state.commit_hash.clone();
-                if tag_name.is_empty() {
-                    self.close();
-                    return DialogDispatch::Task(Task::none());
-                }
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let tag_clone = tag_name.clone();
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .create_tag(&tag_clone, &commit_hash)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::TagCreated {
-                                operation_id: Some(operation_id),
-                                tag_name: tag_name.clone(),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::CreateTagHereCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::DeleteTagConfirmed => {
-                let Some(ActiveDialog::DeleteTag(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let tag_name = state.tag_name.clone();
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let DialogCtx {
-                    repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let tag_clone = tag_name.clone();
-                let task = Task::perform(
-                    git_write_work(move || {
-                        repository
-                            .delete_tag(&tag_clone)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::TagDeleted {
-                                operation_id: Some(operation_id),
-                                tag_name: tag_name.clone(),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::DeleteTagCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::CherryPickImmediateConfirmed => {
-                let Some(ActiveDialog::CherryPick(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let commit_hash = state.commit_hash.clone();
-                self.close();
-                DialogDispatch::Task(spawn_cherry_pick_task(commit_hash, true, ctx))
-            }
-            OverlayPanelAction::CherryPickStagedConfirmed => {
-                let Some(ActiveDialog::CherryPick(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let commit_hash = state.commit_hash.clone();
-                self.close();
-                DialogDispatch::Task(spawn_cherry_pick_task(commit_hash, false, ctx))
-            }
-            OverlayPanelAction::CherryPickCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::RevertImmediateConfirmed => {
-                let Some(ActiveDialog::Revert(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let commit_hash = state.commit_hash.clone();
-                self.close();
-                DialogDispatch::Task(spawn_revert_task(commit_hash, true, ctx))
-            }
-            OverlayPanelAction::RevertInPlaceConfirmed => {
-                let Some(ActiveDialog::Revert(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                let commit_hash = state.commit_hash.clone();
-                self.close();
-                DialogDispatch::Task(spawn_revert_task(commit_hash, false, ctx))
-            }
-            OverlayPanelAction::RevertCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            OverlayPanelAction::CreateWorktreeOpen {
-                available_refs,
-                default_dir_prefix,
-            } => {
-                self.open(ActiveDialog::CreateWorktree(create_worktree::State::new(
-                    available_refs,
-                    default_dir_prefix,
-                )));
-                DialogDispatch::RestoreCenterListScroll
-            }
-            OverlayPanelAction::CreateWorktreeClose => {
-                if let Some(ActiveDialog::CreateWorktree(state)) = self.active.as_mut() {
-                    state.start_close();
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeReferenceChanged(choice) => {
-                if let Some(state) = self.as_create_worktree_mut() {
-                    state.set_reference(choice);
-                    state.dropdown_open = false;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeDropdownToggled => {
-                if let Some(state) = self.as_create_worktree_mut() {
-                    state.dropdown_open = !state.dropdown_open;
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeBranchNameChanged(value) => {
-                if let Some(state) = self.as_create_worktree_mut() {
-                    state.set_branch_name(value);
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeWorkingDirChanged(value) => {
-                if let Some(state) = self.as_create_worktree_mut() {
-                    state.set_working_dir(value);
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeBrowseRequested => {
-                let task = Task::perform(
-                    async {
-                        rfd::AsyncFileDialog::new()
-                            .set_title("Choose worktree directory")
-                            .pick_folder()
-                            .await
-                            .map(|handle| handle.path().to_path_buf())
-                    },
-                    |chosen| {
-                        Message::repo(RepositoryMessage::OverlayPanel(
-                            OverlayPanelAction::CreateWorktreeBrowseResolved(chosen),
-                        ))
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::CreateWorktreeBrowseResolved(chosen) => {
-                if let (Some(state), Some(path)) = (self.as_create_worktree_mut(), chosen) {
-                    state.set_working_dir(path.to_string_lossy().to_string());
-                }
-                DialogDispatch::Task(Task::none())
-            }
-            OverlayPanelAction::CreateWorktreeConfirmed => {
-                let Some(state) = self.as_create_worktree_mut() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                if !state.can_submit() {
-                    return DialogDispatch::Task(Task::none());
-                }
-                let ref_git = state
-                    .reference
-                    .as_ref()
-                    .map(|r| r.git_ref())
-                    .unwrap_or_default();
-                let branch_name = state.branch_name.trim().to_string();
-                let working_dir = std::path::PathBuf::from(state.working_dir.trim());
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                state.submitting = true;
-                state.error = None;
-
-                let DialogCtx {
-                    primary_repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        primary_repository
-                            .add_worktree(working_dir, Some(branch_name), ref_git)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::WorktreeCreated {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::WorktreeRemoveRequested {
-                path,
-                branch_name,
-                is_active,
-            } => {
-                self.open(ActiveDialog::RemoveWorktree(remove_worktree::State {
-                    path,
-                    branch_name,
-                    is_active,
-                }));
-                DialogDispatch::RestoreCenterListScroll
-            }
-            OverlayPanelAction::WorktreeRemoveConfirmed => {
-                let Some(ActiveDialog::RemoveWorktree(state)) = self.active.as_ref() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                // Live check against DialogCtx.active_path (captured at dispatch
-                // time; the snapshotted state.is_active would be stale if focus
-                // swapped after the dialog opened).
-                if ctx.active_path == state.path {
-                    let branch_name = state.branch_name.clone();
-                    self.close();
-                    return DialogDispatch::Task(iced::Task::done(Message::show_toast(
-                        crate::toast::ToastData::error(
-                            "Cannot remove focused worktree",
-                            format!("Switch away from '{branch_name}' first."),
-                        ),
-                    )));
-                }
-                let path = state.path.clone();
-                let Some(operation_id) = ctx.operations.begin_write() else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.close();
-                let DialogCtx {
-                    primary_repository,
-                    presenter,
-                    tab_id,
-                    ..
-                } = ctx;
-                let task = Task::perform(
-                    git_write_work(move || {
-                        primary_repository
-                            .remove_worktree(path)
-                            .map(|s| presenter.project_loaded(s))
-                    }),
-                    move |result| {
-                        Message::tab(
-                            tab_id,
-                            RepositoryMessage::WorktreeRemoved {
-                                operation_id: Some(operation_id),
-                                result,
-                            },
-                        )
-                    },
-                );
-                DialogDispatch::Task(task)
-            }
-            OverlayPanelAction::WorktreeRemoveCanceled => {
-                self.close();
-                DialogDispatch::CancelClosed
+            OverlayPanelAction::DialogButtonPressed {
+                dialog_id,
+                button_id,
+            } => self.dispatch_toolbar_dialog_event_with_ctx(
+                dialog_id,
+                DialogEvent::ButtonPressed { button_id },
+                Some(ctx),
+            ),
+            OverlayPanelAction::DialogInputChanged {
+                dialog_id,
+                control_id,
+                value,
+            } => self.dispatch_toolbar_dialog_event_with_ctx(
+                dialog_id,
+                DialogEvent::InputChanged { control_id, value },
+                Some(ctx),
+            ),
+            OverlayPanelAction::DialogDropdownToggled {
+                dialog_id,
+                control_id,
+            } => self.dispatch_toolbar_dialog_event_with_ctx(
+                dialog_id,
+                DialogEvent::DropdownToggled { control_id },
+                Some(ctx),
+            ),
+            OverlayPanelAction::DialogDropdownChanged {
+                dialog_id,
+                control_id,
+                option_id,
+            } => self.dispatch_toolbar_dialog_event_with_ctx(
+                dialog_id,
+                DialogEvent::DropdownChanged {
+                    control_id,
+                    option_id,
+                },
+                Some(ctx),
+            ),
+            OverlayPanelAction::DialogDismissed { dialog_id } => self
+                .dispatch_toolbar_dialog_event_with_ctx(
+                    dialog_id,
+                    DialogEvent::Dismissed,
+                    Some(ctx),
+                ),
+            action @ OverlayPanelAction::AddRemoteOpen
+            | action @ OverlayPanelAction::AddRemoteClose
+            | action @ OverlayPanelAction::AddRemoteNameChanged(_)
+            | action @ OverlayPanelAction::AddRemotePullUrlChanged(_)
+            | action @ OverlayPanelAction::AddRemotePushUrlChanged(_)
+            | action @ OverlayPanelAction::AddRemoteConfirmed
+            | action @ OverlayPanelAction::CreateWorktreeOpen { .. }
+            | action @ OverlayPanelAction::CreateWorktreeClose
+            | action @ OverlayPanelAction::CreateWorktreeReferenceChanged(_)
+            | action @ OverlayPanelAction::CreateWorktreeDropdownToggled
+            | action @ OverlayPanelAction::CreateWorktreeBranchNameChanged(_)
+            | action @ OverlayPanelAction::CreateWorktreeWorkingDirChanged(_)
+            | action @ OverlayPanelAction::CreateWorktreeBrowseRequested
+            | action @ OverlayPanelAction::CreateWorktreeBrowseResolved(_)
+            | action @ OverlayPanelAction::CreateWorktreeConfirmed
+            | action @ OverlayPanelAction::WorktreeRemoveRequested { .. } => {
+                side_panel_dispatch::dispatch(self, action, ctx)
             }
             OverlayPanelAction::None => DialogDispatch::Task(Task::none()),
         }
     }
 }
 
-fn spawn_discard_task(target: discard::Target, ctx: DialogCtx<'_>) -> Task<Message> {
-    let Some(operation_id) = ctx.operations.begin_write_kind(OperationKind::Discard) else {
-        return Task::none();
-    };
-    let DialogCtx {
-        repository,
-        presenter,
-        tab_id,
-        ..
-    } = ctx;
-    Task::perform(
-        git_write_work(move || {
-            let snapshot = match target {
-                discard::Target::All => repository.discard_all_dirty_changes(),
-                discard::Target::File(path) => repository.discard_file(&path),
-                discard::Target::Files { paths, .. } => repository.discard_files(&paths),
-            }?;
-            Ok(presenter.project_loaded(snapshot))
-        }),
-        move |result| {
-            Message::tab(
-                tab_id,
-                RepositoryMessage::DirtyIndexChanged {
-                    operation_id: Some(operation_id),
-                    result,
-                },
-            )
-        },
-    )
-}
-
-fn spawn_cherry_pick_task(
-    commit_hash: String,
-    commit_now: bool,
-    ctx: DialogCtx<'_>,
-) -> Task<Message> {
-    let Some(operation_id) = ctx.operations.begin_write() else {
-        return Task::none();
-    };
-    let DialogCtx {
-        repository,
-        presenter,
-        tab_id,
-        ..
-    } = ctx;
-    Task::perform(
-        git_write_work(move || {
-            repository
-                .cherry_pick_commit(commit_hash, commit_now)
-                .map(|o| presenter.project_cherry_pick(o))
-        }),
-        move |result| {
-            Message::tab(
-                tab_id,
-                RepositoryMessage::CherryPickCompleted {
-                    operation_id: Some(operation_id),
-                    result,
-                },
-            )
-        },
-    )
-}
-
-fn spawn_revert_task(commit_hash: String, commit_now: bool, ctx: DialogCtx<'_>) -> Task<Message> {
-    let Some(operation_id) = ctx.operations.begin_write() else {
-        return Task::none();
-    };
-    let DialogCtx {
-        repository,
-        presenter,
-        tab_id,
-        ..
-    } = ctx;
-    Task::perform(
-        git_write_work(move || {
-            repository
-                .revert_commit(commit_hash, commit_now)
-                .map(|o| presenter.project_revert(o))
-        }),
-        move |result| {
-            Message::tab(
-                tab_id,
-                RepositoryMessage::RevertCompleted {
-                    operation_id: Some(operation_id),
-                    result,
-                },
-            )
-        },
-    )
-}
-
-fn existing_branches(data: &RepositoryData) -> Vec<String> {
+pub(crate) fn existing_branches(data: &RepositoryData) -> Vec<String> {
     data.snapshot
         .sidebar_sections()
         .iter()
@@ -1346,14 +1274,14 @@ fn existing_branches(data: &RepositoryData) -> Vec<String> {
 fn bar_with_overlay<'a>(
     main_bar: Element<'a, Message>,
     overlay_elem: Element<'a, Message>,
-    slide_offset: f32,
+    toolbar_slide_offset: f32,
 ) -> Element<'a, Message> {
     use iced::{
         widget::{container, Stack},
         Length,
     };
 
-    if slide_offset > 0.0 {
+    if toolbar_slide_offset > 0.0 {
         Stack::with_children(vec![main_bar, overlay_elem])
             .width(Length::Fill)
             .height(Length::Fixed(theme::TOOLBAR_HEIGHT as f32))
@@ -1367,135 +1295,4 @@ fn bar_with_overlay<'a>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn new_manager_has_no_active_dialog_and_no_slide() {
-        let m = OverlayManager::new();
-        assert!(m.active().is_none());
-        assert_eq!(m.slide_offset, 0.0);
-        assert!(!m.is_animating());
-        assert!(!m.is_text_input_active());
-    }
-
-    #[test]
-    fn is_text_input_active_true_when_rename_branch_open() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::RenameBranch(rename_branch::State {
-            branch_name: "old".into(),
-            is_remote: false,
-            new_branch_input: String::new(),
-            needs_focus: false,
-            remote_name: None,
-            remote_ref: None,
-        }));
-        assert!(m.is_text_input_active());
-    }
-
-    #[test]
-    fn is_text_input_active_true_when_create_branch_open() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::CreateBranchHere(create_branch::State {
-            commit_hash: "deadbeef".into(),
-            branch_name_input: String::new(),
-            needs_focus: false,
-        }));
-        assert!(m.is_text_input_active());
-    }
-
-    #[test]
-    fn escape_cancel_action_cancels_create_branch_without_yes_no_shortcuts() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::CreateBranchHere(create_branch::State {
-            commit_hash: "deadbeef".into(),
-            branch_name_input: String::new(),
-            needs_focus: false,
-        }));
-
-        assert!(matches!(
-            m.cancel_active_action(),
-            Some(OverlayPanelAction::CreateBranchHereCanceled)
-        ));
-        assert!(m.cancel_confirmation_action().is_none());
-    }
-
-    #[test]
-    fn is_text_input_active_false_for_confirmation_only_dialogs() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::DeleteBranch(delete_branch::State {
-            branch_name: "feature".into(),
-            is_remote: false,
-            has_remote: false,
-            remote_name: None,
-            remote_ref: None,
-        }));
-        assert!(!m.is_text_input_active());
-
-        m = OverlayManager::new();
-        m.open(ActiveDialog::StashDelete(stash_delete::State {
-            stash_index: 0,
-            display_name: "WIP".into(),
-        }));
-        assert!(!m.is_text_input_active());
-    }
-
-    #[test]
-    fn is_animating_true_when_slide_offset_positive() {
-        let m = OverlayManager::new();
-        assert!(!m.is_animating());
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::StashDelete(stash_delete::State {
-            stash_index: 0,
-            display_name: "WIP".into(),
-        }));
-        assert!(m.is_animating());
-    }
-
-    #[test]
-    fn tick_animation_decays_slide_offset_toward_zero() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::StashDelete(stash_delete::State {
-            stash_index: 0,
-            display_name: "WIP".into(),
-        }));
-        // slide_offset was OVERLAY_ENTER_OFFSET after open.
-        let before = m.slide_offset;
-        let task = m.tick_animation(1.0);
-        assert!((before - m.slide_offset - OVERLAY_SLIDE_SPEED_PX_PER_MS).abs() < 1e-4);
-        assert!(task.is_none());
-    }
-
-    #[test]
-    fn tick_animation_clamps_to_zero_on_large_delta() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::StashDelete(stash_delete::State {
-            stash_index: 0,
-            display_name: "WIP".into(),
-        }));
-        m.tick_animation(1000.0);
-        assert_eq!(m.slide_offset, 0.0);
-        assert!(!m.is_animating());
-    }
-
-    #[test]
-    fn tick_animation_emits_focus_once_when_create_branch_needs_focus() {
-        let mut m = OverlayManager::new();
-        m.open(ActiveDialog::CreateBranchHere(create_branch::State {
-            commit_hash: "cafebabe".into(),
-            branch_name_input: String::new(),
-            needs_focus: true,
-        }));
-        // Drive slide_offset to 0 in one big tick → first tick emits focus.
-        let first = m.tick_animation(1000.0);
-        assert!(first.is_some(), "focus task expected on animation end");
-        assert_eq!(m.slide_offset, 0.0);
-
-        // Second tick finds slide already at 0 → no re-emit.
-        let second = m.tick_animation(16.0);
-        assert!(
-            second.is_none(),
-            "focus must not re-fire once animation already finished"
-        );
-    }
-}
+mod tests;

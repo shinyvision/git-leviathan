@@ -151,6 +151,7 @@ pub struct StagingArtifacts {
     pub generation: PluginGeneration,
     pub slot_handlers: HashMap<SlotAddress, RegistryKey>,
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub dialog_callbacks: Rc<RefCell<crate::plugin::ui::dialog::DialogCallbacks>>,
     pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub screens: HashMap<String, api::ScreenDef>,
     pub dock_panels: HashMap<String, api::DockPanelDef>,
@@ -521,6 +522,9 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         Rc::new(RefCell::new(PluginWatcherCallbacks::new()));
     let overlay_callbacks: Rc<RefCell<OverlayCallbacks>> =
         Rc::new(RefCell::new(OverlayCallbacks::new()));
+    let dialog_callbacks: Rc<RefCell<crate::plugin::ui::dialog::DialogCallbacks>> = Rc::new(
+        RefCell::new(crate::plugin::ui::dialog::DialogCallbacks::new()),
+    );
     let decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>> =
         Rc::new(RefCell::new(DecorationProviderCallbacks::new()));
     let chrome_widgets: crate::plugin::api::ui_ext::ChromeWidgetMap =
@@ -561,6 +565,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
             diagnostics: inputs.diagnostics.clone(),
             extension_registry: inputs.extension_registry.clone(),
             overlay_callbacks: Rc::clone(&overlay_callbacks),
+            dialog_callbacks: Rc::clone(&dialog_callbacks),
             decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
             ui_context: ui_context.clone(),
             chrome_widgets: Rc::clone(&chrome_widgets),
@@ -977,6 +982,7 @@ pub fn stage_reload(inputs: StageInputs<'_>) -> Result<StagingArtifacts, Staging
         generation,
         slot_handlers,
         overlay_callbacks,
+        dialog_callbacks,
         decoration_provider_callbacks,
         screens,
         dock_panels,

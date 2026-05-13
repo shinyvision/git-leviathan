@@ -18,9 +18,12 @@ use std::time::{Duration, Instant};
 use crate::{
     config::AppConfig,
     message::Message,
+    plugin::diagnostic::{DiagnosticSeverity, PluginDiagnostic, PluginSourceSpan},
     plugin::events::EventPayload,
     plugin::navigation::PluginNavigationEffect,
+    plugin::resources::PluginId,
     plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
+    plugin::ui::effects::PluginUiEffect,
     plugin::PluginHost,
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
@@ -283,6 +286,30 @@ impl App {
     }
 
     fn drain_plugin_ui_effects(&mut self) -> Task<Message> {
+        for effect in self.plugin_host.take_pending_ui_effects() {
+            match effect {
+                PluginUiEffect::OpenRepositoryDialog(request) => {
+                    let plugin_id = request.plugin_id.clone();
+                    let dialog_id = request.dialog_id.clone();
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        screen.open_plugin_toolbar_dialog(request);
+                    } else {
+                        self.record_repository_dialog_no_active_repository(&plugin_id, &dialog_id);
+                    }
+                }
+                PluginUiEffect::CloseRepositoryDialog {
+                    plugin_id,
+                    dialog_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        screen.close_plugin_toolbar_dialog(&plugin_id, &dialog_id);
+                    } else {
+                        self.record_repository_dialog_no_active_repository(&plugin_id, &dialog_id);
+                    }
+                }
+            }
+        }
+
         Task::batch(
             self.plugin_host
                 .take_pending_ui_scrolls()
@@ -297,6 +324,21 @@ impl App {
                     )
                 }),
         )
+    }
+
+    fn record_repository_dialog_no_active_repository(&self, plugin_id: &str, dialog_id: &str) {
+        self.plugin_host.diagnostics().record(
+            PluginDiagnostic::new(
+                PluginId::from(plugin_id),
+                DiagnosticSeverity::Warning,
+                "ui.dialog.no_active_repository",
+                format!("repository dialog `{dialog_id}` requested with no active repository tab"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: "leviathan.ui.dialog".into(),
+            })
+            .with_context(serde_json::json!({ "dialog_id": dialog_id })),
+        );
     }
 
     fn rebuild_slot_registries(&mut self) {
@@ -618,7 +660,193 @@ fn build_slot_registries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::tests::harness::MockHost;
+    use crate::{plugin::tests::harness::MockHost, services::test_support};
+
+    fn empty_test_app() -> App {
+        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+
+        let mut plugin_host = PluginHost::new();
+        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
+            build_slot_registries(&plugin_host);
+        App {
+            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())),
+            blank_screen: BlankScreen::new(),
+            no_git_screen: None,
+            toasts: ToastManager::default(),
+            last_animation_tick: None,
+            fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
+            reload_refs_abort: None,
+            plugin_host,
+            key_chord: KeyChordState::new(),
+            main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
+            repo_chrome_registry,
+            slot_registry_revision: 0,
+            pending_focus_reason: None,
+        }
+    }
+
+    fn dialog_request(
+        plugin_id: &str,
+        dialog_id: &str,
+    ) -> crate::plugin::ui::dialog::DialogRequest {
+        crate::plugin::ui::dialog::DialogRequest {
+            plugin_id: plugin_id.into(),
+            dialog_id: dialog_id.into(),
+            text: "Continue?".into(),
+            title: Some("Confirm".into()),
+            data: Vec::new(),
+            controls: Vec::new(),
+            buttons: vec![crate::plugin::ui::dialog::DialogButtonRequest {
+                id: "ok".into(),
+                text: "OK".into(),
+                style: "primary".into(),
+                keys: vec!["enter".into()],
+                closes_dialog: true,
+                enabled: true,
+            }],
+            dismissible: true,
+            autofocus: None,
+        }
+    }
+
+    fn app_with_repository() -> (test_support::TempRepo, App) {
+        let (repo_dir, _repo) = test_support::init_test_repo("plugin_dialog_bridge");
+        let mut app = empty_test_app();
+        let _ = app
+            .tabs
+            .load_initial_repos(vec![repo_dir.path.to_string_lossy().into_owned()], None);
+        (repo_dir, app)
+    }
+
+    #[test]
+    fn draining_repository_dialog_request_opens_active_repository_dialog() {
+        let (_repo_dir, mut app) = app_with_repository();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+    }
+
+    #[test]
+    fn repository_dialog_request_without_active_repository_records_diagnostic() {
+        let mut app = empty_test_app();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+
+        let diagnostics = app
+            .plugin_host
+            .diagnostics()
+            .by_code("ui.dialog.no_active_repository");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].plugin_id.as_str(), "plugin.one");
+    }
+
+    #[test]
+    fn repository_dialog_close_respects_plugin_and_dialog_ownership() {
+        let (_repo_dir, mut app) = app_with_repository();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.two", "confirm");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.one", "other");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.one", "confirm");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(!app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+    }
+
+    #[test]
+    fn top_level_plugin_message_invokes_repository_dialog_button_callback() {
+        let mut app = empty_test_app();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let dir = tmp.path().join("dialog_message");
+        std::fs::create_dir_all(&dir).expect("plugin dir");
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+id = "dialog_message"
+name = "Dialog Message"
+version = "0.1.0"
+api_version = "1.0"
+capabilities = ["ui:overlay"]
+
+[runtime]
+strict_globals = false
+"#,
+        )
+        .expect("manifest");
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+leviathan.ui.dialog({
+    id = "confirm",
+    text = "Continue?",
+    buttons = {
+        {
+            id = "ok",
+            text = "OK",
+            style = "green",
+            on_click = function(button_id) _G.clicked_button = button_id end,
+        },
+    },
+})
+"#,
+        )
+        .expect("init");
+        app.plugin_host.trust_local_plugin_root(tmp.path());
+        app.plugin_host.load_plugin(&dir).expect("load plugin");
+        assert!(app
+            .plugin_host
+            .has_dialog_callback("dialog_message", "confirm", "ok"));
+
+        let _ = app.update_plugin(
+            crate::plugin::PluginMessage::RepositoryDialogButtonPressed {
+                plugin_id: "dialog_message".into(),
+                dialog_id: "confirm".into(),
+                button_id: "ok".into(),
+            },
+        );
+
+        assert_eq!(
+            app.plugin_host
+                .plugin_global_string("dialog_message", "clicked_button")
+                .as_deref(),
+            Some("ok")
+        );
+    }
 
     const MANIFEST: &str = r#"
 id = "slots"

@@ -11,7 +11,6 @@ use crate::{
     view_model::{LoadedRefs, LoadedRepo},
 };
 
-use super::super::overlays::ActiveDialog;
 use super::super::{panels::diff::DirtyDiffSyncResult, RepositoryScreen};
 use super::helpers::apply_fetched_refs;
 
@@ -33,10 +32,7 @@ pub(super) fn on_repo_loaded(
 ) -> Task<Message> {
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::ConflictCheckout(_))
-            ) {
+            if screen.overlay_manager.is_conflict_checkout_dialog_open() {
                 screen.overlay_manager.close();
             }
             super::helpers::handle_repo_loaded(screen, loaded)

@@ -189,7 +189,7 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
         name: "dialog",
         since: "1.0",
         compatibility: "v1",
-        doc: "Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.",
+        doc: "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
         params: UI_DIALOG_PARAM,
         returns: &[],
         capabilities: UI_OVERLAY_CAP,
@@ -200,15 +200,16 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
                 "spec.buttons must contain one or more button specs",
                 "button.style must be red, green, blue, or white",
                 "button.text must be a string",
-                "button.on_click or button.action must be a function",
+                "button.on_click must be a function",
                 "button.keys must be an array of supported keys when present",
             ],
             returns: &[],
             notes: &[
+                "Requires an active repository screen.",
                 "Button clicks call the matching button function.",
                 "Configured keys call the same button function as a click.",
-                "Escape is routed as key `esc` when a button declares it; otherwise a dismissible dialog closes.",
-                "The dialog is rendered in the main toolbar band, matching native confirmation overlays.",
+                "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+                "The dialog is rendered in the repository toolbar band.",
             ],
         },
     },
@@ -625,7 +626,7 @@ const UI_DIALOG_PARAM: &[ApiParam] = &[ApiParam {
     name: "spec",
     lua_type: "LeviathanDialogSpec",
     required: true,
-    doc: "Dialog descriptor (id, text, optional dropdown, buttons).",
+    doc: "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
 }];
 
 const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[

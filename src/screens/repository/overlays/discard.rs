@@ -1,14 +1,21 @@
 //! Confirmation before discarding dirty changes — either a single file or the
 //! entire working tree.
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_cancel_button, overlay_row, sliding_main_bar_overlay, DANGER_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogData, DialogId, DialogKey,
+    DialogMessage, DialogOwner,
 };
+
+pub(crate) const DIALOG_ID: &str = "native.discard";
+const OWNER_ID: &str = "discard";
+const DATA_TARGET_KIND: &str = "target_kind";
+const DATA_PATH: &str = "path";
+const DATA_COUNT: &str = "count";
+const TARGET_ALL: &str = "all";
+const TARGET_FILE: &str = "file";
+const TARGET_FILES: &str = "files";
+pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) enum Target {
@@ -22,85 +29,130 @@ pub(crate) struct State {
     pub target: Target,
 }
 
-pub(crate) fn view_all(slide_offset: f32) -> Element<'static, Message> {
-    let label = text("Are you sure you want to discard all changes?")
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
-
-    let discard_btn = overlay_button(
-        "Discard All Changes",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::DiscardConfirmed),
-    );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::DiscardCanceled,
-    ));
-
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), discard_btn, cancel_btn]),
-        slide_offset,
-    )
-}
-
-pub(crate) fn view_file(file_name: String, slide_offset: f32) -> Element<'static, Message> {
-    let label = text(format!(
-        "Are you sure you want to discard all changes to '{}'?",
-        file_name
-    ))
-    .size(theme::FONT_SM)
-    .style(style::primary_text);
-
-    let reset_btn = overlay_button(
-        "Reset File",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::DiscardConfirmed),
-    );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::DiscardCanceled,
-    ));
-
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), reset_btn, cancel_btn]),
-        slide_offset,
-    )
-}
-
-pub(crate) fn view_files(count: usize, slide_offset: f32) -> Element<'static, Message> {
-    let label = text(format!(
-        "Are you sure you want to discard selected changes in {}?",
-        plural_files(count)
-    ))
-    .size(theme::FONT_SM)
-    .style(style::primary_text);
-
-    let reset_btn = overlay_button(
-        "Reset Files",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::DiscardConfirmed),
-    );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::DiscardCanceled,
-    ));
-
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), reset_btn, cancel_btn]),
-        slide_offset,
-    )
-}
-
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
-    match &state.target {
-        Target::All => view_all(slide_offset),
+pub(crate) fn dialog(state: State) -> Dialog {
+    let (text, confirm_text, data) = match state.target {
+        Target::All => (
+            "Are you sure you want to discard all changes?".to_string(),
+            "Discard All Changes".to_string(),
+            vec![DialogData {
+                id: DATA_TARGET_KIND.into(),
+                value: TARGET_ALL.into(),
+            }],
+        ),
         Target::File(path) => {
-            let file_name = std::path::Path::new(path)
+            let file_name = std::path::Path::new(&path)
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or(path.as_str())
                 .to_string();
-            view_file(file_name, slide_offset)
+            (
+                format!(
+                    "Are you sure you want to discard all changes to '{}'?",
+                    file_name
+                ),
+                "Reset File".to_string(),
+                vec![
+                    DialogData {
+                        id: DATA_TARGET_KIND.into(),
+                        value: TARGET_FILE.into(),
+                    },
+                    DialogData {
+                        id: DATA_PATH.into(),
+                        value: path,
+                    },
+                ],
+            )
         }
-        Target::Files { count, .. } => view_files(*count, slide_offset),
+        Target::Files { paths, count } => {
+            let mut data = vec![
+                DialogData {
+                    id: DATA_TARGET_KIND.into(),
+                    value: TARGET_FILES.into(),
+                },
+                DialogData {
+                    id: DATA_COUNT.into(),
+                    value: count.to_string(),
+                },
+            ];
+            data.extend(paths.into_iter().map(|path| DialogData {
+                id: DATA_PATH.into(),
+                value: path,
+            }));
+            (
+                format!(
+                    "Are you sure you want to discard selected changes in {}?",
+                    plural_files(count)
+                ),
+                "Reset Files".to_string(),
+                data,
+            )
+        }
+    };
+
+    Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage { title: None, text },
+        data,
+        controls: Vec::new(),
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
+                text: confirm_text,
+                style: DialogButtonStyle("danger".into()),
+                keys: vec![DialogKey("y".into())],
+                closes_dialog: false,
+                enabled: true,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into()), DialogKey("n".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: None,
     }
+}
+
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
+
+pub(crate) fn target(dialog: &Dialog) -> Option<Target> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    match dialog.data_value(DATA_TARGET_KIND)? {
+        TARGET_ALL => Some(Target::All),
+        TARGET_FILE => Some(Target::File(dialog.data_value(DATA_PATH)?.to_string())),
+        TARGET_FILES => {
+            let count = dialog.data_value(DATA_COUNT)?.parse().ok()?;
+            let paths = dialog
+                .data
+                .iter()
+                .filter(|item| item.id == DATA_PATH)
+                .map(|item| item.value.clone())
+                .collect();
+            Some(Target::Files { paths, count })
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CONFIRM_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }
 
 fn plural_files(count: usize) -> String {

@@ -1,28 +1,21 @@
 //! First-push-for-a-new-branch dialog: pick the remote and upstream name.
 
-use iced::{
-    widget::{container, text},
-    Color, Element, Length, Theme,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogControl, DialogControlId,
+    DialogData, DialogDropdown, DialogDropdownOption, DialogId, DialogKey, DialogLabel,
+    DialogLabelStyle, DialogMessage, DialogOwner, DialogTextInput,
 };
 
-use crate::{
-    assets,
-    message::Message,
-    style, theme,
-    widgets::dropdown::{dropdown_item, dropdown_menu, dropdown_trigger, icon_label, Dropdown},
-};
+const REMOTE_DROPDOWN_WIDTH: u16 = 150;
 
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_button_disabled, overlay_cancel_button, overlay_row,
-    overlay_text_input_with_submit, sliding_main_bar_overlay, CREATE_BUTTON,
-};
-
-const REMOTE_DROPDOWN_WIDTH: f32 = 150.0;
-
-pub(crate) fn input_id() -> iced::widget::Id {
-    iced::widget::Id::new("set-upstream-input")
-}
+pub(crate) const DIALOG_ID: &str = "native.set_upstream";
+const OWNER_ID: &str = "set_upstream";
+const CONTROL_REMOTE: &str = "remote";
+const CONTROL_SEPARATOR: &str = "separator";
+const CONTROL_BRANCH_NAME: &str = "branch_name";
+const DATA_BRANCH_NAME: &str = "branch_name";
+pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
@@ -31,7 +24,6 @@ pub(crate) struct State {
     pub available_remotes: Vec<String>,
     pub remote_dropdown_open: bool,
     pub new_branch_input: String,
-    pub needs_focus: bool,
     pub submitting: bool,
 }
 
@@ -56,122 +48,170 @@ impl State {
             selected_remote_name,
             available_remotes,
             remote_dropdown_open: false,
-            needs_focus: true,
             submitting: false,
         }
     }
-
-    pub(crate) fn select_remote(&mut self, remote_name: String) {
-        let remote_name = remote_name.trim();
-        if remote_name.is_empty() {
-            return;
-        }
-        if self
-            .available_remotes
-            .iter()
-            .any(|remote| remote == remote_name)
-        {
-            self.selected_remote_name = remote_name.to_string();
-        }
-    }
-
-    pub(crate) fn can_submit(&self) -> bool {
-        !self.submitting
-            && !self.selected_remote_name.trim().is_empty()
-            && !self.new_branch_input.trim().is_empty()
-    }
 }
 
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
-    let label = text(format!("Push '{}' to", state.branch_name))
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
-
-    let remote_dropdown = container(remote_dropdown_stack(state))
-        .width(Length::Fixed(REMOTE_DROPDOWN_WIDTH))
-        .into();
-
-    let slash = text("/").size(theme::FONT_SM).style(style::secondary_text);
-
-    let name_input = overlay_text_input_with_submit(
-        "remote branch name",
-        &state.new_branch_input,
-        |s| RepositoryMessage::OverlayPanel(OverlayPanelAction::SetUpstreamInput(s)),
-        Message::repo(RepositoryMessage::OverlayPanel(
-            OverlayPanelAction::SetUpstreamConfirmed,
-        )),
-        Some(input_id()),
-    );
-
-    let submit_btn = if state.can_submit() {
-        overlay_button(
-            "Confirm",
-            CREATE_BUTTON,
-            RepositoryMessage::OverlayPanel(OverlayPanelAction::SetUpstreamConfirmed),
-        )
-    } else {
-        overlay_button_disabled("Confirm", CREATE_BUTTON)
+pub(crate) fn dialog(state: State) -> Dialog {
+    let mut dialog = Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: format!("Push '{}' to", state.branch_name),
+        },
+        data: vec![DialogData {
+            id: DATA_BRANCH_NAME.into(),
+            value: state.branch_name,
+        }],
+        controls: vec![
+            DialogControl {
+                id: DialogControlId(CONTROL_REMOTE.into()),
+                label: None,
+                text_input: None,
+                dropdown: Some(DialogDropdown {
+                    placeholder: "Select remote".into(),
+                    options: state
+                        .available_remotes
+                        .into_iter()
+                        .map(|remote| DialogDropdownOption {
+                            id: remote.clone(),
+                            text: remote,
+                        })
+                        .collect(),
+                    selected_option_id: (!state.selected_remote_name.is_empty())
+                        .then_some(state.selected_remote_name),
+                    open: state.remote_dropdown_open,
+                    width: Some(REMOTE_DROPDOWN_WIDTH),
+                    leading_icon: Some("cloud".into()),
+                }),
+            },
+            DialogControl {
+                id: DialogControlId(CONTROL_SEPARATOR.into()),
+                label: Some(DialogLabel {
+                    text: "/".into(),
+                    style: DialogLabelStyle("secondary".into()),
+                }),
+                text_input: None,
+                dropdown: None,
+            },
+            DialogControl {
+                id: DialogControlId(CONTROL_BRANCH_NAME.into()),
+                label: None,
+                text_input: Some(DialogTextInput {
+                    placeholder: "remote branch name".into(),
+                    value: state.new_branch_input,
+                    submit_button_id: Some(DialogButtonId(CONFIRM_BUTTON_ID.into())),
+                    width: None,
+                }),
+                dropdown: None,
+            },
+        ],
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
+                text: "Confirm".into(),
+                style: DialogButtonStyle("create".into()),
+                keys: vec![DialogKey("enter".into())],
+                closes_dialog: false,
+                enabled: false,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: Some(DialogControlId(CONTROL_BRANCH_NAME.into())),
     };
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::SetUpstreamCanceled,
-    ));
-
-    sliding_main_bar_overlay(
-        overlay_row(vec![
-            label.into(),
-            remote_dropdown,
-            slash.into(),
-            name_input,
-            submit_btn,
-            cancel_btn,
-        ]),
-        slide_offset,
-    )
+    set_submitting(&mut dialog, state.submitting);
+    refresh_enabled(&mut dialog);
+    dialog
 }
 
-fn remote_dropdown_stack<'a>(state: &'a State) -> Element<'a, Message> {
-    let toggle_msg = Message::repo(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::SetUpstreamRemoteDropdownToggled,
-    ));
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
 
-    let label = (!state.selected_remote_name.is_empty())
-        .then(|| remote_label(&state.selected_remote_name, theme::TEXT_PRIMARY));
-    let trigger = dropdown_trigger(label, "Select remote", toggle_msg.clone());
+pub(crate) fn selected_remote_name(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    dialog
+        .controls
+        .iter()
+        .find(|control| control.id.0 == CONTROL_REMOTE)?
+        .dropdown
+        .as_ref()?
+        .selected_option_id
+        .clone()
+}
 
-    let menu = if state.remote_dropdown_open {
-        let items: Vec<Element<Message>> = state
-            .available_remotes
-            .iter()
-            .map(|remote| {
-                dropdown_item(
-                    remote_label(remote, theme::TEXT_PRIMARY),
-                    Message::repo(RepositoryMessage::OverlayPanel(
-                        OverlayPanelAction::SetUpstreamRemoteChanged(remote.clone()),
-                    )),
-                )
-            })
-            .collect();
-        Some(dropdown_menu(items))
+pub(crate) fn remote_branch_input(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    dialog
+        .controls
+        .iter()
+        .find(|control| control.id.0 == CONTROL_BRANCH_NAME)?
+        .text_input
+        .as_ref()
+        .map(|input| input.value.clone())
+}
+
+pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
+    if !is_dialog(dialog) {
+        return;
+    }
+    let can_submit = !is_submitting(dialog)
+        && selected_remote_name(dialog)
+            .as_deref()
+            .is_some_and(|remote| !remote.trim().is_empty())
+        && remote_branch_input(dialog)
+            .as_deref()
+            .is_some_and(|branch| !branch.trim().is_empty());
+    set_button_enabled(dialog, CONFIRM_BUTTON_ID, can_submit);
+}
+
+pub(crate) fn set_submitting(dialog: &mut Dialog, submitting: bool) {
+    if !is_dialog(dialog) {
+        return;
+    }
+    set_data_value(dialog, "submitting", submitting.to_string());
+}
+
+fn is_submitting(dialog: &Dialog) -> bool {
+    dialog
+        .data_value("submitting")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(false)
+}
+
+fn set_data_value(dialog: &mut Dialog, id: &str, value: String) {
+    if let Some(item) = dialog.data.iter_mut().find(|item| item.id == id) {
+        item.value = value;
     } else {
-        None
-    };
-
-    Dropdown::new(trigger, menu, toggle_msg)
-        .menu_width(REMOTE_DROPDOWN_WIDTH)
-        .into()
+        dialog.data.push(DialogData {
+            id: id.into(),
+            value,
+        });
+    }
 }
 
-fn remote_label<'a>(remote_name: &'a str, text_color: Color) -> Element<'a, Message> {
-    icon_label(
-        assets::CLOUD,
-        theme::TEXT_SECONDARY,
-        text(remote_name.to_string())
-            .size(theme::FONT_SM)
-            .style(move |_: &Theme| text::Style {
-                color: Some(text_color),
-            })
-            .into(),
-    )
+fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
+    if let Some(button) = dialog
+        .buttons
+        .iter_mut()
+        .find(|button| button.id.0 == button_id)
+    {
+        button.enabled = enabled;
+    }
 }
 
 fn normalized_remotes(proposed_remote_name: &str, available_remotes: Vec<String>) -> Vec<String> {
@@ -189,4 +229,16 @@ fn push_unique_remote(remotes: &mut Vec<String>, remote_name: &str) {
         return;
     }
     remotes.push(remote_name.to_string());
+}
+
+pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CONFIRM_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }

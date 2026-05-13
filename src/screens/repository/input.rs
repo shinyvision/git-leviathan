@@ -60,20 +60,12 @@ pub(super) fn on_overlay_key_pressed(
         return None;
     }
 
-    let action = match key.as_ref() {
-        keyboard::Key::Named(keyboard::key::Named::Escape) => {
-            screen.overlay_manager.cancel_active_action()
-        }
-        keyboard::Key::Character("n") | keyboard::Key::Character("N") => {
-            screen.overlay_manager.cancel_confirmation_action()
-        }
-        keyboard::Key::Character("y") | keyboard::Key::Character("Y") => {
-            screen.overlay_manager.confirm_confirmation_action()
-        }
-        _ => None,
-    }?;
+    if screen.overlay_manager.has_toolbar_dialog() {
+        let action = screen.overlay_manager.toolbar_dialog_key_action(key)?;
+        return Some(screen.dispatch_overlay_action(action));
+    }
 
-    Some(screen.dispatch_overlay_action(action))
+    None
 }
 
 pub(super) fn on_key_pressed(

@@ -256,23 +256,53 @@ function LeviathanShellJobHandle:id() end
 ---@field logo boolean Whether the platform logo key was held.
 ---@field command boolean Whether the platform command modifier was held.
 
----Top-bar plugin overlay dialog.
+---Repository-owned toolbar dialog request.
 ---@class LeviathanDialogSpec
 ---@field id string Dialog id.
 ---@field text string Dialog body text.
 ---@field title? string Optional dialog title for hosts that display one.
----@field priority? integer Higher priority renders above lower priority overlays.
----@field dismissible? boolean When true, Escape can dismiss the dialog.
----@field dropdown? LeviathanDialogDropdown Optional dropdown content.
+---@field dismissible? boolean When true, Escape can close the dialog if no button handles it.
+---@field data? LeviathanDialogData[] Opaque string data stored on the dialog.
+---@field controls? LeviathanDialogControl[] Optional dialog controls.
+---@field autofocus? string Control id to focus after the dialog opens.
 ---@field buttons LeviathanDialogButton[] Dialog buttons.
+
+---Dialog data item.
+---@class LeviathanDialogData
+---@field id string Data id.
+---@field value string Data value.
+
+---Dialog control.
+---@class LeviathanDialogControl
+---@field id string Control id.
+---@field label? LeviathanDialogLabel Optional label shown before the control.
+---@field text_input? LeviathanDialogTextInput Optional text input.
+---@field dropdown? LeviathanDialogDropdown Optional dropdown.
+
+---Dialog control label.
+---@class LeviathanDialogLabel
+---@field text string Label text.
+---@field style? string Label style token.
+
+---Dialog text input.
+---@class LeviathanDialogTextInput
+---@field placeholder? string Placeholder text.
+---@field value? string Initial value.
+---@field submit_button_id? string Button id triggered by Enter from this input.
+---@field width? integer Control width in pixels.
 
 ---Optional dialog dropdown content.
 ---@class LeviathanDialogDropdown
+---@field placeholder? string Placeholder text.
 ---@field options LeviathanDialogDropdownOption[] Dropdown options.
+---@field selected_option_id? string Initially selected option id.
+---@field open? boolean Initial open state.
+---@field width? integer Control width in pixels.
+---@field leading_icon? string Optional leading icon name.
 
 ---Dialog dropdown option.
 ---@class LeviathanDialogDropdownOption
----@field icon? string Plugin-owned SVG path.
+---@field id string Option id.
 ---@field text string Option label.
 
 ---Dialog button.
@@ -282,6 +312,8 @@ function LeviathanShellJobHandle:id() end
 ---@field text string Button label.
 ---@field on_click fun(id: string) Callback invoked by clicking the button or pressing one of its keys.
 ---@field keys? string[] Keys that trigger this button, e.g. `y`, `n`, `Esc`.
+---@field closes_dialog? boolean Whether the dialog closes before the callback runs.
+---@field enabled? boolean Whether the button is initially enabled.
 
 ---Plugin screen.
 ---@class LeviathanScreenSpec
@@ -1526,8 +1558,8 @@ function leviathan.autocmd.clear(group) end
 ---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority, key_events).
 function leviathan.ui.overlay(spec) end
 
----Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.
----@param spec LeviathanDialogSpec Dialog descriptor (id, text, optional dropdown, buttons).
+---Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.
+---@param spec LeviathanDialogSpec Repository toolbar dialog descriptor (id, text, optional controls, buttons).
 function leviathan.ui.dialog(spec) end
 
 ---Remove an overlay owned by the calling plugin.

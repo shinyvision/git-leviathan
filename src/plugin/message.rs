@@ -36,6 +36,12 @@ pub enum PluginMessage {
         event: String,
         value: serde_json::Value,
     },
+    /// A button in a plugin-owned repository dialog was pressed.
+    RepositoryDialogButtonPressed {
+        plugin_id: String,
+        dialog_id: String,
+        button_id: String,
+    },
     /// User pressed down on a split divider. Screen captures initial state.
     /// `limits` is `(min, max)` per child, extracted at render time from each
     /// child's `container` min/max fields. Length matches `child_count`.

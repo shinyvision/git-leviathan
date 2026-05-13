@@ -92,6 +92,7 @@ pub(super) struct LoadedPlugin {
     pub(super) manifest: PluginManifest,
     pub(super) slot_handlers: HashMap<SlotAddress, RegistryKey>,
     pub(super) overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub(super) dialog_callbacks: Rc<RefCell<crate::plugin::ui::dialog::DialogCallbacks>>,
     pub(super) decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub(super) screens: HashMap<String, ScreenDef>,
     pub(super) dock_panels: HashMap<String, DockPanelDef>,

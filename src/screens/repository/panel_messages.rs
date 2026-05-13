@@ -3,6 +3,8 @@
 //! Each panel returns intentions via its message type.
 //! `mod.rs` coordinates and creates Tasks based on these intentions.
 
+use super::overlays::dialog::model::{DialogButtonId, DialogControlId, DialogId};
+
 #[derive(Debug, Clone)]
 pub enum CenterAction {
     CommitSelected(usize),
@@ -198,8 +200,6 @@ pub enum DetailAction {
     DiscardAllRequested,
     DiscardSelectedFilesRequested,
     DiscardFileRequested(String),
-    DiscardConfirmed,
-    DiscardCanceled,
     CommitConfirmed,
     AbortMergeConfirmed,
     CommitFileClicked {
@@ -365,64 +365,33 @@ pub enum DiffPanelAction {
 
 #[derive(Debug, Clone)]
 pub enum OverlayPanelAction {
-    ConflictNewBranchInput(String),
-    ConflictCreateBranch,
-    ConflictResetLocal,
-    ConflictCancel,
-    ModifyDeleteKeepModified,
-    ModifyDeleteDeleteFile,
-    ModifyDeleteKeepBase,
-    ModifyDeleteCancel,
-    BranchDeleteConfirmed,
-    BranchDeleteAllConfirmed,
-    BranchDeleteCanceled,
-    StashDeleteConfirmed,
-    StashDeleteCanceled,
-    BranchRenameConfirmed,
-    BranchRenameCanceled,
-    RenameNewBranchInput(String),
-    CreateBranchHereConfirmed,
-    CreateBranchHereCanceled,
-    CreateBranchHereInput(String),
-    DiscardConfirmed,
-    DiscardCanceled,
+    DialogButtonPressed {
+        dialog_id: DialogId,
+        button_id: DialogButtonId,
+    },
+    DialogInputChanged {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+        value: String,
+    },
+    DialogDropdownToggled {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+    },
+    DialogDropdownChanged {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+        option_id: String,
+    },
+    DialogDismissed {
+        dialog_id: DialogId,
+    },
     AddRemoteOpen,
     AddRemoteClose,
     AddRemoteNameChanged(String),
     AddRemotePullUrlChanged(String),
     AddRemotePushUrlChanged(String),
     AddRemoteConfirmed,
-    /// Set upstream (first push): remote-branch name input.
-    SetUpstreamInput(String),
-    /// Set upstream (first push): selected remote.
-    SetUpstreamRemoteChanged(String),
-    /// Set upstream (first push): remote dropdown visibility.
-    SetUpstreamRemoteDropdownToggled,
-    SetUpstreamConfirmed,
-    SetUpstreamCanceled,
-    /// Push behind remote: pull (fast-forward).
-    PushBehindPullRequested,
-    /// Push behind remote: force push.
-    PushBehindForcePushRequested,
-    PushBehindCanceled,
-    ForcePushConfirmed,
-    ForcePushCanceled,
-    CreateTagHereInput(String),
-    CreateTagHereConfirmed,
-    CreateTagHereCanceled,
-    /// Also deletes from any remotes holding the tag.
-    DeleteTagConfirmed,
-    DeleteTagCanceled,
-    /// Cherry pick: immediately commit.
-    CherryPickImmediateConfirmed,
-    /// Cherry pick: apply changes without committing.
-    CherryPickStagedConfirmed,
-    CherryPickCanceled,
-    /// Revert: immediately commit.
-    RevertImmediateConfirmed,
-    /// Revert: apply changes without committing.
-    RevertInPlaceConfirmed,
-    RevertCanceled,
     CreateWorktreeOpen {
         available_refs: Vec<super::overlays::create_worktree::RefChoice>,
         default_dir_prefix: String,
@@ -441,7 +410,5 @@ pub enum OverlayPanelAction {
         branch_name: String,
         is_active: bool,
     },
-    WorktreeRemoveConfirmed,
-    WorktreeRemoveCanceled,
     None,
 }

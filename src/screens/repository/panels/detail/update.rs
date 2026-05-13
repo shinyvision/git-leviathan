@@ -11,7 +11,7 @@ use crate::{
 };
 
 use super::super::super::{
-    overlays::{discard, modify_delete_conflict, ActiveDialog, DialogCtx},
+    overlays::{discard, modify_delete_conflict},
     panel_messages::DetailAction,
     state::{FocusedPanel, OperationKind, PendingFocus},
     RepositoryMessage,
@@ -117,15 +117,11 @@ pub(in crate::screens::repository) fn update(
             open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
         }
         DetailAction::DirtyFileRightClicked(path) => {
-            if matches!(
-                ctx.overlay_manager.active(),
-                Some(
-                    ActiveDialog::ConflictCheckout(_)
-                        | ActiveDialog::DeleteBranch(_)
-                        | ActiveDialog::RenameBranch(_)
-                        | ActiveDialog::CreateBranchHere(_)
-                )
-            ) {
+            if ctx.overlay_manager.is_conflict_checkout_dialog_open()
+                || ctx.overlay_manager.is_delete_branch_dialog_open()
+                || ctx.overlay_manager.is_rename_branch_dialog_open()
+                || ctx.overlay_manager.is_create_branch_dialog_open()
+            {
                 ctx.overlay_manager.close();
             }
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
@@ -434,7 +430,7 @@ pub(in crate::screens::repository) fn update(
             }
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::Discard(discard::State {
+                .open_toolbar_dialog(discard::dialog(discard::State {
                     target: discard::Target::All,
                 }));
             Task::none()
@@ -450,7 +446,7 @@ pub(in crate::screens::repository) fn update(
             }
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::Discard(discard::State {
+                .open_toolbar_dialog(discard::dialog(discard::State {
                     target: discard::Target::Files { paths, count },
                 }));
             Task::none()
@@ -461,25 +457,9 @@ pub(in crate::screens::repository) fn update(
             }
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::Discard(discard::State {
+                .open_toolbar_dialog(discard::dialog(discard::State {
                     target: discard::Target::File(path),
                 }));
-            Task::none()
-        }
-        DetailAction::DiscardConfirmed => {
-            let dctx = DialogCtx {
-                repository: ctx.repository.clone(),
-                primary_repository: ctx.fleet.primary().clone(),
-                presenter: ctx.presenter.clone(),
-                tab_id: ctx.tab_id,
-                active_path: ctx.fleet.active_path().to_path_buf(),
-                operations: &mut ctx.data.operations,
-            };
-            ctx.overlay_manager.confirm_discard(dctx)
-        }
-        DetailAction::DiscardCanceled => {
-            ctx.overlay_manager.close();
-            ctx.input.focused_panel = FocusedPanel::Center;
             Task::none()
         }
         DetailAction::CommitConfirmed => {
@@ -773,9 +753,10 @@ fn open_dirty_file(
             Ok(Some(_)) => {
                 ctx.data.commit_search = None;
                 diff_panel.close();
-                ctx.overlay_manager.open(ActiveDialog::ModifyDeleteConflict(
-                    modify_delete_conflict::State { path },
-                ));
+                ctx.overlay_manager
+                    .open_toolbar_dialog(modify_delete_conflict::dialog(
+                        modify_delete_conflict::State { path },
+                    ));
                 return repository_panel.restore_center_list_scroll();
             }
             Ok(None) => {}

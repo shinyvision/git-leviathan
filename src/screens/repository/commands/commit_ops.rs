@@ -7,7 +7,6 @@ use crate::{
     view_model::{LoadedCherryPickOutcome, LoadedDirtyIndex, LoadedRepo, LoadedRevertOutcome},
 };
 
-use super::super::overlays::ActiveDialog;
 use super::super::state::OperationId;
 use super::super::{CenterViewMode, RepositoryScreen};
 
@@ -75,10 +74,7 @@ pub(super) fn on_dirty_index_changed(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::Discard(_))
-            ) {
+            if screen.overlay_manager.is_discard_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -107,10 +103,7 @@ pub(super) fn on_dirty_index_reloaded(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::Discard(_))
-            ) {
+            if screen.overlay_manager.is_discard_dialog_open() {
                 screen.overlay_manager.close();
             }
             if !screen.data.apply_dirty_index_update(loaded) {

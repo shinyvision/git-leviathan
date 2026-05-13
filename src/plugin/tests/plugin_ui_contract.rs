@@ -230,6 +230,238 @@ fn overlay_scrollable_scroll_y_queues_ui_scroll_effect() {
 }
 
 #[test]
+fn lua_dialog_queues_repository_dialog_request() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_request",
+        &manifest("dialog_request", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            title = "Confirm",
+            text = "Continue?",
+            dismissible = false,
+            autofocus = "name",
+            data = {
+                { id = "branch", value = "main" },
+            },
+            controls = {
+                {
+                    id = "name",
+                    label = { text = "Name", style = "secondary" },
+                    text_input = { placeholder = "Branch", value = "feature" },
+                },
+            },
+            buttons = {
+                {
+                    id = "confirm",
+                    text = "Continue",
+                    style = "green",
+                    keys = { "Y", "Return" },
+                    closes_dialog = false,
+                    enabled = false,
+                    on_click = function() end,
+                },
+                {
+                    id = "cancel",
+                    text = "Cancel",
+                    style = "white",
+                    keys = { "Esc" },
+                    on_click = function() end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog plugin loads");
+
+    let effects = host.host_mut().take_pending_ui_effects();
+    assert_eq!(effects.len(), 1);
+    let crate::plugin::ui::effects::PluginUiEffect::OpenRepositoryDialog(request) = &effects[0]
+    else {
+        panic!("expected repository dialog request");
+    };
+    assert_eq!(request.plugin_id, "dialog_request");
+    assert_eq!(request.dialog_id, "confirm");
+    assert_eq!(request.title.as_deref(), Some("Confirm"));
+    assert_eq!(request.text, "Continue?");
+    assert!(!request.dismissible);
+    assert_eq!(request.autofocus.as_deref(), Some("name"));
+    assert_eq!(request.data[0].id, "branch");
+    assert_eq!(request.controls[0].id, "name");
+    assert_eq!(request.buttons[0].style, "green");
+    assert_eq!(request.buttons[0].keys, vec!["y", "enter"]);
+    assert!(!request.buttons[0].closes_dialog);
+    assert!(!request.buttons[0].enabled);
+    assert_eq!(request.buttons[1].keys, vec!["esc"]);
+    assert!(request.buttons[1].closes_dialog);
+    assert!(request.buttons[1].enabled);
+}
+
+#[test]
+fn lua_dialog_does_not_register_overlay_record() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_no_overlay",
+        &manifest("dialog_no_overlay", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "blue",
+                    on_click = function() end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog plugin loads");
+
+    assert!(host
+        .introspect()
+        .overlays
+        .iter()
+        .all(|overlay| overlay.plugin_id != "dialog_no_overlay"));
+}
+
+#[test]
+fn lua_dialog_rejects_invalid_button_style_and_key() {
+    let mut bad_style = MockHost::new();
+    let style_result = bad_style.load_inline(
+        "bad_style",
+        &manifest("bad_style", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                { id = "ok", text = "OK", style = "purple" },
+            },
+        })
+        "#,
+    );
+    assert!(style_result.is_err());
+
+    let mut bad_key = MockHost::new();
+    let key_result = bad_key.load_inline(
+        "bad_key",
+        &manifest("bad_key", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "blue",
+                    keys = { "Ctrl+K" },
+                    on_click = function() end,
+                },
+            },
+        })
+        "#,
+    );
+    assert!(key_result.is_err());
+}
+
+#[test]
+fn lua_dialog_stores_button_callback() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_callback",
+        &manifest("dialog_callback", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "green",
+                    on_click = function() _G.clicked = 1 end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog plugin loads");
+
+    assert!(host
+        .host()
+        .has_dialog_callback("dialog_callback", "confirm", "ok"));
+}
+
+#[test]
+fn dialog_button_callback_receives_button_id_argument() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_callback_arg",
+        &manifest("dialog_callback_arg", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "green",
+                    on_click = function(button_id) _G.clicked_button = button_id end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog plugin loads");
+
+    host.host_mut()
+        .dispatch_dialog_button_callback("dialog_callback_arg", "confirm", "ok");
+
+    assert_eq!(
+        host.read_global_string("dialog_callback_arg", "clicked_button")
+            .as_deref(),
+        Some("ok")
+    );
+}
+
+#[test]
+fn dialog_button_callback_error_records_diagnostic() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_callback_error",
+        &manifest("dialog_callback_error", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "green",
+                    on_click = function() error("boom") end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog plugin loads");
+
+    host.host_mut()
+        .dispatch_dialog_button_callback("dialog_callback_error", "confirm", "ok");
+
+    let diagnostics = host.diagnostics().by_code("lua.callback_error");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].plugin_id.as_str(), "dialog_callback_error");
+}
+
+#[test]
 fn ui_dynamic_widgets_receive_typed_context_for_mounted_regions() {
     let mut host = MockHost::new();
     host.load_inline(

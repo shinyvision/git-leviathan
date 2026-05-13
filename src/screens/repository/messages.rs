@@ -333,7 +333,6 @@ fn detail_write_intent(action: &DetailAction) -> Option<GitWriteIntent> {
         | DetailAction::CommitConfirmed => Some(GitWriteIntent::FastLocal),
         DetailAction::MarkConflictResolved(_)
         | DetailAction::MarkAllConflictsResolved
-        | DetailAction::DiscardConfirmed
         | DetailAction::AbortMergeConfirmed
         | DetailAction::RewordConfirmed => Some(GitWriteIntent::Normal),
         _ => None,
@@ -342,35 +341,113 @@ fn detail_write_intent(action: &DetailAction) -> Option<GitWriteIntent> {
 
 fn overlay_write_intent(action: &OverlayPanelAction) -> Option<GitWriteIntent> {
     match action {
-        OverlayPanelAction::ConflictCreateBranch
-        | OverlayPanelAction::ConflictResetLocal
-        | OverlayPanelAction::ModifyDeleteKeepModified
-        | OverlayPanelAction::ModifyDeleteDeleteFile
-        | OverlayPanelAction::ModifyDeleteKeepBase
-        | OverlayPanelAction::BranchDeleteConfirmed
-        | OverlayPanelAction::BranchDeleteAllConfirmed
-        | OverlayPanelAction::StashDeleteConfirmed
-        | OverlayPanelAction::BranchRenameConfirmed
-        | OverlayPanelAction::CreateBranchHereConfirmed
-        | OverlayPanelAction::DiscardConfirmed
-        | OverlayPanelAction::AddRemoteConfirmed
-        | OverlayPanelAction::SetUpstreamConfirmed
-        | OverlayPanelAction::PushBehindPullRequested
-        | OverlayPanelAction::ForcePushConfirmed
-        | OverlayPanelAction::CreateTagHereConfirmed
-        | OverlayPanelAction::DeleteTagConfirmed
-        | OverlayPanelAction::CherryPickImmediateConfirmed
-        | OverlayPanelAction::CherryPickStagedConfirmed
-        | OverlayPanelAction::RevertImmediateConfirmed
-        | OverlayPanelAction::RevertInPlaceConfirmed
-        | OverlayPanelAction::CreateWorktreeConfirmed
-        | OverlayPanelAction::WorktreeRemoveConfirmed => Some(GitWriteIntent::Normal),
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::force_push::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::stash_delete::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::delete_tag::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::cherry_pick_confirm::is_write_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::revert_confirm::is_write_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::remove_worktree::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::discard::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::delete_branch::is_write_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::rename_branch::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::create_branch::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::conflict_checkout::is_write_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::set_upstream::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::push_behind::is_write_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::create_tag::is_confirm_button_action(dialog_id, button_id) => {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::DialogButtonPressed {
+            dialog_id,
+            button_id,
+        } if super::overlays::modify_delete_conflict::is_write_button_action(
+            dialog_id, button_id,
+        ) =>
+        {
+            Some(GitWriteIntent::Normal)
+        }
+        OverlayPanelAction::AddRemoteConfirmed | OverlayPanelAction::CreateWorktreeConfirmed => {
+            Some(GitWriteIntent::Normal)
+        }
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::overlays::{
+        cherry_pick_confirm, delete_tag,
+        dialog::model::{DialogButtonId, DialogId},
+        discard, force_push, remove_worktree, revert_confirm, stash_delete,
+    };
     use super::*;
 
     #[test]
@@ -387,6 +464,66 @@ mod tests {
             RepositoryMessage::DiscardSelectedDirtyFile.git_write_intent(),
             None
         );
+    }
+
+    #[test]
+    fn force_push_dialog_confirm_button_uses_git_queue() {
+        assert_eq!(
+            RepositoryMessage::OverlayPanel(OverlayPanelAction::DialogButtonPressed {
+                dialog_id: DialogId(force_push::DIALOG_ID.into()),
+                button_id: DialogButtonId(force_push::CONFIRM_BUTTON_ID.into()),
+            })
+            .git_write_intent(),
+            Some(GitWriteIntent::Normal)
+        );
+        assert_eq!(
+            RepositoryMessage::OverlayPanel(OverlayPanelAction::DialogButtonPressed {
+                dialog_id: DialogId(force_push::DIALOG_ID.into()),
+                button_id: DialogButtonId(force_push::CANCEL_BUTTON_ID.into()),
+            })
+            .git_write_intent(),
+            None
+        );
+    }
+
+    #[test]
+    fn migrated_dialog_confirm_buttons_use_git_queue() {
+        let write_buttons = [
+            (stash_delete::DIALOG_ID, stash_delete::CONFIRM_BUTTON_ID),
+            (delete_tag::DIALOG_ID, delete_tag::CONFIRM_BUTTON_ID),
+            (
+                cherry_pick_confirm::DIALOG_ID,
+                cherry_pick_confirm::IMMEDIATE_BUTTON_ID,
+            ),
+            (
+                cherry_pick_confirm::DIALOG_ID,
+                cherry_pick_confirm::STAGED_BUTTON_ID,
+            ),
+            (
+                revert_confirm::DIALOG_ID,
+                revert_confirm::IMMEDIATE_BUTTON_ID,
+            ),
+            (
+                revert_confirm::DIALOG_ID,
+                revert_confirm::IN_PLACE_BUTTON_ID,
+            ),
+            (
+                remove_worktree::DIALOG_ID,
+                remove_worktree::CONFIRM_BUTTON_ID,
+            ),
+            (discard::DIALOG_ID, discard::CONFIRM_BUTTON_ID),
+        ];
+
+        for (dialog_id, button_id) in write_buttons {
+            assert_eq!(
+                RepositoryMessage::OverlayPanel(OverlayPanelAction::DialogButtonPressed {
+                    dialog_id: DialogId(dialog_id.into()),
+                    button_id: DialogButtonId(button_id.into()),
+                })
+                .git_write_intent(),
+                Some(GitWriteIntent::Normal)
+            );
+        }
     }
 
     #[test]

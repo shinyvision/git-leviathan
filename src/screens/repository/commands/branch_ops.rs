@@ -7,7 +7,7 @@ use crate::{
     view_model::{LoadedBranchMergeOutcome, LoadedRemoteCheckoutOutcome, LoadedRepo},
 };
 
-use super::super::overlays::{validation, ActiveDialog};
+use super::super::overlays::validation;
 use super::super::state::OperationId;
 use super::super::RepositoryScreen;
 
@@ -43,10 +43,7 @@ pub(super) fn on_branch_deleted(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::DeleteBranch(_))
-            ) {
+            if screen.overlay_manager.is_delete_branch_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -79,10 +76,7 @@ pub(super) fn on_branch_renamed(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::RenameBranch(_))
-            ) {
+            if screen.overlay_manager.is_rename_branch_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -114,10 +108,7 @@ pub(super) fn on_branch_created(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::CreateBranchHere(_))
-            ) {
+            if screen.overlay_manager.is_create_branch_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);

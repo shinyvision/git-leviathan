@@ -155,7 +155,6 @@ impl RepositoryScreen {
         self.data.snapshot.default_remote_name()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn remote_names(&self) -> &[String] {
         self.data.snapshot.remote_names()
     }
@@ -424,6 +423,24 @@ impl RepositoryScreen {
             }
             None => Task::none(),
         }
+    }
+
+    pub(crate) fn open_plugin_toolbar_dialog(
+        &mut self,
+        request: crate::plugin::ui::dialog::DialogRequest,
+    ) {
+        self.overlay_manager.open_toolbar_dialog(request.into());
+    }
+
+    pub(crate) fn close_plugin_toolbar_dialog(&mut self, plugin_id: &str, dialog_id: &str) -> bool {
+        self.overlay_manager
+            .close_plugin_toolbar_dialog(plugin_id, dialog_id)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn plugin_toolbar_dialog_matches(&self, plugin_id: &str, dialog_id: &str) -> bool {
+        self.overlay_manager
+            .plugin_toolbar_dialog_matches(plugin_id, dialog_id)
     }
 
     pub(crate) fn start_reword_selected(&mut self) -> Task<Message> {
@@ -876,6 +893,17 @@ impl RepositoryScreen {
         };
         match self.overlay_manager.dispatch(action, ctx) {
             overlays::DialogDispatch::Task(task) => task,
+            overlays::DialogDispatch::PluginDialogButtonPressed {
+                plugin_id,
+                dialog_id,
+                button_id,
+            } => Task::done(Message::Plugin(
+                crate::plugin::PluginMessage::RepositoryDialogButtonPressed {
+                    plugin_id,
+                    dialog_id,
+                    button_id,
+                },
+            )),
             overlays::DialogDispatch::CancelClosed => Task::none(),
             overlays::DialogDispatch::RestoreCenterListScroll => {
                 self.panels.center.restore_center_list_scroll()
@@ -992,7 +1020,7 @@ mod tests {
             screen.input.focused_panel = focused_panel;
             screen
                 .overlay_manager
-                .open(overlays::ActiveDialog::DeleteBranch(
+                .open_toolbar_dialog(overlays::delete_branch::dialog(
                     overlays::delete_branch::State {
                         branch_name: "feature".into(),
                         is_remote: false,
@@ -1009,7 +1037,7 @@ mod tests {
 
             assert!(task.is_some(), "Esc should keep cancel semantics");
             assert!(
-                screen.overlay_manager.active().is_none(),
+                !screen.overlay_manager.has_toolbar_dialog(),
                 "Esc should close the active overlay"
             );
             assert_eq!(screen.input.focused_panel, focused_panel);

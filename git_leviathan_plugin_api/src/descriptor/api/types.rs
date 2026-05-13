@@ -487,22 +487,28 @@ const TYPE_DIALOG_FIELDS: &[ApiTypeField] = &[
         doc: "Optional dialog title for hosts that display one.",
     },
     ApiTypeField {
-        name: "priority",
-        lua_type: "integer",
-        required: false,
-        doc: "Higher priority renders above lower priority overlays.",
-    },
-    ApiTypeField {
         name: "dismissible",
         lua_type: "boolean",
         required: false,
-        doc: "When true, Escape can dismiss the dialog.",
+        doc: "When true, Escape can close the dialog if no button handles it.",
     },
     ApiTypeField {
-        name: "dropdown",
-        lua_type: "LeviathanDialogDropdown",
+        name: "data",
+        lua_type: "LeviathanDialogData[]",
         required: false,
-        doc: "Optional dropdown content.",
+        doc: "Opaque string data stored on the dialog.",
+    },
+    ApiTypeField {
+        name: "controls",
+        lua_type: "LeviathanDialogControl[]",
+        required: false,
+        doc: "Optional dialog controls.",
+    },
+    ApiTypeField {
+        name: "autofocus",
+        lua_type: "string",
+        required: false,
+        doc: "Control id to focus after the dialog opens.",
     },
     ApiTypeField {
         name: "buttons",
@@ -511,18 +517,130 @@ const TYPE_DIALOG_FIELDS: &[ApiTypeField] = &[
         doc: "Dialog buttons.",
     },
 ];
-const TYPE_DIALOG_DROPDOWN_FIELDS: &[ApiTypeField] = &[ApiTypeField {
-    name: "options",
-    lua_type: "LeviathanDialogDropdownOption[]",
-    required: true,
-    doc: "Dropdown options.",
-}];
-const TYPE_DIALOG_DROPDOWN_OPTION_FIELDS: &[ApiTypeField] = &[
+const TYPE_DIALOG_DATA_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
-        name: "icon",
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Data id.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: true,
+        doc: "Data value.",
+    },
+];
+const TYPE_DIALOG_CONTROL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Control id.",
+    },
+    ApiTypeField {
+        name: "label",
+        lua_type: "LeviathanDialogLabel",
+        required: false,
+        doc: "Optional label shown before the control.",
+    },
+    ApiTypeField {
+        name: "text_input",
+        lua_type: "LeviathanDialogTextInput",
+        required: false,
+        doc: "Optional text input.",
+    },
+    ApiTypeField {
+        name: "dropdown",
+        lua_type: "LeviathanDialogDropdown",
+        required: false,
+        doc: "Optional dropdown.",
+    },
+];
+const TYPE_DIALOG_LABEL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Label text.",
+    },
+    ApiTypeField {
+        name: "style",
         lua_type: "string",
         required: false,
-        doc: "Plugin-owned SVG path.",
+        doc: "Label style token.",
+    },
+];
+const TYPE_DIALOG_TEXT_INPUT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "placeholder",
+        lua_type: "string",
+        required: false,
+        doc: "Placeholder text.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: false,
+        doc: "Initial value.",
+    },
+    ApiTypeField {
+        name: "submit_button_id",
+        lua_type: "string",
+        required: false,
+        doc: "Button id triggered by Enter from this input.",
+    },
+    ApiTypeField {
+        name: "width",
+        lua_type: "integer",
+        required: false,
+        doc: "Control width in pixels.",
+    },
+];
+const TYPE_DIALOG_DROPDOWN_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "placeholder",
+        lua_type: "string",
+        required: false,
+        doc: "Placeholder text.",
+    },
+    ApiTypeField {
+        name: "options",
+        lua_type: "LeviathanDialogDropdownOption[]",
+        required: true,
+        doc: "Dropdown options.",
+    },
+    ApiTypeField {
+        name: "selected_option_id",
+        lua_type: "string",
+        required: false,
+        doc: "Initially selected option id.",
+    },
+    ApiTypeField {
+        name: "open",
+        lua_type: "boolean",
+        required: false,
+        doc: "Initial open state.",
+    },
+    ApiTypeField {
+        name: "width",
+        lua_type: "integer",
+        required: false,
+        doc: "Control width in pixels.",
+    },
+    ApiTypeField {
+        name: "leading_icon",
+        lua_type: "string",
+        required: false,
+        doc: "Optional leading icon name.",
+    },
+];
+const TYPE_DIALOG_DROPDOWN_OPTION_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Option id.",
     },
     ApiTypeField {
         name: "text",
@@ -561,6 +679,18 @@ const TYPE_DIALOG_BUTTON_FIELDS: &[ApiTypeField] = &[
         lua_type: "string[]",
         required: false,
         doc: "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
+    },
+    ApiTypeField {
+        name: "closes_dialog",
+        lua_type: "boolean",
+        required: false,
+        doc: "Whether the dialog closes before the callback runs.",
+    },
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: false,
+        doc: "Whether the button is initially enabled.",
     },
 ];
 const TYPE_CONTEXT_MENU_ITEM_FIELDS: &[ApiTypeField] = &[
@@ -1689,8 +1819,36 @@ pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "LeviathanDialogSpec",
         since: "1.0",
-        doc: "Top-bar plugin overlay dialog.",
+        doc: "Repository-owned toolbar dialog request.",
         fields: TYPE_DIALOG_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogData",
+        since: "1.0",
+        doc: "Dialog data item.",
+        fields: TYPE_DIALOG_DATA_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogControl",
+        since: "1.0",
+        doc: "Dialog control.",
+        fields: TYPE_DIALOG_CONTROL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogLabel",
+        since: "1.0",
+        doc: "Dialog control label.",
+        fields: TYPE_DIALOG_LABEL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogTextInput",
+        since: "1.0",
+        doc: "Dialog text input.",
+        fields: TYPE_DIALOG_TEXT_INPUT_FIELDS,
         methods: &[],
     },
     ApiType {

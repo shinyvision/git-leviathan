@@ -626,6 +626,36 @@ impl PluginHost {
         self.pending_ui_effects.take_scroll_to()
     }
 
+    pub fn queue_repository_dialog_request(
+        &self,
+        request: crate::plugin::ui::dialog::DialogRequest,
+    ) {
+        self.pending_ui_effects
+            .queue_open_repository_dialog(request);
+    }
+
+    pub fn queue_repository_dialog_close(
+        &self,
+        plugin_id: impl Into<String>,
+        dialog_id: impl Into<String>,
+    ) {
+        self.pending_ui_effects
+            .queue_close_repository_dialog(plugin_id, dialog_id);
+    }
+
+    pub fn take_pending_ui_effects(&mut self) -> Vec<crate::plugin::ui::effects::PluginUiEffect> {
+        self.pending_ui_effects.take_effects()
+    }
+
+    pub fn has_dialog_callback(&self, plugin_id: &str, dialog_id: &str, button_id: &str) -> bool {
+        self.plugins.get(plugin_id).is_some_and(|plugin| {
+            plugin
+                .dialog_callbacks
+                .borrow()
+                .contains(plugin_id, dialog_id, button_id)
+        })
+    }
+
     pub fn tab_snapshot(&self) -> &TabsSnapshot {
         &self.last_tab_snapshot
     }

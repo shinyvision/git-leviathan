@@ -1800,11 +1800,11 @@
             "ui:overlay"
           ],
           "compatibility": "v1",
-          "doc": "Register a top-bar overlay dialog with text, optional dropdown content, and callback buttons.",
+          "doc": "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
           "name": "dialog",
           "params": [
             {
-              "doc": "Dialog descriptor (id, text, optional dropdown, buttons).",
+              "doc": "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
               "lua_type": "LeviathanDialogSpec",
               "name": "spec",
               "required": true
@@ -1820,14 +1820,15 @@
               "spec.buttons must contain one or more button specs",
               "button.style must be red, green, blue, or white",
               "button.text must be a string",
-              "button.on_click or button.action must be a function",
+              "button.on_click must be a function",
               "button.keys must be an array of supported keys when present"
             ],
             "notes": [
+              "Requires an active repository screen.",
               "Button clicks call the matching button function.",
               "Configured keys call the same button function as a click.",
-              "Escape is routed as key `esc` when a button declares it; otherwise a dismissible dialog closes.",
-              "The dialog is rendered in the main toolbar band, matching native confirmation overlays."
+              "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+              "The dialog is rendered in the repository toolbar band."
             ],
             "returns": []
           }
@@ -2020,6 +2021,14 @@
         "LeviathanSlotTarget",
         "LeviathanContributionSpec",
         "LeviathanContributionHandle",
+        "LeviathanDialogSpec",
+        "LeviathanDialogData",
+        "LeviathanDialogControl",
+        "LeviathanDialogLabel",
+        "LeviathanDialogTextInput",
+        "LeviathanDialogDropdown",
+        "LeviathanDialogDropdownOption",
+        "LeviathanDialogButton",
         "LeviathanContextMenuItem",
         "LeviathanGraphDecorationContribution",
         "LeviathanDiffDecorationContribution"
@@ -7178,7 +7187,7 @@
       "since": "1.0"
     },
     {
-      "doc": "Top-bar plugin overlay dialog.",
+      "doc": "Repository-owned toolbar dialog request.",
       "fields": [
         {
           "doc": "Dialog id.",
@@ -7199,21 +7208,27 @@
           "required": false
         },
         {
-          "doc": "Higher priority renders above lower priority overlays.",
-          "lua_type": "integer",
-          "name": "priority",
-          "required": false
-        },
-        {
-          "doc": "When true, Escape can dismiss the dialog.",
+          "doc": "When true, Escape can close the dialog if no button handles it.",
           "lua_type": "boolean",
           "name": "dismissible",
           "required": false
         },
         {
-          "doc": "Optional dropdown content.",
-          "lua_type": "LeviathanDialogDropdown",
-          "name": "dropdown",
+          "doc": "Opaque string data stored on the dialog.",
+          "lua_type": "LeviathanDialogData[]",
+          "name": "data",
+          "required": false
+        },
+        {
+          "doc": "Optional dialog controls.",
+          "lua_type": "LeviathanDialogControl[]",
+          "name": "controls",
+          "required": false
+        },
+        {
+          "doc": "Control id to focus after the dialog opens.",
+          "lua_type": "string",
+          "name": "autofocus",
           "required": false
         },
         {
@@ -7228,13 +7243,147 @@
       "since": "1.0"
     },
     {
+      "doc": "Dialog data item.",
+      "fields": [
+        {
+          "doc": "Data id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Data value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogData",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog control.",
+      "fields": [
+        {
+          "doc": "Control id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Optional label shown before the control.",
+          "lua_type": "LeviathanDialogLabel",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Optional text input.",
+          "lua_type": "LeviathanDialogTextInput",
+          "name": "text_input",
+          "required": false
+        },
+        {
+          "doc": "Optional dropdown.",
+          "lua_type": "LeviathanDialogDropdown",
+          "name": "dropdown",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogControl",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog control label.",
+      "fields": [
+        {
+          "doc": "Label text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Label style token.",
+          "lua_type": "string",
+          "name": "style",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogLabel",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog text input.",
+      "fields": [
+        {
+          "doc": "Placeholder text.",
+          "lua_type": "string",
+          "name": "placeholder",
+          "required": false
+        },
+        {
+          "doc": "Initial value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": false
+        },
+        {
+          "doc": "Button id triggered by Enter from this input.",
+          "lua_type": "string",
+          "name": "submit_button_id",
+          "required": false
+        },
+        {
+          "doc": "Control width in pixels.",
+          "lua_type": "integer",
+          "name": "width",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogTextInput",
+      "since": "1.0"
+    },
+    {
       "doc": "Optional dialog dropdown content.",
       "fields": [
+        {
+          "doc": "Placeholder text.",
+          "lua_type": "string",
+          "name": "placeholder",
+          "required": false
+        },
         {
           "doc": "Dropdown options.",
           "lua_type": "LeviathanDialogDropdownOption[]",
           "name": "options",
           "required": true
+        },
+        {
+          "doc": "Initially selected option id.",
+          "lua_type": "string",
+          "name": "selected_option_id",
+          "required": false
+        },
+        {
+          "doc": "Initial open state.",
+          "lua_type": "boolean",
+          "name": "open",
+          "required": false
+        },
+        {
+          "doc": "Control width in pixels.",
+          "lua_type": "integer",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Optional leading icon name.",
+          "lua_type": "string",
+          "name": "leading_icon",
+          "required": false
         }
       ],
       "methods": [],
@@ -7245,10 +7394,10 @@
       "doc": "Dialog dropdown option.",
       "fields": [
         {
-          "doc": "Plugin-owned SVG path.",
+          "doc": "Option id.",
           "lua_type": "string",
-          "name": "icon",
-          "required": false
+          "name": "id",
+          "required": true
         },
         {
           "doc": "Option label.",
@@ -7292,6 +7441,18 @@
           "doc": "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
           "lua_type": "string[]",
           "name": "keys",
+          "required": false
+        },
+        {
+          "doc": "Whether the dialog closes before the callback runs.",
+          "lua_type": "boolean",
+          "name": "closes_dialog",
+          "required": false
+        },
+        {
+          "doc": "Whether the button is initially enabled.",
+          "lua_type": "boolean",
+          "name": "enabled",
           "required": false
         }
       ],

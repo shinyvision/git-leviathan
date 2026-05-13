@@ -306,6 +306,99 @@ impl PluginHost {
         self.drain_lua_command_effects();
     }
 
+    pub fn dispatch_dialog_button_callback(
+        &mut self,
+        plugin_id: &str,
+        dialog_id: &str,
+        button_id: &str,
+    ) {
+        let chunk_name = format!("plugins/{plugin_id}/init.lua");
+        let mut disable_after_failures = false;
+        let effects: Vec<crate::plugin::navigation::PluginNavigationEffect> = {
+            let Some(plugin) = self.plugins.get(plugin_id) else {
+                return;
+            };
+            let generation_id = plugin.generation.generation_id;
+            let func: Function = {
+                let callbacks = plugin.dialog_callbacks.borrow();
+                let Some(key) = callbacks.get(plugin_id, dialog_id, button_id) else {
+                    return;
+                };
+                match plugin.lua().registry_value(key) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        self.diagnostics.record(
+                            PluginDiagnostic::new(
+                                PluginId::from(plugin_id),
+                                DiagnosticSeverity::Error,
+                                "lua.handler_lookup_failed",
+                                format!("dialog button callback lookup failed: {e}"),
+                            )
+                            .with_generation(generation_id)
+                            .with_source(
+                                PluginSourceSpan::ApiFunction {
+                                    name: format!("dialog:{dialog_id}.button:{button_id}.on_click"),
+                                },
+                            ),
+                        );
+                        return;
+                    }
+                }
+            };
+            let cb_id = format!("dialog:{dialog_id}.button:{button_id}.on_click");
+            match self
+                .budget_tracker
+                .track_call::<Option<Table>, mlua::Error>(
+                    CallbackKind::UiCallback,
+                    &PluginId::from(plugin_id),
+                    generation_id,
+                    &cb_id,
+                    || func.call(button_id.to_string()),
+                ) {
+                PerfOutcome::Ok(Some(t)) => parse_navigation_effects(
+                    plugin_id,
+                    dialog_id,
+                    generation_id,
+                    "dialog.button.on_click",
+                    &t,
+                    &self.diagnostics,
+                ),
+                PerfOutcome::Ok(None) => Vec::new(),
+                PerfOutcome::Skipped => {
+                    disable_after_failures = true;
+                    Vec::new()
+                }
+                PerfOutcome::Err(e) => {
+                    disable_after_failures = self.budget_tracker.is_tripped(
+                        &PluginId::from(plugin_id),
+                        generation_id,
+                        &cb_id,
+                    );
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            format!("dialog button callback error in {dialog_id}.{button_id}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                    Vec::new()
+                }
+            }
+        };
+        if disable_after_failures {
+            self.disable_plugin(plugin_id);
+            return;
+        }
+        self.apply_navigation_effects(&effects);
+        self.pending_navigation_effects.extend(effects);
+        let only = HashSet::from([plugin_id.to_string()]);
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::PluginStateChanged], Some(&only));
+        self.drain_lua_command_effects();
+    }
+
     pub fn autofocus_overlay_text_input_id(&self) -> Option<iced::widget::Id> {
         for overlay in self.extension_registry.overlays() {
             let Some(node_id) = autofocus_text_input_node_id(&overlay.widget) else {
@@ -765,6 +858,7 @@ impl PluginHost {
             generation,
             slot_handlers,
             overlay_callbacks,
+            dialog_callbacks,
             decoration_provider_callbacks,
             screens,
             dock_panels,
@@ -982,6 +1076,7 @@ impl PluginHost {
             manifest,
             slot_handlers,
             overlay_callbacks,
+            dialog_callbacks,
             decoration_provider_callbacks,
             screens,
             dock_panels,

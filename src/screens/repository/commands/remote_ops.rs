@@ -8,7 +8,7 @@ use crate::{
     work::git_write_work,
 };
 
-use super::super::overlays::{push_behind, set_upstream, ActiveDialog};
+use super::super::overlays::{push_behind, set_upstream};
 use super::super::state::OperationId;
 use super::super::{RepositoryMessage, RepositoryScreen};
 
@@ -22,10 +22,7 @@ pub(super) fn on_remote_added(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::AddRemote(_))
-            ) {
+            if screen.overlay_manager.is_add_remote_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -99,7 +96,7 @@ pub(super) fn on_push_completed(
         }) => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::SetUpstream(set_upstream_state(
+                .open_toolbar_dialog(set_upstream::dialog(set_upstream_state(
                     screen,
                     branch_name,
                     remote_name,
@@ -112,7 +109,7 @@ pub(super) fn on_push_completed(
         }) => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::PushBehind(push_behind::State {
+                .open_toolbar_dialog(push_behind::dialog(push_behind::State {
                     branch_name,
                     remote_name,
                 }));
@@ -140,10 +137,7 @@ pub(super) fn on_set_upstream_push_completed(
     match result {
         Ok(loaded) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::SetUpstream(_))
-            ) {
+            if screen.overlay_manager.is_set_upstream_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -155,9 +149,7 @@ pub(super) fn on_set_upstream_push_completed(
         }
         Err(e) => {
             eprintln!("git_leviathan: push failed: {}", e);
-            if let Some(state) = screen.overlay_manager.as_set_upstream_mut() {
-                state.submitting = false;
-            }
+            screen.overlay_manager.reset_set_upstream_submitting();
             super::helpers::pending_reload_task_after_write(
                 screen,
                 Task::done(Message::show_toast(ToastData::error(
@@ -192,7 +184,7 @@ pub(super) fn on_force_push_completed(
         }) => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::SetUpstream(set_upstream_state(
+                .open_toolbar_dialog(set_upstream::dialog(set_upstream_state(
                     screen,
                     branch_name,
                     remote_name,

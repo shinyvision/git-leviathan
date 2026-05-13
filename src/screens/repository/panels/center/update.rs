@@ -15,7 +15,7 @@ use crate::{
 use super::super::super::{
     overlays::{
         cherry_pick_confirm, create_branch, create_tag, delete_branch, delete_tag, rename_branch,
-        revert_confirm, stash_delete, ActiveDialog,
+        revert_confirm, stash_delete,
     },
     panel_messages::CenterAction,
     state::{eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState},
@@ -456,7 +456,7 @@ pub(in crate::screens::repository) fn update(
             }
 
             ctx.overlay_manager
-                .open(ActiveDialog::DeleteBranch(delete_branch::State {
+                .open_toolbar_dialog(delete_branch::dialog(delete_branch::State {
                     branch_name,
                     is_remote,
                     has_remote,
@@ -473,11 +473,10 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::RenameBranch(rename_branch::State {
+                .open_toolbar_dialog(rename_branch::dialog(rename_branch::State {
                     branch_name: branch_name.clone(),
                     is_remote,
                     new_branch_input: branch_name,
-                    needs_focus: true,
                     remote_name,
                     remote_ref,
                 }));
@@ -485,14 +484,10 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::CommitRightClicked { commit_idx } => {
             ctx.data.branch_popout.close();
-            if matches!(
-                ctx.overlay_manager.active(),
-                Some(
-                    ActiveDialog::DeleteBranch(_)
-                        | ActiveDialog::RenameBranch(_)
-                        | ActiveDialog::CreateBranchHere(_)
-                )
-            ) {
+            if ctx.overlay_manager.is_delete_branch_dialog_open()
+                || ctx.overlay_manager.is_rename_branch_dialog_open()
+                || ctx.overlay_manager.is_create_branch_dialog_open()
+            {
                 ctx.overlay_manager.close();
             }
 
@@ -597,7 +592,7 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::StashDelete(stash_delete::State {
+                .open_toolbar_dialog(stash_delete::dialog(stash_delete::State {
                     stash_index,
                     display_name,
                 }));
@@ -608,12 +603,15 @@ pub(in crate::screens::repository) fn update(
             commit_hash,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let existing = crate::screens::repository::overlays::existing_branches(ctx.data);
             ctx.overlay_manager
-                .open(ActiveDialog::CreateBranchHere(create_branch::State {
-                    commit_hash,
-                    branch_name_input: String::new(),
-                    needs_focus: true,
-                }));
+                .open_toolbar_dialog(create_branch::dialog(
+                    create_branch::State {
+                        commit_hash,
+                        branch_name_input: String::new(),
+                    },
+                    &existing,
+                ));
             panel.restore_center_list_scroll()
         }
         CenterAction::SquashCommitsRequested { indices: _, hashes } => {
@@ -790,17 +788,16 @@ pub(in crate::screens::repository) fn update(
         CenterAction::CreateTagHereRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::CreateTagHere(create_tag::State {
+                .open_toolbar_dialog(create_tag::dialog(create_tag::State {
                     commit_hash,
                     tag_name_input: String::new(),
-                    needs_focus: true,
                 }));
             panel.restore_center_list_scroll()
         }
         CenterAction::CherryPickRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::CherryPick(cherry_pick_confirm::State {
+                .open_toolbar_dialog(cherry_pick_confirm::dialog(cherry_pick_confirm::State {
                     commit_hash,
                 }));
             panel.restore_center_list_scroll()
@@ -808,7 +805,9 @@ pub(in crate::screens::repository) fn update(
         CenterAction::RevertCommitRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::Revert(revert_confirm::State { commit_hash }));
+                .open_toolbar_dialog(revert_confirm::dialog(revert_confirm::State {
+                    commit_hash,
+                }));
             panel.restore_center_list_scroll()
         }
         CenterAction::PushTagRequested {
@@ -848,7 +847,7 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::DeleteTag(delete_tag::State {
+                .open_toolbar_dialog(delete_tag::dialog(delete_tag::State {
                     tag_name,
                     tag_remote_names,
                 }));

@@ -55,7 +55,7 @@ fn region_table_rejects_unmounted_addresses() {
 }
 
 #[test]
-fn extension_point_descriptors_cover_phase7_surfaces() {
+fn extension_point_descriptors_cover_registered_surfaces() {
     use git_leviathan_plugin_api::descriptor::extension_point::{
         ExtensionPointKind, EXTENSION_POINTS,
     };
@@ -122,6 +122,37 @@ fn overlay_registration_appears_in_devtools() {
     // overlay registration; it just has to project through. Inline
     // plugins may report a synthetic location but never panic.
     let _ = overlay.source_location.as_deref();
+}
+
+#[test]
+fn repository_dialog_request_does_not_register_extension_overlay() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p_dialog",
+        &manifest_with_caps("p_dialog", ALL_EXT_CAPS),
+        r#"
+        leviathan.ui.dialog({
+            id = "confirm",
+            text = "Continue?",
+            buttons = {
+                {
+                    id = "ok",
+                    text = "OK",
+                    style = "green",
+                    on_click = function() end,
+                },
+            },
+        })
+        "#,
+    )
+    .expect("dialog request queues");
+
+    assert!(host.host().extension_overlays().is_empty());
+    assert!(host
+        .introspect()
+        .overlays
+        .iter()
+        .all(|overlay| overlay.plugin_id != "p_dialog"));
 }
 
 #[test]
@@ -197,110 +228,6 @@ fn overlay_event_callback_can_remove_overlay() {
         .dispatch_overlay_event("palette", "cmd", "close", serde_json::json!({}));
     assert_eq!(host.read_global_i64("palette", "hits"), Some(2));
     assert!(host.introspect().overlays.iter().all(|o| o.id != "cmd"));
-}
-
-#[test]
-fn dialog_buttons_can_be_triggered_by_clicks_keys_and_escape() {
-    use crate::plugin::ui::widget_ast::{AstLength, WidgetNode};
-
-    let mut host = MockHost::new();
-    host.load_inline(
-        "dialog",
-        &manifest_with_caps("dialog", ALL_EXT_CAPS),
-        r#"
-        clicked = ""
-        click_count = 0
-        leviathan.ui.dialog({
-            id = "confirm",
-            text = "Delete branch?",
-            buttons = {
-                {
-                    id = "yes",
-                    style = "red",
-                    text = "Delete",
-                    keys = { "y" },
-                    on_click = function(id)
-                        clicked = id
-                        click_count = click_count + 1
-                    end,
-                },
-                {
-                    id = "no",
-                    style = "white",
-                    text = "Cancel",
-                    keys = { "n", "Esc" },
-                    on_click = function(id)
-                        clicked = id
-                        click_count = click_count + 1
-                    end,
-                },
-            },
-        })
-        "#,
-    )
-    .expect("dialog registers");
-
-    let snap = host.introspect();
-    let overlay = snap
-        .overlays
-        .iter()
-        .find(|o| o.plugin_id == "dialog" && o.id == "confirm")
-        .expect("dialog overlay row present");
-    assert_eq!(overlay.priority, 100);
-    assert_eq!(overlay.key_events, vec!["y", "n", "esc"]);
-    let WidgetNode::Column(column) = &overlay.widget.node else {
-        panic!("dialog should render as a toolbar overlay column");
-    };
-    assert_eq!(column.height, AstLength::Shrink);
-    assert_eq!(column.children.len(), 2);
-    let WidgetNode::Space(tab_spacer) = &column.children[0].node else {
-        panic!("dialog should reserve the tab-bar height before the overlay bar");
-    };
-    assert_eq!(
-        tab_spacer.height,
-        AstLength::Fixed(crate::theme::TAB_HEIGHT as f32)
-    );
-    let WidgetNode::Container(bar) = &column.children[1].node else {
-        panic!("dialog should render its body as a toolbar-height bar");
-    };
-    assert_eq!(
-        bar.height,
-        AstLength::Fixed(crate::theme::TOOLBAR_HEIGHT as f32)
-    );
-    assert!(!bar.center_x);
-    assert!(!bar.center_y);
-
-    host.host_mut().dispatch_overlay_event(
-        "dialog",
-        "confirm",
-        "dialog_button",
-        serde_json::json!({ "id": "yes" }),
-    );
-    assert_eq!(
-        host.read_global_string("dialog", "clicked").as_deref(),
-        Some("yes")
-    );
-    assert_eq!(host.read_global_i64("dialog", "click_count"), Some(1));
-
-    host.host_mut().dispatch_overlay_event(
-        "dialog",
-        "confirm",
-        "key",
-        serde_json::json!({ "key": "n" }),
-    );
-    assert_eq!(
-        host.read_global_string("dialog", "clicked").as_deref(),
-        Some("no")
-    );
-    assert_eq!(host.read_global_i64("dialog", "click_count"), Some(2));
-
-    host.host_mut()
-        .dispatch_overlay_event("dialog", "confirm", "escape", serde_json::json!(null));
-    assert_eq!(
-        host.read_global_string("dialog", "clicked").as_deref(),
-        Some("no")
-    );
-    assert_eq!(host.read_global_i64("dialog", "click_count"), Some(3));
 }
 
 #[test]

@@ -193,6 +193,7 @@ pub struct InstallAllContext {
     pub diagnostics: DiagnosticStore,
     pub extension_registry: crate::plugin::extensions::ExtensionRegistry,
     pub overlay_callbacks: Rc<RefCell<OverlayCallbacks>>,
+    pub dialog_callbacks: Rc<RefCell<crate::plugin::ui::dialog::DialogCallbacks>>,
     pub decoration_provider_callbacks: Rc<RefCell<DecorationProviderCallbacks>>,
     pub ui_context: crate::plugin::ui::context::UiContextStore,
     pub chrome_widgets: ui_ext::ChromeWidgetMap,
@@ -220,6 +221,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
         diagnostics,
         extension_registry,
         overlay_callbacks,
+        dialog_callbacks,
         decoration_provider_callbacks,
         ui_context,
         chrome_widgets,
@@ -285,6 +287,7 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
                 registry: extension_registry,
                 ui_effects: pending_ui_effects,
                 overlay_callbacks: Rc::clone(&overlay_callbacks),
+                dialog_callbacks,
                 decoration_provider_callbacks: Rc::clone(&decoration_provider_callbacks),
                 chrome_widgets,
             },
@@ -519,6 +522,9 @@ mod tests {
                 diagnostics: DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)),
                 extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
                 overlay_callbacks: Rc::new(RefCell::new(OverlayCallbacks::new())),
+                dialog_callbacks: Rc::new(RefCell::new(
+                    crate::plugin::ui::dialog::DialogCallbacks::new(),
+                )),
                 decoration_provider_callbacks: Rc::new(RefCell::new(
                     DecorationProviderCallbacks::new(),
                 )),

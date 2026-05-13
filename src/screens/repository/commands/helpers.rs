@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::super::commit_search;
-use super::super::overlays::{conflict_checkout, ActiveDialog};
+use super::super::overlays::conflict_checkout;
 use super::super::panels::center::CenterPanel;
 use super::super::panels::diff::DirtyDiffSyncResult;
 use super::super::state::{PendingFocus, RepositoryData};
@@ -276,7 +276,7 @@ pub(in crate::screens::repository) fn handle_remote_checkout(
         } => {
             screen
                 .overlay_manager
-                .open(ActiveDialog::ConflictCheckout(conflict_checkout::State {
+                .open_toolbar_dialog(conflict_checkout::dialog(conflict_checkout::State {
                     branch_name,
                     remote_ref,
                     new_branch_input: String::new(),
