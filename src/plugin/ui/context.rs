@@ -32,6 +32,37 @@ pub struct SelectionContextSnapshot {
     pub selected_file_path: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogContextSnapshot {
+    pub active: bool,
+    pub id: String,
+    pub owner: String,
+    pub plugin_id: Option<String>,
+    pub data: Vec<ToolbarDialogDataContextSnapshot>,
+    pub controls: Vec<ToolbarDialogControlContextSnapshot>,
+    pub buttons: Vec<ToolbarDialogButtonContextSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogDataContextSnapshot {
+    pub id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogControlContextSnapshot {
+    pub id: String,
+    pub kind: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogButtonContextSnapshot {
+    pub id: String,
+    pub text: String,
+    pub enabled: bool,
+}
+
 impl SelectionContextSnapshot {
     pub fn none() -> Self {
         Self {
@@ -39,6 +70,20 @@ impl SelectionContextSnapshot {
             kind: "none".to_string(),
             selected_commit_id: None,
             selected_file_path: None,
+        }
+    }
+}
+
+impl ToolbarDialogContextSnapshot {
+    pub fn none() -> Self {
+        Self {
+            active: false,
+            id: String::new(),
+            owner: "none".to_string(),
+            plugin_id: None,
+            data: Vec::new(),
+            controls: Vec::new(),
+            buttons: Vec::new(),
         }
     }
 }
@@ -189,6 +234,28 @@ pub fn context_for_surface_with_selection(
     tabs: &TabsSnapshot,
     focus: Option<&FocusSnapshot>,
 ) -> Value {
+    context_for_surface_with_selection_and_dialog(
+        plugin_id,
+        generation_id,
+        surface,
+        repository,
+        selection,
+        None,
+        tabs,
+        focus,
+    )
+}
+
+pub fn context_for_surface_with_selection_and_dialog(
+    plugin_id: &str,
+    generation_id: GenerationId,
+    surface: UiContextSurface,
+    repository: Option<&RepositoryContextSnapshot>,
+    selection: Option<&SelectionContextSnapshot>,
+    dialog: Option<&ToolbarDialogContextSnapshot>,
+    tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
+) -> Value {
     let parts = surface_parts(surface);
     let focus_value = build_focus_value(&parts, focus);
     json!({
@@ -202,6 +269,7 @@ pub fn context_for_surface_with_selection(
         "repository": repository_summary(repository),
         "tab": tab_summary(tabs),
         "selection": selection_summary(selection),
+        "dialog": dialog_summary(dialog),
         "focus": focus_value,
         "viewport": viewport_summary(),
         "payload": parts.payload,
@@ -507,6 +575,52 @@ fn selection_summary(selection: Option<&SelectionContextSnapshot>) -> Value {
                 "kind": none.kind,
                 "selected_commit_id": none.selected_commit_id,
                 "selected_file_path": none.selected_file_path,
+            })
+        }
+    }
+}
+
+fn dialog_summary(dialog: Option<&ToolbarDialogContextSnapshot>) -> Value {
+    match dialog {
+        Some(dialog) => json!({
+            "active": dialog.active,
+            "id": dialog.id,
+            "owner": dialog.owner,
+            "plugin_id": dialog.plugin_id,
+            "data": dialog
+                .data
+                .iter()
+                .map(|item| json!({ "id": item.id, "value": item.value }))
+                .collect::<Vec<_>>(),
+            "controls": dialog
+                .controls
+                .iter()
+                .map(|control| json!({
+                    "id": control.id,
+                    "kind": control.kind,
+                    "value": control.value,
+                }))
+                .collect::<Vec<_>>(),
+            "buttons": dialog
+                .buttons
+                .iter()
+                .map(|button| json!({
+                    "id": button.id,
+                    "text": button.text,
+                    "enabled": button.enabled,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+        None => {
+            let none = ToolbarDialogContextSnapshot::none();
+            json!({
+                "active": none.active,
+                "id": none.id,
+                "owner": none.owner,
+                "plugin_id": none.plugin_id,
+                "data": [],
+                "controls": [],
+                "buttons": [],
             })
         }
     }

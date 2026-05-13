@@ -227,6 +227,8 @@ impl PluginHost {
             lazy_ledgers: HashMap::new(),
             last_repository_shape: None,
             last_selection_snapshot: crate::plugin::ui::context::SelectionContextSnapshot::none(),
+            last_toolbar_dialog_snapshot:
+                crate::plugin::ui::context::ToolbarDialogContextSnapshot::none(),
             extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
             dock_manager: DockManager::new(),
             contribution_overrides:

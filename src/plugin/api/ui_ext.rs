@@ -842,46 +842,112 @@ fn install_dialog(
     dialog_callbacks: Rc<RefCell<DialogCallbacks>>,
 ) -> mlua::Result<()> {
     let plugin_id = ledger.plugin_id().as_str().to_string();
-    ui.set(
-        "dialog",
-        lua.create_function(move |lua_inner, spec: Table| {
-            let dialog_id = required_non_empty_string(&spec, "id", "dialog.id")?;
+    let dialog = lua.create_table()?;
+
+    let open_plugin_id = plugin_id.clone();
+    let open_ledger = ledger.clone();
+    let open_guard = Rc::clone(&guard);
+    let open_effects = ui_effects.clone();
+    let open_callbacks = Rc::clone(&dialog_callbacks);
+    let open = lua.create_function(move |lua_inner, spec: Table| {
+        let dialog_id = required_non_empty_string(&spec, "id", "dialog.id")?;
+        let source = ResourceLedger::source_location(lua_inner);
+        open_guard
+            .check_named_for_target(
+                "ui:overlay",
+                &format!("dialog:{dialog_id}"),
+                "leviathan.ui.dialog",
+                source.as_deref(),
+                "Declare and grant `ui:overlay`.",
+            )
+            .map_err(mlua::Error::external)?;
+
+        let mut callbacks = Vec::new();
+        let request = dialog_request_from_lua(
+            lua_inner,
+            &open_plugin_id,
+            &dialog_id,
+            &spec,
+            &mut callbacks,
+        )?;
+
+        open_ledger.remove_by_handle_prefix(&format!("dialog:{dialog_id}:button:"));
+        open_callbacks
+            .borrow_mut()
+            .remove_dialog(&open_plugin_id, &dialog_id);
+        for (button_id, callback_key) in callbacks {
+            open_ledger.record(
+                PluginResourceKind::LuaRegistryKey,
+                format!("dialog:{dialog_id}:button:{button_id}:on_click"),
+                source.clone(),
+            );
+            open_callbacks.borrow_mut().insert(
+                open_plugin_id.clone(),
+                dialog_id.clone(),
+                button_id,
+                callback_key,
+            );
+        }
+        open_effects.queue_open_repository_dialog(request);
+        Ok(())
+    })?;
+
+    dialog.set("open", open.clone())?;
+    let mt = lua.create_table()?;
+    mt.set(
+        "__call",
+        lua.create_function(move |_lua_inner, (_dialog, spec): (Table, Table)| {
+            open.call::<()>(spec)
+        })?,
+    )?;
+    dialog.set_metatable(Some(mt));
+
+    let focus_guard = Rc::clone(&guard);
+    let focus_effects = ui_effects.clone();
+    dialog.set(
+        "focus_control",
+        lua.create_function(
+            move |lua_inner, (dialog_id, control_id): (String, String)| {
+                let dialog_id = validate_non_empty_string(dialog_id, "dialog id")?;
+                let control_id = validate_non_empty_string(control_id, "dialog control id")?;
+                let source = ResourceLedger::source_location(lua_inner);
+                focus_guard
+                    .check_named_for_target(
+                        "ui:overlay",
+                        &format!("dialog:{dialog_id}:control:{control_id}"),
+                        "leviathan.ui.dialog.focus_control",
+                        source.as_deref(),
+                        "Declare and grant `ui:overlay`.",
+                    )
+                    .map_err(mlua::Error::external)?;
+                focus_effects.queue_focus_repository_dialog_control(dialog_id, control_id);
+                Ok((true, None::<String>))
+            },
+        )?,
+    )?;
+
+    let press_guard = Rc::clone(&guard);
+    dialog.set(
+        "press_button",
+        lua.create_function(move |lua_inner, (dialog_id, button_id): (String, String)| {
+            let dialog_id = validate_non_empty_string(dialog_id, "dialog id")?;
+            let button_id = validate_non_empty_string(button_id, "dialog button id")?;
             let source = ResourceLedger::source_location(lua_inner);
-            guard
+            press_guard
                 .check_named_for_target(
                     "ui:overlay",
-                    &format!("dialog:{dialog_id}"),
-                    "leviathan.ui.dialog",
+                    &format!("dialog:{dialog_id}:button:{button_id}"),
+                    "leviathan.ui.dialog.press_button",
                     source.as_deref(),
                     "Declare and grant `ui:overlay`.",
                 )
                 .map_err(mlua::Error::external)?;
-
-            let mut callbacks = Vec::new();
-            let request =
-                dialog_request_from_lua(lua_inner, &plugin_id, &dialog_id, &spec, &mut callbacks)?;
-
-            ledger.remove_by_handle_prefix(&format!("dialog:{dialog_id}:button:"));
-            dialog_callbacks
-                .borrow_mut()
-                .remove_dialog(&plugin_id, &dialog_id);
-            for (button_id, callback_key) in callbacks {
-                ledger.record(
-                    PluginResourceKind::LuaRegistryKey,
-                    format!("dialog:{dialog_id}:button:{button_id}:on_click"),
-                    source.clone(),
-                );
-                dialog_callbacks.borrow_mut().insert(
-                    plugin_id.clone(),
-                    dialog_id.clone(),
-                    button_id,
-                    callback_key,
-                );
-            }
-            ui_effects.queue_open_repository_dialog(request);
-            Ok(())
+            ui_effects.queue_press_repository_dialog_button(dialog_id, button_id);
+            Ok((true, None::<String>))
         })?,
     )?;
+
+    ui.set("dialog", dialog)?;
     Ok(())
 }
 

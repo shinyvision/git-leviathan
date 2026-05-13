@@ -821,6 +821,41 @@ fn migrated_complex_dialogs_open_as_toolbar_dialogs() {
 }
 
 #[test]
+fn toolbar_dialog_context_snapshot_exposes_conflict_checkout_controls_and_buttons() {
+    let mut m = OverlayManager::new();
+    m.open_toolbar_dialog(conflict_checkout::dialog(conflict_checkout::State {
+        branch_name: "main".into(),
+        remote_ref: "origin/main".into(),
+        new_branch_input: "main-local".into(),
+    }));
+
+    let snapshot = m.toolbar_dialog_context_snapshot();
+    assert!(snapshot.active);
+    assert_eq!(snapshot.id, conflict_checkout::DIALOG_ID);
+    assert_eq!(snapshot.owner, "native");
+    assert_eq!(snapshot.controls.len(), 1);
+    assert_eq!(snapshot.controls[0].id, "branch_name");
+    assert_eq!(snapshot.controls[0].kind, "text_input");
+    assert_eq!(snapshot.controls[0].value.as_deref(), Some("main-local"));
+
+    let create = snapshot
+        .buttons
+        .iter()
+        .find(|button| button.id == conflict_checkout::CREATE_BUTTON_ID)
+        .expect("create button");
+    assert!(create.enabled);
+    assert_eq!(create.text, "Create Branch Here");
+
+    let reset = snapshot
+        .buttons
+        .iter()
+        .find(|button| button.id == conflict_checkout::RESET_BUTTON_ID)
+        .expect("reset button");
+    assert!(reset.enabled);
+    assert_eq!(reset.text, "Reset Local to Here");
+}
+
+#[test]
 fn migrated_input_dialog_updates_validation_and_enter_submit() {
     let mut m = OverlayManager::new();
     m.open_toolbar_dialog(create_branch::dialog(

@@ -7,6 +7,10 @@ use iced::{keyboard, Element, Task};
 use crate::{
     core::TabId,
     message::Message,
+    plugin::ui::context::{
+        ToolbarDialogButtonContextSnapshot, ToolbarDialogContextSnapshot,
+        ToolbarDialogControlContextSnapshot, ToolbarDialogDataContextSnapshot,
+    },
     services::{presenter::Presenter, ModifyDeleteConflictChoice, SharedRepositoryGateway},
     theme,
 };
@@ -157,6 +161,83 @@ impl OverlayManager {
         self.toolbar_dialog.as_ref().is_some_and(|dialog| {
             dialog.id.0 == dialog_id && dialog.owner.plugin_id() == Some(plugin_id)
         })
+    }
+
+    pub(crate) fn toolbar_dialog_control_focus_id(
+        &self,
+        dialog_id: &str,
+        control_id: &str,
+    ) -> Option<iced::widget::Id> {
+        let dialog = self.toolbar_dialog.as_ref()?;
+        if dialog.id.0 != dialog_id {
+            return None;
+        }
+        let control = dialog
+            .controls
+            .iter()
+            .find(|control| control.id.0 == control_id)?;
+        control.text_input.as_ref()?;
+        Some(dialog::view::input_id(dialog, &control.id))
+    }
+
+    pub(crate) fn toolbar_dialog_context_snapshot(&self) -> ToolbarDialogContextSnapshot {
+        let Some(dialog) = self.toolbar_dialog.as_ref() else {
+            return ToolbarDialogContextSnapshot::none();
+        };
+
+        let (owner, plugin_id) = match &dialog.owner {
+            DialogOwner::Native(_) => ("native".to_string(), None),
+            DialogOwner::Plugin { plugin_id } => ("plugin".to_string(), Some(plugin_id.clone())),
+        };
+
+        ToolbarDialogContextSnapshot {
+            active: true,
+            id: dialog.id.0.clone(),
+            owner,
+            plugin_id,
+            data: dialog
+                .data
+                .iter()
+                .map(|item| ToolbarDialogDataContextSnapshot {
+                    id: item.id.clone(),
+                    value: item.value.clone(),
+                })
+                .collect(),
+            controls: dialog
+                .controls
+                .iter()
+                .map(|control| {
+                    if let Some(input) = control.text_input.as_ref() {
+                        ToolbarDialogControlContextSnapshot {
+                            id: control.id.0.clone(),
+                            kind: "text_input".to_string(),
+                            value: Some(input.value.clone()),
+                        }
+                    } else if let Some(dropdown) = control.dropdown.as_ref() {
+                        ToolbarDialogControlContextSnapshot {
+                            id: control.id.0.clone(),
+                            kind: "dropdown".to_string(),
+                            value: dropdown.selected_option_id.clone(),
+                        }
+                    } else {
+                        ToolbarDialogControlContextSnapshot {
+                            id: control.id.0.clone(),
+                            kind: "unknown".to_string(),
+                            value: None,
+                        }
+                    }
+                })
+                .collect(),
+            buttons: dialog
+                .buttons
+                .iter()
+                .map(|button| ToolbarDialogButtonContextSnapshot {
+                    id: button.id.0.clone(),
+                    text: button.text.clone(),
+                    enabled: button.enabled,
+                })
+                .collect(),
+        }
     }
 
     fn open_side_panel(&mut self, side_panel: SidePanelOverlay) {

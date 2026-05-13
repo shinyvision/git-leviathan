@@ -1800,7 +1800,7 @@
             "ui:overlay"
           ],
           "compatibility": "v1",
-          "doc": "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
+          "doc": "Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.",
           "name": "dialog",
           "params": [
             {
@@ -1831,6 +1831,137 @@
               "The dialog is rendered in the repository toolbar band."
             ],
             "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
+          "name": "dialog.open",
+          "params": [
+            {
+              "doc": "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
+              "lua_type": "LeviathanDialogSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.open",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.text must be a string",
+              "spec.buttons must contain one or more button specs",
+              "button.style must be red, green, blue, or white",
+              "button.text must be a string",
+              "button.on_click must be a function",
+              "button.keys must be an array of supported keys when present"
+            ],
+            "notes": [
+              "Requires an active repository screen.",
+              "Button clicks call the matching button function.",
+              "Configured keys call the same button function as a click.",
+              "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+              "The dialog is rendered in the repository toolbar band."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Focus a text input control in the active repository toolbar dialog.",
+          "name": "dialog.focus_control",
+          "params": [
+            {
+              "doc": "Active toolbar dialog id.",
+              "lua_type": "string",
+              "name": "dialog_id",
+              "required": true
+            },
+            {
+              "doc": "Dialog control id to focus.",
+              "lua_type": "string",
+              "name": "control_id",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.focus_control",
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "dialog_id must be a string",
+              "control_id must be a string"
+            ],
+            "notes": [
+              "No-ops when the active toolbar dialog or control does not match."
+            ],
+            "returns": [
+              "true plus nil error, or nil plus error string"
+            ]
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Press a button in the active repository toolbar dialog.",
+          "name": "dialog.press_button",
+          "params": [
+            {
+              "doc": "Active toolbar dialog id.",
+              "lua_type": "string",
+              "name": "dialog_id",
+              "required": true
+            },
+            {
+              "doc": "Dialog button id to press.",
+              "lua_type": "string",
+              "name": "button_id",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.press_button",
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "dialog_id must be a string",
+              "button_id must be a string"
+            ],
+            "notes": [
+              "Routes through the same dialog dispatcher as a click.",
+              "Disabled buttons are ignored by the host dialog dispatcher."
+            ],
+            "returns": [
+              "true plus nil error, or nil plus error string"
+            ]
           }
         },
         {
@@ -2378,6 +2509,10 @@
         "LeviathanRepositorySummary",
         "LeviathanTabSummary",
         "LeviathanSelectionSummary",
+        "LeviathanToolbarDialogSummary",
+        "LeviathanToolbarDialogData",
+        "LeviathanToolbarDialogControl",
+        "LeviathanToolbarDialogButton",
         "LeviathanFocusSummary",
         "LeviathanViewportSummary"
       ],
@@ -7907,6 +8042,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -7990,6 +8131,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8079,6 +8226,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8162,6 +8315,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8251,6 +8410,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8334,6 +8499,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8423,6 +8594,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8506,6 +8683,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8595,6 +8778,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8678,6 +8867,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8767,6 +8962,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8850,6 +9051,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8962,6 +9169,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -9143,6 +9356,128 @@
       ],
       "methods": [],
       "name": "LeviathanSelectionSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Active repository toolbar dialog summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether a repository toolbar dialog is active.",
+          "lua_type": "boolean",
+          "name": "active",
+          "required": true
+        },
+        {
+          "doc": "Active dialog id, or empty string when none is active.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "`native`, `plugin`, or `none`.",
+          "lua_type": "string",
+          "name": "owner",
+          "required": true
+        },
+        {
+          "doc": "Owner plugin id for plugin-owned dialogs.",
+          "lua_type": "string|nil",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Opaque dialog data rows.",
+          "lua_type": "LeviathanToolbarDialogData[]",
+          "name": "data",
+          "required": true
+        },
+        {
+          "doc": "Dialog controls and current values.",
+          "lua_type": "LeviathanToolbarDialogControl[]",
+          "name": "controls",
+          "required": true
+        },
+        {
+          "doc": "Dialog buttons and enabled state.",
+          "lua_type": "LeviathanToolbarDialogButton[]",
+          "name": "buttons",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog data item.",
+      "fields": [
+        {
+          "doc": "Data id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Data value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogData",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog control summary.",
+      "fields": [
+        {
+          "doc": "Control id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Control kind such as `text_input` or `dropdown`.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Current control value when available.",
+          "lua_type": "string|nil",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogControl",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog button summary.",
+      "fields": [
+        {
+          "doc": "Button id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Button label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Whether the button can currently be pressed.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogButton",
       "since": "1.0"
     },
     {

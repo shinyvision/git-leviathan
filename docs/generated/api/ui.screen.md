@@ -44,6 +44,7 @@ Context shape returned outside a mounted slot render.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.

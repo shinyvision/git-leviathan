@@ -177,6 +177,8 @@ pub struct PluginHost {
     pub(super) lazy_ledgers: HashMap<String, ResourceLedger>,
     pub(super) last_repository_shape: Option<RepositoryShapeFacts>,
     pub(super) last_selection_snapshot: crate::plugin::ui::context::SelectionContextSnapshot,
+    pub(super) last_toolbar_dialog_snapshot:
+        crate::plugin::ui::context::ToolbarDialogContextSnapshot,
     pub(super) extension_registry: ExtensionRegistry,
     pub(super) dock_manager: DockManager,
     pub(super) contribution_overrides: ContributionOverrides,

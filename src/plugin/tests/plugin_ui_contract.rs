@@ -299,6 +299,108 @@ fn lua_dialog_queues_repository_dialog_request() {
 }
 
 #[test]
+fn lua_dialog_focus_and_press_queue_repository_dialog_effects() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_actions",
+        &manifest("dialog_actions", r#"["ui:overlay"]"#),
+        r#"
+        local focus_ok, focus_err = leviathan.ui.dialog.focus_control("native.conflict_checkout", "branch_name")
+        assert(focus_ok, focus_err)
+        local press_ok, press_err = leviathan.ui.dialog.press_button("native.conflict_checkout", "reset")
+        assert(press_ok, press_err)
+        "#,
+    )
+    .expect("dialog action plugin loads");
+
+    let effects = host.host_mut().take_pending_ui_effects();
+    assert_eq!(effects.len(), 2);
+    assert!(matches!(
+        &effects[0],
+        crate::plugin::ui::effects::PluginUiEffect::FocusRepositoryDialogControl {
+            dialog_id,
+            control_id,
+        } if dialog_id == "native.conflict_checkout" && control_id == "branch_name"
+    ));
+    assert!(matches!(
+        &effects[1],
+        crate::plugin::ui::effects::PluginUiEffect::PressRepositoryDialogButton {
+            dialog_id,
+            button_id,
+        } if dialog_id == "native.conflict_checkout" && button_id == "reset"
+    ));
+}
+
+#[test]
+fn command_context_includes_active_toolbar_dialog() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "dialog_context",
+        &manifest("dialog_context", r#"["ui:overlay"]"#),
+        r#"
+        leviathan.command.create("dialog_context.capture", {
+            title = "Capture",
+            context = "repository.graph",
+            run = function()
+                local ctx = assert(leviathan.ui.context.current())
+                _G.dialog_id = ctx.dialog.id
+                _G.control_value = ctx.dialog.controls[1].value
+                _G.reset_enabled = ctx.dialog.buttons[2].enabled and "yes" or "no"
+            end,
+        })
+        "#,
+    )
+    .expect("dialog context plugin loads");
+
+    host.host_mut()
+        .sync_toolbar_dialog(crate::plugin::ui::context::ToolbarDialogContextSnapshot {
+            active: true,
+            id: "native.conflict_checkout".into(),
+            owner: "native".into(),
+            plugin_id: None,
+            data: Vec::new(),
+            controls: vec![
+                crate::plugin::ui::context::ToolbarDialogControlContextSnapshot {
+                    id: "branch_name".into(),
+                    kind: "text_input".into(),
+                    value: Some("topic".into()),
+                },
+            ],
+            buttons: vec![
+                crate::plugin::ui::context::ToolbarDialogButtonContextSnapshot {
+                    id: "create".into(),
+                    text: "Create Branch Here".into(),
+                    enabled: true,
+                },
+                crate::plugin::ui::context::ToolbarDialogButtonContextSnapshot {
+                    id: "reset".into(),
+                    text: "Reset Local to Here".into(),
+                    enabled: true,
+                },
+            ],
+        });
+
+    assert!(host
+        .invoke_command("dialog_context.capture", serde_json::Value::Null)
+        .is_ok());
+    assert_eq!(
+        host.read_global_string("dialog_context", "dialog_id")
+            .as_deref(),
+        Some("native.conflict_checkout")
+    );
+    assert_eq!(
+        host.read_global_string("dialog_context", "control_value")
+            .as_deref(),
+        Some("topic")
+    );
+    assert_eq!(
+        host.read_global_string("dialog_context", "reset_enabled")
+            .as_deref(),
+        Some("yes")
+    );
+}
+
+#[test]
 fn lua_dialog_does_not_register_overlay_record() {
     let mut host = MockHost::new();
     host.load_inline(

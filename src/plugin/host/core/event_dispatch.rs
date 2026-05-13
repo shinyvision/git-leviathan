@@ -622,6 +622,18 @@ impl PluginHost {
         true
     }
 
+    pub fn sync_toolbar_dialog(
+        &mut self,
+        snapshot: crate::plugin::ui::context::ToolbarDialogContextSnapshot,
+    ) -> bool {
+        if self.last_toolbar_dialog_snapshot == snapshot {
+            return false;
+        }
+        self.last_toolbar_dialog_snapshot = snapshot;
+        self.refresh_command_active_context();
+        true
+    }
+
     pub fn take_pending_ui_scrolls(&mut self) -> Vec<crate::plugin::ui::effects::ScrollToRequest> {
         self.pending_ui_effects.take_scroll_to()
     }

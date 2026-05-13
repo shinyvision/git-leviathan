@@ -905,6 +905,12 @@ const TYPE_UI_CONTEXT_FIELDS: &[ApiTypeField] = &[
         doc: "Selection summary when the host has one for the surface.",
     },
     ApiTypeField {
+        name: "dialog",
+        lua_type: "LeviathanToolbarDialogSummary",
+        required: true,
+        doc: "Active repository toolbar dialog summary.",
+    },
+    ApiTypeField {
         name: "focus",
         lua_type: "LeviathanFocusSummary",
         required: true,
@@ -1059,6 +1065,108 @@ const TYPE_SELECTION_SUMMARY_FIELDS: &[ApiTypeField] = &[
         lua_type: "string|nil",
         required: true,
         doc: "Selected file path when available.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "active",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether a repository toolbar dialog is active.",
+    },
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Active dialog id, or empty string when none is active.",
+    },
+    ApiTypeField {
+        name: "owner",
+        lua_type: "string",
+        required: true,
+        doc: "`native`, `plugin`, or `none`.",
+    },
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Owner plugin id for plugin-owned dialogs.",
+    },
+    ApiTypeField {
+        name: "data",
+        lua_type: "LeviathanToolbarDialogData[]",
+        required: true,
+        doc: "Opaque dialog data rows.",
+    },
+    ApiTypeField {
+        name: "controls",
+        lua_type: "LeviathanToolbarDialogControl[]",
+        required: true,
+        doc: "Dialog controls and current values.",
+    },
+    ApiTypeField {
+        name: "buttons",
+        lua_type: "LeviathanToolbarDialogButton[]",
+        required: true,
+        doc: "Dialog buttons and enabled state.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_DATA_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Data id.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: true,
+        doc: "Data value.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_CONTROL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Control id.",
+    },
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Control kind such as `text_input` or `dropdown`.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Current control value when available.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_BUTTON_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Button id.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Button label.",
+    },
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the button can currently be pressed.",
     },
 ];
 
@@ -2059,6 +2167,34 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.0",
         doc: "Selection summary in a UI context.",
         fields: TYPE_SELECTION_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogSummary",
+        since: "1.0",
+        doc: "Active repository toolbar dialog summary in a UI context.",
+        fields: TYPE_TOOLBAR_DIALOG_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogData",
+        since: "1.0",
+        doc: "Toolbar dialog data item.",
+        fields: TYPE_TOOLBAR_DIALOG_DATA_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogControl",
+        since: "1.0",
+        doc: "Toolbar dialog control summary.",
+        fields: TYPE_TOOLBAR_DIALOG_CONTROL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogButton",
+        since: "1.0",
+        doc: "Toolbar dialog button summary.",
+        fields: TYPE_TOOLBAR_DIALOG_BUTTON_FIELDS,
         methods: &[],
     },
     ApiType {

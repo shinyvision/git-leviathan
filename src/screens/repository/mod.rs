@@ -437,6 +437,40 @@ impl RepositoryScreen {
             .close_plugin_toolbar_dialog(plugin_id, dialog_id)
     }
 
+    pub(crate) fn focus_toolbar_dialog_control(
+        &self,
+        dialog_id: &str,
+        control_id: &str,
+    ) -> Task<Message> {
+        let Some(id) = self
+            .overlay_manager
+            .toolbar_dialog_control_focus_id(dialog_id, control_id)
+        else {
+            return Task::none();
+        };
+        Task::batch([
+            iced::widget::operation::focus(id.clone()),
+            iced::widget::operation::move_cursor_to_end(id),
+        ])
+    }
+
+    pub(crate) fn press_toolbar_dialog_button(
+        &mut self,
+        dialog_id: &str,
+        button_id: &str,
+    ) -> Task<Message> {
+        self.dispatch_overlay_action(OverlayPanelAction::DialogButtonPressed {
+            dialog_id: overlays::dialog::model::DialogId(dialog_id.to_string()),
+            button_id: overlays::dialog::model::DialogButtonId(button_id.to_string()),
+        })
+    }
+
+    pub(crate) fn toolbar_dialog_context_snapshot(
+        &self,
+    ) -> crate::plugin::ui::context::ToolbarDialogContextSnapshot {
+        self.overlay_manager.toolbar_dialog_context_snapshot()
+    }
+
     #[cfg(test)]
     pub(crate) fn plugin_toolbar_dialog_matches(&self, plugin_id: &str, dialog_id: &str) -> bool {
         self.overlay_manager

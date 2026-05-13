@@ -17,6 +17,14 @@ pub enum PluginUiEffect {
         plugin_id: String,
         dialog_id: String,
     },
+    FocusRepositoryDialogControl {
+        dialog_id: String,
+        control_id: String,
+    },
+    PressRepositoryDialogButton {
+        dialog_id: String,
+        button_id: String,
+    },
 }
 
 #[derive(Clone, Default)]
@@ -63,6 +71,32 @@ impl PendingUiEffects {
             .push(PluginUiEffect::CloseRepositoryDialog {
                 plugin_id: plugin_id.into(),
                 dialog_id: dialog_id.into(),
+            });
+    }
+
+    pub fn queue_focus_repository_dialog_control(
+        &self,
+        dialog_id: impl Into<String>,
+        control_id: impl Into<String>,
+    ) {
+        self.effects
+            .borrow_mut()
+            .push(PluginUiEffect::FocusRepositoryDialogControl {
+                dialog_id: dialog_id.into(),
+                control_id: control_id.into(),
+            });
+    }
+
+    pub fn queue_press_repository_dialog_button(
+        &self,
+        dialog_id: impl Into<String>,
+        button_id: impl Into<String>,
+    ) {
+        self.effects
+            .borrow_mut()
+            .push(PluginUiEffect::PressRepositoryDialogButton {
+                dialog_id: dialog_id.into(),
+                button_id: button_id.into(),
             });
     }
 

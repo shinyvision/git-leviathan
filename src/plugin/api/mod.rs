@@ -559,7 +559,16 @@ mod tests {
                 LuaValue::Function(_) => {
                     out.insert(path);
                 }
-                LuaValue::Table(child) => collect_functions(child, &path, out),
+                LuaValue::Table(child) => {
+                    if child
+                        .metatable()
+                        .and_then(|meta| meta.get::<LuaValue>("__call").ok())
+                        .is_some_and(|value| matches!(value, LuaValue::Function(_)))
+                    {
+                        out.insert(path.clone());
+                    }
+                    collect_functions(child, &path, out);
+                }
                 _ => {}
             }
         }

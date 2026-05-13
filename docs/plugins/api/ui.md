@@ -175,6 +175,18 @@ Register an overlay widget the host renders above the active screen.
 
 ### `leviathan.ui.dialog(spec)`
 
+Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `spec` (`LeviathanDialogSpec`; required) - Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+
+### `leviathan.ui.dialog.open(spec)`
+
 Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.
 
 **Capabilities:** `ui:overlay`
@@ -184,6 +196,40 @@ Open a repository-owned toolbar dialog on the active repository screen; button k
 
 **Parameters:**
 - `spec` (`LeviathanDialogSpec`; required) - Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+
+### `leviathan.ui.dialog.focus_control(dialog_id, control_id)`
+
+Focus a text input control in the active repository toolbar dialog.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `dialog_id` (`string`; required) - Active toolbar dialog id.
+- `control_id` (`string`; required) - Dialog control id to focus.
+
+**Returns:**
+- `boolean|nil` - True on success, nil on failure.
+- `string|nil` - Error message on failure.
+
+### `leviathan.ui.dialog.press_button(dialog_id, button_id)`
+
+Press a button in the active repository toolbar dialog.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `dialog_id` (`string`; required) - Active toolbar dialog id.
+- `button_id` (`string`; required) - Dialog button id to press.
+
+**Returns:**
+- `boolean|nil` - True on success, nil on failure.
+- `string|nil` - Error message on failure.
 
 ### `leviathan.ui.remove_overlay(id)`
 

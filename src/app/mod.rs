@@ -272,6 +272,7 @@ impl App {
         };
         self.sync_active_plugin_screen_to_host();
         self.sync_repository_to_plugins();
+        self.sync_toolbar_dialog_to_plugins();
         self.process_tab_changes();
         let command_actions = self.drain_core_command_actions();
         let drain = self.drain_pending_tab_ops();
@@ -285,7 +286,17 @@ impl App {
         Task::batch(vec![task, command_actions, drain, git_drain, ui_effects])
     }
 
+    fn sync_toolbar_dialog_to_plugins(&mut self) {
+        let snapshot = self
+            .tabs
+            .active_screen()
+            .map(|screen| screen.toolbar_dialog_context_snapshot())
+            .unwrap_or_else(crate::plugin::ui::context::ToolbarDialogContextSnapshot::none);
+        let _ = self.plugin_host.sync_toolbar_dialog(snapshot);
+    }
+
     fn drain_plugin_ui_effects(&mut self) -> Task<Message> {
+        let mut tasks = Vec::new();
         for effect in self.plugin_host.take_pending_ui_effects() {
             match effect {
                 PluginUiEffect::OpenRepositoryDialog(request) => {
@@ -307,10 +318,30 @@ impl App {
                         self.record_repository_dialog_no_active_repository(&plugin_id, &dialog_id);
                     }
                 }
+                PluginUiEffect::FocusRepositoryDialogControl {
+                    dialog_id,
+                    control_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen() {
+                        tasks.push(screen.focus_toolbar_dialog_control(&dialog_id, &control_id));
+                    } else {
+                        self.record_repository_dialog_no_active_repository("<unknown>", &dialog_id);
+                    }
+                }
+                PluginUiEffect::PressRepositoryDialogButton {
+                    dialog_id,
+                    button_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        tasks.push(screen.press_toolbar_dialog_button(&dialog_id, &button_id));
+                    } else {
+                        self.record_repository_dialog_no_active_repository("<unknown>", &dialog_id);
+                    }
+                }
             }
         }
 
-        Task::batch(
+        tasks.extend(
             self.plugin_host
                 .take_pending_ui_scrolls()
                 .into_iter()
@@ -323,7 +354,8 @@ impl App {
                         },
                     )
                 }),
-        )
+        );
+        Task::batch(tasks)
     }
 
     fn record_repository_dialog_no_active_repository(&self, plugin_id: &str, dialog_id: &str) {
