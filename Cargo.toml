@@ -18,7 +18,7 @@ notify = { version = "7", features = ["macos_fsevent"] }
 
 [package]
 name = "git_leviathan"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 description = "Git client built with Iced."
 license = "MIT"
