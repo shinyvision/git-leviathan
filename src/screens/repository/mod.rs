@@ -1166,6 +1166,51 @@ mod tests {
     }
 
     #[test]
+    fn consumed_commit_click_focuses_center_panel() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Detail;
+
+        let _ = screen.handle_center_action(CenterAction::CommitClicked(1));
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Center);
+        assert_eq!(screen.data.selection.selected_commit(), 1);
+    }
+
+    #[test]
+    fn programmatic_commit_selection_preserves_panel_focus() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Sidebar;
+
+        let _ = screen.handle_center_action(CenterAction::CommitSelected(1));
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Sidebar);
+        assert_eq!(screen.data.selection.selected_commit(), 1);
+    }
+
+    #[test]
+    fn consumed_reword_message_click_focuses_detail_panel() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Center;
+
+        let _ = screen.handle_detail_action(DetailAction::RewordStarted {
+            hash: "parent".into(),
+            original_message: "initial".into(),
+        });
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Detail);
+        assert!(screen.panels.detail.reword_active().is_some());
+    }
+
+    #[test]
     fn escape_canceling_confirmation_preserves_tracked_panel_focus() {
         for focused_panel in [FocusedPanel::Sidebar, FocusedPanel::Detail] {
             let (_repo_dir, mut screen) = test_screen();

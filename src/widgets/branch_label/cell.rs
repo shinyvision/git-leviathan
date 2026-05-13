@@ -297,7 +297,7 @@ fn empty_cell(bg: Color, commit_idx: usize) -> Element<'static, Message> {
             ..Default::default()
         })
         .on_press(Message::repo(RepositoryMessage::Center(
-            CenterAction::CommitSelected(commit_idx),
+            CenterAction::CommitClicked(commit_idx),
         )))
         .padding(Padding::from([5, BRANCH_LABEL_INSET_X]))
         .width(Length::Fill)
@@ -465,7 +465,7 @@ pub fn branch_label_cell<'a>(
             ..Default::default()
         })
         .on_press(Message::repo(RepositoryMessage::Center(
-            CenterAction::CommitSelected(commit_idx),
+            CenterAction::CommitClicked(commit_idx),
         )))
         .padding(Padding::from([5, BRANCH_LABEL_INSET_X]))
         .width(Length::Fill)

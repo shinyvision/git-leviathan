@@ -18,7 +18,9 @@ use super::super::super::{
         revert_confirm, stash_delete,
     },
     panel_messages::CenterAction,
-    state::{eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState},
+    state::{
+        eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState, FocusedPanel,
+    },
     RepositoryMessage,
 };
 use super::super::detail::DetailPanel;
@@ -32,7 +34,14 @@ pub(in crate::screens::repository) fn update(
     action: CenterAction,
     ctx: &mut ScreenCtx<'_>,
 ) -> Task<Message> {
+    if action_focuses_center(&action) {
+        ctx.input.focused_panel = FocusedPanel::Center;
+    }
+
     match action {
+        CenterAction::CommitClicked(idx) => {
+            update(panel, detail_panel, CenterAction::CommitSelected(idx), ctx)
+        }
         CenterAction::CommitSelected(idx) => {
             ctx.data.branch_popout.close();
             let mods = ctx.input.modifiers;
@@ -850,6 +859,38 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::None => Task::none(),
     }
+}
+
+fn action_focuses_center(action: &CenterAction) -> bool {
+    matches!(
+        action,
+        CenterAction::CommitClicked(_)
+            | CenterAction::BranchLabelClicked { .. }
+            | CenterAction::BranchLabelPressed(_)
+            | CenterAction::RemoteBranchLabelPressed { .. }
+            | CenterAction::BranchLabelRightClicked { .. }
+            | CenterAction::BranchMergeRequested { .. }
+            | CenterAction::BranchFastForwardRequested { .. }
+            | CenterAction::BranchRebaseRequested { .. }
+            | CenterAction::ResetSubmenuRequested { .. }
+            | CenterAction::ResetToCommitRequested { .. }
+            | CenterAction::BranchDeleteRequested { .. }
+            | CenterAction::BranchRenameRequested { .. }
+            | CenterAction::CommitRightClicked { .. }
+            | CenterAction::CherryPickRequested { .. }
+            | CenterAction::RevertCommitRequested { .. }
+            | CenterAction::StashCreateRequested
+            | CenterAction::StashApplyRequested { .. }
+            | CenterAction::StashPopRequested { .. }
+            | CenterAction::StashDeleteRequested { .. }
+            | CenterAction::CreateBranchHereRequested { .. }
+            | CenterAction::SquashCommitsRequested { .. }
+            | CenterAction::SquashSelectedCommitsRequested
+            | CenterAction::CreateTagHereRequested { .. }
+            | CenterAction::PushTagRequested { .. }
+            | CenterAction::DeleteTagRequested { .. }
+            | CenterAction::GraphColumnResizeStarted { .. }
+    )
 }
 
 fn squash_commits(ctx: &mut ScreenCtx<'_>, hashes: Vec<String>) -> Task<Message> {

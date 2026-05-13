@@ -14,7 +14,7 @@ use super::super::super::{
     panel_messages::DiffPanelAction,
     state::{
         conflict_ours_scroll_id, conflict_output_scroll_id, conflict_theirs_scroll_id,
-        diff_content_scroll_id, OperationKind,
+        diff_content_scroll_id, FocusedPanel, OperationKind,
     },
     RepositoryMessage,
 };
@@ -43,6 +43,10 @@ pub(in crate::screens::repository) fn update(
     action: DiffPanelAction,
     ctx: &mut ScreenCtx<'_>,
 ) -> Task<Message> {
+    if action_focuses_diff(&action) {
+        ctx.input.focused_panel = FocusedPanel::Center;
+    }
+
     match action {
         DiffPanelAction::ScrollUp => scroll_focused_diff(panel, DiffKeyboardScroll::Up),
         DiffPanelAction::ScrollDown => scroll_focused_diff(panel, DiffKeyboardScroll::Down),
@@ -563,6 +567,21 @@ pub(in crate::screens::repository) fn update(
         }
         DiffPanelAction::None => Task::none(),
     }
+}
+
+fn action_focuses_diff(action: &DiffPanelAction) -> bool {
+    matches!(
+        action,
+        DiffPanelAction::DiffSelectionBegin { .. }
+            | DiffPanelAction::DiffGutterClicked { .. }
+            | DiffPanelAction::DiffShiftWheel { .. }
+            | DiffPanelAction::DiffCopyRequested
+            | DiffPanelAction::ConflictHunkSideToggled { .. }
+            | DiffPanelAction::ConflictSideAllToggled(_)
+            | DiffPanelAction::ConflictShiftWheel { .. }
+            | DiffPanelAction::ConflictResolutionSaveRequested
+            | DiffPanelAction::TextSearch(_)
+    )
 }
 
 fn build_highlight_document(content: Option<String>, file_path: &str) -> Option<HighlightDocument> {

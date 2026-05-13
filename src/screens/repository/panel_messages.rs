@@ -7,6 +7,9 @@ use super::overlays::dialog::model::{DialogButtonId, DialogControlId, DialogId};
 
 #[derive(Debug, Clone)]
 pub enum CenterAction {
+    /// Mouse click on a commit row. Unlike `CommitSelected`, this should move
+    /// keyboard focus to the graph panel before applying selection changes.
+    CommitClicked(usize),
     CommitSelected(usize),
     /// Tracked for multi-select clicks (Ctrl/Shift etc.).
     ModifiersChanged(iced::keyboard::Modifiers),

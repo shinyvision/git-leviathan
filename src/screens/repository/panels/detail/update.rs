@@ -30,6 +30,10 @@ pub(in crate::screens::repository) fn update(
     repository_panel: &mut CenterPanel,
     diff_panel: &mut DiffPanel,
 ) -> Task<Message> {
+    if action_focuses_detail(&action) {
+        ctx.input.focused_panel = FocusedPanel::Detail;
+    }
+
     match action {
         DetailAction::NavigateFileUp => panel.select_file(
             DetailFileNavigation::Previous,
@@ -94,7 +98,6 @@ pub(in crate::screens::repository) fn update(
             update(panel, action, ctx, repository_panel, diff_panel)
         }
         DetailAction::DirtyFileClicked { path, is_staged } => {
-            ctx.input.focused_panel = FocusedPanel::Detail;
             let mode = dirty_selection_mode(ctx.input.modifiers);
             panel.select_dirty_file_from_click(
                 path.clone(),
@@ -113,7 +116,6 @@ pub(in crate::screens::repository) fn update(
             open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
         }
         DetailAction::DirtyFileOpened { path, is_staged } => {
-            ctx.input.focused_panel = FocusedPanel::Detail;
             open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
         }
         DetailAction::DirtyFileRightClicked(path) => {
@@ -526,7 +528,6 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DetailAction::CommitFileClicked { commit_idx, path } => {
-            ctx.input.focused_panel = FocusedPanel::Detail;
             panel.select_commit_file(commit_idx, path.clone());
             if diff_panel.is_active() {
                 let already_shown = diff_panel
@@ -566,7 +567,6 @@ pub(in crate::screens::repository) fn update(
             repository_panel.restore_center_list_scroll()
         }
         DetailAction::MergedFileClicked { path } => {
-            ctx.input.focused_panel = FocusedPanel::Detail;
             panel.select_merged_file(path.clone());
             if diff_panel.is_active() {
                 let already_shown = diff_panel
@@ -670,6 +670,37 @@ pub(in crate::screens::repository) fn update(
         }
         DetailAction::None => Task::none(),
     }
+}
+
+fn action_focuses_detail(action: &DetailAction) -> bool {
+    matches!(
+        action,
+        DetailAction::DirtyFileClicked { .. }
+            | DetailAction::DirtyFileOpened { .. }
+            | DetailAction::DirtyFileRightClicked(_)
+            | DetailAction::StageFile(_)
+            | DetailAction::StageAll
+            | DetailAction::StageSelectedFiles
+            | DetailAction::UnstageFile(_)
+            | DetailAction::UnstageAll
+            | DetailAction::UnstageSelectedFiles
+            | DetailAction::MarkConflictResolved(_)
+            | DetailAction::MarkAllConflictsResolved
+            | DetailAction::DiscardAllRequested
+            | DetailAction::DiscardSelectedFilesRequested
+            | DetailAction::DiscardFileRequested(_)
+            | DetailAction::CommitConfirmed
+            | DetailAction::AbortMergeConfirmed
+            | DetailAction::CommitFileClicked { .. }
+            | DetailAction::MergedFileClicked { .. }
+            | DetailAction::CloseDirtyFileDiff
+            | DetailAction::CommitMessageAction(_)
+            | DetailAction::RewordStarted { .. }
+            | DetailAction::RewordCanceled
+            | DetailAction::RewordConfirmed
+            | DetailAction::RewordMessageAction(_)
+            | DetailAction::ParentCommitPressed(_)
+    )
 }
 
 fn dirty_selection_mode(modifiers: iced::keyboard::Modifiers) -> DirtyFileSelectionMode {

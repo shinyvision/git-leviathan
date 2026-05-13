@@ -591,7 +591,7 @@ fn message_cell<'a>(data: MessageCellData<'a>) -> Element<'a, Message> {
 
     MouseArea::new(commit_button)
         .on_press(Message::repo(RepositoryMessage::Center(
-            CenterAction::CommitSelected(idx),
+            CenterAction::CommitClicked(idx),
         )))
         .on_right_press(Message::repo(RepositoryMessage::Center(
             CenterAction::CommitRightClicked { commit_idx: idx },

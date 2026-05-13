@@ -127,7 +127,7 @@ impl Program<Message> for FullGraphProgram<'_> {
                 if row < self.rows.len() {
                     return Some(
                         iced::widget::Action::publish(Message::repo(RepositoryMessage::Center(
-                            CenterAction::CommitSelected(row),
+                            CenterAction::CommitClicked(row),
                         )))
                         .and_capture(),
                     );
