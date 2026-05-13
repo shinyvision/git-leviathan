@@ -49,8 +49,24 @@ Reference to the winning binding for a conflict-lost keymap row.
   - `command` (`string`; required) - Command the chord dispatched to.
   - `plugin_id` (`string`; required) - Owning plugin id of the matched keymap; `<host>` for built-ins, `<user>` for user-config.
   - `ok` (`boolean`; required) - True when the underlying command dispatch returned `Ok`.
+- `KeymapPrefixChanged` (table) - Fired when the in-flight keymap prefix changes so plugins can render their own hint UI.
+  - `active` (`boolean`; required) - True while the host is buffering a keymap prefix.
+  - `context` (`string`; required) - Active keymap context.
+  - `prefix` (`string`; required) - Rendered in-flight chord prefix.
+  - `hints` (`table`; required) - Array of next-key hint rows after conflict filtering.
+  - `reason` (`string`; required) - Why the prefix state changed (`pending`, `dispatched`, `cancelled`, `unhandled`, `context_changed`, or `focus_lost`).
 
 ## Functions
+
+### `leviathan.keymap.set_leader(leader)`
+
+Set the active keymap leader sequence used to expand `<leader>` bindings.
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `leader` (`string`; required) - Vim-style key sequence used as leader, e.g. `<Space>` or `,`.
 
 ### `leviathan.keymap.set(context, key, command, opts)`
 

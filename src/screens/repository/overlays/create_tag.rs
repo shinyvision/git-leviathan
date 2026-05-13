@@ -1,59 +1,121 @@
 //! "Create tag here" dialog triggered from a commit's right-click menu.
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_button_disabled, overlay_cancel_button, overlay_row,
-    overlay_text_input_with_submit, sliding_main_bar_overlay, CREATE_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogControl, DialogControlId,
+    DialogData, DialogId, DialogKey, DialogMessage, DialogOwner, DialogTextInput,
 };
 
-pub(crate) fn input_id() -> iced::widget::Id {
-    iced::widget::Id::new("create-tag-here-input")
-}
+pub(crate) const DIALOG_ID: &str = "native.create_tag";
+const OWNER_ID: &str = "create_tag";
+const CONTROL_TAG_NAME: &str = "tag_name";
+const DATA_COMMIT_HASH: &str = "commit_hash";
+pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
     pub commit_hash: String,
     pub tag_name_input: String,
-    pub needs_focus: bool,
 }
 
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
-    let has_name = !state.tag_name_input.trim().is_empty();
-
-    let label = text("Enter tag name")
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
-
-    let name_input = overlay_text_input_with_submit(
-        "tag name",
-        &state.tag_name_input,
-        |s| RepositoryMessage::OverlayPanel(OverlayPanelAction::CreateTagHereInput(s)),
-        Message::repo(RepositoryMessage::OverlayPanel(
-            OverlayPanelAction::CreateTagHereConfirmed,
-        )),
-        Some(input_id()),
-    );
-
-    let create_btn = if has_name {
-        overlay_button(
-            "Create Tag",
-            CREATE_BUTTON,
-            RepositoryMessage::OverlayPanel(OverlayPanelAction::CreateTagHereConfirmed),
-        )
-    } else {
-        overlay_button_disabled("Create Tag", CREATE_BUTTON)
+pub(crate) fn dialog(state: State) -> Dialog {
+    let mut dialog = Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: "Enter tag name".into(),
+        },
+        data: vec![DialogData {
+            id: DATA_COMMIT_HASH.into(),
+            value: state.commit_hash,
+        }],
+        controls: vec![DialogControl {
+            id: DialogControlId(CONTROL_TAG_NAME.into()),
+            label: None,
+            text_input: Some(DialogTextInput {
+                placeholder: "tag name".into(),
+                value: state.tag_name_input,
+                submit_button_id: Some(DialogButtonId(CONFIRM_BUTTON_ID.into())),
+                width: None,
+            }),
+            dropdown: None,
+        }],
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
+                text: "Create Tag".into(),
+                style: DialogButtonStyle("create".into()),
+                keys: vec![DialogKey("enter".into())],
+                closes_dialog: false,
+                enabled: false,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: Some(DialogControlId(CONTROL_TAG_NAME.into())),
     };
+    refresh_enabled(&mut dialog);
+    dialog
+}
 
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::CreateTagHereCanceled,
-    ));
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
 
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), name_input, create_btn, cancel_btn]),
-        slide_offset,
-    )
+pub(crate) fn commit_hash(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_COMMIT_HASH)?.to_string())
+}
+
+pub(crate) fn tag_name_input(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    dialog
+        .controls
+        .iter()
+        .find(|control| control.id.0 == CONTROL_TAG_NAME)?
+        .text_input
+        .as_ref()
+        .map(|input| input.value.clone())
+}
+
+pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
+    if !is_dialog(dialog) {
+        return;
+    }
+    let tag_name = tag_name_input(dialog).unwrap_or_default();
+    set_button_enabled(dialog, CONFIRM_BUTTON_ID, !tag_name.trim().is_empty());
+}
+
+fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
+    if let Some(button) = dialog
+        .buttons
+        .iter_mut()
+        .find(|button| button.id.0 == button_id)
+    {
+        button.enabled = enabled;
+    }
+}
+
+pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CONFIRM_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }

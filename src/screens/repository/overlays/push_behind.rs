@@ -1,15 +1,17 @@
 //! Bar shown when a push is rejected because the branch is behind its remote.
-//! Offers pull (fast-forward), force push (with another confirmation), or cancel.
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_cancel_button, overlay_row, sliding_main_bar_overlay, CREATE_BUTTON,
-    DANGER_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogData, DialogId, DialogKey,
+    DialogMessage, DialogOwner,
 };
+
+pub(crate) const DIALOG_ID: &str = "native.push_behind";
+const OWNER_ID: &str = "push_behind";
+const DATA_BRANCH_NAME: &str = "branch_name";
+const DATA_REMOTE_NAME: &str = "remote_name";
+pub(crate) const PULL_BUTTON_ID: &str = "pull";
+pub(crate) const FORCE_BUTTON_ID: &str = "force";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
@@ -17,30 +19,89 @@ pub(crate) struct State {
     pub remote_name: String,
 }
 
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
-    let label = text(format!(
-        "'{}' is behind '{}/{}' Update your branch by doing a Pull.",
-        state.branch_name, state.remote_name, state.branch_name
-    ))
-    .size(theme::FONT_SM)
-    .style(style::primary_text);
+pub(crate) fn dialog(state: State) -> Dialog {
+    Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: format!(
+                "'{}' is behind '{}/{}' Update your branch by doing a Pull.",
+                state.branch_name, state.remote_name, state.branch_name
+            ),
+        },
+        data: vec![
+            DialogData {
+                id: DATA_BRANCH_NAME.into(),
+                value: state.branch_name,
+            },
+            DialogData {
+                id: DATA_REMOTE_NAME.into(),
+                value: state.remote_name,
+            },
+        ],
+        controls: Vec::new(),
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(PULL_BUTTON_ID.into()),
+                text: "Pull (fast-forward if possible)".into(),
+                style: DialogButtonStyle("create".into()),
+                keys: Vec::new(),
+                closes_dialog: false,
+                enabled: true,
+            },
+            DialogButton {
+                id: DialogButtonId(FORCE_BUTTON_ID.into()),
+                text: "Force Push".into(),
+                style: DialogButtonStyle("danger".into()),
+                keys: Vec::new(),
+                closes_dialog: false,
+                enabled: true,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into()), DialogKey("n".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: None,
+    }
+}
 
-    let pull_btn = overlay_button(
-        "Pull (fast-forward if possible)",
-        CREATE_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::PushBehindPullRequested),
-    );
-    let force_btn = overlay_button(
-        "Force Push",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::PushBehindForcePushRequested),
-    );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::PushBehindCanceled,
-    ));
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
 
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), pull_btn, force_btn, cancel_btn]),
-        slide_offset,
-    )
+pub(crate) fn branch_name(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_BRANCH_NAME)?.to_string())
+}
+
+pub(crate) fn remote_name(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_REMOTE_NAME)?.to_string())
+}
+
+pub(crate) fn is_pull_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == PULL_BUTTON_ID
+}
+
+pub(crate) fn is_force_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == FORCE_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_write_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_pull_button(button_id)
 }

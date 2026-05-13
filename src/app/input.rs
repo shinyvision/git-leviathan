@@ -1,5 +1,7 @@
 //! Keyboard-input dispatch for `App`. Extracted from `update.rs` in keymaps.
 
+use std::borrow::Cow;
+
 use iced::{keyboard, Task};
 
 use crate::message::Message;
@@ -20,6 +22,7 @@ impl App {
             modifiers.control() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
 
         if is_ctrl_tab {
+            self.clear_key_chord("cancelled");
             let target = if modifiers.shift() {
                 self.tabs.prev_tab_id_circular()
             } else {
@@ -37,6 +40,20 @@ impl App {
                 .fetch
                 .schedule_debounced(FETCH_DEBOUNCE_AFTER_TAB_SWITCH);
             return Task::batch(vec![screen_task, debounce_task]);
+        }
+
+        if is_escape_key(&key) {
+            if let Some(screen) = self.tabs.active_screen_mut() {
+                if let Some(task) = screen.handle_overlay_key_pressed(&key, modifiers) {
+                    self.clear_key_chord("cancelled");
+                    return task;
+                }
+            }
+        }
+
+        if is_escape_key(&key) && self.key_chord.is_active() {
+            self.clear_key_chord("cancelled");
+            return Task::none();
         }
 
         if is_escape_key(&key) {
@@ -67,13 +84,20 @@ impl App {
             return self.focus_plugin_overlay_input();
         }
 
+        if let Some(screen) = self.tabs.active_screen_mut() {
+            if let Some(task) = screen.handle_overlay_key_pressed(&key, modifiers) {
+                return task;
+            }
+        }
+
+        if is_backspace_key(&key) && self.key_chord.is_active() {
+            self.pop_key_chord();
+            return Task::none();
+        }
+
         if let Some(keystroke) = keystroke_from_iced_key(&modified_key, modifiers) {
             let context = self.keymap_context();
-            let outcome = self.plugin_host.dispatch_key(&context, &[keystroke]);
-            if matches!(
-                outcome,
-                KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending
-            ) {
+            if self.handle_keymap_candidate(context, keystroke) {
                 return self.focus_plugin_overlay_input();
             }
         }
@@ -96,11 +120,59 @@ impl App {
             .unwrap_or(Task::none())
     }
 
+    fn handle_keymap_candidate(&mut self, context: String, keystroke: Keystroke) -> bool {
+        if self.key_chord.context() != Some(context.as_str()) {
+            self.clear_key_chord("context_changed");
+            self.key_chord.reset_for_context(context.clone());
+        }
+
+        self.key_chord.push(keystroke.clone());
+        match self.dispatch_current_key_chord(&context) {
+            KeymapDispatchOutcome::Dispatched { .. } => true,
+            KeymapDispatchOutcome::Pending => {
+                self.publish_key_chord_pending(&context, "pending");
+                true
+            }
+            KeymapDispatchOutcome::Unhandled => {
+                let should_retry_current = self.key_chord.buffer().len() > 1;
+                if !should_retry_current {
+                    self.clear_key_chord("unhandled");
+                    return false;
+                }
+
+                self.key_chord.replace_with(context.clone(), keystroke);
+                match self.dispatch_current_key_chord(&context) {
+                    KeymapDispatchOutcome::Dispatched { .. } => true,
+                    KeymapDispatchOutcome::Pending => {
+                        self.publish_key_chord_pending(&context, "pending");
+                        true
+                    }
+                    KeymapDispatchOutcome::Unhandled => {
+                        self.clear_key_chord("unhandled");
+                        false
+                    }
+                }
+            }
+        }
+    }
+
+    fn dispatch_current_key_chord(&mut self, context: &str) -> KeymapDispatchOutcome {
+        let buffer = self.key_chord.buffer().to_vec();
+        let outcome = self.plugin_host.dispatch_key(context, &buffer);
+        if matches!(outcome, KeymapDispatchOutcome::Dispatched { .. }) {
+            self.clear_key_chord("dispatched");
+        }
+        outcome
+    }
+
     fn keymap_context(&self) -> String {
         if let Some(screen) = self.tabs.active_plugin_screen() {
             format!("plugin_screen:{}", screen.screen_id())
-        } else if self.no_git_screen.is_none() && self.tabs.active_screen().is_some() {
-            "repository".to_string()
+        } else if self.no_git_screen.is_none() {
+            self.tabs
+                .active_screen()
+                .map(|screen| screen.keymap_context().to_string())
+                .unwrap_or_else(|| "global".to_string())
         } else {
             "global".to_string()
         }
@@ -128,9 +200,9 @@ fn overlay_key_event(
     key: &keyboard::Key,
     modifiers: keyboard::Modifiers,
 ) -> Option<OverlayKeyEvent> {
-    let key_name = named_key_from_iced_key(key)?;
+    let key_name = overlay_key_name_from_iced_key(key)?;
     let top_overlay = overlays.first()?;
-    if !top_overlay.listens_for_key(key_name) {
+    if !top_overlay.listens_for_key(key_name.as_ref()) {
         return None;
     }
 
@@ -138,7 +210,7 @@ fn overlay_key_event(
         plugin_id: top_overlay.plugin_id.clone(),
         overlay_id: top_overlay.id.clone(),
         payload: serde_json::json!({
-            "key": key_name,
+            "key": key_name.as_ref(),
             "ctrl": modifiers.control(),
             "shift": modifiers.shift(),
             "alt": modifiers.alt(),
@@ -152,10 +224,22 @@ fn is_escape_key(key: &keyboard::Key) -> bool {
     matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
 }
 
-fn named_key_from_iced_key(key: &keyboard::Key) -> Option<&'static str> {
-    match key {
-        keyboard::Key::Named(named) => named_key_name(*named),
-        _ => None,
+fn is_backspace_key(key: &keyboard::Key) -> bool {
+    matches!(key, keyboard::Key::Named(keyboard::key::Named::Backspace))
+}
+
+fn overlay_key_name_from_iced_key(key: &keyboard::Key) -> Option<Cow<'static, str>> {
+    match key.as_ref() {
+        keyboard::Key::Named(named) => named_key_name(named).map(Cow::Borrowed),
+        keyboard::Key::Character(character) => {
+            let mut chars = character.chars();
+            let ch = chars.next()?;
+            if chars.next().is_some() || ch.is_control() {
+                return None;
+            }
+            Some(Cow::Owned(ch.to_ascii_lowercase().to_string()))
+        }
+        keyboard::Key::Unidentified => None,
     }
 }
 
@@ -256,6 +340,7 @@ fn named_key_name(named: keyboard::key::Named) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::keymap::Keystroke;
 
     #[test]
     fn converts_shifted_colon_to_bare_punctuation() {
@@ -288,6 +373,90 @@ mod tests {
         .expect("escape should convert");
 
         assert_eq!(stroke, Keystroke::plain("esc"));
+    }
+
+    fn empty_test_app() -> App {
+        use std::sync::Arc;
+
+        use crate::app::{
+            build_slot_registries, fetch_policy::FetchPolicy, git_queue::GitOperationQueue,
+            key_chord::KeyChordState, tabs::TabManager,
+        };
+        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+        use crate::plugin::PluginHost;
+        use crate::screens::BlankScreen;
+        use crate::services::DefaultPresenter;
+        use crate::toast::ToastManager;
+
+        let mut plugin_host = PluginHost::new();
+        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
+            build_slot_registries(&plugin_host);
+
+        App {
+            tabs: TabManager::new(Arc::new(DefaultPresenter::new())),
+            blank_screen: BlankScreen::new(),
+            no_git_screen: None,
+            toasts: ToastManager::default(),
+            last_animation_tick: None,
+            fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
+            reload_refs_abort: None,
+            plugin_host,
+            key_chord: KeyChordState::new(),
+            main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
+            repo_chrome_registry,
+            slot_registry_revision: 0,
+            pending_focus_reason: None,
+        }
+    }
+
+    fn press_char(app: &mut App, character: &str) {
+        let key = keyboard::Key::Character(character.into());
+        let _ = app.handle_key_pressed(key.clone(), key, keyboard::Modifiers::default());
+    }
+
+    fn press_named(app: &mut App, named: keyboard::key::Named) {
+        let key = keyboard::Key::Named(named);
+        let _ = app.handle_key_pressed(key.clone(), key, keyboard::Modifiers::default());
+    }
+
+    #[test]
+    fn backspace_pops_pending_key_chord_to_previous_prefix() {
+        let mut app = empty_test_app();
+        app.plugin_host
+            .set_builtin_keymap("global", "gab", "test.noop", "Open branch");
+
+        press_char(&mut app, "g");
+        press_char(&mut app, "a");
+        assert_eq!(
+            app.key_chord.buffer(),
+            [Keystroke::plain("g"), Keystroke::plain("a")]
+        );
+
+        press_named(&mut app, keyboard::key::Named::Backspace);
+
+        assert_eq!(app.key_chord.buffer(), [Keystroke::plain("g")]);
+        assert_eq!(app.key_chord.context(), Some("global"));
+        assert!(app.key_chord.prefix_published());
+    }
+
+    #[test]
+    fn backspace_cancels_pending_key_chord_when_final_key_is_removed() {
+        let mut app = empty_test_app();
+        app.plugin_host
+            .set_builtin_keymap("global", "gab", "test.noop", "Open branch");
+
+        press_char(&mut app, "g");
+        assert_eq!(app.key_chord.buffer(), [Keystroke::plain("g")]);
+
+        press_named(&mut app, keyboard::key::Named::Backspace);
+
+        assert!(!app.key_chord.is_active());
+        assert_eq!(app.key_chord.context(), None);
+        assert!(!app.key_chord.prefix_published());
     }
 
     fn overlay(id: &str, priority: i32, key_events: &[&str]) -> OverlayRecord {
@@ -343,8 +512,23 @@ mod tests {
     }
 
     #[test]
-    fn overlay_key_event_ignores_character_keys() {
-        let overlays = vec![overlay("top", 100, &["tab"])];
+    fn overlay_key_event_routes_opted_in_character_keys() {
+        let overlays = vec![overlay("top", 100, &["j"])];
+        let event = overlay_key_event(
+            &overlays,
+            &keyboard::Key::Character("j".into()),
+            keyboard::Modifiers::default(),
+        )
+        .expect("j should be captured");
+
+        assert_eq!(event.plugin_id, "plugin_top");
+        assert_eq!(event.overlay_id, "top");
+        assert_eq!(event.payload["key"], "j");
+    }
+
+    #[test]
+    fn overlay_key_event_ignores_unlisted_character_keys() {
+        let overlays = vec![overlay("top", 100, &["k"])];
         let event = overlay_key_event(
             &overlays,
             &keyboard::Key::Character("j".into()),

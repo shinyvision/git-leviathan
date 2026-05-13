@@ -52,7 +52,9 @@ fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Messag
         &app.tab_bar_registry,
         app.plugin_host.tab_snapshot()
     ),]
-    .spacing(0);
+    .spacing(0)
+    .width(Length::Fill)
+    .height(Length::Fill);
     let ctx = ToolbarCtx {
         now: app.fetch.started_at(),
         main_bar_registry: &app.main_bar_registry,
@@ -79,7 +81,9 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
         &app.tab_bar_registry,
         app.plugin_host.tab_snapshot()
     ),]
-    .spacing(0);
+    .spacing(0)
+    .width(Length::Fill)
+    .height(Length::Fill);
     let ctx = ToolbarCtx {
         now: app.fetch.started_at(),
         main_bar_registry: &app.main_bar_registry,
@@ -87,7 +91,8 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
     if let Some(toolbar) = <RepositoryScreen as Screen>::toolbar(screen, &ctx) {
         content_col = content_col.push(toolbar);
     }
-    content_col = content_col.push(screen.view_with_repo_region(&app.repo_region_registry));
+    content_col = content_col
+        .push(screen.view_with_repo_region(&app.repo_region_registry, &app.repo_chrome_registry));
 
     let content: Element<Message> = content_col.into();
 

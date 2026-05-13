@@ -265,6 +265,190 @@ const TYPE_TAG_FIELDS: &[ApiTypeField] = &[
     },
 ];
 
+const TYPE_COMMIT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Commit row kind: commit, dirty, or stash.",
+    },
+    ApiTypeField {
+        name: "hash",
+        lua_type: "string",
+        required: true,
+        doc: "Full commit hash, or empty for an uncommitted dirty row.",
+    },
+    ApiTypeField {
+        name: "short_hash",
+        lua_type: "string",
+        required: true,
+        doc: "Short display hash.",
+    },
+    ApiTypeField {
+        name: "summary",
+        lua_type: "string",
+        required: true,
+        doc: "First line of the commit message.",
+    },
+    ApiTypeField {
+        name: "message",
+        lua_type: "string",
+        required: true,
+        doc: "Full commit message when available.",
+    },
+    ApiTypeField {
+        name: "author",
+        lua_type: "string",
+        required: true,
+        doc: "Commit author display name.",
+    },
+    ApiTypeField {
+        name: "date",
+        lua_type: "string",
+        required: true,
+        doc: "Host-formatted commit date when available.",
+    },
+    ApiTypeField {
+        name: "timestamp",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Author timestamp in seconds when available.",
+    },
+    ApiTypeField {
+        name: "parents",
+        lua_type: "string[]",
+        required: true,
+        doc: "Full parent hashes in git parent order.",
+    },
+    ApiTypeField {
+        name: "index",
+        lua_type: "integer|nil",
+        required: true,
+        doc: "Zero-based visible commit row index when available.",
+    },
+    ApiTypeField {
+        name: "is_merge",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the commit has multiple parents.",
+    },
+    ApiTypeField {
+        name: "is_merge_in_progress",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the dirty row represents an in-progress merge.",
+    },
+    ApiTypeField {
+        name: "actions",
+        lua_type: "LeviathanCommitActions",
+        required: true,
+        doc: "Host-computed commit actions.",
+    },
+];
+
+const TYPE_COMMIT_ACTIONS_FIELDS: &[ApiTypeField] = &[ApiTypeField {
+    name: "reword",
+    lua_type: "LeviathanActionAvailability",
+    required: true,
+    doc: "Reword availability for this commit in the current tree.",
+}];
+
+const TYPE_ACTION_AVAILABILITY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the action can run.",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Stable disabled reason when available.",
+    },
+];
+
+const TYPE_COMMIT_DIFF_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "commit",
+        lua_type: "LeviathanCommit",
+        required: true,
+        doc: "Commit this diff was loaded for.",
+    },
+    ApiTypeField {
+        name: "modified_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Modified file count.",
+    },
+    ApiTypeField {
+        name: "added_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Added file count.",
+    },
+    ApiTypeField {
+        name: "deleted_count",
+        lua_type: "integer",
+        required: true,
+        doc: "Deleted file count.",
+    },
+    ApiTypeField {
+        name: "files",
+        lua_type: "LeviathanCommitDiffFile[]",
+        required: true,
+        doc: "Changed files in the commit diff.",
+    },
+];
+
+const TYPE_COMMIT_DIFF_FILE_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Repository-relative file path.",
+    },
+    ApiTypeField {
+        name: "status",
+        lua_type: "string",
+        required: true,
+        doc: "Change status.",
+    },
+];
+
+const TYPE_COMMIT_FILE_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "commit",
+        lua_type: "LeviathanCommit",
+        required: true,
+        doc: "Commit this file snapshot was loaded for.",
+    },
+    ApiTypeField {
+        name: "path",
+        lua_type: "string",
+        required: true,
+        doc: "Repository-relative file path.",
+    },
+    ApiTypeField {
+        name: "lines",
+        lua_type: "string[]",
+        required: true,
+        doc: "Per-line diff content.",
+    },
+    ApiTypeField {
+        name: "old_content",
+        lua_type: "string",
+        required: true,
+        doc: "Old file content when available.",
+    },
+    ApiTypeField {
+        name: "new_content",
+        lua_type: "string",
+        required: true,
+        doc: "New file content when available.",
+    },
+];
+
 const TYPE_TAB_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "path",
@@ -408,7 +592,7 @@ const TYPE_OVERLAY_FIELDS: &[ApiTypeField] = &[
         name: "key_events",
         lua_type: "string[]",
         required: false,
-        doc: "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+        doc: "Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.",
     },
     ApiTypeField {
         name: "widget",
@@ -467,6 +651,232 @@ const TYPE_OVERLAY_KEY_EVENT_FIELDS: &[ApiTypeField] = &[
         doc: "Whether the platform command modifier was held.",
     },
 ];
+const TYPE_DIALOG_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog id.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog body text.",
+    },
+    ApiTypeField {
+        name: "title",
+        lua_type: "string",
+        required: false,
+        doc: "Optional dialog title for hosts that display one.",
+    },
+    ApiTypeField {
+        name: "dismissible",
+        lua_type: "boolean",
+        required: false,
+        doc: "When true, Escape can close the dialog if no button handles it.",
+    },
+    ApiTypeField {
+        name: "data",
+        lua_type: "LeviathanDialogData[]",
+        required: false,
+        doc: "Opaque string data stored on the dialog.",
+    },
+    ApiTypeField {
+        name: "controls",
+        lua_type: "LeviathanDialogControl[]",
+        required: false,
+        doc: "Optional dialog controls.",
+    },
+    ApiTypeField {
+        name: "autofocus",
+        lua_type: "string",
+        required: false,
+        doc: "Control id to focus after the dialog opens.",
+    },
+    ApiTypeField {
+        name: "buttons",
+        lua_type: "LeviathanDialogButton[]",
+        required: true,
+        doc: "Dialog buttons.",
+    },
+];
+const TYPE_DIALOG_DATA_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Data id.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: true,
+        doc: "Data value.",
+    },
+];
+const TYPE_DIALOG_CONTROL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Control id.",
+    },
+    ApiTypeField {
+        name: "label",
+        lua_type: "LeviathanDialogLabel",
+        required: false,
+        doc: "Optional label shown before the control.",
+    },
+    ApiTypeField {
+        name: "text_input",
+        lua_type: "LeviathanDialogTextInput",
+        required: false,
+        doc: "Optional text input.",
+    },
+    ApiTypeField {
+        name: "dropdown",
+        lua_type: "LeviathanDialogDropdown",
+        required: false,
+        doc: "Optional dropdown.",
+    },
+];
+const TYPE_DIALOG_LABEL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Label text.",
+    },
+    ApiTypeField {
+        name: "style",
+        lua_type: "string",
+        required: false,
+        doc: "Label style token.",
+    },
+];
+const TYPE_DIALOG_TEXT_INPUT_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "placeholder",
+        lua_type: "string",
+        required: false,
+        doc: "Placeholder text.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: false,
+        doc: "Initial value.",
+    },
+    ApiTypeField {
+        name: "submit_button_id",
+        lua_type: "string",
+        required: false,
+        doc: "Button id triggered by Enter from this input.",
+    },
+    ApiTypeField {
+        name: "width",
+        lua_type: "integer",
+        required: false,
+        doc: "Control width in pixels.",
+    },
+];
+const TYPE_DIALOG_DROPDOWN_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "placeholder",
+        lua_type: "string",
+        required: false,
+        doc: "Placeholder text.",
+    },
+    ApiTypeField {
+        name: "options",
+        lua_type: "LeviathanDialogDropdownOption[]",
+        required: true,
+        doc: "Dropdown options.",
+    },
+    ApiTypeField {
+        name: "selected_option_id",
+        lua_type: "string",
+        required: false,
+        doc: "Initially selected option id.",
+    },
+    ApiTypeField {
+        name: "open",
+        lua_type: "boolean",
+        required: false,
+        doc: "Initial open state.",
+    },
+    ApiTypeField {
+        name: "width",
+        lua_type: "integer",
+        required: false,
+        doc: "Control width in pixels.",
+    },
+    ApiTypeField {
+        name: "leading_icon",
+        lua_type: "string",
+        required: false,
+        doc: "Optional leading icon name.",
+    },
+];
+const TYPE_DIALOG_DROPDOWN_OPTION_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Option id.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Option label.",
+    },
+];
+const TYPE_DIALOG_BUTTON_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: false,
+        doc: "Button id passed to its callback.",
+    },
+    ApiTypeField {
+        name: "style",
+        lua_type: "\"red\"|\"green\"|\"blue\"|\"white\"",
+        required: true,
+        doc: "Button color style.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Button label.",
+    },
+    ApiTypeField {
+        name: "on_click",
+        lua_type: "fun(id: string)",
+        required: true,
+        doc: "Callback invoked by clicking the button or pressing one of its keys.",
+    },
+    ApiTypeField {
+        name: "keys",
+        lua_type: "string[]",
+        required: false,
+        doc: "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
+    },
+    ApiTypeField {
+        name: "closes_dialog",
+        lua_type: "boolean",
+        required: false,
+        doc: "Whether the dialog closes before the callback runs.",
+    },
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: false,
+        doc: "Whether the button is initially enabled.",
+    },
+];
 const TYPE_CONTEXT_MENU_ITEM_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "id",
@@ -502,10 +912,10 @@ const TYPE_GRAPH_CONTRIBUTION_FIELDS: &[ApiTypeField] = &[
         doc: "Contribution id.",
     },
     ApiTypeField {
-        name: "commit_hash",
-        lua_type: "string",
+        name: "commit",
+        lua_type: "LeviathanCommit",
         required: false,
-        doc: "Static target commit hash.",
+        doc: "Static target commit.",
     },
     ApiTypeField {
         name: "decoration",
@@ -679,6 +1089,12 @@ const TYPE_UI_CONTEXT_FIELDS: &[ApiTypeField] = &[
         doc: "Selection summary when the host has one for the surface.",
     },
     ApiTypeField {
+        name: "dialog",
+        lua_type: "LeviathanToolbarDialogSummary",
+        required: true,
+        doc: "Active repository toolbar dialog summary.",
+    },
+    ApiTypeField {
         name: "focus",
         lua_type: "LeviathanFocusSummary",
         required: true,
@@ -823,10 +1239,10 @@ const TYPE_SELECTION_SUMMARY_FIELDS: &[ApiTypeField] = &[
         doc: "Selection kind.",
     },
     ApiTypeField {
-        name: "selected_commit_id",
-        lua_type: "string|nil",
+        name: "commit",
+        lua_type: "LeviathanCommit|nil",
         required: true,
-        doc: "Selected commit id when available.",
+        doc: "Selected commit data when a commit row is selected.",
     },
     ApiTypeField {
         name: "selected_file_path",
@@ -836,30 +1252,180 @@ const TYPE_SELECTION_SUMMARY_FIELDS: &[ApiTypeField] = &[
     },
 ];
 
+const TYPE_TOOLBAR_DIALOG_SUMMARY_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "active",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether a repository toolbar dialog is active.",
+    },
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Active dialog id, or empty string when none is active.",
+    },
+    ApiTypeField {
+        name: "owner",
+        lua_type: "string",
+        required: true,
+        doc: "`native`, `plugin`, or `none`.",
+    },
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Owner plugin id for plugin-owned dialogs.",
+    },
+    ApiTypeField {
+        name: "data",
+        lua_type: "LeviathanToolbarDialogData[]",
+        required: true,
+        doc: "Opaque dialog data rows.",
+    },
+    ApiTypeField {
+        name: "controls",
+        lua_type: "LeviathanToolbarDialogControl[]",
+        required: true,
+        doc: "Dialog controls and current values.",
+    },
+    ApiTypeField {
+        name: "buttons",
+        lua_type: "LeviathanToolbarDialogButton[]",
+        required: true,
+        doc: "Dialog buttons and enabled state.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_DATA_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Data id.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string",
+        required: true,
+        doc: "Data value.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_CONTROL_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Control id.",
+    },
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Control kind such as `text_input` or `dropdown`.",
+    },
+    ApiTypeField {
+        name: "value",
+        lua_type: "string|nil",
+        required: true,
+        doc: "Current control value when available.",
+    },
+];
+
+const TYPE_TOOLBAR_DIALOG_BUTTON_FIELDS: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "id",
+        lua_type: "string",
+        required: true,
+        doc: "Button id.",
+    },
+    ApiTypeField {
+        name: "text",
+        lua_type: "string",
+        required: true,
+        doc: "Button label.",
+    },
+    ApiTypeField {
+        name: "enabled",
+        lua_type: "boolean",
+        required: true,
+        doc: "Whether the button can currently be pressed.",
+    },
+];
+
 const TYPE_FOCUS_SUMMARY_FIELDS: &[ApiTypeField] = &[
     ApiTypeField {
         name: "surface",
         lua_type: "string",
         required: true,
-        doc: "Focused surface.",
+        doc: "Active focus surface id (e.g. `repository.graph`).",
+    },
+    ApiTypeField {
+        name: "kind",
+        lua_type: "string",
+        required: true,
+        doc: "Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.",
     },
     ApiTypeField {
         name: "region",
         lua_type: "string",
         required: false,
-        doc: "Focused region.",
+        doc: "Focused region when applicable.",
     },
     ApiTypeField {
         name: "pane",
         lua_type: "string",
         required: false,
-        doc: "Focused pane.",
+        doc: "Focused pane when applicable.",
     },
     ApiTypeField {
         name: "section",
         lua_type: "string",
         required: false,
-        doc: "Focused section.",
+        doc: "Focused section when applicable.",
+    },
+    ApiTypeField {
+        name: "plugin_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused plugin id when focus is on a plugin screen or overlay.",
+    },
+    ApiTypeField {
+        name: "screen_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused plugin screen id when focus is on a plugin screen.",
+    },
+    ApiTypeField {
+        name: "overlay_id",
+        lua_type: "string",
+        required: false,
+        doc: "Focused overlay id when focus is on an overlay.",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string",
+        required: false,
+        doc: "Last focus-change reason as a snake_case string.",
+    },
+    ApiTypeField {
+        name: "matches_surface",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus surface equals the rendered context surface.",
+    },
+    ApiTypeField {
+        name: "matches_region",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus shares a region with the rendered context.",
+    },
+    ApiTypeField {
+        name: "matches_pane",
+        lua_type: "boolean",
+        required: true,
+        doc: "True when the active focus shares a pane with the rendered context.",
     },
 ];
 
@@ -1543,6 +2109,62 @@ pub const API_TYPES: &[ApiType] = &[
         methods: &[],
     },
     ApiType {
+        name: "LeviathanDialogSpec",
+        since: "1.0",
+        doc: "Repository-owned toolbar dialog request.",
+        fields: TYPE_DIALOG_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogData",
+        since: "1.0",
+        doc: "Dialog data item.",
+        fields: TYPE_DIALOG_DATA_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogControl",
+        since: "1.0",
+        doc: "Dialog control.",
+        fields: TYPE_DIALOG_CONTROL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogLabel",
+        since: "1.0",
+        doc: "Dialog control label.",
+        fields: TYPE_DIALOG_LABEL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogTextInput",
+        since: "1.0",
+        doc: "Dialog text input.",
+        fields: TYPE_DIALOG_TEXT_INPUT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogDropdown",
+        since: "1.0",
+        doc: "Optional dialog dropdown content.",
+        fields: TYPE_DIALOG_DROPDOWN_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogDropdownOption",
+        since: "1.0",
+        doc: "Dialog dropdown option.",
+        fields: TYPE_DIALOG_DROPDOWN_OPTION_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanDialogButton",
+        since: "1.0",
+        doc: "Dialog button.",
+        fields: TYPE_DIALOG_BUTTON_FIELDS,
+        methods: &[],
+    },
+    ApiType {
         name: "LeviathanScreenSpec",
         since: "1.0",
         doc: "Plugin screen.",
@@ -1732,6 +2354,34 @@ pub const API_TYPES: &[ApiType] = &[
         methods: &[],
     },
     ApiType {
+        name: "LeviathanToolbarDialogSummary",
+        since: "1.0",
+        doc: "Active repository toolbar dialog summary in a UI context.",
+        fields: TYPE_TOOLBAR_DIALOG_SUMMARY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogData",
+        since: "1.0",
+        doc: "Toolbar dialog data item.",
+        fields: TYPE_TOOLBAR_DIALOG_DATA_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogControl",
+        since: "1.0",
+        doc: "Toolbar dialog control summary.",
+        fields: TYPE_TOOLBAR_DIALOG_CONTROL_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanToolbarDialogButton",
+        since: "1.0",
+        doc: "Toolbar dialog button summary.",
+        fields: TYPE_TOOLBAR_DIALOG_BUTTON_FIELDS,
+        methods: &[],
+    },
+    ApiType {
         name: "LeviathanFocusSummary",
         since: "1.0",
         doc: "Focus summary in a UI context.",
@@ -1820,6 +2470,48 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.0",
         doc: "Git tag.",
         fields: TYPE_TAG_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommit",
+        since: "1.0",
+        doc: "Commit data exposed to Lua APIs.",
+        fields: TYPE_COMMIT_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitActions",
+        since: "1.0",
+        doc: "Host-computed actions for a commit.",
+        fields: TYPE_COMMIT_ACTIONS_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanActionAvailability",
+        since: "1.0",
+        doc: "Availability state for a host action.",
+        fields: TYPE_ACTION_AVAILABILITY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitDiff",
+        since: "1.0",
+        doc: "Diff loaded for a commit.",
+        fields: TYPE_COMMIT_DIFF_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitDiffFile",
+        since: "1.0",
+        doc: "File row in a commit diff.",
+        fields: TYPE_COMMIT_DIFF_FILE_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanCommitFile",
+        since: "1.0",
+        doc: "File snapshot loaded at a commit.",
+        fields: TYPE_COMMIT_FILE_FIELDS,
         methods: &[],
     },
     ApiType {

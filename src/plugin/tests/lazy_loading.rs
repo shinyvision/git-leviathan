@@ -20,6 +20,7 @@
 //!   triggers.
 
 use crate::plugin::commands::InvokeOutcome;
+use crate::plugin::host::RepositorySyncState;
 use crate::plugin::tests::harness::MockHost;
 
 const EAGER_MANIFEST: &str = r#"
@@ -237,14 +238,15 @@ fn lazy_file_presence_activates_plugin() {
 
     assert!(host.read_global_string("lf", "activated").is_none());
     // sync_repository drives the file-presence probe.
-    host.host_mut().sync_repository(
-        "demo-repo",
-        workdir.path().to_str().unwrap(),
-        "main",
-        "deadbeefdeadbeef",
-        "origin",
-        &[],
-    );
+    host.host_mut().sync_repository(RepositorySyncState {
+        repo_name: "demo-repo",
+        workdir_path: workdir.path().to_str().unwrap(),
+        current_branch_name: "main",
+        head_hash: "deadbeefdeadbeef",
+        default_remote_name: "origin",
+        remote_names: &[],
+        refs: &[],
+    });
     assert_eq!(
         host.read_global_string("lf", "activated").as_deref(),
         Some("yes")

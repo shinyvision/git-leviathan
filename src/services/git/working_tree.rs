@@ -181,6 +181,41 @@ pub(super) fn stage_file(service: &mut GitService, path: &str) -> Result<(), Git
     Ok(())
 }
 
+pub(super) fn stage_files(service: &mut GitService, paths: &[String]) -> Result<(), GitError> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    if paths.iter().any(|path| path.is_empty()) {
+        return Err(GitError::Other("file path cannot be empty".to_string()));
+    }
+
+    let mut index = service
+        .repo
+        .index()
+        .map_err(|e| wrap_git2_error("open repository index", e))?;
+    let workdir = service.repo.workdir().map(|workdir| workdir.to_path_buf());
+    for path in paths {
+        let relative_path = Path::new(path);
+        let exists_in_workdir = workdir
+            .as_ref()
+            .map(|workdir| workdir.join(relative_path).exists())
+            .unwrap_or(false);
+        if exists_in_workdir {
+            index
+                .add_path(relative_path)
+                .map_err(|e| wrap_git2_error(&format!("stage file '{path}'"), e))?;
+        } else {
+            index
+                .remove_path(relative_path)
+                .map_err(|e| wrap_git2_error(&format!("stage deletion '{path}'"), e))?;
+        }
+    }
+    index
+        .write()
+        .map_err(|e| wrap_git2_error("write repository index", e))?;
+    Ok(())
+}
+
 pub(super) fn stage_all_dirty_changes(service: &mut GitService) -> Result<(), GitError> {
     let mut index = service
         .repo
@@ -208,6 +243,22 @@ pub(super) fn unstage_file(service: &mut GitService, path: &str) -> Result<(), G
         .repo
         .reset_default(head.as_ref(), [path])
         .map_err(|e| wrap_git2_error(&format!("unstage file '{path}'"), e))?;
+    Ok(())
+}
+
+pub(super) fn unstage_files(service: &mut GitService, paths: &[String]) -> Result<(), GitError> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    if paths.iter().any(|path| path.is_empty()) {
+        return Err(GitError::Other("file path cannot be empty".to_string()));
+    }
+
+    let head = head_object(service)?;
+    service
+        .repo
+        .reset_default(head.as_ref(), paths.iter().map(String::as_str))
+        .map_err(|e| wrap_git2_error("unstage files", e))?;
     Ok(())
 }
 

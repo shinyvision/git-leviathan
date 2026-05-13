@@ -18,18 +18,18 @@ pub(crate) enum OperationKind {
 }
 
 impl OperationKind {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> Option<&'static str> {
         match self {
-            Self::GitWrite => "Working...",
-            Self::Fetch => "Fetching...",
-            Self::StageFile => "Staging...",
-            Self::StageAll => "Staging...",
-            Self::UnstageFile => "Unstaging...",
-            Self::UnstageAll => "Unstaging...",
-            Self::Commit => "Committing...",
-            Self::Discard => "Discarding...",
-            Self::ResolveConflict => "Resolving...",
-            Self::AbortMerge => "Aborting...",
+            Self::GitWrite => Some("Working..."),
+            Self::Fetch => None,
+            Self::StageFile => Some("Staging..."),
+            Self::StageAll => Some("Staging..."),
+            Self::UnstageFile => Some("Unstaging..."),
+            Self::UnstageAll => Some("Unstaging..."),
+            Self::Commit => Some("Committing..."),
+            Self::Discard => Some("Discarding..."),
+            Self::ResolveConflict => Some("Resolving..."),
+            Self::AbortMerge => Some("Aborting..."),
         }
     }
 }
@@ -71,12 +71,17 @@ impl OperationCoordinator {
         self.active_write.is_some()
     }
 
+    pub(crate) fn is_blocking_write(&self) -> bool {
+        self.active_kind()
+            .is_some_and(|kind| kind != OperationKind::Fetch)
+    }
+
     pub(crate) fn active_kind(&self) -> Option<OperationKind> {
         self.active_write.map(|(_, kind)| kind)
     }
 
     pub(crate) fn active_label(&self) -> Option<&'static str> {
-        self.active_kind().map(OperationKind::label)
+        self.active_kind().and_then(OperationKind::label)
     }
 
     pub(crate) fn mark_watcher_reload_pending(&mut self, path: impl Into<PathBuf>) {
@@ -166,7 +171,9 @@ mod tests {
         let first = ops.begin_fetch().unwrap();
 
         assert_eq!(ops.active_kind(), Some(OperationKind::Fetch));
-        assert_eq!(ops.active_label(), Some("Fetching..."));
+        assert!(ops.is_writing());
+        assert!(!ops.is_blocking_write());
+        assert_eq!(ops.active_label(), None);
         assert!(ops.begin_write().is_none());
 
         assert!(ops.finish_write(first));

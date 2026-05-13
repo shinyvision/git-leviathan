@@ -2,7 +2,7 @@
 //! built-in panes (sidebar, graph, details), each exposing top/bottom
 //! extension sections.
 
-use iced::Element;
+use iced::{Element, Length};
 
 use crate::message::Message;
 use crate::plugin::slots::{Container, IsSlot, SlotAddress, SlotRegistry};
@@ -121,7 +121,12 @@ pub fn render_top<'a>(
     let items: Vec<Element<'a, Message>> = iter(registry, pane, Section::Top)
         .map(|s| (s.builder)(&pane_ctx))
         .collect();
-    Some(iced::widget::column(items).spacing(0).into())
+    Some(
+        iced::widget::column(items)
+            .spacing(0)
+            .width(Length::Fill)
+            .into(),
+    )
 }
 
 /// Render the bottom-section slots for a pane as a stacked column.
@@ -137,5 +142,10 @@ pub fn render_bottom<'a>(
     let items: Vec<Element<'a, Message>> = iter(registry, pane, Section::Bottom)
         .map(|s| (s.builder)(&pane_ctx))
         .collect();
-    Some(iced::widget::column(items).spacing(0).into())
+    Some(
+        iced::widget::column(items)
+            .spacing(0)
+            .width(Length::Fill)
+            .into(),
+    )
 }

@@ -64,6 +64,24 @@ column id=*screen-root spacing=6 width=auto height=auto align_x=None
 }
 
 #[test]
+fn snapshot_scrollable_carries_scroll_request() {
+    let ast = decode(&json!({
+        "kind": "scrollable",
+        "id": "branches",
+        "scroll_y": 84,
+        "height": 240,
+        "child": { "kind": "text", "value": "body" }
+    }))
+    .unwrap();
+    let snap = snapshot(&ast);
+    let expected = "\
+scrollable id=*branches width=auto height=fixed(240) scroll_id=\"branches\" scroll_y=84
+  text id=root.child value=\"body\" size=14 color=none
+";
+    assert_eq!(snap, expected);
+}
+
+#[test]
 fn snapshot_button_with_style_and_action() {
     let ast = decode(&json!({
         "kind": "button",

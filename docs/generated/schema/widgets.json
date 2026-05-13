@@ -371,6 +371,18 @@
         "lua_type": "number|string",
         "required": false,
         "doc": "Fixed pixels, fill, or shrink."
+      },
+      {
+        "name": "id",
+        "lua_type": "string",
+        "required": false,
+        "doc": "Stable scrollable id, scoped to the plugin surface."
+      },
+      {
+        "name": "scroll_y",
+        "lua_type": "number",
+        "required": false,
+        "doc": "Absolute vertical scroll offset in pixels."
       }
     ]
   },

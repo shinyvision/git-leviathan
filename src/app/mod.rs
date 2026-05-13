@@ -2,8 +2,10 @@ mod animation;
 mod commands;
 mod fetch_ops;
 mod fetch_policy;
+mod focus;
 mod git_queue;
 mod input;
+mod key_chord;
 mod subscription;
 mod tabs;
 mod update;
@@ -16,10 +18,13 @@ use std::time::{Duration, Instant};
 use crate::{
     config::AppConfig,
     message::Message,
+    plugin::diagnostic::{DiagnosticSeverity, PluginDiagnostic, PluginSourceSpan},
     plugin::events::EventPayload,
     plugin::navigation::PluginNavigationEffect,
+    plugin::resources::PluginId,
     plugin::tab_snapshot::{TabRegistryOp, TabSnapshotEntry, TabsSnapshot},
-    plugin::PluginHost,
+    plugin::ui::effects::PluginUiEffect,
+    plugin::{host::RepositorySyncState, PluginHost},
     screens::no_git::TargetOs,
     screens::{BlankScreen, NoGitScreen},
     services::{
@@ -27,12 +32,13 @@ use crate::{
     },
     toast::ToastManager,
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
-    widgets::chrome::repo_region::RepoRegionRegistry,
+    widgets::chrome::repo_region::{RepoChromeRegistry, RepoRegionRegistry},
     widgets::chrome::tab_bar_slots::{builtins as tab_bar_builtins, TabBarRegistry},
 };
 
 use fetch_policy::FetchPolicy;
 use git_queue::GitOperationQueue;
+use key_chord::KeyChordState;
 use tabs::TabManager;
 
 /// Delay between Ctrl+Tab settling on a tab and kicking off its auto-fetch.
@@ -56,6 +62,7 @@ pub struct App {
     /// latest snapshot ever reaches the main thread.
     pub(super) reload_refs_abort: Option<iced::task::Handle>,
     pub(super) plugin_host: PluginHost,
+    pub(in crate::app) key_chord: KeyChordState,
     /// Authoritative slot registry for the main bar. Rebuilt from built-ins
     /// + current plugin contributions after plugin host mutations.
     pub(super) main_bar_registry: MainBarRegistry,
@@ -65,7 +72,9 @@ pub struct App {
     /// Authoritative slot registry for the repository region. Rebuilt from
     /// current plugin contributions after plugin host mutations.
     pub(super) repo_region_registry: RepoRegionRegistry,
+    pub(super) repo_chrome_registry: RepoChromeRegistry,
     pub(super) slot_registry_revision: u64,
+    pub(super) pending_focus_reason: Option<crate::plugin::ui::focus::FocusReason>,
 }
 
 impl App {
@@ -86,7 +95,7 @@ impl App {
         plugin_host.drop_breaker_state_for_plugin("");
         plugin_host.drop_breaker_state_for_generation("", 0);
 
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&plugin_host);
         let slot_registry_revision = plugin_host.slot_ops_revision();
 
@@ -100,10 +109,13 @@ impl App {
             git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
+            key_chord: KeyChordState::new(),
             main_bar_registry,
             tab_bar_registry,
             repo_region_registry,
+            repo_chrome_registry,
             slot_registry_revision,
+            pending_focus_reason: None,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -260,14 +272,105 @@ impl App {
         };
         self.sync_active_plugin_screen_to_host();
         self.sync_repository_to_plugins();
+        self.sync_toolbar_dialog_to_plugins();
         self.process_tab_changes();
         let command_actions = self.drain_core_command_actions();
         let drain = self.drain_pending_tab_ops();
         let git_drain = self.drain_git_operation_queue();
+        let ui_effects = self.drain_plugin_ui_effects();
         self.persist_plugin_tabs();
+        let snapshot = self.compute_focus_snapshot();
+        let _ = self.plugin_host.sync_focus(snapshot);
         self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
-        Task::batch(vec![task, command_actions, drain, git_drain])
+        Task::batch(vec![task, command_actions, drain, git_drain, ui_effects])
+    }
+
+    fn sync_toolbar_dialog_to_plugins(&mut self) {
+        let snapshot = self
+            .tabs
+            .active_screen()
+            .map(|screen| screen.toolbar_dialog_context_snapshot())
+            .unwrap_or_else(crate::plugin::ui::context::ToolbarDialogContextSnapshot::none);
+        let _ = self.plugin_host.sync_toolbar_dialog(snapshot);
+    }
+
+    fn drain_plugin_ui_effects(&mut self) -> Task<Message> {
+        let mut tasks = Vec::new();
+        for effect in self.plugin_host.take_pending_ui_effects() {
+            match effect {
+                PluginUiEffect::OpenRepositoryDialog(request) => {
+                    let plugin_id = request.plugin_id.clone();
+                    let dialog_id = request.dialog_id.clone();
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        screen.open_plugin_toolbar_dialog(request);
+                    } else {
+                        self.record_repository_dialog_no_active_repository(&plugin_id, &dialog_id);
+                    }
+                }
+                PluginUiEffect::CloseRepositoryDialog {
+                    plugin_id,
+                    dialog_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        screen.close_plugin_toolbar_dialog(&plugin_id, &dialog_id);
+                    } else {
+                        self.record_repository_dialog_no_active_repository(&plugin_id, &dialog_id);
+                    }
+                }
+                PluginUiEffect::FocusRepositoryDialogControl {
+                    dialog_id,
+                    control_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen() {
+                        tasks.push(screen.focus_toolbar_dialog_control(&dialog_id, &control_id));
+                    } else {
+                        self.record_repository_dialog_no_active_repository("<unknown>", &dialog_id);
+                    }
+                }
+                PluginUiEffect::PressRepositoryDialogButton {
+                    dialog_id,
+                    button_id,
+                } => {
+                    if let Some(screen) = self.tabs.active_screen_mut() {
+                        tasks.push(screen.press_toolbar_dialog_button(&dialog_id, &button_id));
+                    } else {
+                        self.record_repository_dialog_no_active_repository("<unknown>", &dialog_id);
+                    }
+                }
+            }
+        }
+
+        tasks.extend(
+            self.plugin_host
+                .take_pending_ui_scrolls()
+                .into_iter()
+                .map(|request| {
+                    iced::widget::operation::scroll_to(
+                        iced::widget::Id::from(request.id),
+                        iced::widget::scrollable::AbsoluteOffset {
+                            x: 0.0,
+                            y: request.y,
+                        },
+                    )
+                }),
+        );
+        Task::batch(tasks)
+    }
+
+    fn record_repository_dialog_no_active_repository(&self, plugin_id: &str, dialog_id: &str) {
+        self.plugin_host.diagnostics().record(
+            PluginDiagnostic::new(
+                PluginId::from(plugin_id),
+                DiagnosticSeverity::Warning,
+                "ui.dialog.no_active_repository",
+                format!("repository dialog `{dialog_id}` requested with no active repository tab"),
+            )
+            .with_source(PluginSourceSpan::ApiFunction {
+                name: "leviathan.ui.dialog".into(),
+            })
+            .with_context(serde_json::json!({ "dialog_id": dialog_id })),
+        );
     }
 
     fn rebuild_slot_registries(&mut self) {
@@ -275,11 +378,12 @@ impl App {
         if self.slot_registry_revision == revision {
             return;
         }
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&self.plugin_host);
         self.main_bar_registry = main_bar_registry;
         self.tab_bar_registry = tab_bar_registry;
         self.repo_region_registry = repo_region_registry;
+        self.repo_chrome_registry = repo_chrome_registry;
         self.slot_registry_revision = revision;
     }
 
@@ -317,41 +421,55 @@ impl App {
             .active_screen()
             .or_else(|| bound_repo_tab.and_then(|id| self.tabs.screen(id)));
         let active_gateway = source_screen.map(|screen| screen.active_gateway());
-        let (repo_name, workdir_path, current_branch, head_hash, default_remote, refs) =
-            source_screen
-                .map(|screen| {
-                    (
-                        screen.repo_name().to_string(),
-                        screen.active_worktree_path().to_string_lossy().into_owned(),
-                        screen.current_branch().to_string(),
-                        screen.head_hash().unwrap_or("").to_string(),
-                        screen.default_remote_name().unwrap_or("").to_string(),
-                        screen.branch_refs().to_vec(),
-                    )
-                })
-                .unwrap_or_else(|| {
-                    (
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        String::new(),
-                        Vec::new(),
-                    )
-                });
+        let selection = source_screen
+            .map(|screen| screen.selection_context_snapshot())
+            .unwrap_or_else(crate::plugin::ui::context::SelectionContextSnapshot::none);
+        let (
+            repo_name,
+            workdir_path,
+            current_branch,
+            head_hash,
+            default_remote,
+            remote_names,
+            refs,
+        ) = source_screen
+            .map(|screen| {
+                (
+                    screen.repo_name().to_string(),
+                    screen.active_worktree_path().to_string_lossy().into_owned(),
+                    screen.current_branch().to_string(),
+                    screen.head_hash().unwrap_or("").to_string(),
+                    screen.default_remote_name().unwrap_or("").to_string(),
+                    screen.remote_names().to_vec(),
+                    screen.branch_refs().to_vec(),
+                )
+            })
+            .unwrap_or_else(|| {
+                (
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )
+            });
         // Keep the plugin host's view of the active gateway
         // in sync with the active tab. None when no repository is open;
         // plugin git reads/writes then surface "no repository open"
         // instead of silently routing to a stale gateway.
         self.plugin_host.set_repository_gateway(active_gateway);
-        self.plugin_host.sync_repository(
-            &repo_name,
-            &workdir_path,
-            &current_branch,
-            &head_hash,
-            &default_remote,
-            &refs,
-        );
+        self.plugin_host.sync_repository(RepositorySyncState {
+            repo_name: &repo_name,
+            workdir_path: &workdir_path,
+            current_branch_name: &current_branch,
+            head_hash: &head_hash,
+            default_remote_name: &default_remote,
+            remote_names: &remote_names,
+            refs: &refs,
+        });
+        self.plugin_host.sync_selection(selection);
     }
 
     pub(super) fn fetch_all_remotes_payload() -> EventPayload {
@@ -553,7 +671,12 @@ fn parse_force_screen() -> Option<ForceScreen> {
 
 fn build_slot_registries(
     plugin_host: &PluginHost,
-) -> (MainBarRegistry, TabBarRegistry, RepoRegionRegistry) {
+) -> (
+    MainBarRegistry,
+    TabBarRegistry,
+    RepoRegionRegistry,
+    RepoChromeRegistry,
+) {
     let mut main_bar_registry = MainBarRegistry::new();
     main_bar_builtins::register_all(&mut main_bar_registry);
     plugin_host.apply_main_bar_slots(&mut main_bar_registry);
@@ -565,13 +688,207 @@ fn build_slot_registries(
     let mut repo_region_registry = RepoRegionRegistry::new();
     plugin_host.apply_repo_region_slots(&mut repo_region_registry);
 
-    (main_bar_registry, tab_bar_registry, repo_region_registry)
+    let mut repo_chrome_registry = RepoChromeRegistry::new();
+    plugin_host.apply_repo_chrome_slots(&mut repo_chrome_registry);
+
+    (
+        main_bar_registry,
+        tab_bar_registry,
+        repo_region_registry,
+        repo_chrome_registry,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::tests::harness::MockHost;
+    use crate::{plugin::tests::harness::MockHost, services::test_support};
+
+    fn empty_test_app() -> App {
+        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+
+        let mut plugin_host = PluginHost::new();
+        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
+            build_slot_registries(&plugin_host);
+        App {
+            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())),
+            blank_screen: BlankScreen::new(),
+            no_git_screen: None,
+            toasts: ToastManager::default(),
+            last_animation_tick: None,
+            fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
+            reload_refs_abort: None,
+            plugin_host,
+            key_chord: KeyChordState::new(),
+            main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
+            repo_chrome_registry,
+            slot_registry_revision: 0,
+            pending_focus_reason: None,
+        }
+    }
+
+    fn dialog_request(
+        plugin_id: &str,
+        dialog_id: &str,
+    ) -> crate::plugin::ui::dialog::DialogRequest {
+        crate::plugin::ui::dialog::DialogRequest {
+            plugin_id: plugin_id.into(),
+            dialog_id: dialog_id.into(),
+            text: "Continue?".into(),
+            title: Some("Confirm".into()),
+            data: Vec::new(),
+            controls: Vec::new(),
+            buttons: vec![crate::plugin::ui::dialog::DialogButtonRequest {
+                id: "ok".into(),
+                text: "OK".into(),
+                style: "primary".into(),
+                keys: vec!["enter".into()],
+                closes_dialog: true,
+                enabled: true,
+            }],
+            dismissible: true,
+            autofocus: None,
+        }
+    }
+
+    fn app_with_repository() -> (test_support::TempRepo, App) {
+        let (repo_dir, _repo) = test_support::init_test_repo("plugin_dialog_bridge");
+        let mut app = empty_test_app();
+        let _ = app
+            .tabs
+            .load_initial_repos(vec![repo_dir.path.to_string_lossy().into_owned()], None);
+        (repo_dir, app)
+    }
+
+    #[test]
+    fn draining_repository_dialog_request_opens_active_repository_dialog() {
+        let (_repo_dir, mut app) = app_with_repository();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+    }
+
+    #[test]
+    fn repository_dialog_request_without_active_repository_records_diagnostic() {
+        let mut app = empty_test_app();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+
+        let diagnostics = app
+            .plugin_host
+            .diagnostics()
+            .by_code("ui.dialog.no_active_repository");
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].plugin_id.as_str(), "plugin.one");
+    }
+
+    #[test]
+    fn repository_dialog_close_respects_plugin_and_dialog_ownership() {
+        let (_repo_dir, mut app) = app_with_repository();
+
+        app.plugin_host
+            .queue_repository_dialog_request(dialog_request("plugin.one", "confirm"));
+        let _ = app.drain_plugin_ui_effects();
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.two", "confirm");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.one", "other");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+
+        app.plugin_host
+            .queue_repository_dialog_close("plugin.one", "confirm");
+        let _ = app.drain_plugin_ui_effects();
+        assert!(!app
+            .tabs
+            .active_screen()
+            .expect("active repository screen")
+            .plugin_toolbar_dialog_matches("plugin.one", "confirm"));
+    }
+
+    #[test]
+    fn top_level_plugin_message_invokes_repository_dialog_button_callback() {
+        let mut app = empty_test_app();
+        let tmp = tempfile::tempdir().expect("tmp");
+        let dir = tmp.path().join("dialog_message");
+        std::fs::create_dir_all(&dir).expect("plugin dir");
+        std::fs::write(
+            dir.join("plugin.toml"),
+            r#"
+id = "dialog_message"
+name = "Dialog Message"
+version = "0.1.0"
+api_version = "1.0"
+capabilities = ["ui:overlay"]
+
+[runtime]
+strict_globals = false
+"#,
+        )
+        .expect("manifest");
+        std::fs::write(
+            dir.join("init.lua"),
+            r#"
+leviathan.ui.dialog({
+    id = "confirm",
+    text = "Continue?",
+    buttons = {
+        {
+            id = "ok",
+            text = "OK",
+            style = "green",
+            on_click = function(button_id) _G.clicked_button = button_id end,
+        },
+    },
+})
+"#,
+        )
+        .expect("init");
+        app.plugin_host.trust_local_plugin_root(tmp.path());
+        app.plugin_host.load_plugin(&dir).expect("load plugin");
+        assert!(app
+            .plugin_host
+            .has_dialog_callback("dialog_message", "confirm", "ok"));
+
+        let _ = app.update_plugin(
+            crate::plugin::PluginMessage::RepositoryDialogButtonPressed {
+                plugin_id: "dialog_message".into(),
+                dialog_id: "confirm".into(),
+                button_id: "ok".into(),
+            },
+        );
+
+        assert_eq!(
+            app.plugin_host
+                .plugin_global_string("dialog_message", "clicked_button")
+                .as_deref(),
+            Some("ok")
+        );
+    }
 
     const MANIFEST: &str = r#"
 id = "slots"
@@ -620,7 +937,7 @@ leviathan.ui.slot.add{
         let load_revision = host.host().slot_ops_revision();
         assert!(load_revision > 0);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("builtin.repo_info"));
         assert!(tabs.contains_display_id("builtin.plus_button"));
         assert!(main.contains_display_id("plugin.slots.main"));
@@ -631,7 +948,7 @@ leviathan.ui.slot.add{
         let disable_revision = host.host().slot_ops_revision();
         assert!(disable_revision > load_revision);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("builtin.repo_info"));
         assert!(tabs.contains_display_id("builtin.plus_button"));
         assert!(!main.contains_display_id("plugin.slots.main"));
@@ -645,7 +962,7 @@ leviathan.ui.slot.add{
         assert!(reloaded);
         assert!(host.host().slot_ops_revision() > disable_revision);
 
-        let (main, tabs, repo) = build_slot_registries(host.host());
+        let (main, tabs, repo, _chrome) = build_slot_registries(host.host());
         assert!(main.contains_display_id("plugin.slots.main"));
         assert!(tabs.contains_display_id("plugin.slots.tab"));
         assert!(repo.contains_display_id("plugin.slots.repo"));
@@ -693,7 +1010,7 @@ capabilities = ["ui:region:main_bar"]
             .load_plugin(&dir)
             .expect("load missing-remove plugin");
 
-        let (main_bar_registry, tab_bar_registry, repo_region_registry) =
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&plugin_host);
         let slot_registry_revision = plugin_host.slot_ops_revision();
         let initial_missing_count = plugin_host
@@ -714,10 +1031,13 @@ capabilities = ["ui:region:main_bar"]
             git_queue: GitOperationQueue::new(),
             reload_refs_abort: None,
             plugin_host,
+            key_chord: KeyChordState::new(),
             main_bar_registry,
             tab_bar_registry,
             repo_region_registry,
+            repo_chrome_registry,
             slot_registry_revision,
+            pending_focus_reason: None,
         };
 
         app.rebuild_slot_registries();

@@ -3,11 +3,18 @@
 //! Each panel returns intentions via its message type.
 //! `mod.rs` coordinates and creates Tasks based on these intentions.
 
+use super::overlays::dialog::model::{DialogButtonId, DialogControlId, DialogId};
+
 #[derive(Debug, Clone)]
 pub enum CenterAction {
+    /// Mouse click on a commit row. Unlike `CommitSelected`, this should move
+    /// keyboard focus to the graph panel before applying selection changes.
+    CommitClicked(usize),
     CommitSelected(usize),
     /// Tracked for multi-select clicks (Ctrl/Shift etc.).
     ModifiersChanged(iced::keyboard::Modifiers),
+    NavigateFirst,
+    NavigateLast,
     NavigateUp,
     NavigateDown,
     /// Single click — double-click gate applies.
@@ -145,6 +152,7 @@ pub enum CenterAction {
         indices: Vec<usize>,
         hashes: Vec<String>,
     },
+    SquashSelectedCommitsRequested,
     CreateTagHereRequested {
         commit_hash: String,
     },
@@ -167,21 +175,35 @@ pub enum DetailFileListKind {
 
 #[derive(Debug, Clone)]
 pub enum DetailAction {
+    NavigateFileUp,
+    NavigateFileDown,
+    NavigateFileFirst,
+    NavigateFileLast,
+    ExtendFileSelectionUp,
+    ExtendFileSelectionDown,
+    ExtendFileSelectionFirst,
+    ExtendFileSelectionLast,
+    OpenSelectedFile,
     DirtyFileClicked {
+        path: String,
+        is_staged: bool,
+    },
+    DirtyFileOpened {
         path: String,
         is_staged: bool,
     },
     DirtyFileRightClicked(String),
     StageFile(String),
     StageAll,
+    StageSelectedFiles,
     UnstageFile(String),
     UnstageAll,
+    UnstageSelectedFiles,
     MarkConflictResolved(String),
     MarkAllConflictsResolved,
     DiscardAllRequested,
+    DiscardSelectedFilesRequested,
     DiscardFileRequested(String),
-    DiscardConfirmed,
-    DiscardCanceled,
     CommitConfirmed,
     AbortMergeConfirmed,
     CommitFileClicked {
@@ -264,6 +286,11 @@ pub enum DiffPanelAction {
     DiffShiftWheel {
         delta_lines: f32,
     },
+    /// Keyboard-driven vertical scrolling for the focused diff panel.
+    ScrollUp,
+    ScrollDown,
+    ScrollTop,
+    ScrollBottom,
     NavigateFileUp,
     NavigateFileDown,
     ConflictHunkSideToggled {
@@ -342,64 +369,33 @@ pub enum DiffPanelAction {
 
 #[derive(Debug, Clone)]
 pub enum OverlayPanelAction {
-    ConflictNewBranchInput(String),
-    ConflictCreateBranch,
-    ConflictResetLocal,
-    ConflictCancel,
-    ModifyDeleteKeepModified,
-    ModifyDeleteDeleteFile,
-    ModifyDeleteKeepBase,
-    ModifyDeleteCancel,
-    BranchDeleteConfirmed,
-    BranchDeleteAllConfirmed,
-    BranchDeleteCanceled,
-    StashDeleteConfirmed,
-    StashDeleteCanceled,
-    BranchRenameConfirmed,
-    BranchRenameCanceled,
-    RenameNewBranchInput(String),
-    CreateBranchHereConfirmed,
-    CreateBranchHereCanceled,
-    CreateBranchHereInput(String),
-    DiscardConfirmed,
-    DiscardCanceled,
+    DialogButtonPressed {
+        dialog_id: DialogId,
+        button_id: DialogButtonId,
+    },
+    DialogInputChanged {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+        value: String,
+    },
+    DialogDropdownToggled {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+    },
+    DialogDropdownChanged {
+        dialog_id: DialogId,
+        control_id: DialogControlId,
+        option_id: String,
+    },
+    DialogDismissed {
+        dialog_id: DialogId,
+    },
     AddRemoteOpen,
     AddRemoteClose,
     AddRemoteNameChanged(String),
     AddRemotePullUrlChanged(String),
     AddRemotePushUrlChanged(String),
     AddRemoteConfirmed,
-    /// Set upstream (first push): remote-branch name input.
-    SetUpstreamInput(String),
-    /// Set upstream (first push): selected remote.
-    SetUpstreamRemoteChanged(String),
-    /// Set upstream (first push): remote dropdown visibility.
-    SetUpstreamRemoteDropdownToggled,
-    SetUpstreamConfirmed,
-    SetUpstreamCanceled,
-    /// Push behind remote: pull (fast-forward).
-    PushBehindPullRequested,
-    /// Push behind remote: force push.
-    PushBehindForcePushRequested,
-    PushBehindCanceled,
-    ForcePushConfirmed,
-    ForcePushCanceled,
-    CreateTagHereInput(String),
-    CreateTagHereConfirmed,
-    CreateTagHereCanceled,
-    /// Also deletes from any remotes holding the tag.
-    DeleteTagConfirmed,
-    DeleteTagCanceled,
-    /// Cherry pick: immediately commit.
-    CherryPickImmediateConfirmed,
-    /// Cherry pick: apply changes without committing.
-    CherryPickStagedConfirmed,
-    CherryPickCanceled,
-    /// Revert: immediately commit.
-    RevertImmediateConfirmed,
-    /// Revert: apply changes without committing.
-    RevertInPlaceConfirmed,
-    RevertCanceled,
     CreateWorktreeOpen {
         available_refs: Vec<super::overlays::create_worktree::RefChoice>,
         default_dir_prefix: String,
@@ -418,7 +414,5 @@ pub enum OverlayPanelAction {
         branch_name: String,
         is_active: bool,
     },
-    WorktreeRemoveConfirmed,
-    WorktreeRemoveCanceled,
     None,
 }

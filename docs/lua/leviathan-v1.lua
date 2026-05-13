@@ -242,7 +242,7 @@ function LeviathanShellJobHandle:id() end
 ---@field id string Overlay id.
 ---@field priority? integer Higher priority renders above lower priority overlays.
 ---@field dismissible? boolean When true, Escape sends the overlay an `escape` event.
----@field key_events? string[] Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.
+---@field key_events? string[] Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.
 ---@field widget LeviathanWidget Overlay widget tree.
 ---@field on_event? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Overlay callback.
 ---@field update? fun(id: string, event: string, value: LeviathanJson|LeviathanOverlayKeyEvent): table|nil Alias for `on_event`.
@@ -255,6 +255,65 @@ function LeviathanShellJobHandle:id() end
 ---@field alt boolean Whether Alt was held.
 ---@field logo boolean Whether the platform logo key was held.
 ---@field command boolean Whether the platform command modifier was held.
+
+---Repository-owned toolbar dialog request.
+---@class LeviathanDialogSpec
+---@field id string Dialog id.
+---@field text string Dialog body text.
+---@field title? string Optional dialog title for hosts that display one.
+---@field dismissible? boolean When true, Escape can close the dialog if no button handles it.
+---@field data? LeviathanDialogData[] Opaque string data stored on the dialog.
+---@field controls? LeviathanDialogControl[] Optional dialog controls.
+---@field autofocus? string Control id to focus after the dialog opens.
+---@field buttons LeviathanDialogButton[] Dialog buttons.
+
+---Dialog data item.
+---@class LeviathanDialogData
+---@field id string Data id.
+---@field value string Data value.
+
+---Dialog control.
+---@class LeviathanDialogControl
+---@field id string Control id.
+---@field label? LeviathanDialogLabel Optional label shown before the control.
+---@field text_input? LeviathanDialogTextInput Optional text input.
+---@field dropdown? LeviathanDialogDropdown Optional dropdown.
+
+---Dialog control label.
+---@class LeviathanDialogLabel
+---@field text string Label text.
+---@field style? string Label style token.
+
+---Dialog text input.
+---@class LeviathanDialogTextInput
+---@field placeholder? string Placeholder text.
+---@field value? string Initial value.
+---@field submit_button_id? string Button id triggered by Enter from this input.
+---@field width? integer Control width in pixels.
+
+---Optional dialog dropdown content.
+---@class LeviathanDialogDropdown
+---@field placeholder? string Placeholder text.
+---@field options LeviathanDialogDropdownOption[] Dropdown options.
+---@field selected_option_id? string Initially selected option id.
+---@field open? boolean Initial open state.
+---@field width? integer Control width in pixels.
+---@field leading_icon? string Optional leading icon name.
+
+---Dialog dropdown option.
+---@class LeviathanDialogDropdownOption
+---@field id string Option id.
+---@field text string Option label.
+
+---Dialog button.
+---@class LeviathanDialogButton
+---@field id? string Button id passed to its callback.
+---@field style "red"|"green"|"blue"|"white" Button color style.
+---@field text string Button label.
+---@field on_click fun(id: string) Callback invoked by clicking the button or pressing one of its keys.
+---@field keys? string[] Keys that trigger this button, e.g. `y`, `n`, `Esc`.
+---@field closes_dialog? boolean Whether the dialog closes before the callback runs.
+---@field enabled? boolean Whether the button is initially enabled.
 
 ---Plugin screen.
 ---@class LeviathanScreenSpec
@@ -318,7 +377,7 @@ function LeviathanSlotHandle:replace(spec) end
 ---Static or dynamic graph-row decoration contribution.
 ---@class LeviathanGraphDecorationContribution
 ---@field id string Contribution id.
----@field commit_hash? string Static target commit hash.
+---@field commit? LeviathanCommit Static target commit.
 ---@field decoration? LeviathanGraphDecoration Static graph decoration.
 ---@field provider? fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil Dynamic provider called per graph row.
 
@@ -354,6 +413,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -370,6 +430,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -386,6 +447,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -402,6 +464,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -418,6 +481,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -434,6 +498,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -450,6 +515,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -466,6 +532,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -482,6 +549,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -498,6 +566,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -514,6 +583,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -530,6 +600,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -552,6 +623,7 @@ function LeviathanContributionHandle:remove() end
 ---@field repository LeviathanRepositorySummary Active repository summary without commit lists or diffs.
 ---@field tab LeviathanTabSummary Active tab summary.
 ---@field selection LeviathanSelectionSummary Selection summary when the host has one for the surface.
+---@field dialog LeviathanToolbarDialogSummary Active repository toolbar dialog summary.
 ---@field focus LeviathanFocusSummary Focused surface, region, pane, and section where available.
 ---@field viewport LeviathanViewportSummary Viewport constraints when known.
 ---@field payload table Surface-specific ids and lightweight metadata.
@@ -586,15 +658,50 @@ function LeviathanContributionHandle:remove() end
 ---@class LeviathanSelectionSummary
 ---@field available boolean Whether selection data is available for this surface.
 ---@field kind string Selection kind.
----@field selected_commit_id string|nil Selected commit id when available.
+---@field commit LeviathanCommit|nil Selected commit data when a commit row is selected.
 ---@field selected_file_path string|nil Selected file path when available.
+
+---Active repository toolbar dialog summary in a UI context.
+---@class LeviathanToolbarDialogSummary
+---@field active boolean Whether a repository toolbar dialog is active.
+---@field id string Active dialog id, or empty string when none is active.
+---@field owner string `native`, `plugin`, or `none`.
+---@field plugin_id string|nil Owner plugin id for plugin-owned dialogs.
+---@field data LeviathanToolbarDialogData[] Opaque dialog data rows.
+---@field controls LeviathanToolbarDialogControl[] Dialog controls and current values.
+---@field buttons LeviathanToolbarDialogButton[] Dialog buttons and enabled state.
+
+---Toolbar dialog data item.
+---@class LeviathanToolbarDialogData
+---@field id string Data id.
+---@field value string Data value.
+
+---Toolbar dialog control summary.
+---@class LeviathanToolbarDialogControl
+---@field id string Control id.
+---@field kind string Control kind such as `text_input` or `dropdown`.
+---@field value string|nil Current control value when available.
+
+---Toolbar dialog button summary.
+---@class LeviathanToolbarDialogButton
+---@field id string Button id.
+---@field text string Button label.
+---@field enabled boolean Whether the button can currently be pressed.
 
 ---Focus summary in a UI context.
 ---@class LeviathanFocusSummary
----@field surface string Focused surface.
----@field region? string Focused region.
----@field pane? string Focused pane.
----@field section? string Focused section.
+---@field surface string Active focus surface id (e.g. `repository.graph`).
+---@field kind string Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.
+---@field region? string Focused region when applicable.
+---@field pane? string Focused pane when applicable.
+---@field section? string Focused section when applicable.
+---@field plugin_id? string Focused plugin id when focus is on a plugin screen or overlay.
+---@field screen_id? string Focused plugin screen id when focus is on a plugin screen.
+---@field overlay_id? string Focused overlay id when focus is on an overlay.
+---@field reason? string Last focus-change reason as a snake_case string.
+---@field matches_surface boolean True when the active focus surface equals the rendered context surface.
+---@field matches_region boolean True when the active focus shares a region with the rendered context.
+---@field matches_pane boolean True when the active focus shares a pane with the rendered context.
 
 ---Viewport summary in a UI context.
 ---@class LeviathanViewportSummary
@@ -663,6 +770,52 @@ function LeviathanContributionHandle:remove() end
 ---@class LeviathanTag
 ---@field name string Tag name.
 ---@field hash string Target hash.
+
+---Commit data exposed to Lua APIs.
+---@class LeviathanCommit
+---@field kind string Commit row kind: commit, dirty, or stash.
+---@field hash string Full commit hash, or empty for an uncommitted dirty row.
+---@field short_hash string Short display hash.
+---@field summary string First line of the commit message.
+---@field message string Full commit message when available.
+---@field author string Commit author display name.
+---@field date string Host-formatted commit date when available.
+---@field timestamp integer|nil Author timestamp in seconds when available.
+---@field parents string[] Full parent hashes in git parent order.
+---@field index integer|nil Zero-based visible commit row index when available.
+---@field is_merge boolean Whether the commit has multiple parents.
+---@field is_merge_in_progress boolean Whether the dirty row represents an in-progress merge.
+---@field actions LeviathanCommitActions Host-computed commit actions.
+
+---Host-computed actions for a commit.
+---@class LeviathanCommitActions
+---@field reword LeviathanActionAvailability Reword availability for this commit in the current tree.
+
+---Availability state for a host action.
+---@class LeviathanActionAvailability
+---@field enabled boolean Whether the action can run.
+---@field reason string|nil Stable disabled reason when available.
+
+---Diff loaded for a commit.
+---@class LeviathanCommitDiff
+---@field commit LeviathanCommit Commit this diff was loaded for.
+---@field modified_count integer Modified file count.
+---@field added_count integer Added file count.
+---@field deleted_count integer Deleted file count.
+---@field files LeviathanCommitDiffFile[] Changed files in the commit diff.
+
+---File row in a commit diff.
+---@class LeviathanCommitDiffFile
+---@field path string Repository-relative file path.
+---@field status string Change status.
+
+---File snapshot loaded at a commit.
+---@class LeviathanCommitFile
+---@field commit LeviathanCommit Commit this file snapshot was loaded for.
+---@field path string Repository-relative file path.
+---@field lines string[] Per-line diff content.
+---@field old_content string Old file content when available.
+---@field new_content string New file content when available.
 
 ---Persistence open options.
 ---@class LeviathanPersistOpenOpts
@@ -821,6 +974,8 @@ function LeviathanHealthContext:error(message) end
 ---@field kind "space"
 ---@field width? number|string Fixed pixels, fill, or shrink.
 ---@field height? number|string Fixed pixels, fill, or shrink.
+---@field id? string Stable scrollable id, scoped to the plugin surface.
+---@field scroll_y? number Absolute vertical scroll offset in pixels.
 
 ---SVG icon loaded from plugin assets.
 ---@class LeviathanIconWidget
@@ -1450,6 +1605,10 @@ function leviathan.command.invoke(name, args) end
 ---@return LeviathanCommandSummary[] Array of command summaries.
 function leviathan.command.list() end
 
+---Set the active keymap leader sequence used to expand `<leader>` bindings.
+---@param leader string Vim-style key sequence used as leader, e.g. `<Space>` or `,`.
+function leviathan.keymap.set_leader(leader) end
+
 ---Bind a key chord to a registered command in a context.
 ---@param context string Activation context (`global`, `repository`, `repository.graph`, `tab_bar`, etc.).
 ---@param key string Vim-style key sequence (e.g. `gl`, `<C-r>`, `<leader>gh`).
@@ -1485,6 +1644,28 @@ function leviathan.autocmd.clear(group) end
 ---@param spec LeviathanOverlaySpec Overlay descriptor (id, widget, dismissible, priority, key_events).
 function leviathan.ui.overlay(spec) end
 
+---Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.
+---@param spec LeviathanDialogSpec Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+function leviathan.ui.dialog(spec) end
+
+---Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.
+---@param spec LeviathanDialogSpec Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+function leviathan.ui.dialog.open(spec) end
+
+---Focus a text input control in the active repository toolbar dialog.
+---@param dialog_id string Active toolbar dialog id.
+---@param control_id string Dialog control id to focus.
+---@return boolean|nil True on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.dialog.focus_control(dialog_id, control_id) end
+
+---Press a button in the active repository toolbar dialog.
+---@param dialog_id string Active toolbar dialog id.
+---@param button_id string Dialog button id to press.
+---@return boolean|nil True on success, nil on failure.
+---@return string|nil Error message on failure.
+function leviathan.ui.dialog.press_button(dialog_id, button_id) end
+
 ---Remove an overlay owned by the calling plugin.
 ---@param id string Overlay id to remove.
 function leviathan.ui.remove_overlay(id) end
@@ -1502,9 +1683,9 @@ function leviathan.ui.contribute(point_id, spec) end
 function leviathan.ui.context_menu(region, item) end
 
 ---Attach a decoration to a commit row (badge / icon / marker / lane).
----@param commit_hash string Commit row hash the decoration applies to.
+---@param commit LeviathanCommit Commit row the decoration applies to.
 ---@param decoration LeviathanGraphDecoration Decoration AST: badge / icon / marker / lane.
-function leviathan.ui.graph_decoration(commit_hash, decoration) end
+function leviathan.ui.graph_decoration(commit, decoration) end
 
 ---Attach a decoration to a diff line / hunk (line_hint / hunk_badge / line_gutter).
 ---@param decoration LeviathanDiffDecoration Decoration AST: line_hint / hunk_badge / line_gutter.
@@ -1907,21 +2088,21 @@ function leviathan.repository.head() end
 ---@return string|nil Error message on failure.
 function leviathan.repository.status() end
 
----Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.
+---Return up to `limit` commits from the active repository as `LeviathanCommit` rows.
 ---@param opts table Options table: { limit = 100, rev = "HEAD" }.
----@return table[]|nil Commit list on success.
+---@return LeviathanCommit[]|nil Commit list on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.commits(opts) end
 
----Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.
----@param opts table Options table: { commit = hash }.
----@return table[]|nil Diff snapshot on success.
+---Return per-file diff for `commit`. The result carries `commit` as `LeviathanCommit`.
+---@param opts table Options table: { commit = LeviathanCommit }.
+---@return LeviathanCommitDiff|nil Diff snapshot on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.diff(opts) end
 
----Return the file at a given commit/path as { lines = string[] } (per-line diff content).
----@param opts table Options table: { commit = hash, path = "src/main.rs" }.
----@return table|nil File-at-commit snapshot on success.
+---Return the file at a given commit/path. The result carries `commit` as `LeviathanCommit`.
+---@param opts table Options table: { commit = LeviathanCommit, path = "src/main.rs" }.
+---@return LeviathanCommitFile|nil File-at-commit snapshot on success.
 ---@return string|nil Error message on failure.
 function leviathan.repository.file_at(opts) end
 

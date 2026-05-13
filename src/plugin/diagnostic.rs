@@ -2,7 +2,7 @@
 //!
 //! typed diagnostics: every host-side error path that used to `eprintln!` instead
 //! emits a `PluginDiagnostic`. The host owns a ring-buffered
-//! `DiagnosticStore`; devtools, tests, and an optional stderr sink read
+//! `DiagnosticStore`; devtools, tests, and an optional stdout sink read
 //! from it. Plugins never emit diagnostics themselves — the host
 //! summarises Lua/manifest/widget/capability/reload/cleanup failures and
 //! attaches `(plugin_id, generation_id)` from the resource lifecycle newtypes.
@@ -10,6 +10,7 @@
 //! Engineering invariant 1 (host owns every effect) is preserved:
 //! diagnostics are an effect, so only host-side code constructs them.
 
+use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -213,15 +214,43 @@ fn parse_line_from_msg(msg: &str) -> Option<u32> {
     None
 }
 
-/// Pluggable forward sink. Default is `StderrSink`; tests use the
+/// Pluggable forward sink. Default is a debug-filtered `StdoutSink`; tests use the
 /// null sink so test output stays quiet.
 pub trait DiagnosticSink: Send + Sync + 'static {
     fn emit(&self, diagnostic: &PluginDiagnostic);
 }
 
-pub struct StderrSink;
+#[derive(Clone, Default)]
+pub struct PluginDebugFilter {
+    enabled_plugins: Arc<Mutex<HashSet<String>>>,
+}
 
-impl DiagnosticSink for StderrSink {
+impl PluginDebugFilter {
+    pub fn set(&self, plugin_id: &str, enabled: bool) {
+        if let Ok(mut enabled_plugins) = self.enabled_plugins.lock() {
+            if enabled {
+                enabled_plugins.insert(plugin_id.to_string());
+            } else {
+                enabled_plugins.remove(plugin_id);
+            }
+        }
+    }
+
+    pub fn clear(&self, plugin_id: &str) {
+        self.set(plugin_id, false);
+    }
+
+    pub fn enabled(&self, plugin_id: &str) -> bool {
+        self.enabled_plugins
+            .lock()
+            .map(|enabled_plugins| enabled_plugins.contains(plugin_id))
+            .unwrap_or(false)
+    }
+}
+
+pub struct StdoutSink;
+
+impl DiagnosticSink for StdoutSink {
     fn emit(&self, diagnostic: &PluginDiagnostic) {
         let gen = diagnostic
             .generation_id
@@ -232,13 +261,32 @@ impl DiagnosticSink for StderrSink {
             .as_ref()
             .map(|s| format!(" at {s}"))
             .unwrap_or_default();
-        eprintln!(
+        println!(
             "git_leviathan [{severity}] {plugin}{gen} {code}: {message}{src}",
             severity = diagnostic.severity,
             plugin = diagnostic.plugin_id,
             code = diagnostic.code,
             message = diagnostic.message,
         );
+    }
+}
+
+pub struct PluginDebugSink {
+    inner: Arc<dyn DiagnosticSink>,
+    filter: PluginDebugFilter,
+}
+
+impl PluginDebugSink {
+    pub fn new(inner: Arc<dyn DiagnosticSink>, filter: PluginDebugFilter) -> Self {
+        Self { inner, filter }
+    }
+}
+
+impl DiagnosticSink for PluginDebugSink {
+    fn emit(&self, diagnostic: &PluginDiagnostic) {
+        if self.filter.enabled(diagnostic.plugin_id.as_str()) {
+            self.inner.emit(diagnostic);
+        }
     }
 }
 
@@ -253,7 +301,7 @@ const DEFAULT_CAPACITY: usize = 1024;
 #[derive(Debug)]
 struct StoreInner {
     capacity: usize,
-    buffer: std::collections::VecDeque<PluginDiagnostic>,
+    buffer: VecDeque<PluginDiagnostic>,
 }
 
 /// Cheap-clone, thread-safe ring buffer of diagnostics. Old entries
@@ -262,6 +310,7 @@ struct StoreInner {
 pub struct DiagnosticStore {
     inner: Arc<Mutex<StoreInner>>,
     sink: Arc<dyn DiagnosticSink>,
+    debug_filter: Option<PluginDebugFilter>,
 }
 
 impl std::fmt::Debug for DiagnosticStore {
@@ -279,7 +328,7 @@ impl std::fmt::Debug for DiagnosticStore {
 
 impl Default for DiagnosticStore {
     fn default() -> Self {
-        Self::with_sink(Arc::new(StderrSink))
+        Self::with_plugin_debug_sink(Arc::new(StdoutSink))
     }
 }
 
@@ -288,10 +337,51 @@ impl DiagnosticStore {
         Self {
             inner: Arc::new(Mutex::new(StoreInner {
                 capacity: DEFAULT_CAPACITY,
-                buffer: std::collections::VecDeque::with_capacity(DEFAULT_CAPACITY),
+                buffer: VecDeque::with_capacity(DEFAULT_CAPACITY),
             })),
             sink,
+            debug_filter: None,
         }
+    }
+
+    pub fn with_plugin_debug_sink(sink: Arc<dyn DiagnosticSink>) -> Self {
+        let filter = PluginDebugFilter::default();
+        Self {
+            inner: Arc::new(Mutex::new(StoreInner {
+                capacity: DEFAULT_CAPACITY,
+                buffer: VecDeque::with_capacity(DEFAULT_CAPACITY),
+            })),
+            sink: Arc::new(PluginDebugSink::new(sink, filter.clone())),
+            debug_filter: Some(filter),
+        }
+    }
+
+    pub fn set_plugin_debug(&self, plugin_id: &str, enabled: bool) {
+        if let Some(filter) = &self.debug_filter {
+            filter.set(plugin_id, enabled);
+        }
+    }
+
+    pub fn clear_plugin_debug(&self, plugin_id: &str) {
+        if let Some(filter) = &self.debug_filter {
+            filter.clear(plugin_id);
+        }
+    }
+
+    pub fn plugin_debug_enabled(&self, plugin_id: &str) -> bool {
+        self.debug_filter
+            .as_ref()
+            .map(|filter| filter.enabled(plugin_id))
+            .unwrap_or(false)
+    }
+
+    pub fn emit_plugin_log(&self, plugin_id: &str, message: &str) {
+        self.sink.emit(&PluginDiagnostic::new(
+            PluginId::from(plugin_id),
+            DiagnosticSeverity::Info,
+            "plugin.log",
+            message,
+        ));
     }
 
     pub fn capacity(&self) -> usize {

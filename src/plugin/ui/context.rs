@@ -3,9 +3,11 @@ use std::rc::Rc;
 
 use serde_json::{json, Value};
 
+use crate::plugin::commit_data::CommitData;
 use crate::plugin::resources::GenerationId;
 use crate::plugin::slots::{Container, SlotAddress};
 use crate::plugin::tab_snapshot::TabsSnapshot;
+use crate::plugin::ui::focus::{project_active_focus, FocusSnapshot};
 use crate::theme;
 
 #[derive(Clone)]
@@ -21,6 +23,70 @@ pub struct RepositoryContextSnapshot {
     pub head_hash: String,
     pub default_remote_name: String,
     pub has_remote: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectionContextSnapshot {
+    pub available: bool,
+    pub kind: String,
+    pub commit: Option<CommitData>,
+    pub selected_file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogContextSnapshot {
+    pub active: bool,
+    pub id: String,
+    pub owner: String,
+    pub plugin_id: Option<String>,
+    pub data: Vec<ToolbarDialogDataContextSnapshot>,
+    pub controls: Vec<ToolbarDialogControlContextSnapshot>,
+    pub buttons: Vec<ToolbarDialogButtonContextSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogDataContextSnapshot {
+    pub id: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogControlContextSnapshot {
+    pub id: String,
+    pub kind: String,
+    pub value: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ToolbarDialogButtonContextSnapshot {
+    pub id: String,
+    pub text: String,
+    pub enabled: bool,
+}
+
+impl SelectionContextSnapshot {
+    pub fn none() -> Self {
+        Self {
+            available: false,
+            kind: "none".to_string(),
+            commit: None,
+            selected_file_path: None,
+        }
+    }
+}
+
+impl ToolbarDialogContextSnapshot {
+    pub fn none() -> Self {
+        Self {
+            active: false,
+            id: String::new(),
+            owner: "none".to_string(),
+            plugin_id: None,
+            data: Vec::new(),
+            controls: Vec::new(),
+            buttons: Vec::new(),
+        }
+    }
 }
 
 pub enum UiContextSurface {
@@ -64,6 +130,7 @@ impl UiContextStore {
                 UiContextSurface::Screen,
                 None,
                 &TabsSnapshot::default(),
+                None,
             ))),
         }
     }
@@ -83,6 +150,27 @@ pub fn context_for_slot(
     address: &SlotAddress,
     repository: Option<&RepositoryContextSnapshot>,
     tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
+) -> Value {
+    context_for_slot_with_selection(
+        plugin_id,
+        generation_id,
+        address,
+        repository,
+        None,
+        tabs,
+        focus,
+    )
+}
+
+pub fn context_for_slot_with_selection(
+    plugin_id: &str,
+    generation_id: GenerationId,
+    address: &SlotAddress,
+    repository: Option<&RepositoryContextSnapshot>,
+    selection: Option<&SelectionContextSnapshot>,
+    tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
 ) -> Value {
     let surface = match (address.region().as_str(), address.container()) {
         ("main_bar", Container::Section(section)) => UiContextSurface::MainBar {
@@ -108,7 +196,15 @@ pub fn context_for_slot(
         }
         _ => UiContextSurface::Screen,
     };
-    context_for_surface(plugin_id, generation_id, surface, repository, tabs)
+    context_for_surface_with_selection(
+        plugin_id,
+        generation_id,
+        surface,
+        repository,
+        selection,
+        tabs,
+        focus,
+    )
 }
 
 pub fn context_for_surface(
@@ -117,22 +213,69 @@ pub fn context_for_surface(
     surface: UiContextSurface,
     repository: Option<&RepositoryContextSnapshot>,
     tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
 ) -> Value {
-    let (context_type, surface_name, focus, payload) = surface_parts(surface);
+    context_for_surface_with_selection(
+        plugin_id,
+        generation_id,
+        surface,
+        repository,
+        None,
+        tabs,
+        focus,
+    )
+}
+
+pub fn context_for_surface_with_selection(
+    plugin_id: &str,
+    generation_id: GenerationId,
+    surface: UiContextSurface,
+    repository: Option<&RepositoryContextSnapshot>,
+    selection: Option<&SelectionContextSnapshot>,
+    tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
+) -> Value {
+    context_for_surface_with_selection_and_dialog(SurfaceContextRequest {
+        plugin_id,
+        generation_id,
+        surface,
+        repository,
+        selection,
+        dialog: None,
+        tabs,
+        focus,
+    })
+}
+
+pub struct SurfaceContextRequest<'a> {
+    pub plugin_id: &'a str,
+    pub generation_id: GenerationId,
+    pub surface: UiContextSurface,
+    pub repository: Option<&'a RepositoryContextSnapshot>,
+    pub selection: Option<&'a SelectionContextSnapshot>,
+    pub dialog: Option<&'a ToolbarDialogContextSnapshot>,
+    pub tabs: &'a TabsSnapshot,
+    pub focus: Option<&'a FocusSnapshot>,
+}
+
+pub fn context_for_surface_with_selection_and_dialog(request: SurfaceContextRequest<'_>) -> Value {
+    let parts = surface_parts(request.surface);
+    let focus_value = build_focus_value(&parts, request.focus);
     json!({
         "version": 1,
-        "type": context_type,
-        "plugin_id": plugin_id,
-        "generation_id": generation_id.get(),
-        "surface": surface_name,
+        "type": parts.context_type,
+        "plugin_id": request.plugin_id,
+        "generation_id": request.generation_id.get(),
+        "surface": parts.surface_name,
         "features": features(),
         "theme": theme_tokens(),
-        "repository": repository_summary(repository),
-        "tab": tab_summary(tabs),
-        "selection": selection_summary(),
-        "focus": focus,
+        "repository": repository_summary(request.repository),
+        "tab": tab_summary(request.tabs),
+        "selection": selection_summary(request.selection),
+        "dialog": dialog_summary(request.dialog),
+        "focus": focus_value,
         "viewport": viewport_summary(),
-        "payload": payload,
+        "payload": parts.payload,
     })
 }
 
@@ -142,6 +285,7 @@ pub fn context_for_dock_panel(
     panel: &crate::plugin::dock::DockPanelSummary,
     repository: Option<&RepositoryContextSnapshot>,
     tabs: &TabsSnapshot,
+    focus: Option<&FocusSnapshot>,
 ) -> Value {
     context_for_surface(
         plugin_id,
@@ -155,23 +299,40 @@ pub fn context_for_dock_panel(
         },
         repository,
         tabs,
+        focus,
     )
 }
 
-fn surface_parts(surface: UiContextSurface) -> (&'static str, &'static str, Value, Value) {
+struct SurfaceParts {
+    context_type: &'static str,
+    surface_name: &'static str,
+    rendered_kind: &'static str,
+    rendered_region: Option<&'static str>,
+    rendered_pane: Option<&'static str>,
+    rendered_section: Option<String>,
+    payload: Value,
+}
+
+fn surface_parts(surface: UiContextSurface) -> SurfaceParts {
     match surface {
-        UiContextSurface::MainBar { section } => (
-            "MainBarContext",
-            "main_bar",
-            json!({ "surface": "main_bar", "region": "main_bar", "section": section }),
-            json!({ "main_bar": { "section": section } }),
-        ),
-        UiContextSurface::TabBar { section } => (
-            "TabBarContext",
-            "tab_bar",
-            json!({ "surface": "tab_bar", "region": "tab_bar", "section": section }),
-            json!({ "tab_bar": { "section": section } }),
-        ),
+        UiContextSurface::MainBar { section } => SurfaceParts {
+            context_type: "MainBarContext",
+            surface_name: "main_bar",
+            rendered_kind: "global",
+            rendered_region: Some("main_bar"),
+            rendered_pane: None,
+            rendered_section: Some(section.clone()),
+            payload: json!({ "main_bar": { "section": section } }),
+        },
+        UiContextSurface::TabBar { section } => SurfaceParts {
+            context_type: "TabBarContext",
+            surface_name: "tab_bar",
+            rendered_kind: "tab_bar",
+            rendered_region: Some("tab_bar"),
+            rendered_pane: None,
+            rendered_section: Some(section.clone()),
+            payload: json!({ "tab_bar": { "section": section } }),
+        },
         UiContextSurface::RepositorySidebar { section } => repository_surface(
             "RepositorySidebarContext",
             "repository.sidebar",
@@ -190,31 +351,52 @@ fn surface_parts(surface: UiContextSurface) -> (&'static str, &'static str, Valu
             "details",
             section,
         ),
-        UiContextSurface::Overlay => simple_surface("OverlayContext", "overlay"),
-        UiContextSurface::Screen => simple_surface("ScreenContext", "screen"),
-        UiContextSurface::StatusBar => simple_surface("StatusBarContext", "status_bar"),
-        UiContextSurface::RepositoryDiff => {
-            simple_surface("RepositoryDiffContext", "repository.diff")
-        }
-        UiContextSurface::RepositoryGraphRow => {
-            simple_surface("RepositoryGraphRowContext", "repository.graph.row")
-        }
-        UiContextSurface::RepositoryDiffLine => {
-            simple_surface("RepositoryDiffLineContext", "repository.diff.line")
-        }
-        UiContextSurface::Settings => simple_surface("SettingsContext", "settings"),
+        UiContextSurface::Overlay => simple_surface("OverlayContext", "overlay", "overlay"),
+        UiContextSurface::Screen => simple_surface("ScreenContext", "screen", "global"),
+        UiContextSurface::StatusBar => simple_surface("StatusBarContext", "status_bar", "global"),
+        UiContextSurface::RepositoryDiff => SurfaceParts {
+            context_type: "RepositoryDiffContext",
+            surface_name: "repository.diff",
+            rendered_kind: "repository",
+            rendered_region: Some("repository"),
+            rendered_pane: Some("diff"),
+            rendered_section: None,
+            payload: json!({}),
+        },
+        UiContextSurface::RepositoryGraphRow => SurfaceParts {
+            context_type: "RepositoryGraphRowContext",
+            surface_name: "repository.graph.row",
+            rendered_kind: "repository",
+            rendered_region: Some("repository"),
+            rendered_pane: Some("graph"),
+            rendered_section: None,
+            payload: json!({}),
+        },
+        UiContextSurface::RepositoryDiffLine => SurfaceParts {
+            context_type: "RepositoryDiffLineContext",
+            surface_name: "repository.diff.line",
+            rendered_kind: "repository",
+            rendered_region: Some("repository"),
+            rendered_pane: Some("diff"),
+            rendered_section: None,
+            payload: json!({}),
+        },
+        UiContextSurface::Settings => simple_surface("SettingsContext", "settings", "global"),
         UiContextSurface::DockPanel {
             area,
             panel_id,
             title,
             open,
             state,
-        } => (
-            "DockPanelContext",
-            "dock.panel",
-            json!({ "surface": "dock.panel", "area": area.clone(), "panel_id": panel_id.clone() }),
-            json!({ "dock": { "area": area, "panel_id": panel_id, "title": title, "open": open, "state": state } }),
-        ),
+        } => SurfaceParts {
+            context_type: "DockPanelContext",
+            surface_name: "dock.panel",
+            rendered_kind: "global",
+            rendered_region: None,
+            rendered_pane: None,
+            rendered_section: None,
+            payload: json!({ "dock": { "area": area, "panel_id": panel_id, "title": title, "open": open, "state": state } }),
+        },
     }
 }
 
@@ -223,25 +405,96 @@ fn repository_surface(
     surface: &'static str,
     pane: &'static str,
     section: String,
-) -> (&'static str, &'static str, Value, Value) {
-    (
+) -> SurfaceParts {
+    SurfaceParts {
         context_type,
-        surface,
-        json!({ "surface": surface, "region": "repository", "pane": pane, "section": section }),
-        json!({ "repository": { "pane": pane, "section": section } }),
-    )
+        surface_name: surface,
+        rendered_kind: "repository",
+        rendered_region: Some("repository"),
+        rendered_pane: Some(pane),
+        rendered_section: Some(section.clone()),
+        payload: json!({ "repository": { "pane": pane, "section": section } }),
+    }
 }
 
 fn simple_surface(
     context_type: &'static str,
     surface: &'static str,
-) -> (&'static str, &'static str, Value, Value) {
-    (
+    kind: &'static str,
+) -> SurfaceParts {
+    SurfaceParts {
         context_type,
-        surface,
-        json!({ "surface": surface }),
-        json!({}),
-    )
+        surface_name: surface,
+        rendered_kind: kind,
+        rendered_region: None,
+        rendered_pane: None,
+        rendered_section: None,
+        payload: json!({}),
+    }
+}
+
+fn build_focus_value(parts: &SurfaceParts, focus: Option<&FocusSnapshot>) -> Value {
+    let rendered_region = parts.rendered_region;
+    let rendered_pane = parts.rendered_pane;
+    let rendered_section = parts.rendered_section.clone();
+    let rendered_surface = parts.surface_name;
+
+    let mut obj = serde_json::Map::new();
+    match focus {
+        Some(snapshot) => {
+            let active = project_active_focus(&snapshot.surface);
+            let matches_surface = active.surface == rendered_surface;
+            let matches_region = active.region == rendered_region;
+            let matches_pane = active.pane == rendered_pane;
+            obj.insert("surface".into(), Value::String(active.surface));
+            obj.insert("kind".into(), Value::String(active.kind.to_string()));
+            if let Some(region) = active.region {
+                obj.insert("region".into(), Value::String(region.to_string()));
+            }
+            if let Some(pane) = active.pane {
+                obj.insert("pane".into(), Value::String(pane.to_string()));
+            }
+            if let Some(plugin_id) = active.plugin_id {
+                obj.insert("plugin_id".into(), Value::String(plugin_id));
+            }
+            if let Some(screen_id) = active.screen_id {
+                obj.insert("screen_id".into(), Value::String(screen_id));
+            }
+            if let Some(overlay_id) = active.overlay_id {
+                obj.insert("overlay_id".into(), Value::String(overlay_id));
+            }
+            obj.insert(
+                "reason".into(),
+                Value::String(snapshot.reason.as_str().to_string()),
+            );
+            obj.insert("matches_surface".into(), Value::Bool(matches_surface));
+            obj.insert("matches_region".into(), Value::Bool(matches_region));
+            obj.insert("matches_pane".into(), Value::Bool(matches_pane));
+        }
+        None => {
+            obj.insert(
+                "surface".into(),
+                Value::String(rendered_surface.to_string()),
+            );
+            obj.insert(
+                "kind".into(),
+                Value::String(parts.rendered_kind.to_string()),
+            );
+            if let Some(region) = rendered_region {
+                obj.insert("region".into(), Value::String(region.to_string()));
+            }
+            if let Some(pane) = rendered_pane {
+                obj.insert("pane".into(), Value::String(pane.to_string()));
+            }
+            if let Some(section) = rendered_section {
+                obj.insert("section".into(), Value::String(section));
+            }
+            obj.insert("matches_surface".into(), Value::Bool(true));
+            obj.insert("matches_region".into(), Value::Bool(true));
+            obj.insert("matches_pane".into(), Value::Bool(true));
+        }
+    }
+    Value::Object(obj)
 }
 
 fn features() -> Value {
@@ -310,13 +563,70 @@ fn tab_summary(tabs: &TabsSnapshot) -> Value {
     }
 }
 
-fn selection_summary() -> Value {
-    json!({
-        "available": false,
-        "kind": "none",
-        "selected_commit_id": null,
-        "selected_file_path": null,
-    })
+fn selection_summary(selection: Option<&SelectionContextSnapshot>) -> Value {
+    match selection {
+        Some(selection) => json!({
+            "available": selection.available,
+            "kind": selection.kind,
+            "commit": selection.commit,
+            "selected_file_path": selection.selected_file_path,
+        }),
+        None => {
+            let none = SelectionContextSnapshot::none();
+            json!({
+                "available": none.available,
+                "kind": none.kind,
+                "commit": none.commit,
+                "selected_file_path": none.selected_file_path,
+            })
+        }
+    }
+}
+
+fn dialog_summary(dialog: Option<&ToolbarDialogContextSnapshot>) -> Value {
+    match dialog {
+        Some(dialog) => json!({
+            "active": dialog.active,
+            "id": dialog.id,
+            "owner": dialog.owner,
+            "plugin_id": dialog.plugin_id,
+            "data": dialog
+                .data
+                .iter()
+                .map(|item| json!({ "id": item.id, "value": item.value }))
+                .collect::<Vec<_>>(),
+            "controls": dialog
+                .controls
+                .iter()
+                .map(|control| json!({
+                    "id": control.id,
+                    "kind": control.kind,
+                    "value": control.value,
+                }))
+                .collect::<Vec<_>>(),
+            "buttons": dialog
+                .buttons
+                .iter()
+                .map(|button| json!({
+                    "id": button.id,
+                    "text": button.text,
+                    "enabled": button.enabled,
+                }))
+                .collect::<Vec<_>>(),
+        }),
+        None => {
+            let none = ToolbarDialogContextSnapshot::none();
+            json!({
+                "active": none.active,
+                "id": none.id,
+                "owner": none.owner,
+                "plugin_id": none.plugin_id,
+                "data": [],
+                "controls": [],
+                "buttons": [],
+            })
+        }
+    }
 }
 
 fn viewport_summary() -> Value {
@@ -367,4 +677,149 @@ fn color_hex(color: iced::Color) -> String {
         channel(color.g),
         channel(color.b)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugin::ui::focus::{FocusReason, FocusSurface, RepositoryFocusSurface};
+
+    fn build_ctx(surface: UiContextSurface, focus: Option<&FocusSnapshot>) -> Value {
+        context_for_surface(
+            "p",
+            GenerationId::new(0),
+            surface,
+            None,
+            &TabsSnapshot::default(),
+            focus,
+        )
+    }
+
+    #[test]
+    fn focus_none_compat_mirrors_rendered_surface() {
+        let ctx = build_ctx(
+            UiContextSurface::RepositoryGraph {
+                section: "bottom".into(),
+            },
+            None,
+        );
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "repository.graph");
+        assert_eq!(focus["region"], "repository");
+        assert_eq!(focus["pane"], "graph");
+        assert_eq!(focus["section"], "bottom");
+        assert_eq!(focus["matches_surface"], true);
+        assert_eq!(focus["matches_region"], true);
+        assert_eq!(focus["matches_pane"], true);
+        assert!(focus.get("reason").is_none());
+    }
+
+    #[test]
+    fn focus_active_graph_matches_graph_surface() {
+        let snap = FocusSnapshot {
+            surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+            reason: FocusReason::Keymap,
+        };
+        let ctx = build_ctx(
+            UiContextSurface::RepositoryGraph {
+                section: "bottom".into(),
+            },
+            Some(&snap),
+        );
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "repository.graph");
+        assert_eq!(focus["kind"], "repository");
+        assert_eq!(focus["region"], "repository");
+        assert_eq!(focus["pane"], "graph");
+        assert_eq!(focus["reason"], "keymap");
+        assert_eq!(focus["matches_surface"], true);
+        assert_eq!(focus["matches_region"], true);
+        assert_eq!(focus["matches_pane"], true);
+    }
+
+    #[test]
+    fn focus_active_details_does_not_match_graph_render() {
+        let snap = FocusSnapshot {
+            surface: FocusSurface::Repository(RepositoryFocusSurface::Details),
+            reason: FocusReason::Keymap,
+        };
+        let ctx = build_ctx(
+            UiContextSurface::RepositoryGraph {
+                section: "bottom".into(),
+            },
+            Some(&snap),
+        );
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "repository.details");
+        assert_eq!(focus["region"], "repository");
+        assert_eq!(focus["pane"], "details");
+        assert_eq!(focus["matches_surface"], false);
+        assert_eq!(focus["matches_region"], true);
+        assert_eq!(focus["matches_pane"], false);
+    }
+
+    #[test]
+    fn focus_graph_row_inherits_active_focus_without_exact_surface_match() {
+        let snap = FocusSnapshot {
+            surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+            reason: FocusReason::Mouse,
+        };
+        let ctx = build_ctx(UiContextSurface::RepositoryGraphRow, Some(&snap));
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "repository.graph");
+        assert_eq!(focus["matches_surface"], false);
+        assert_eq!(focus["matches_region"], true);
+        assert_eq!(focus["matches_pane"], true);
+    }
+
+    #[test]
+    fn focus_diff_line_inherits_active_focus_without_exact_surface_match() {
+        let snap = FocusSnapshot {
+            surface: FocusSurface::Repository(RepositoryFocusSurface::Diff),
+            reason: FocusReason::DiffOpened,
+        };
+        let ctx = build_ctx(UiContextSurface::RepositoryDiffLine, Some(&snap));
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "repository.diff");
+        assert_eq!(focus["reason"], "diff_opened");
+        assert_eq!(focus["matches_surface"], false);
+        assert_eq!(focus["matches_region"], true);
+        assert_eq!(focus["matches_pane"], true);
+    }
+
+    #[test]
+    fn focus_plugin_screen_active_matches_screen_render() {
+        let snap = FocusSnapshot {
+            surface: FocusSurface::PluginScreen {
+                plugin_id: "demo".into(),
+                screen_id: "main".into(),
+            },
+            reason: FocusReason::PluginScreenChanged,
+        };
+        let ctx = build_ctx(UiContextSurface::Screen, Some(&snap));
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "plugin_screen");
+        assert_eq!(focus["kind"], "plugin_screen");
+        assert_eq!(focus["plugin_id"], "demo");
+        assert_eq!(focus["screen_id"], "main");
+        assert_eq!(focus["reason"], "plugin_screen_changed");
+    }
+
+    #[test]
+    fn focus_none_active_clears_match_helpers_for_specific_surface() {
+        let snap = FocusSnapshot::default();
+        let ctx = build_ctx(
+            UiContextSurface::RepositoryGraph {
+                section: "bottom".into(),
+            },
+            Some(&snap),
+        );
+        let focus = &ctx["focus"];
+        assert_eq!(focus["surface"], "none");
+        assert_eq!(focus["kind"], "none");
+        assert_eq!(focus["reason"], "startup");
+        assert_eq!(focus["matches_surface"], false);
+        assert_eq!(focus["matches_region"], false);
+        assert!(focus.get("region").is_none());
+    }
 }

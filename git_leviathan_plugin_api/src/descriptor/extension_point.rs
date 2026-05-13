@@ -11,6 +11,7 @@ pub enum ExtensionPointKind {
     Command,
     SettingsPanel,
     DockPane,
+    Chrome,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -226,6 +227,46 @@ pub const EXTENSION_POINTS: &[ExtensionPoint] = &[
         ownership_rules: "owned by plugin + dock panel id",
         capabilities: &["ui:dock"],
         render_mount_handler: "DockManager",
+    },
+    ExtensionPoint {
+        id: "repository.sidebar.chrome",
+        kind: ExtensionPointKind::Chrome,
+        context_schema: "RepositorySidebarContext",
+        contribution_schema: "LeviathanChromeSpec",
+        ordering_model: "priority ascending, then plugin/id",
+        ownership_rules: "owned by plugin + contribution id",
+        capabilities: &["ui:chrome:repository.sidebar.chrome"],
+        render_mount_handler: "RepoChromeRegistry",
+    },
+    ExtensionPoint {
+        id: "repository.graph.chrome",
+        kind: ExtensionPointKind::Chrome,
+        context_schema: "RepositoryGraphContext",
+        contribution_schema: "LeviathanChromeSpec",
+        ordering_model: "priority ascending, then plugin/id",
+        ownership_rules: "owned by plugin + contribution id",
+        capabilities: &["ui:chrome:repository.graph.chrome"],
+        render_mount_handler: "RepoChromeRegistry",
+    },
+    ExtensionPoint {
+        id: "repository.details.chrome",
+        kind: ExtensionPointKind::Chrome,
+        context_schema: "RepositoryDetailsContext",
+        contribution_schema: "LeviathanChromeSpec",
+        ordering_model: "priority ascending, then plugin/id",
+        ownership_rules: "owned by plugin + contribution id",
+        capabilities: &["ui:chrome:repository.details.chrome"],
+        render_mount_handler: "RepoChromeRegistry",
+    },
+    ExtensionPoint {
+        id: "repository.diff.chrome",
+        kind: ExtensionPointKind::Chrome,
+        context_schema: "RepositoryDiffContext",
+        contribution_schema: "LeviathanChromeSpec",
+        ordering_model: "priority ascending, then plugin/id",
+        ownership_rules: "owned by plugin + contribution id",
+        capabilities: &["ui:chrome:repository.diff.chrome"],
+        render_mount_handler: "RepoChromeRegistry",
     },
 ];
 

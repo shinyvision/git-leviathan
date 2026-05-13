@@ -9,15 +9,15 @@ mod panels;
 pub(crate) mod state;
 mod view;
 
-pub(crate) use messages::GitWriteIntent;
-pub use messages::RepositoryMessage;
+pub use messages::{RepositoryFocusTarget, RepositoryMessage};
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;
 
 use crate::{
-    core::TabId,
+    core::{Commit, CommitKind, TabId},
     message::{AppMessage, Message},
+    plugin::commit_data::{commit_kind_name, CommitActionAvailability, CommitActions, CommitData},
     screens::screen_trait::{Screen, ToolbarCtx},
     services::{presenter::Presenter, SettingsService, COMMIT_LOAD_LIMIT},
     view_model::SidebarSectionKind,
@@ -111,7 +111,7 @@ impl RepositoryScreen {
         }
     }
 
-    /// Branch refs (local + remote) from the latest snapshot. Exposed so
+    /// Refs from the latest snapshot. Exposed so
     /// `App::sync_repository_to_plugins` can rebuild the plugin-host
     /// `leviathan.repository` tables without reaching into screen internals.
     pub(crate) fn branch_refs(&self) -> &[crate::services::RepoRef] {
@@ -130,11 +130,32 @@ impl RepositoryScreen {
         self.data.snapshot.head_hash()
     }
 
+    pub(crate) fn keymap_context(&self) -> &'static str {
+        match self.input.focused_panel {
+            FocusedPanel::Sidebar => "repository.sidebar",
+            FocusedPanel::Center if self.panels.diff.is_active() => "repository.diff",
+            FocusedPanel::Center => "repository.graph",
+            FocusedPanel::Detail if self.selected_commit_has_commit_message_editor() => {
+                "repository.details.dirty"
+            }
+            FocusedPanel::Detail => "repository.details",
+        }
+    }
+
+    pub(crate) fn focus_surface(&self) -> crate::plugin::ui::focus::RepositoryFocusSurface {
+        use crate::plugin::ui::focus::RepositoryFocusSurface;
+        match self.input.focused_panel {
+            FocusedPanel::Sidebar => RepositoryFocusSurface::Sidebar,
+            FocusedPanel::Center if self.panels.diff.is_active() => RepositoryFocusSurface::Diff,
+            FocusedPanel::Center => RepositoryFocusSurface::Graph,
+            FocusedPanel::Detail => RepositoryFocusSurface::Details,
+        }
+    }
+
     pub(crate) fn default_remote_name(&self) -> Option<&str> {
         self.data.snapshot.default_remote_name()
     }
 
-    #[allow(dead_code)]
     pub(crate) fn remote_names(&self) -> &[String] {
         self.data.snapshot.remote_names()
     }
@@ -228,7 +249,80 @@ impl RepositoryScreen {
         }
     }
 
+    pub(crate) fn selection_context_snapshot(
+        &self,
+    ) -> crate::plugin::ui::context::SelectionContextSnapshot {
+        let available = !self.data.snapshot.commits().is_empty();
+        let selected_commit_idx = self.data.selection.selected_commit();
+        let selected_commit = self.data.selected_commit(selected_commit_idx);
+        let selected_file_path = self
+            .panels
+            .detail
+            .selected_file_path()
+            .map(ToOwned::to_owned);
+        let kind = if !available {
+            "none".to_string()
+        } else if selected_file_path.is_some() {
+            "file".to_string()
+        } else if self.data.selection.is_multi() {
+            "commits".to_string()
+        } else {
+            selected_commit
+                .map(|commit| commit_kind_name(commit.kind).to_string())
+                .unwrap_or_else(|| "commit".to_string())
+        };
+        let commit = selected_commit.map(|commit| {
+            CommitData::from_commit(
+                commit,
+                Some(selected_commit_idx),
+                None,
+                self.selected_commit_actions(commit),
+            )
+        });
+
+        crate::plugin::ui::context::SelectionContextSnapshot {
+            available,
+            kind,
+            commit,
+            selected_file_path,
+        }
+    }
+
+    pub(crate) fn selected_commit_can_reword(&self) -> bool {
+        if self.data.selection.is_multi() {
+            return false;
+        }
+        let Some((_, hash)) = self.selected_commit_hash() else {
+            return false;
+        };
+        self.data
+            .snapshot
+            .first_parent_distance_from_head(&hash)
+            .is_some()
+    }
+
+    fn selected_commit_actions(&self, commit: &Commit) -> CommitActions {
+        let reword = if self.data.selection.is_multi() {
+            CommitActionAvailability::disabled("multiple_commits_selected")
+        } else if commit.kind != CommitKind::Commit {
+            CommitActionAvailability::disabled("selection_is_not_a_commit")
+        } else if self
+            .data
+            .snapshot
+            .first_parent_distance_from_head(&commit.hash)
+            .is_some()
+        {
+            CommitActionAvailability::enabled()
+        } else {
+            CommitActionAvailability::disabled("commit_not_on_first_parent_chain")
+        };
+        CommitActions::with_reword(reword)
+    }
+
     pub(crate) fn selected_commit_reword_seed(&self) -> Option<(String, String)> {
+        if !self.selected_commit_can_reword() {
+            return None;
+        }
         let idx = self.data.selection.selected_commit();
         let commit = self.data.selected_commit(idx)?;
         if commit.kind == crate::core::CommitKind::Commit {
@@ -279,6 +373,325 @@ impl RepositoryScreen {
         }
     }
 
+    pub(crate) fn create_branch_at_selected(
+        &mut self,
+        commit_idx: Option<usize>,
+        hash: Option<String>,
+    ) -> Task<Message> {
+        let Some((idx, commit_hash)) = commit_idx.zip(hash).or_else(|| self.selected_commit_hash())
+        else {
+            return Task::none();
+        };
+        self.handle_center_action(CenterAction::CreateBranchHereRequested {
+            commit_idx: idx,
+            commit_hash,
+        })
+    }
+
+    pub(crate) fn delete_branch_direct(
+        &mut self,
+        branch_name: String,
+        is_remote: bool,
+        remote_ref: Option<String>,
+    ) -> Task<Message> {
+        let branch_ref = if is_remote {
+            remote_ref.unwrap_or_else(|| branch_name.clone())
+        } else {
+            branch_name.clone()
+        };
+        let Some(operation_id) = self.begin_git_write() else {
+            return Task::none();
+        };
+        let repo = self.fleet.active().clone();
+        let presenter = self.presenter.clone();
+        let tab_id = self.tab_id;
+        Task::perform(
+            git_write_work(move || {
+                repo.delete_branch(&branch_ref, is_remote)
+                    .map(|s| presenter.project_loaded(s))
+            }),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::BranchDeleted {
+                        operation_id: Some(operation_id),
+                        branch_name: branch_name.clone(),
+                        is_remote,
+                        result,
+                    },
+                )
+            },
+        )
+    }
+
+    pub(crate) fn delete_branch_local_and_remote(&mut self, branch_name: String) -> Task<Message> {
+        let Some(operation_id) = self.begin_git_write() else {
+            return Task::none();
+        };
+        let repo = self.fleet.active().clone();
+        let presenter = self.presenter.clone();
+        let tab_id = self.tab_id;
+        let delete_branch_name = branch_name.clone();
+        Task::perform(
+            git_write_work(move || {
+                repo.delete_branch_all(&delete_branch_name)
+                    .map(|s| presenter.project_loaded(s))
+            }),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::BranchDeleted {
+                        operation_id: Some(operation_id),
+                        branch_name: branch_name.clone(),
+                        is_remote: false,
+                        result,
+                    },
+                )
+            },
+        )
+    }
+
+    pub(crate) fn copy_commit_hash(&mut self, hash: Option<String>) -> Task<Message> {
+        let hash = hash.or_else(|| self.selected_commit_hash().map(|(_, hash)| hash));
+        match hash {
+            Some(hash) => self.handle_detail_action(DetailAction::CopyCommitShaRequested(hash)),
+            None => Task::none(),
+        }
+    }
+
+    pub(crate) fn open_selected_diff(&mut self) -> Task<Message> {
+        match self.selected_diff_target() {
+            Some(SelectedDiffTarget::Dirty { path, is_staged }) => {
+                self.handle_detail_action(DetailAction::DirtyFileOpened { path, is_staged })
+            }
+            Some(SelectedDiffTarget::Commit { commit_idx, path }) => {
+                self.handle_detail_action(DetailAction::CommitFileClicked { commit_idx, path })
+            }
+            None => Task::none(),
+        }
+    }
+
+    pub(crate) fn open_plugin_toolbar_dialog(
+        &mut self,
+        request: crate::plugin::ui::dialog::DialogRequest,
+    ) {
+        self.overlay_manager.open_toolbar_dialog(request.into());
+    }
+
+    pub(crate) fn close_plugin_toolbar_dialog(&mut self, plugin_id: &str, dialog_id: &str) -> bool {
+        self.overlay_manager
+            .close_plugin_toolbar_dialog(plugin_id, dialog_id)
+    }
+
+    pub(crate) fn focus_toolbar_dialog_control(
+        &self,
+        dialog_id: &str,
+        control_id: &str,
+    ) -> Task<Message> {
+        let Some(id) = self
+            .overlay_manager
+            .toolbar_dialog_control_focus_id(dialog_id, control_id)
+        else {
+            return Task::none();
+        };
+        Task::batch([
+            iced::widget::operation::focus(id.clone()),
+            iced::widget::operation::move_cursor_to_end(id),
+        ])
+    }
+
+    pub(crate) fn press_toolbar_dialog_button(
+        &mut self,
+        dialog_id: &str,
+        button_id: &str,
+    ) -> Task<Message> {
+        self.dispatch_overlay_action(OverlayPanelAction::DialogButtonPressed {
+            dialog_id: overlays::dialog::model::DialogId(dialog_id.to_string()),
+            button_id: overlays::dialog::model::DialogButtonId(button_id.to_string()),
+        })
+    }
+
+    pub(crate) fn toolbar_dialog_context_snapshot(
+        &self,
+    ) -> crate::plugin::ui::context::ToolbarDialogContextSnapshot {
+        self.overlay_manager.toolbar_dialog_context_snapshot()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn plugin_toolbar_dialog_matches(&self, plugin_id: &str, dialog_id: &str) -> bool {
+        self.overlay_manager
+            .plugin_toolbar_dialog_matches(plugin_id, dialog_id)
+    }
+
+    pub(crate) fn start_reword_selected(&mut self) -> Task<Message> {
+        let Some((hash, message)) = self.selected_commit_reword_seed() else {
+            return Task::none();
+        };
+        self.input.focused_panel = FocusedPanel::Detail;
+        self.handle_detail_action(DetailAction::RewordStarted {
+            hash,
+            original_message: message,
+        })
+    }
+
+    pub(crate) fn focus_reword_message(&mut self) -> Task<Message> {
+        if self.panels.detail.reword_active().is_none() {
+            return Task::none();
+        }
+        self.input.focused_panel = FocusedPanel::Detail;
+        self.panels.detail.request_reword_focus();
+        Task::none()
+    }
+
+    pub(crate) fn focus_panel(&mut self, target: RepositoryFocusTarget) -> Task<Message> {
+        match target.resolve(self.panels.diff.is_active()) {
+            Ok(panel) => {
+                self.input.focused_panel = panel;
+            }
+            Err(reason) => {
+                eprintln!("git_leviathan: repository.focus_panel skipped: {reason}");
+            }
+        }
+        Task::none()
+    }
+
+    pub(crate) fn clear_multi_selection(&mut self) -> Task<Message> {
+        let commit_count = self.data.snapshot.commits().len();
+        if self.data.selection.is_multi() && commit_count > 0 {
+            let current = self.data.selection.cursor().min(commit_count - 1);
+            self.data.selection.replace_with_single(current);
+        }
+
+        self.panels
+            .detail
+            .collapse_dirty_selection_to_selected(&self.data, &self.data.selection);
+        Task::none()
+    }
+
+    pub(crate) fn escape_pressed(&mut self) -> Task<Message> {
+        input::on_key_pressed(
+            self,
+            keyboard::Key::Named(keyboard::key::Named::Escape),
+            keyboard::Modifiers::default(),
+        )
+        .unwrap_or_else(Task::none)
+    }
+
+    pub(crate) fn focus_commit_message(&mut self) -> Task<Message> {
+        if self.input.focused_panel != FocusedPanel::Detail
+            || !self.selected_commit_has_commit_message_editor()
+        {
+            return Task::none();
+        }
+
+        iced::widget::operation::focus(panels::detail::dirty_commit_message_editor_id())
+    }
+
+    fn selected_commit_has_commit_message_editor(&self) -> bool {
+        !self.data.selection.is_multi()
+            && self
+                .data
+                .selected_commit(self.data.selection.selected_commit())
+                .is_some_and(|commit| commit.kind == crate::core::CommitKind::Dirty)
+    }
+
+    pub(crate) fn stage_selected_dirty_file(&mut self) -> Task<Message> {
+        if self
+            .panels
+            .detail
+            .selected_dirty_count(&self.data, &self.data.selection)
+            > 1
+        {
+            return self.handle_detail_action(DetailAction::StageSelectedFiles);
+        }
+        let Some((path, is_staged)) = self
+            .panels
+            .detail
+            .selected_dirty_file(&self.data, &self.data.selection)
+        else {
+            return Task::none();
+        };
+        if is_staged {
+            return Task::none();
+        }
+        self.handle_detail_action(DetailAction::StageFile(path))
+    }
+
+    pub(crate) fn unstage_selected_dirty_file(&mut self) -> Task<Message> {
+        if self
+            .panels
+            .detail
+            .selected_dirty_count(&self.data, &self.data.selection)
+            > 1
+        {
+            return self.handle_detail_action(DetailAction::UnstageSelectedFiles);
+        }
+        let Some((path, is_staged)) = self
+            .panels
+            .detail
+            .selected_dirty_file(&self.data, &self.data.selection)
+        else {
+            return Task::none();
+        };
+        if !is_staged {
+            return Task::none();
+        }
+        self.handle_detail_action(DetailAction::UnstageFile(path))
+    }
+
+    pub(crate) fn discard_selected_dirty_file(&mut self) -> Task<Message> {
+        if self
+            .panels
+            .detail
+            .selected_dirty_count(&self.data, &self.data.selection)
+            > 1
+        {
+            return self.handle_detail_action(DetailAction::DiscardSelectedFilesRequested);
+        }
+        let Some((path, _is_staged)) = self
+            .panels
+            .detail
+            .selected_dirty_file(&self.data, &self.data.selection)
+        else {
+            return Task::none();
+        };
+        self.handle_detail_action(DetailAction::DiscardFileRequested(path))
+    }
+
+    pub(crate) fn move_selection(&mut self, action: CenterAction, extend: bool) -> Task<Message> {
+        if !extend {
+            return self.handle_center_action(action);
+        }
+
+        if self.input.focused_panel == FocusedPanel::Detail {
+            return match action {
+                CenterAction::NavigateFirst => {
+                    self.handle_detail_action(DetailAction::ExtendFileSelectionFirst)
+                }
+                CenterAction::NavigateLast => {
+                    self.handle_detail_action(DetailAction::ExtendFileSelectionLast)
+                }
+                CenterAction::NavigateUp => {
+                    self.handle_detail_action(DetailAction::ExtendFileSelectionUp)
+                }
+                CenterAction::NavigateDown => {
+                    self.handle_detail_action(DetailAction::ExtendFileSelectionDown)
+                }
+                _ => Task::none(),
+            };
+        }
+
+        if self.input.focused_panel == FocusedPanel::Center && self.panels.diff.is_active() {
+            return self.handle_center_action(action);
+        }
+
+        if self.input.focused_panel != FocusedPanel::Center {
+            return Task::none();
+        }
+
+        self.extend_center_selection(action)
+    }
+
     pub fn select_commit(&mut self, idx: usize) -> Task<Message> {
         let action = self.panels.center.select_commit(
             idx,
@@ -286,6 +699,37 @@ impl RepositoryScreen {
             &mut self.data.branch_popout,
         );
         self.handle_center_action(action)
+    }
+
+    fn extend_center_selection(&mut self, action: CenterAction) -> Task<Message> {
+        let commit_count = self.data.snapshot.commits().len();
+        if commit_count == 0 {
+            return Task::none();
+        }
+
+        let current = self.data.selection.cursor().min(commit_count - 1);
+        let target = match action {
+            CenterAction::NavigateFirst => 0,
+            CenterAction::NavigateLast => commit_count - 1,
+            CenterAction::NavigateUp => current.saturating_sub(1),
+            CenterAction::NavigateDown => (current + 1).min(commit_count - 1),
+            _ => return Task::none(),
+        };
+        if target == current {
+            return Task::none();
+        }
+
+        self.data.branch_popout.close();
+        self.data.selection.extend_range_to(target);
+        let (mut ctx, panels) = self.ctx_and_panels();
+        Task::batch(vec![
+            panels.detail.reset_file_list_scroll(),
+            panels::sidebar::commit_selection_changed_task(&mut ctx, target),
+            panels
+                .center
+                .scroll_to_commit(target)
+                .unwrap_or(Task::none()),
+        ])
     }
 
     pub fn fetch_task(&self, operation_id: state::OperationId) -> Task<Message> {
@@ -317,6 +761,10 @@ impl RepositoryScreen {
 
     pub(crate) fn is_git_write_in_flight(&self) -> bool {
         self.data.operations.is_writing()
+    }
+
+    pub(crate) fn is_blocking_git_write_in_flight(&self) -> bool {
+        self.data.operations.is_blocking_write()
     }
 
     pub(crate) fn mark_watcher_reload_pending(&mut self, path: impl Into<std::path::PathBuf>) {
@@ -433,11 +881,71 @@ impl RepositoryScreen {
             RepositoryMessage::CommitSearch(action) => commit_search::handle_action(self, action),
             RepositoryMessage::OpenCommitSearch => commit_search::open(self),
             RepositoryMessage::OverlayPanel(action) => self.dispatch_overlay_action(action),
+            RepositoryMessage::RefreshRequested => self.reload_refs_task(),
+            RepositoryMessage::CreateBranchAtSelected { commit_idx, hash } => {
+                self.create_branch_at_selected(commit_idx, hash)
+            }
+            RepositoryMessage::CopyCommitHash { hash } => self.copy_commit_hash(hash),
+            RepositoryMessage::OpenSelectedDiff => self.open_selected_diff(),
+            RepositoryMessage::MoveSelection { action, extend } => {
+                self.move_selection(action, extend)
+            }
+            RepositoryMessage::ClearMultiSelection => self.clear_multi_selection(),
+            RepositoryMessage::EscapePressed => self.escape_pressed(),
+            RepositoryMessage::FocusCommitMessage => self.focus_commit_message(),
+            RepositoryMessage::StartRewordSelected => self.start_reword_selected(),
+            RepositoryMessage::FocusRewordMessage => self.focus_reword_message(),
+            RepositoryMessage::FocusPanel(target) => self.focus_panel(target),
+            RepositoryMessage::StageSelectedDirtyFile => self.stage_selected_dirty_file(),
+            RepositoryMessage::UnstageSelectedDirtyFile => self.unstage_selected_dirty_file(),
+            RepositoryMessage::DiscardSelectedDirtyFile => self.discard_selected_dirty_file(),
+            RepositoryMessage::DeleteBranchDirect {
+                branch_name,
+                is_remote,
+                remote_ref,
+            } => self.delete_branch_direct(branch_name, is_remote, remote_ref),
+            RepositoryMessage::DeleteBranchLocalAndRemote { branch_name } => {
+                self.delete_branch_local_and_remote(branch_name)
+            }
             other => commands::dispatch_result(self, other),
         }
     }
 
     fn handle_center_action(&mut self, action: CenterAction) -> Task<Message> {
+        if self.input.focused_panel == FocusedPanel::Detail {
+            match &action {
+                CenterAction::NavigateFirst => {
+                    return self.handle_detail_action(DetailAction::NavigateFileFirst);
+                }
+                CenterAction::NavigateLast => {
+                    return self.handle_detail_action(DetailAction::NavigateFileLast);
+                }
+                CenterAction::NavigateUp => {
+                    return self.handle_detail_action(DetailAction::NavigateFileUp);
+                }
+                CenterAction::NavigateDown => {
+                    return self.handle_detail_action(DetailAction::NavigateFileDown);
+                }
+                _ => {}
+            }
+        }
+        if self.input.focused_panel == FocusedPanel::Center && self.panels.diff.is_active() {
+            match &action {
+                CenterAction::NavigateFirst => {
+                    return self.handle_diff_panel_action(DiffPanelAction::ScrollTop);
+                }
+                CenterAction::NavigateLast => {
+                    return self.handle_diff_panel_action(DiffPanelAction::ScrollBottom);
+                }
+                CenterAction::NavigateUp => {
+                    return self.handle_diff_panel_action(DiffPanelAction::ScrollUp);
+                }
+                CenterAction::NavigateDown => {
+                    return self.handle_diff_panel_action(DiffPanelAction::ScrollDown);
+                }
+                _ => {}
+            }
+        }
         let (mut ctx, panels) = self.ctx_and_panels();
         panels::center::update_center(&mut panels.center, &mut panels.detail, action, &mut ctx)
     }
@@ -476,10 +984,18 @@ impl RepositoryScreen {
         };
         match self.overlay_manager.dispatch(action, ctx) {
             overlays::DialogDispatch::Task(task) => task,
-            overlays::DialogDispatch::CancelCloseFocus => {
-                self.input.focused_panel = FocusedPanel::Center;
-                Task::none()
-            }
+            overlays::DialogDispatch::PluginDialogButtonPressed {
+                plugin_id,
+                dialog_id,
+                button_id,
+            } => Task::done(Message::Plugin(
+                crate::plugin::PluginMessage::RepositoryDialogButtonPressed {
+                    plugin_id,
+                    dialog_id,
+                    button_id,
+                },
+            )),
+            overlays::DialogDispatch::CancelClosed => Task::none(),
             overlays::DialogDispatch::RestoreCenterListScroll => {
                 self.panels.center.restore_center_list_scroll()
             }
@@ -497,6 +1013,233 @@ impl RepositoryScreen {
     ) -> Option<Task<Message>> {
         input::on_key_pressed(self, key, modifiers)
     }
+
+    pub fn handle_overlay_key_pressed(
+        &mut self,
+        key: &keyboard::Key,
+        modifiers: keyboard::Modifiers,
+    ) -> Option<Task<Message>> {
+        input::on_overlay_key_pressed(self, key, modifiers)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use std::sync::Arc;
+
+    use iced::keyboard;
+
+    use super::*;
+    use crate::{
+        core::{ChangeKind, ChangedFile},
+        services::{
+            presenter::projection, test_support, CommitSnapshot, DefaultPresenter, DirtySnapshot,
+            GitRepositoryGateway, RepoRef, RepoSnapshot,
+        },
+    };
+
+    fn test_screen() -> (test_support::TempRepo, RepositoryScreen) {
+        let (repo_dir, _repo) = test_support::init_test_repo("overlay_focus");
+        let gateway = GitRepositoryGateway::from_path(repo_dir.path_str());
+        let fleet = state::GatewayFleet::new(
+            repo_dir.path.clone(),
+            gateway.clone(),
+            repo_dir.path.clone(),
+            gateway,
+        );
+        let screen = RepositoryScreen::new(fleet, Arc::new(DefaultPresenter::new()), TabId(1));
+        (repo_dir, screen)
+    }
+
+    fn commit_snapshot(hash: &str) -> CommitSnapshot {
+        commit_snapshot_with_parents(hash, vec![])
+    }
+
+    fn commit_snapshot_with_parents(hash: &str, parent_hashes: Vec<&str>) -> CommitSnapshot {
+        CommitSnapshot {
+            hash: hash.to_string(),
+            message: "initial".to_string(),
+            author_name: "Ada".to_string(),
+            authored_at: 1_700_000_000,
+            authored_offset_minutes: 0,
+            parent_hashes: parent_hashes.into_iter().map(str::to_string).collect(),
+        }
+    }
+
+    fn loaded_repo_with_first_parent_chain() -> crate::view_model::LoadedRepo {
+        projection::project_loaded(RepoSnapshot {
+            commits: vec![
+                commit_snapshot_with_parents("head", vec!["parent"]),
+                commit_snapshot_with_parents("parent", vec!["root"]),
+                commit_snapshot("side"),
+            ],
+            refs: Vec::<RepoRef>::new(),
+            dirty: None,
+            stashes: vec![],
+            repo_name: "repo".to_string(),
+            current_branch: Some("main".to_string()),
+            head_hash: Some("head".to_string()),
+            has_more_commits: false,
+            default_remote_name: None,
+            remote_names: Vec::new(),
+            fast_forward_candidates: Default::default(),
+            worktrees: vec![],
+            active_worktree_path: Default::default(),
+        })
+    }
+
+    fn loaded_repo_with_dirty_commit() -> crate::view_model::LoadedRepo {
+        projection::project_loaded(RepoSnapshot {
+            commits: vec![commit_snapshot("aaaaaaaa")],
+            refs: Vec::<RepoRef>::new(),
+            dirty: Some(DirtySnapshot {
+                conflicted_files: vec![],
+                staged_files: vec![],
+                unstaged_files: vec![ChangedFile {
+                    path: "file.txt".to_string(),
+                    kind: ChangeKind::Modified,
+                }],
+                parent_hashes: vec!["aaaaaaaa".to_string()],
+            }),
+            stashes: vec![],
+            repo_name: "repo".to_string(),
+            current_branch: Some("main".to_string()),
+            head_hash: Some("aaaaaaaa".to_string()),
+            has_more_commits: false,
+            default_remote_name: None,
+            remote_names: Vec::new(),
+            fast_forward_candidates: Default::default(),
+            worktrees: vec![],
+            active_worktree_path: Default::default(),
+        })
+    }
+
+    #[test]
+    fn details_keymap_context_is_dirty_only_for_single_working_changes_commit() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen.data.replace_loaded(loaded_repo_with_dirty_commit());
+        screen.input.focused_panel = FocusedPanel::Detail;
+
+        assert_eq!(screen.keymap_context(), "repository.details.dirty");
+
+        screen.data.selection.select_commit(1);
+        assert_eq!(screen.keymap_context(), "repository.details");
+
+        screen.data.selection.select_commit(0);
+        screen.data.selection.extend_range_to(1);
+        assert_eq!(screen.keymap_context(), "repository.details");
+    }
+
+    #[test]
+    fn selection_context_reports_rewordable_selected_commit() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.data.selection.select_commit(1);
+
+        let ctx = screen.selection_context_snapshot();
+        assert!(ctx.commit.unwrap().actions.reword.enabled);
+
+        screen.data.selection.select_commit(2);
+        let ctx = screen.selection_context_snapshot();
+        assert!(!ctx.commit.unwrap().actions.reword.enabled);
+    }
+
+    #[test]
+    fn start_reword_selected_only_starts_for_first_parent_chain_commit() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.data.selection.select_commit(2);
+
+        let _ = screen.start_reword_selected();
+        assert!(screen.panels.detail.reword_active().is_none());
+
+        screen.data.selection.select_commit(1);
+        let _ = screen.start_reword_selected();
+        assert!(screen.panels.detail.reword_active().is_some());
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Detail);
+        assert!(screen.panels.detail.reword_needs_focus());
+    }
+
+    #[test]
+    fn consumed_commit_click_focuses_center_panel() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Detail;
+
+        let _ = screen.handle_center_action(CenterAction::CommitClicked(1));
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Center);
+        assert_eq!(screen.data.selection.selected_commit(), 1);
+    }
+
+    #[test]
+    fn programmatic_commit_selection_preserves_panel_focus() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Sidebar;
+
+        let _ = screen.handle_center_action(CenterAction::CommitSelected(1));
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Sidebar);
+        assert_eq!(screen.data.selection.selected_commit(), 1);
+    }
+
+    #[test]
+    fn consumed_reword_message_click_focuses_detail_panel() {
+        let (_repo_dir, mut screen) = test_screen();
+        screen
+            .data
+            .replace_loaded(loaded_repo_with_first_parent_chain());
+        screen.input.focused_panel = FocusedPanel::Center;
+
+        let _ = screen.handle_detail_action(DetailAction::RewordStarted {
+            hash: "parent".into(),
+            original_message: "initial".into(),
+        });
+
+        assert_eq!(screen.input.focused_panel, FocusedPanel::Detail);
+        assert!(screen.panels.detail.reword_active().is_some());
+    }
+
+    #[test]
+    fn escape_canceling_confirmation_preserves_tracked_panel_focus() {
+        for focused_panel in [FocusedPanel::Sidebar, FocusedPanel::Detail] {
+            let (_repo_dir, mut screen) = test_screen();
+            screen.input.focused_panel = focused_panel;
+            screen
+                .overlay_manager
+                .open_toolbar_dialog(overlays::delete_branch::dialog(
+                    overlays::delete_branch::State {
+                        branch_name: "feature".into(),
+                        is_remote: false,
+                        has_remote: false,
+                        remote_name: None,
+                        remote_ref: None,
+                    },
+                ));
+
+            let task = screen.handle_overlay_key_pressed(
+                &keyboard::Key::Named(keyboard::key::Named::Escape),
+                keyboard::Modifiers::default(),
+            );
+
+            assert!(task.is_some(), "Esc should keep cancel semantics");
+            assert!(
+                !screen.overlay_manager.has_toolbar_dialog(),
+                "Esc should close the active overlay"
+            );
+            assert_eq!(screen.input.focused_panel, focused_panel);
+        }
+    }
 }
 
 impl RepositoryScreen {
@@ -505,8 +1248,9 @@ impl RepositoryScreen {
     pub fn view_with_repo_region<'a>(
         &'a self,
         registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+        chrome_registry: &'a crate::widgets::chrome::repo_region::RepoChromeRegistry,
     ) -> iced::Element<'a, crate::message::Message> {
-        view::view_with_repo_region(self, registry)
+        view::view_with_repo_region(self, registry, chrome_registry)
     }
 }
 

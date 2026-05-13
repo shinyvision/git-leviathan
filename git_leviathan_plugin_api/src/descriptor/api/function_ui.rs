@@ -32,7 +32,7 @@ pub(super) const ROOT_FUNCTIONS: &[ApiFunction] = &[
             name: "message",
             lua_type: "string",
             required: true,
-            doc: "Message to log to host stderr.",
+            doc: "Message to log to host stdout when the manifest has debug = true.",
         }],
         returns: &[],
         capabilities: &["ui:screen"],
@@ -175,12 +175,103 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
                 "spec.widget must be a LeviathanWidget table",
                 "spec.dismissible must be boolean",
                 "spec.priority must be a number",
-                "spec.key_events must be an array of supported named keys when present",
+                "spec.key_events must be an array of supported keys when present",
             ],
             returns: &[],
             notes: &[
                 "Host owns Esc / click-outside dismissal.",
                 "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input.",
+            ],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.dialog",
+        name: "dialog",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.",
+        params: UI_DIALOG_PARAM,
+        returns: &[],
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &[
+                "spec.id must be a string",
+                "spec.text must be a string",
+                "spec.buttons must contain one or more button specs",
+                "button.style must be red, green, blue, or white",
+                "button.text must be a string",
+                "button.on_click must be a function",
+                "button.keys must be an array of supported keys when present",
+            ],
+            returns: &[],
+            notes: &[
+                "Requires an active repository screen.",
+                "Button clicks call the matching button function.",
+                "Configured keys call the same button function as a click.",
+                "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+                "The dialog is rendered in the repository toolbar band.",
+            ],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.dialog.open",
+        name: "dialog.open",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
+        params: UI_DIALOG_PARAM,
+        returns: &[],
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &[
+                "spec.id must be a string",
+                "spec.text must be a string",
+                "spec.buttons must contain one or more button specs",
+                "button.style must be red, green, blue, or white",
+                "button.text must be a string",
+                "button.on_click must be a function",
+                "button.keys must be an array of supported keys when present",
+            ],
+            returns: &[],
+            notes: &[
+                "Requires an active repository screen.",
+                "Button clicks call the matching button function.",
+                "Configured keys call the same button function as a click.",
+                "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+                "The dialog is rendered in the repository toolbar band.",
+            ],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.dialog.focus_control",
+        name: "dialog.focus_control",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Focus a text input control in the active repository toolbar dialog.",
+        params: UI_DIALOG_CONTROL_PARAMS,
+        returns: BOOL_NIL_ERR_RET,
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &["dialog_id must be a string", "control_id must be a string"],
+            returns: &["true plus nil error, or nil plus error string"],
+            notes: &["No-ops when the active toolbar dialog or control does not match."],
+        },
+    },
+    ApiFunction {
+        path: "leviathan.ui.dialog.press_button",
+        name: "dialog.press_button",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Press a button in the active repository toolbar dialog.",
+        params: UI_DIALOG_BUTTON_PARAMS,
+        returns: BOOL_NIL_ERR_RET,
+        capabilities: UI_OVERLAY_CAP,
+        validation: ApiValidation {
+            args: &["dialog_id must be a string", "button_id must be a string"],
+            returns: &["true plus nil error, or nil plus error string"],
+            notes: &[
+                "Routes through the same dialog dispatcher as a click.",
+                "Disabled buttons are ignored by the host dialog dispatcher.",
             ],
         },
     },
@@ -254,7 +345,7 @@ pub(super) const UI_FUNCTIONS: &[ApiFunction] = &[
         validation: ApiValidation {
             args: &["decoration.kind must be one of badge / icon / marker / lane"],
             returns: &[],
-            notes: &["Bound to repository.graph.row:<commit_hash>."],
+            notes: &["Bound to repository.graph.row:<commit.hash>."],
         },
     },
     ApiFunction {
@@ -593,6 +684,43 @@ const UI_OVERLAY_PARAM: &[ApiParam] = &[ApiParam {
     doc: "Overlay descriptor (id, widget, dismissible, priority, key_events).",
 }];
 
+const UI_DIALOG_PARAM: &[ApiParam] = &[ApiParam {
+    name: "spec",
+    lua_type: "LeviathanDialogSpec",
+    required: true,
+    doc: "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
+}];
+
+const UI_DIALOG_CONTROL_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "dialog_id",
+        lua_type: "string",
+        required: true,
+        doc: "Active toolbar dialog id.",
+    },
+    ApiParam {
+        name: "control_id",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog control id to focus.",
+    },
+];
+
+const UI_DIALOG_BUTTON_PARAMS: &[ApiParam] = &[
+    ApiParam {
+        name: "dialog_id",
+        lua_type: "string",
+        required: true,
+        doc: "Active toolbar dialog id.",
+    },
+    ApiParam {
+        name: "button_id",
+        lua_type: "string",
+        required: true,
+        doc: "Dialog button id to press.",
+    },
+];
+
 const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[
     ApiParam {
         name: "region",
@@ -610,10 +738,10 @@ const UI_CONTEXT_MENU_PARAMS: &[ApiParam] = &[
 
 const UI_GRAPH_DECORATION_PARAMS: &[ApiParam] = &[
     ApiParam {
-        name: "commit_hash",
-        lua_type: "string",
+        name: "commit",
+        lua_type: "LeviathanCommit",
         required: true,
-        doc: "Commit row hash the decoration applies to.",
+        doc: "Commit row the decoration applies to.",
     },
     ApiParam {
         name: "decoration",

@@ -152,6 +152,10 @@ impl TextCanvasData {
         self.content_width
     }
 
+    pub fn total_height(&self) -> f32 {
+        self.total_height
+    }
+
     pub fn gutter_width(&self) -> f32 {
         self.gutter_width
     }

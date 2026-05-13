@@ -10,8 +10,6 @@ use iced::{
 
 use crate::{message::Message, style, theme};
 
-use super::super::RepositoryMessage;
-
 pub const OVERLAY_ENTER_OFFSET: f32 = 2000.0;
 
 #[derive(Clone, Copy)]
@@ -168,13 +166,14 @@ const CANCEL_BORDER: Color = Color {
     a: 1.0,
 };
 
-pub fn overlay_button(
-    label: &'static str,
+pub fn overlay_button_msg(
+    label: impl Into<String>,
     palette: OverlayButtonPalette,
-    on_press: RepositoryMessage,
+    on_press: Message,
 ) -> Element<'static, Message> {
+    let label = label.into();
     button(text(label).size(theme::FONT_SM))
-        .on_press(Message::repo(on_press))
+        .on_press(on_press)
         .padding(Padding::from([4, 10]))
         .style(move |_: &Theme, status: button::Status| {
             let hovered = matches!(status, button::Status::Hovered | button::Status::Pressed);
@@ -202,9 +201,10 @@ pub fn overlay_button(
 }
 
 pub fn overlay_button_disabled(
-    label: &'static str,
+    label: impl Into<String>,
     palette: OverlayButtonPalette,
 ) -> Element<'static, Message> {
+    let label = label.into();
     let dimmed_bg = Color {
         a: 0.5,
         ..palette.background
@@ -243,12 +243,13 @@ pub fn overlay_button_disabled(
     .into()
 }
 
-pub fn overlay_neutral_button(
-    label: &'static str,
-    on_press: RepositoryMessage,
+pub fn overlay_neutral_button_msg(
+    label: impl Into<String>,
+    on_press: Message,
 ) -> Element<'static, Message> {
+    let label = label.into();
     button(text(label).size(theme::FONT_SM).style(style::primary_text))
-        .on_press(Message::repo(on_press))
+        .on_press(on_press)
         .padding(Padding::from([4, 10]))
         .style(|_: &Theme, status: button::Status| {
             let (border_color, text_color) = match status {
@@ -270,32 +271,17 @@ pub fn overlay_neutral_button(
         .into()
 }
 
-pub fn overlay_cancel_button(on_press: RepositoryMessage) -> Element<'static, Message> {
-    button(
-        text("Cancel")
-            .size(theme::FONT_SM)
-            .style(style::primary_text),
+pub fn overlay_neutral_button_disabled(label: impl Into<String>) -> Element<'static, Message> {
+    overlay_button_disabled(
+        label,
+        OverlayButtonPalette {
+            background: theme::BG_HEADER,
+            hover_background: theme::BG_HEADER,
+            border: CANCEL_BORDER,
+            text: theme::TEXT_PRIMARY,
+            hover_text: Color::WHITE,
+        },
     )
-    .on_press(Message::repo(on_press))
-    .padding(Padding::from([4, 10]))
-    .style(|_: &Theme, status: button::Status| {
-        let (border_color, text_color) = match status {
-            button::Status::Hovered | button::Status::Pressed => (Color::WHITE, Color::WHITE),
-            _ => (CANCEL_BORDER, theme::TEXT_PRIMARY),
-        };
-        button::Style {
-            background: Some(theme::BG_HEADER.into()),
-            border: Border {
-                color: border_color,
-                width: 1.0,
-                radius: 3.0.into(),
-            },
-            text_color,
-            shadow: Default::default(),
-            snap: false,
-        }
-    })
-    .into()
 }
 
 pub fn overlay_text_input_style(_: &Theme, _: text_input::Status) -> text_input::Style {
@@ -311,42 +297,6 @@ pub fn overlay_text_input_style(_: &Theme, _: text_input::Status) -> text_input:
         value: theme::TEXT_PRIMARY,
         selection: theme::ACCENT_BLUE,
     }
-}
-
-pub fn overlay_text_input<'a>(
-    placeholder: &'static str,
-    value: &'a str,
-    on_input: impl Fn(String) -> RepositoryMessage + 'static,
-) -> Element<'a, Message> {
-    text_input(placeholder, value)
-        .on_input(move |s| Message::repo(on_input(s)))
-        .size(theme::FONT_SM)
-        .padding(theme::INPUT_PADDING)
-        .width(Length::Fixed(160.0))
-        .style(overlay_text_input_style)
-        .into()
-}
-
-pub fn overlay_text_input_with_submit<'a>(
-    placeholder: &'static str,
-    value: &'a str,
-    on_input: impl Fn(String) -> RepositoryMessage + 'static,
-    on_submit: Message,
-    id: Option<iced::widget::Id>,
-) -> Element<'a, Message> {
-    let mut input = text_input(placeholder, value)
-        .on_input(move |s| Message::repo(on_input(s)))
-        .on_submit(on_submit)
-        .size(theme::FONT_SM)
-        .padding(theme::INPUT_PADDING)
-        .width(Length::Fixed(160.0))
-        .style(overlay_text_input_style);
-
-    if let Some(id) = id {
-        input = input.id(id);
-    }
-
-    input.into()
 }
 
 pub fn sliding_main_bar_overlay<'a>(
@@ -366,7 +316,7 @@ pub fn sliding_main_bar_overlay<'a>(
     SlideOverlay::new(panel, -slide_offset.max(0.0), 0.0, 0.0, Length::Fill, 0.0).into()
 }
 
-pub fn overlay_row(items: Vec<Element<Message>>) -> Element<Message> {
+pub fn overlay_row<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
     use crate::widgets::shared::horizontal_space as hspace;
 
     let mut all = vec![hspace().into()];

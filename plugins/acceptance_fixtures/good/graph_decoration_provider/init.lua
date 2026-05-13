@@ -1,4 +1,4 @@
-leviathan.ui.graph_decoration("abc1234", {
+leviathan.ui.graph_decoration({ hash = "abc1234" }, {
   id = "graph-provider.acceptance",
   kind = "badge",
   text = "GP",

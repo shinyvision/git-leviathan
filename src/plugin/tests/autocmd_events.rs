@@ -50,13 +50,16 @@ fn typed_event_payload_deserialises_in_lua() {
             callback = function(ev)
                 _G.last_event = ev.event
                 _G.last_alias = ev.alias or ""
-                _G.last_hash = ev.payload.hash
+                _G.last_hash = ev.payload.commit.hash
             end,
         })
         "#,
     )
     .expect("load");
-    host.dispatch_test_event("CommitSelected", serde_json::json!({ "hash": "deadbeef" }));
+    host.dispatch_test_event(
+        "CommitSelected",
+        serde_json::json!({ "commit": { "hash": "deadbeef" } }),
+    );
     assert_eq!(
         host.read_global_string("typed", "last_event").as_deref(),
         Some("CommitSelected")
@@ -300,6 +303,72 @@ fn reload_drops_old_generation_autocmds() {
     assert_eq!(
         host.read_global_string("rel", "gen").as_deref(),
         Some("updated")
+    );
+}
+
+#[test]
+fn sync_focus_fires_focus_changed_autocmd_with_payload() {
+    use crate::plugin::ui::focus::{
+        FocusReason, FocusSnapshot, FocusSurface, RepositoryFocusSurface,
+    };
+
+    let mut host = MockHost::new();
+    host.load_inline(
+        "focus_listener",
+        &manifest("focus_listener"),
+        r#"
+        leviathan.autocmd.create("FocusChanged", {
+            callback = function(ev)
+                _G.fires = (_G.fires or 0) + 1
+                _G.last_old = ev.payload.old_surface
+                _G.last_new = ev.payload.new_surface
+                _G.last_reason = ev.payload.reason
+            end,
+        })
+        "#,
+    )
+    .expect("load");
+
+    let first = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Graph),
+        reason: FocusReason::Startup,
+    };
+    assert!(host.host_mut().sync_focus(first.clone()));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(1));
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_old")
+            .as_deref(),
+        Some("none")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_new")
+            .as_deref(),
+        Some("repository.graph")
+    );
+
+    assert!(!host.host_mut().sync_focus(first));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(1));
+
+    let next = FocusSnapshot {
+        surface: FocusSurface::Repository(RepositoryFocusSurface::Details),
+        reason: FocusReason::Keymap,
+    };
+    assert!(host.host_mut().sync_focus(next));
+    assert_eq!(host.read_global_i64("focus_listener", "fires"), Some(2));
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_old")
+            .as_deref(),
+        Some("repository.graph")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_new")
+            .as_deref(),
+        Some("repository.details")
+    );
+    assert_eq!(
+        host.read_global_string("focus_listener", "last_reason")
+            .as_deref(),
+        Some("keymap")
     );
 }
 

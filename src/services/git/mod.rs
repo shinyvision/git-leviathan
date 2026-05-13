@@ -31,7 +31,7 @@ pub use checkout::ResetMode;
 pub use conflict_resolution::{
     ConflictBlock, ConflictResolutionResult, ModifyDeleteConflict, ModifyDeleteConflictChoice,
 };
-pub use helpers::kill_running_git_processes;
+pub use helpers::{kill_running_fetch_processes, kill_running_git_processes};
 pub use push::PushOutcome;
 
 pub const COMMIT_LOAD_LIMIT: usize = 500;
@@ -295,12 +295,20 @@ impl GitService {
         working_tree::stage_file(self, path)
     }
 
+    pub fn stage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        working_tree::stage_files(self, paths)
+    }
+
     pub fn stage_all_dirty_changes(&mut self) -> Result<(), GitError> {
         working_tree::stage_all_dirty_changes(self)
     }
 
     pub fn unstage_file(&mut self, path: &str) -> Result<(), GitError> {
         working_tree::unstage_file(self, path)
+    }
+
+    pub fn unstage_files(&mut self, paths: &[String]) -> Result<(), GitError> {
+        working_tree::unstage_files(self, paths)
     }
 
     pub fn unstage_all_dirty_changes(&mut self) -> Result<(), GitError> {
@@ -1364,6 +1372,29 @@ mod tests {
     }
 
     #[test]
+    fn stage_files_moves_only_selected_dirty_files_into_the_index() {
+        let (temp_repo, _repo) = init_test_repo("stage_files");
+        write_file(&temp_repo.path, "one.txt", "one\n");
+        write_file(&temp_repo.path, "two.txt", "two\n");
+        write_file(&temp_repo.path, "kept.txt", "kept\n");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .stage_files(&["one.txt".to_string(), "two.txt".to_string()])
+            .expect("staging selected files should succeed");
+
+        let snapshot = service.load_repo(10);
+        let dirty = snapshot.dirty.expect("dirty snapshot should be present");
+
+        assert!(dirty.staged_files.iter().any(|file| file.path == "one.txt"));
+        assert!(dirty.staged_files.iter().any(|file| file.path == "two.txt"));
+        assert!(dirty
+            .unstaged_files
+            .iter()
+            .any(|file| file.path == "kept.txt"));
+    }
+
+    #[test]
     fn stage_all_dirty_changes_moves_every_dirty_file_into_the_index() {
         let (temp_repo, _repo) = init_test_repo("stage_all_dirty");
         write_file(&temp_repo.path, "tracked.txt", "modified\n");
@@ -1417,6 +1448,40 @@ mod tests {
             .unstaged_files
             .iter()
             .any(|file| file.path == "selected.txt"));
+    }
+
+    #[test]
+    fn unstage_files_moves_only_selected_staged_files_out_of_the_index() {
+        let (temp_repo, _repo) = init_test_repo("unstage_files");
+        write_file(&temp_repo.path, "one.txt", "one\n");
+        write_file(&temp_repo.path, "two.txt", "two\n");
+        write_file(&temp_repo.path, "kept.txt", "kept\n");
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        service
+            .stage_all_dirty_changes()
+            .expect("staging all changes should succeed");
+        service
+            .unstage_files(&["one.txt".to_string(), "two.txt".to_string()])
+            .expect("unstaging selected files should succeed");
+
+        let snapshot = service.load_repo(10);
+        let dirty = snapshot.dirty.expect("dirty snapshot should be present");
+
+        assert!(dirty
+            .staged_files
+            .iter()
+            .any(|file| file.path == "kept.txt"));
+        assert!(!dirty.staged_files.iter().any(|file| file.path == "one.txt"));
+        assert!(!dirty.staged_files.iter().any(|file| file.path == "two.txt"));
+        assert!(dirty
+            .unstaged_files
+            .iter()
+            .any(|file| file.path == "one.txt"));
+        assert!(dirty
+            .unstaged_files
+            .iter()
+            .any(|file| file.path == "two.txt"));
     }
 
     #[test]

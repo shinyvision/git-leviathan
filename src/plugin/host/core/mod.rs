@@ -66,7 +66,6 @@ use crate::plugin::ui::main_bar_slots::PreparedSlotOp;
 use crate::plugin::ui::split;
 use crate::plugin::ui::widget_ast::{self, WidgetAst};
 use crate::plugin::watchers::{FileWatcherRegistry, PluginWatcherCallbacks};
-use crate::services::RepoRef;
 use crate::widgets::chrome::main_bar::MainBarRegistry;
 use crate::widgets::chrome::repo_region::RepoRegionRegistry;
 use crate::widgets::chrome::tab_bar_slots::TabBarRegistry;
@@ -178,6 +177,7 @@ impl Default for PluginHost {
 
 impl PluginHost {
     pub fn new() -> Self {
+        let diagnostics = DiagnosticStore::default();
         let mut host = Self {
             plugins: HashMap::new(),
             slot_ops: Vec::new(),
@@ -194,7 +194,7 @@ impl PluginHost {
             last_reload_errors: HashMap::new(),
             service_registry: Rc::new(RefCell::new(ServiceRegistry::new())),
             next_generation_ids: HashMap::new(),
-            diagnostics: DiagnosticStore::default(),
+            diagnostics: diagnostics.clone(),
             runtime_path_registry: RuntimePathRegistry::new(),
             reload_history: HashMap::new(),
             command_registry: Rc::new(RefCell::new(CommandRegistry::new())),
@@ -207,6 +207,7 @@ impl PluginHost {
                     crate::plugin::ui::context::UiContextSurface::Screen,
                     None,
                     &TabsSnapshot::default(),
+                    None,
                 ),
             )),
             keymap_registry: Rc::new(RefCell::new(KeymapRegistry::new())),
@@ -216,6 +217,7 @@ impl PluginHost {
             destructive_policy: DestructiveConfirmPolicy::new(),
             pending_git_writes: PendingGitWrites::new(),
             pending_git_events: crate::plugin::api::git::PendingGitEvents::new(),
+            pending_ui_effects: crate::plugin::ui::effects::PendingUiEffects::new(),
             async_jobs: AsyncJobRegistry::new(),
             timers: TimerRegistry::new(),
             watchers: FileWatcherRegistry::new(),
@@ -224,17 +226,21 @@ impl PluginHost {
             lazy_registry: crate::plugin::activation::LazyRegistry::new(),
             lazy_ledgers: HashMap::new(),
             last_repository_shape: None,
+            last_selection_snapshot: crate::plugin::ui::context::SelectionContextSnapshot::none(),
+            last_toolbar_dialog_snapshot:
+                crate::plugin::ui::context::ToolbarDialogContextSnapshot::none(),
             extension_registry: crate::plugin::extensions::ExtensionRegistry::new(),
             dock_manager: DockManager::new(),
             contribution_overrides:
                 crate::plugin::ui::contribution_overrides::ContributionOverrides::new(),
-            budget_tracker: BudgetTracker::new(DiagnosticStore::default()),
+            budget_tracker: BudgetTracker::new(diagnostics),
             disabled_plugins: std::collections::HashSet::new(),
             last_plugin_roots: HashMap::new(),
             devtools_action_queue: Rc::new(RefCell::new(Vec::new())),
             last_devtools_result: None,
             core_command_actions: crate::plugin::core_commands::CoreCommandActions::new(),
             pending_navigation_effects: Vec::new(),
+            last_focus_snapshot: crate::plugin::ui::focus::FocusSnapshot::default(),
         };
         host.dock_manager.set_persist_path(
             host.storage_roots

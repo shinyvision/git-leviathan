@@ -604,6 +604,26 @@ pub(super) const COMMAND_FUNCTIONS: &[ApiFunction] = &[
 
 pub(super) const KEYMAP_FUNCTIONS: &[ApiFunction] = &[
     ApiFunction {
+        path: "leviathan.keymap.set_leader",
+        name: "set_leader",
+        since: "1.0",
+        compatibility: "v1",
+        doc: "Set the active keymap leader sequence used to expand `<leader>` bindings.",
+        params: &[ApiParam {
+            name: "leader",
+            lua_type: "string",
+            required: true,
+            doc: "Vim-style key sequence used as leader, e.g. `<Space>` or `,`.",
+        }],
+        returns: &[],
+        capabilities: &[],
+        validation: ApiValidation {
+            args: &["leader must parse as a vim-style key sequence when `<leader>` bindings are installed"],
+            returns: &[],
+            notes: &["The leader is host-global for the active keymap registry."],
+        },
+    },
+    ApiFunction {
         path: "leviathan.keymap.set",
         name: "set",
         since: "1.0",

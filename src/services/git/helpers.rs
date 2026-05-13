@@ -2,7 +2,7 @@
 //! subprocess invocation for the service layer. Uniform error classification
 //! via `wrap_git2_error`; callers should not re-roll their own boilerplate.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Output, Stdio};
 use std::sync::{Mutex, OnceLock};
@@ -17,15 +17,15 @@ use crate::utils::configure_background_command;
 /// On app shutdown the close handler calls `kill_running_git_processes` to
 /// SIGKILL anything still running so the process can exit immediately instead
 /// of blocking on a slow `git ls-remote` / `git push`.
-static RUNNING_GIT_PIDS: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+static RUNNING_GIT_PIDS: OnceLock<Mutex<HashMap<u32, String>>> = OnceLock::new();
 
-fn pid_set() -> &'static Mutex<HashSet<u32>> {
-    RUNNING_GIT_PIDS.get_or_init(|| Mutex::new(HashSet::new()))
+fn pid_set() -> &'static Mutex<HashMap<u32, String>> {
+    RUNNING_GIT_PIDS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn register_pid(pid: u32) {
+fn register_pid(pid: u32, op: &str) {
     if let Ok(mut set) = pid_set().lock() {
-        set.insert(pid);
+        set.insert(pid, op.to_string());
     }
 }
 
@@ -39,8 +39,22 @@ fn unregister_pid(pid: u32) {
 /// to be called once from the shutdown path; safe to call when none are
 /// running. Does not wait for the children to be reaped.
 pub fn kill_running_git_processes() {
+    kill_running_git_processes_matching(|_| true);
+}
+
+/// Force-kill network fetch subprocesses owned by the auto-fetch pipeline.
+/// This covers both `git fetch` and the follow-up `git ls-remote --tags`
+/// cache refresh, without interrupting unrelated local git subprocesses.
+pub fn kill_running_fetch_processes() {
+    kill_running_git_processes_matching(|op| op.starts_with("fetch '") || op == "ls-remote --tags");
+}
+
+fn kill_running_git_processes_matching(predicate: impl Fn(&str) -> bool) {
     let pids: Vec<u32> = match pid_set().lock() {
-        Ok(set) => set.iter().copied().collect(),
+        Ok(set) => set
+            .iter()
+            .filter_map(|(pid, op)| predicate(op).then_some(*pid))
+            .collect(),
         Err(_) => return,
     };
     for pid in pids {
@@ -175,7 +189,7 @@ fn spawn_git_command_inner(
         .spawn()
         .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))?;
     let pid = child.id();
-    register_pid(pid);
+    register_pid(pid, op);
     let result = match timeout {
         Some(timeout) => wait_with_timeout(child, op, timeout),
         None => child

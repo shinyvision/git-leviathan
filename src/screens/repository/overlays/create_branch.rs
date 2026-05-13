@@ -1,65 +1,143 @@
 //! "Create branch here" dialog triggered from a commit's right-click menu.
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::validation::validate_branch_name;
-use super::widgets::{
-    overlay_button, overlay_button_disabled, overlay_cancel_button, overlay_row,
-    overlay_text_input_with_submit, sliding_main_bar_overlay, CREATE_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogControl, DialogControlId,
+    DialogData, DialogId, DialogKey, DialogMessage, DialogOwner, DialogTextInput,
 };
+use super::validation::validate_branch_name;
 
-pub(crate) fn input_id() -> iced::widget::Id {
-    iced::widget::Id::new("create-branch-here-input")
-}
+pub(crate) const DIALOG_ID: &str = "native.create_branch";
+const OWNER_ID: &str = "create_branch";
+const CONTROL_BRANCH_NAME: &str = "branch_name";
+const DATA_COMMIT_HASH: &str = "commit_hash";
+const DATA_EXISTING_BRANCH: &str = "existing_branch";
+pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
     pub commit_hash: String,
     pub branch_name_input: String,
-    /// Whether the input field needs focus after animation completes.
-    pub needs_focus: bool,
 }
 
-pub(crate) fn view<'a>(
-    state: &'a State,
-    slide_offset: f32,
-    existing_branches: &[String],
-) -> Element<'a, Message> {
-    let label = text("Enter branch name")
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
-
-    let name_input = overlay_text_input_with_submit(
-        "branch name",
-        &state.branch_name_input,
-        |s| RepositoryMessage::OverlayPanel(OverlayPanelAction::CreateBranchHereInput(s)),
-        Message::repo(RepositoryMessage::OverlayPanel(
-            OverlayPanelAction::CreateBranchHereConfirmed,
-        )),
-        Some(input_id()),
-    );
-
-    let validation_ok = validate_branch_name(&state.branch_name_input, existing_branches).is_ok();
-
-    let create_btn: Element<Message> = if validation_ok {
-        overlay_button(
-            "Create Branch",
-            CREATE_BUTTON,
-            RepositoryMessage::OverlayPanel(OverlayPanelAction::CreateBranchHereConfirmed),
-        )
-    } else {
-        overlay_button_disabled("Create Branch", CREATE_BUTTON)
+pub(crate) fn dialog(state: State, existing_branches: &[String]) -> Dialog {
+    let mut dialog = Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: "Enter branch name".into(),
+        },
+        data: create_data(state.commit_hash, existing_branches),
+        controls: vec![DialogControl {
+            id: DialogControlId(CONTROL_BRANCH_NAME.into()),
+            label: None,
+            text_input: Some(DialogTextInput {
+                placeholder: "branch name".into(),
+                value: state.branch_name_input,
+                submit_button_id: Some(DialogButtonId(CONFIRM_BUTTON_ID.into())),
+                width: None,
+            }),
+            dropdown: None,
+        }],
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
+                text: "Create Branch".into(),
+                style: DialogButtonStyle("create".into()),
+                keys: vec![DialogKey("enter".into())],
+                closes_dialog: false,
+                enabled: false,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: Some(DialogControlId(CONTROL_BRANCH_NAME.into())),
     };
+    refresh_enabled(&mut dialog);
+    dialog
+}
 
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::CreateBranchHereCanceled,
-    ));
+fn create_data(commit_hash: String, existing_branches: &[String]) -> Vec<DialogData> {
+    let mut data = vec![DialogData {
+        id: DATA_COMMIT_HASH.into(),
+        value: commit_hash,
+    }];
+    data.extend(existing_branches.iter().cloned().map(|branch| DialogData {
+        id: DATA_EXISTING_BRANCH.into(),
+        value: branch,
+    }));
+    data
+}
 
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), name_input, create_btn, cancel_btn]),
-        slide_offset,
-    )
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
+
+pub(crate) fn commit_hash(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_COMMIT_HASH)?.to_string())
+}
+
+pub(crate) fn branch_name_input(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    dialog
+        .controls
+        .iter()
+        .find(|control| control.id.0 == CONTROL_BRANCH_NAME)?
+        .text_input
+        .as_ref()
+        .map(|input| input.value.clone())
+}
+
+pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
+    if !is_dialog(dialog) {
+        return;
+    }
+    let branch_name = branch_name_input(dialog).unwrap_or_default();
+    let existing = existing_branches(dialog);
+    let enabled = validate_branch_name(&branch_name, &existing).is_ok();
+    set_button_enabled(dialog, CONFIRM_BUTTON_ID, enabled);
+}
+
+fn existing_branches(dialog: &Dialog) -> Vec<String> {
+    dialog
+        .data
+        .iter()
+        .filter(|item| item.id == DATA_EXISTING_BRANCH)
+        .map(|item| item.value.clone())
+        .collect()
+}
+
+fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
+    if let Some(button) = dialog
+        .buttons
+        .iter_mut()
+        .find(|button| button.id.0 == button_id)
+    {
+        button.enabled = enabled;
+    }
+}
+
+pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CONFIRM_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }

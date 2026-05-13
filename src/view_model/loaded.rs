@@ -45,8 +45,8 @@ pub struct LoadedRefs {
     pub fast_forward_candidates: HashSet<String>,
     pub signature: ProjectionSignature,
     pub has_more_commits: bool,
-    /// Local + remote branch refs (tags filtered out). Kept so
-    /// plugin-host `leviathan.repository` tables can update after a fetch.
+    /// Refs exposed to plugin-host `leviathan.repository` tables after a
+    /// fetch.
     pub branch_refs: Vec<crate::services::RepoRef>,
 }
 

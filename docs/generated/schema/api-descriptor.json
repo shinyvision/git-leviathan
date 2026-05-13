@@ -266,6 +266,11 @@
       "since": "1.0"
     },
     {
+      "doc": "Contribute non-layout chrome layered over a repository panel (e.g. `ui:chrome:repository.graph.chrome`).",
+      "name": "ui:chrome:<point>",
+      "since": "1.0"
+    },
+    {
       "doc": "Draw decorations in the commit graph view.",
       "name": "ui:decoration:graph",
       "since": "1.0"
@@ -314,6 +319,10 @@
         "repository.graph.context_menu",
         "repository.graph.row_badge",
         "repository.diff.line_gutter",
+        "repository.sidebar.chrome",
+        "repository.graph.chrome",
+        "repository.details.chrome",
+        "repository.diff.chrome",
         "overlays",
         "screens",
         "commands",
@@ -471,9 +480,9 @@
       "name": "CommitSelected",
       "payload_fields": [
         {
-          "doc": "Selected commit hash.",
-          "lua_type": "string",
-          "name": "hash",
+          "doc": "Selected commit.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
           "required": true
         }
       ],
@@ -779,6 +788,86 @@
       ],
       "payload_type": "table",
       "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when the in-flight keymap prefix changes so plugins can render their own hint UI.",
+      "is_alias": false,
+      "name": "KeymapPrefixChanged",
+      "payload_fields": [
+        {
+          "doc": "True while the host is buffering a keymap prefix.",
+          "lua_type": "boolean",
+          "name": "active",
+          "required": true
+        },
+        {
+          "doc": "Active keymap context.",
+          "lua_type": "string",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Rendered in-flight chord prefix.",
+          "lua_type": "string",
+          "name": "prefix",
+          "required": true
+        },
+        {
+          "doc": "Array of next-key hint rows after conflict filtering.",
+          "lua_type": "table",
+          "name": "hints",
+          "required": true
+        },
+        {
+          "doc": "Why the prefix state changed (`pending`, `dispatched`, `cancelled`, `unhandled`, `context_changed`, or `focus_lost`).",
+          "lua_type": "string",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
+      "doc": "Fired when the active focus surface changes.",
+      "is_alias": false,
+      "name": "FocusChanged",
+      "payload_fields": [
+        {
+          "doc": "Previous active focus surface id.",
+          "lua_type": "string",
+          "name": "old_surface",
+          "required": true
+        },
+        {
+          "doc": "New active focus surface id.",
+          "lua_type": "string",
+          "name": "new_surface",
+          "required": true
+        },
+        {
+          "doc": "Previous focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+          "lua_type": "table",
+          "name": "old",
+          "required": false
+        },
+        {
+          "doc": "New focus projection (surface, kind, region, pane, plugin_id, screen_id, overlay_id).",
+          "lua_type": "table",
+          "name": "new",
+          "required": false
+        },
+        {
+          "doc": "Normalized reason for the focus change.",
+          "lua_type": "string",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
     }
   ],
   "experimental_apis": [],
@@ -1018,6 +1107,54 @@
       "ordering_model": "area order, then plugin/id",
       "ownership_rules": "owned by plugin + dock panel id",
       "render_mount_handler": "DockManager"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.sidebar.chrome"
+      ],
+      "context_schema": "RepositorySidebarContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.sidebar.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.graph.chrome"
+      ],
+      "context_schema": "RepositoryGraphContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.graph.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.details.chrome"
+      ],
+      "context_schema": "RepositoryDetailsContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.details.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
+    },
+    {
+      "capabilities": [
+        "ui:chrome:repository.diff.chrome"
+      ],
+      "context_schema": "RepositoryDiffContext",
+      "contribution_schema": "LeviathanChromeSpec",
+      "id": "repository.diff.chrome",
+      "kind": "chrome",
+      "ordering_model": "priority ascending, then plugin/id",
+      "ownership_rules": "owned by plugin + contribution id",
+      "render_mount_handler": "RepoChromeRegistry"
     }
   ],
   "host_api_version": {
@@ -1074,7 +1211,7 @@
           "name": "log",
           "params": [
             {
-              "doc": "Message to log to host stderr.",
+              "doc": "Message to log to host stdout when the manifest has debug = true.",
               "lua_type": "string",
               "name": "message",
               "required": true
@@ -1366,9 +1503,36 @@
       "capabilities": [],
       "doc": "Context-aware keymap registry.",
       "events": [
-        "KeymapTriggered"
+        "KeymapTriggered",
+        "KeymapPrefixChanged"
       ],
       "functions": [
+        {
+          "capabilities": [],
+          "compatibility": "v1",
+          "doc": "Set the active keymap leader sequence used to expand `<leader>` bindings.",
+          "name": "set_leader",
+          "params": [
+            {
+              "doc": "Vim-style key sequence used as leader, e.g. `<Space>` or `,`.",
+              "lua_type": "string",
+              "name": "leader",
+              "required": true
+            }
+          ],
+          "path": "leviathan.keymap.set_leader",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "leader must parse as a vim-style key sequence when `<leader>` bindings are installed"
+            ],
+            "notes": [
+              "The leader is host-global for the active keymap registry."
+            ],
+            "returns": []
+          }
+        },
         {
           "capabilities": [],
           "compatibility": "v1",
@@ -1512,7 +1676,8 @@
         "ThemeChanged",
         "SettingsChanged",
         "CommandExecuted",
-        "KeymapTriggered"
+        "KeymapTriggered",
+        "KeymapPrefixChanged"
       ],
       "functions": [
         {
@@ -1625,7 +1790,13 @@
         "leviathan.autocmd",
         "LeviathanAutocmdOpts",
         "LeviathanAutocmdGroupOpts",
-        "LeviathanAutocmdEvent"
+        "LeviathanAutocmdEvent",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
+        "LeviathanCommitDiff",
+        "LeviathanCommitDiffFile",
+        "LeviathanCommitFile"
       ],
       "version": {
         "compatibility": "v1",
@@ -1663,13 +1834,182 @@
               "spec.widget must be a LeviathanWidget table",
               "spec.dismissible must be boolean",
               "spec.priority must be a number",
-              "spec.key_events must be an array of supported named keys when present"
+              "spec.key_events must be an array of supported keys when present"
             ],
             "notes": [
               "Host owns Esc / click-outside dismissal.",
               "Opted-in key events call on_event(id, \"key\", value) before keymaps or screen input."
             ],
             "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.",
+          "name": "dialog",
+          "params": [
+            {
+              "doc": "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
+              "lua_type": "LeviathanDialogSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.text must be a string",
+              "spec.buttons must contain one or more button specs",
+              "button.style must be red, green, blue, or white",
+              "button.text must be a string",
+              "button.on_click must be a function",
+              "button.keys must be an array of supported keys when present"
+            ],
+            "notes": [
+              "Requires an active repository screen.",
+              "Button clicks call the matching button function.",
+              "Configured keys call the same button function as a click.",
+              "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+              "The dialog is rendered in the repository toolbar band."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.",
+          "name": "dialog.open",
+          "params": [
+            {
+              "doc": "Repository toolbar dialog descriptor (id, text, optional controls, buttons).",
+              "lua_type": "LeviathanDialogSpec",
+              "name": "spec",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.open",
+          "returns": [],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "spec.id must be a string",
+              "spec.text must be a string",
+              "spec.buttons must contain one or more button specs",
+              "button.style must be red, green, blue, or white",
+              "button.text must be a string",
+              "button.on_click must be a function",
+              "button.keys must be an array of supported keys when present"
+            ],
+            "notes": [
+              "Requires an active repository screen.",
+              "Button clicks call the matching button function.",
+              "Configured keys call the same button function as a click.",
+              "Escape follows dialog data: a button key binding handles it first, otherwise dismissible dialogs close.",
+              "The dialog is rendered in the repository toolbar band."
+            ],
+            "returns": []
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Focus a text input control in the active repository toolbar dialog.",
+          "name": "dialog.focus_control",
+          "params": [
+            {
+              "doc": "Active toolbar dialog id.",
+              "lua_type": "string",
+              "name": "dialog_id",
+              "required": true
+            },
+            {
+              "doc": "Dialog control id to focus.",
+              "lua_type": "string",
+              "name": "control_id",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.focus_control",
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "dialog_id must be a string",
+              "control_id must be a string"
+            ],
+            "notes": [
+              "No-ops when the active toolbar dialog or control does not match."
+            ],
+            "returns": [
+              "true plus nil error, or nil plus error string"
+            ]
+          }
+        },
+        {
+          "capabilities": [
+            "ui:overlay"
+          ],
+          "compatibility": "v1",
+          "doc": "Press a button in the active repository toolbar dialog.",
+          "name": "dialog.press_button",
+          "params": [
+            {
+              "doc": "Active toolbar dialog id.",
+              "lua_type": "string",
+              "name": "dialog_id",
+              "required": true
+            },
+            {
+              "doc": "Dialog button id to press.",
+              "lua_type": "string",
+              "name": "button_id",
+              "required": true
+            }
+          ],
+          "path": "leviathan.ui.dialog.press_button",
+          "returns": [
+            {
+              "doc": "True on success, nil on failure.",
+              "lua_type": "boolean|nil"
+            },
+            {
+              "doc": "Error message on failure.",
+              "lua_type": "string|nil"
+            }
+          ],
+          "since": "1.0",
+          "validation": {
+            "args": [
+              "dialog_id must be a string",
+              "button_id must be a string"
+            ],
+            "notes": [
+              "Routes through the same dialog dispatcher as a click.",
+              "Disabled buttons are ignored by the host dialog dispatcher."
+            ],
+            "returns": [
+              "true plus nil error, or nil plus error string"
+            ]
           }
         },
         {
@@ -1798,9 +2138,9 @@
           "name": "graph_decoration",
           "params": [
             {
-              "doc": "Commit row hash the decoration applies to.",
-              "lua_type": "string",
-              "name": "commit_hash",
+              "doc": "Commit row the decoration applies to.",
+              "lua_type": "LeviathanCommit",
+              "name": "commit",
               "required": true
             },
             {
@@ -1818,7 +2158,7 @@
               "decoration.kind must be one of badge / icon / marker / lane"
             ],
             "notes": [
-              "Bound to repository.graph.row:<commit_hash>."
+              "Bound to repository.graph.row:<commit.hash>."
             ],
             "returns": []
           }
@@ -1860,9 +2200,20 @@
         "LeviathanSlotTarget",
         "LeviathanContributionSpec",
         "LeviathanContributionHandle",
+        "LeviathanDialogSpec",
+        "LeviathanDialogData",
+        "LeviathanDialogControl",
+        "LeviathanDialogLabel",
+        "LeviathanDialogTextInput",
+        "LeviathanDialogDropdown",
+        "LeviathanDialogDropdownOption",
+        "LeviathanDialogButton",
         "LeviathanContextMenuItem",
         "LeviathanGraphDecorationContribution",
-        "LeviathanDiffDecorationContribution"
+        "LeviathanDiffDecorationContribution",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability"
       ],
       "version": {
         "compatibility": "v1",
@@ -2209,6 +2560,13 @@
         "LeviathanRepositorySummary",
         "LeviathanTabSummary",
         "LeviathanSelectionSummary",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
+        "LeviathanToolbarDialogSummary",
+        "LeviathanToolbarDialogData",
+        "LeviathanToolbarDialogControl",
+        "LeviathanToolbarDialogButton",
         "LeviathanFocusSummary",
         "LeviathanViewportSummary"
       ],
@@ -4410,7 +4768,7 @@
             "git:read:log"
           ],
           "compatibility": "v1",
-          "doc": "Return up to `limit` commits from the active repository. Each entry: { hash, summary, author, timestamp, parents }.",
+          "doc": "Return up to `limit` commits from the active repository as `LeviathanCommit` rows.",
           "name": "commits",
           "params": [
             {
@@ -4424,7 +4782,7 @@
           "returns": [
             {
               "doc": "Commit list on success.",
-              "lua_type": "table[]|nil"
+              "lua_type": "LeviathanCommit[]|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4443,11 +4801,11 @@
             "git:read:diff"
           ],
           "compatibility": "v1",
-          "doc": "Return per-file diff for `commit`. Each entry: { path, status, additions, deletions }.",
+          "doc": "Return per-file diff for `commit`. The result carries `commit` as `LeviathanCommit`.",
           "name": "diff",
           "params": [
             {
-              "doc": "Options table: { commit = hash }.",
+              "doc": "Options table: { commit = LeviathanCommit }.",
               "lua_type": "table",
               "name": "opts",
               "required": true
@@ -4457,7 +4815,7 @@
           "returns": [
             {
               "doc": "Diff snapshot on success.",
-              "lua_type": "table[]|nil"
+              "lua_type": "LeviathanCommitDiff|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4476,11 +4834,11 @@
             "git:read:show"
           ],
           "compatibility": "v1",
-          "doc": "Return the file at a given commit/path as { lines = string[] } (per-line diff content).",
+          "doc": "Return the file at a given commit/path. The result carries `commit` as `LeviathanCommit`.",
           "name": "file_at",
           "params": [
             {
-              "doc": "Options table: { commit = hash, path = \"src/main.rs\" }.",
+              "doc": "Options table: { commit = LeviathanCommit, path = \"src/main.rs\" }.",
               "lua_type": "table",
               "name": "opts",
               "required": true
@@ -4490,7 +4848,7 @@
           "returns": [
             {
               "doc": "File-at-commit snapshot on success.",
-              "lua_type": "table|nil"
+              "lua_type": "LeviathanCommitFile|nil"
             },
             {
               "doc": "Error message on failure.",
@@ -4544,7 +4902,13 @@
         "leviathan.repository",
         "LeviathanLocalBranch",
         "LeviathanRemoteBranch",
-        "LeviathanTag"
+        "LeviathanTag",
+        "LeviathanCommit",
+        "LeviathanCommitActions",
+        "LeviathanActionAvailability",
+        "LeviathanCommitDiff",
+        "LeviathanCommitDiffFile",
+        "LeviathanCommitFile"
       ],
       "version": {
         "compatibility": "v1",
@@ -6945,7 +7309,7 @@
           "required": false
         },
         {
-          "doc": "Named keys this overlay captures as `key` events, e.g. `Tab`, `ArrowUp`, `ArrowDown`.",
+          "doc": "Keys this overlay captures as `key` events, e.g. `j`, `k`, `Tab`, `ArrowUp`, `ArrowDown`.",
           "lua_type": "string[]",
           "name": "key_events",
           "required": false
@@ -7015,6 +7379,280 @@
       ],
       "methods": [],
       "name": "LeviathanOverlayKeyEvent",
+      "since": "1.0"
+    },
+    {
+      "doc": "Repository-owned toolbar dialog request.",
+      "fields": [
+        {
+          "doc": "Dialog id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Dialog body text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Optional dialog title for hosts that display one.",
+          "lua_type": "string",
+          "name": "title",
+          "required": false
+        },
+        {
+          "doc": "When true, Escape can close the dialog if no button handles it.",
+          "lua_type": "boolean",
+          "name": "dismissible",
+          "required": false
+        },
+        {
+          "doc": "Opaque string data stored on the dialog.",
+          "lua_type": "LeviathanDialogData[]",
+          "name": "data",
+          "required": false
+        },
+        {
+          "doc": "Optional dialog controls.",
+          "lua_type": "LeviathanDialogControl[]",
+          "name": "controls",
+          "required": false
+        },
+        {
+          "doc": "Control id to focus after the dialog opens.",
+          "lua_type": "string",
+          "name": "autofocus",
+          "required": false
+        },
+        {
+          "doc": "Dialog buttons.",
+          "lua_type": "LeviathanDialogButton[]",
+          "name": "buttons",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogSpec",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog data item.",
+      "fields": [
+        {
+          "doc": "Data id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Data value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogData",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog control.",
+      "fields": [
+        {
+          "doc": "Control id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Optional label shown before the control.",
+          "lua_type": "LeviathanDialogLabel",
+          "name": "label",
+          "required": false
+        },
+        {
+          "doc": "Optional text input.",
+          "lua_type": "LeviathanDialogTextInput",
+          "name": "text_input",
+          "required": false
+        },
+        {
+          "doc": "Optional dropdown.",
+          "lua_type": "LeviathanDialogDropdown",
+          "name": "dropdown",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogControl",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog control label.",
+      "fields": [
+        {
+          "doc": "Label text.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Label style token.",
+          "lua_type": "string",
+          "name": "style",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogLabel",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog text input.",
+      "fields": [
+        {
+          "doc": "Placeholder text.",
+          "lua_type": "string",
+          "name": "placeholder",
+          "required": false
+        },
+        {
+          "doc": "Initial value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": false
+        },
+        {
+          "doc": "Button id triggered by Enter from this input.",
+          "lua_type": "string",
+          "name": "submit_button_id",
+          "required": false
+        },
+        {
+          "doc": "Control width in pixels.",
+          "lua_type": "integer",
+          "name": "width",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogTextInput",
+      "since": "1.0"
+    },
+    {
+      "doc": "Optional dialog dropdown content.",
+      "fields": [
+        {
+          "doc": "Placeholder text.",
+          "lua_type": "string",
+          "name": "placeholder",
+          "required": false
+        },
+        {
+          "doc": "Dropdown options.",
+          "lua_type": "LeviathanDialogDropdownOption[]",
+          "name": "options",
+          "required": true
+        },
+        {
+          "doc": "Initially selected option id.",
+          "lua_type": "string",
+          "name": "selected_option_id",
+          "required": false
+        },
+        {
+          "doc": "Initial open state.",
+          "lua_type": "boolean",
+          "name": "open",
+          "required": false
+        },
+        {
+          "doc": "Control width in pixels.",
+          "lua_type": "integer",
+          "name": "width",
+          "required": false
+        },
+        {
+          "doc": "Optional leading icon name.",
+          "lua_type": "string",
+          "name": "leading_icon",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogDropdown",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog dropdown option.",
+      "fields": [
+        {
+          "doc": "Option id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Option label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogDropdownOption",
+      "since": "1.0"
+    },
+    {
+      "doc": "Dialog button.",
+      "fields": [
+        {
+          "doc": "Button id passed to its callback.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Button color style.",
+          "lua_type": "\"red\"|\"green\"|\"blue\"|\"white\"",
+          "name": "style",
+          "required": true
+        },
+        {
+          "doc": "Button label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Callback invoked by clicking the button or pressing one of its keys.",
+          "lua_type": "fun(id: string)",
+          "name": "on_click",
+          "required": true
+        },
+        {
+          "doc": "Keys that trigger this button, e.g. `y`, `n`, `Esc`.",
+          "lua_type": "string[]",
+          "name": "keys",
+          "required": false
+        },
+        {
+          "doc": "Whether the dialog closes before the callback runs.",
+          "lua_type": "boolean",
+          "name": "closes_dialog",
+          "required": false
+        },
+        {
+          "doc": "Whether the button is initially enabled.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": false
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanDialogButton",
       "since": "1.0"
     },
     {
@@ -7303,9 +7941,9 @@
           "required": true
         },
         {
-          "doc": "Static target commit hash.",
-          "lua_type": "string",
-          "name": "commit_hash",
+          "doc": "Static target commit.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
           "required": false
         },
         {
@@ -7464,6 +8102,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -7547,6 +8191,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -7636,6 +8286,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -7719,6 +8375,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -7808,6 +8470,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -7891,6 +8559,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -7980,6 +8654,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8063,6 +8743,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8152,6 +8838,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8235,6 +8927,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8324,6 +9022,12 @@
           "required": true
         },
         {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
+          "required": true
+        },
+        {
           "doc": "Focused surface, region, pane, and section where available.",
           "lua_type": "LeviathanFocusSummary",
           "name": "focus",
@@ -8407,6 +9111,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8519,6 +9229,12 @@
           "doc": "Selection summary when the host has one for the surface.",
           "lua_type": "LeviathanSelectionSummary",
           "name": "selection",
+          "required": true
+        },
+        {
+          "doc": "Active repository toolbar dialog summary.",
+          "lua_type": "LeviathanToolbarDialogSummary",
+          "name": "dialog",
           "required": true
         },
         {
@@ -8686,9 +9402,9 @@
           "required": true
         },
         {
-          "doc": "Selected commit id when available.",
-          "lua_type": "string|nil",
-          "name": "selected_commit_id",
+          "doc": "Selected commit data when a commit row is selected.",
+          "lua_type": "LeviathanCommit|nil",
+          "name": "commit",
           "required": true
         },
         {
@@ -8703,31 +9419,201 @@
       "since": "1.0"
     },
     {
+      "doc": "Active repository toolbar dialog summary in a UI context.",
+      "fields": [
+        {
+          "doc": "Whether a repository toolbar dialog is active.",
+          "lua_type": "boolean",
+          "name": "active",
+          "required": true
+        },
+        {
+          "doc": "Active dialog id, or empty string when none is active.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "`native`, `plugin`, or `none`.",
+          "lua_type": "string",
+          "name": "owner",
+          "required": true
+        },
+        {
+          "doc": "Owner plugin id for plugin-owned dialogs.",
+          "lua_type": "string|nil",
+          "name": "plugin_id",
+          "required": true
+        },
+        {
+          "doc": "Opaque dialog data rows.",
+          "lua_type": "LeviathanToolbarDialogData[]",
+          "name": "data",
+          "required": true
+        },
+        {
+          "doc": "Dialog controls and current values.",
+          "lua_type": "LeviathanToolbarDialogControl[]",
+          "name": "controls",
+          "required": true
+        },
+        {
+          "doc": "Dialog buttons and enabled state.",
+          "lua_type": "LeviathanToolbarDialogButton[]",
+          "name": "buttons",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogSummary",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog data item.",
+      "fields": [
+        {
+          "doc": "Data id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Data value.",
+          "lua_type": "string",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogData",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog control summary.",
+      "fields": [
+        {
+          "doc": "Control id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Control kind such as `text_input` or `dropdown`.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Current control value when available.",
+          "lua_type": "string|nil",
+          "name": "value",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogControl",
+      "since": "1.0"
+    },
+    {
+      "doc": "Toolbar dialog button summary.",
+      "fields": [
+        {
+          "doc": "Button id.",
+          "lua_type": "string",
+          "name": "id",
+          "required": true
+        },
+        {
+          "doc": "Button label.",
+          "lua_type": "string",
+          "name": "text",
+          "required": true
+        },
+        {
+          "doc": "Whether the button can currently be pressed.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanToolbarDialogButton",
+      "since": "1.0"
+    },
+    {
       "doc": "Focus summary in a UI context.",
       "fields": [
         {
-          "doc": "Focused surface.",
+          "doc": "Active focus surface id (e.g. `repository.graph`).",
           "lua_type": "string",
           "name": "surface",
           "required": true
         },
         {
-          "doc": "Focused region.",
+          "doc": "Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Focused region when applicable.",
           "lua_type": "string",
           "name": "region",
           "required": false
         },
         {
-          "doc": "Focused pane.",
+          "doc": "Focused pane when applicable.",
           "lua_type": "string",
           "name": "pane",
           "required": false
         },
         {
-          "doc": "Focused section.",
+          "doc": "Focused section when applicable.",
           "lua_type": "string",
           "name": "section",
           "required": false
+        },
+        {
+          "doc": "Focused plugin id when focus is on a plugin screen or overlay.",
+          "lua_type": "string",
+          "name": "plugin_id",
+          "required": false
+        },
+        {
+          "doc": "Focused plugin screen id when focus is on a plugin screen.",
+          "lua_type": "string",
+          "name": "screen_id",
+          "required": false
+        },
+        {
+          "doc": "Focused overlay id when focus is on an overlay.",
+          "lua_type": "string",
+          "name": "overlay_id",
+          "required": false
+        },
+        {
+          "doc": "Last focus-change reason as a snake_case string.",
+          "lua_type": "string",
+          "name": "reason",
+          "required": false
+        },
+        {
+          "doc": "True when the active focus surface equals the rendered context surface.",
+          "lua_type": "boolean",
+          "name": "matches_surface",
+          "required": true
+        },
+        {
+          "doc": "True when the active focus shares a region with the rendered context.",
+          "lua_type": "boolean",
+          "name": "matches_region",
+          "required": true
+        },
+        {
+          "doc": "True when the active focus shares a pane with the rendered context.",
+          "lua_type": "boolean",
+          "name": "matches_pane",
+          "required": true
         }
       ],
       "methods": [],
@@ -9036,6 +9922,222 @@
       ],
       "methods": [],
       "name": "LeviathanTag",
+      "since": "1.0"
+    },
+    {
+      "doc": "Commit data exposed to Lua APIs.",
+      "fields": [
+        {
+          "doc": "Commit row kind: commit, dirty, or stash.",
+          "lua_type": "string",
+          "name": "kind",
+          "required": true
+        },
+        {
+          "doc": "Full commit hash, or empty for an uncommitted dirty row.",
+          "lua_type": "string",
+          "name": "hash",
+          "required": true
+        },
+        {
+          "doc": "Short display hash.",
+          "lua_type": "string",
+          "name": "short_hash",
+          "required": true
+        },
+        {
+          "doc": "First line of the commit message.",
+          "lua_type": "string",
+          "name": "summary",
+          "required": true
+        },
+        {
+          "doc": "Full commit message when available.",
+          "lua_type": "string",
+          "name": "message",
+          "required": true
+        },
+        {
+          "doc": "Commit author display name.",
+          "lua_type": "string",
+          "name": "author",
+          "required": true
+        },
+        {
+          "doc": "Host-formatted commit date when available.",
+          "lua_type": "string",
+          "name": "date",
+          "required": true
+        },
+        {
+          "doc": "Author timestamp in seconds when available.",
+          "lua_type": "integer|nil",
+          "name": "timestamp",
+          "required": true
+        },
+        {
+          "doc": "Full parent hashes in git parent order.",
+          "lua_type": "string[]",
+          "name": "parents",
+          "required": true
+        },
+        {
+          "doc": "Zero-based visible commit row index when available.",
+          "lua_type": "integer|nil",
+          "name": "index",
+          "required": true
+        },
+        {
+          "doc": "Whether the commit has multiple parents.",
+          "lua_type": "boolean",
+          "name": "is_merge",
+          "required": true
+        },
+        {
+          "doc": "Whether the dirty row represents an in-progress merge.",
+          "lua_type": "boolean",
+          "name": "is_merge_in_progress",
+          "required": true
+        },
+        {
+          "doc": "Host-computed commit actions.",
+          "lua_type": "LeviathanCommitActions",
+          "name": "actions",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommit",
+      "since": "1.0"
+    },
+    {
+      "doc": "Host-computed actions for a commit.",
+      "fields": [
+        {
+          "doc": "Reword availability for this commit in the current tree.",
+          "lua_type": "LeviathanActionAvailability",
+          "name": "reword",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitActions",
+      "since": "1.0"
+    },
+    {
+      "doc": "Availability state for a host action.",
+      "fields": [
+        {
+          "doc": "Whether the action can run.",
+          "lua_type": "boolean",
+          "name": "enabled",
+          "required": true
+        },
+        {
+          "doc": "Stable disabled reason when available.",
+          "lua_type": "string|nil",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanActionAvailability",
+      "since": "1.0"
+    },
+    {
+      "doc": "Diff loaded for a commit.",
+      "fields": [
+        {
+          "doc": "Commit this diff was loaded for.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
+          "required": true
+        },
+        {
+          "doc": "Modified file count.",
+          "lua_type": "integer",
+          "name": "modified_count",
+          "required": true
+        },
+        {
+          "doc": "Added file count.",
+          "lua_type": "integer",
+          "name": "added_count",
+          "required": true
+        },
+        {
+          "doc": "Deleted file count.",
+          "lua_type": "integer",
+          "name": "deleted_count",
+          "required": true
+        },
+        {
+          "doc": "Changed files in the commit diff.",
+          "lua_type": "LeviathanCommitDiffFile[]",
+          "name": "files",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitDiff",
+      "since": "1.0"
+    },
+    {
+      "doc": "File row in a commit diff.",
+      "fields": [
+        {
+          "doc": "Repository-relative file path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Change status.",
+          "lua_type": "string",
+          "name": "status",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitDiffFile",
+      "since": "1.0"
+    },
+    {
+      "doc": "File snapshot loaded at a commit.",
+      "fields": [
+        {
+          "doc": "Commit this file snapshot was loaded for.",
+          "lua_type": "LeviathanCommit",
+          "name": "commit",
+          "required": true
+        },
+        {
+          "doc": "Repository-relative file path.",
+          "lua_type": "string",
+          "name": "path",
+          "required": true
+        },
+        {
+          "doc": "Per-line diff content.",
+          "lua_type": "string[]",
+          "name": "lines",
+          "required": true
+        },
+        {
+          "doc": "Old file content when available.",
+          "lua_type": "string",
+          "name": "old_content",
+          "required": true
+        },
+        {
+          "doc": "New file content when available.",
+          "lua_type": "string",
+          "name": "new_content",
+          "required": true
+        }
+      ],
+      "methods": [],
+      "name": "LeviathanCommitFile",
       "since": "1.0"
     },
     {
@@ -9649,6 +10751,18 @@
           "doc": "Fixed pixels, fill, or shrink.",
           "lua_type": "number|string",
           "name": "height",
+          "required": false
+        },
+        {
+          "doc": "Stable scrollable id, scoped to the plugin surface.",
+          "lua_type": "string",
+          "name": "id",
+          "required": false
+        },
+        {
+          "doc": "Absolute vertical scroll offset in pixels.",
+          "lua_type": "number",
+          "name": "scroll_y",
           "required": false
         }
       ],

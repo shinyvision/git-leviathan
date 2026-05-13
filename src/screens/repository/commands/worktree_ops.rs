@@ -5,7 +5,6 @@ use iced::Task;
 
 use crate::{message::Message, services::GitError, toast::ToastData, view_model::LoadedRepo};
 
-use super::super::overlays::ActiveDialog;
 use super::super::state::OperationId;
 use super::super::RepositoryScreen;
 
@@ -19,10 +18,7 @@ pub(super) fn on_worktree_created(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::CreateWorktree(_))
-            ) {
+            if screen.overlay_manager.is_create_worktree_open() {
                 screen.overlay_manager.close();
             }
             let apply_task = super::helpers::handle_repo_loaded(screen, loaded);

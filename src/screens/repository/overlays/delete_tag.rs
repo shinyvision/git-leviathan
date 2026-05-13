@@ -1,13 +1,16 @@
 //! Destructive confirmation before deleting a local tag (and any remote copies).
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_cancel_button, overlay_row, sliding_main_bar_overlay, DANGER_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogData, DialogId, DialogKey,
+    DialogMessage, DialogOwner,
 };
+
+pub(crate) const DIALOG_ID: &str = "native.delete_tag";
+const OWNER_ID: &str = "delete_tag";
+const DATA_TAG_NAME: &str = "tag_name";
+const DATA_REMOTE_NAME: &str = "remote_name";
+pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
@@ -17,7 +20,7 @@ pub(crate) struct State {
     pub tag_remote_names: Vec<String>,
 }
 
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
+pub(crate) fn dialog(state: State) -> Dialog {
     let remote_suffix = if state.tag_remote_names.is_empty() {
         String::new()
     } else {
@@ -26,24 +29,86 @@ pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Messa
             state.tag_remote_names.join(", ")
         )
     };
-    let label = text(format!(
-        "This is a destructive operation, are you sure you want to delete tag '{}'{}?",
-        state.tag_name, remote_suffix
-    ))
-    .size(theme::FONT_SM)
-    .style(style::primary_text);
-
-    let delete_btn = overlay_button(
-        "Delete",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::DeleteTagConfirmed),
+    let mut data = vec![DialogData {
+        id: DATA_TAG_NAME.into(),
+        value: state.tag_name.clone(),
+    }];
+    data.extend(
+        state
+            .tag_remote_names
+            .into_iter()
+            .map(|remote_name| DialogData {
+                id: DATA_REMOTE_NAME.into(),
+                value: remote_name,
+            }),
     );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::DeleteTagCanceled,
-    ));
 
-    sliding_main_bar_overlay(
-        overlay_row(vec![label.into(), delete_btn, cancel_btn]),
-        slide_offset,
-    )
+    Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: format!(
+                "This is a destructive operation, are you sure you want to delete tag '{}'{}?",
+                state.tag_name, remote_suffix
+            ),
+        },
+        data,
+        controls: Vec::new(),
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CONFIRM_BUTTON_ID.into()),
+                text: "Delete".into(),
+                style: DialogButtonStyle("danger".into()),
+                keys: vec![DialogKey("y".into())],
+                closes_dialog: false,
+                enabled: true,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into()), DialogKey("n".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: None,
+    }
+}
+
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
+
+pub(crate) fn tag_name(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_TAG_NAME)?.to_string())
+}
+
+pub(crate) fn remote_names(dialog: &Dialog) -> Vec<String> {
+    if !is_dialog(dialog) {
+        return Vec::new();
+    }
+    dialog
+        .data
+        .iter()
+        .filter(|item| item.id == DATA_REMOTE_NAME)
+        .map(|item| item.value.clone())
+        .collect()
+}
+
+pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CONFIRM_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }

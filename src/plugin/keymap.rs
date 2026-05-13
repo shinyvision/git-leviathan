@@ -29,6 +29,7 @@ pub const KNOWN_CONTEXTS: &[&str] = &[
     "repository.sidebar",
     "repository.graph",
     "repository.details",
+    "repository.details.dirty",
     "repository.diff",
     "tab_bar",
 ];
@@ -370,6 +371,28 @@ pub enum MatchOutcome {
         context: String,
         plugin_id: String,
     },
+}
+
+/// One visible child in a which-key style prefix menu. The keymap
+/// registry produces these so the UI does not have to duplicate
+/// context matching, conflict filtering, or chord rendering rules.
+#[derive(Debug, Clone)]
+pub struct KeymapPrefixHint {
+    /// The next keypress after the current prefix.
+    pub key: String,
+    /// The full chord when the next key completes a command. Empty for
+    /// pure intermediate groups.
+    pub full_key: String,
+    /// Human-facing description supplied by the keymap owner. Pure
+    /// intermediate groups receive a generated count label.
+    pub description: String,
+    pub command: String,
+    pub plugin_id: String,
+    pub source: String,
+    /// Number of active descendants below this next key.
+    pub child_count: usize,
+    /// True when this next key enters another submenu.
+    pub is_group: bool,
 }
 
 /// Plugin-side capture of `leviathan.keymap.set` calls during init.
@@ -751,8 +774,6 @@ impl KeymapRegistry {
             .filter(|e| e.status == KeymapStatus::Active)
             .filter(|e| context_matches(&e.context, context))
             .collect();
-        // Exact match takes priority over a prefix match — needed for
-        // the chord-prefix-wins-over-single-key rule from the plan.
         let mut exact: Option<&KeymapEntry> = None;
         let mut has_prefix = false;
         for e in &candidates {
@@ -770,6 +791,9 @@ impl KeymapRegistry {
                 has_prefix = true;
             }
         }
+        if has_prefix {
+            return MatchOutcome::Pending;
+        }
         if let Some(e) = exact {
             return MatchOutcome::Match {
                 command: e.command.clone(),
@@ -778,11 +802,100 @@ impl KeymapRegistry {
                 plugin_id: e.plugin_id.clone(),
             };
         }
-        if has_prefix {
-            MatchOutcome::Pending
-        } else {
-            MatchOutcome::None
+        MatchOutcome::None
+    }
+
+    /// Return the visible next-step hints for a partially-entered
+    /// chord in `context`. Only active keymaps are considered, and
+    /// the same `global` / hierarchical context matching used by
+    /// dispatch is applied.
+    pub fn prefix_hints(&self, context: &str, prefix: &[Keystroke]) -> Vec<KeymapPrefixHint> {
+        if prefix.is_empty() {
+            return Vec::new();
         }
+
+        struct Group {
+            next: Keystroke,
+            exact_idx: Option<usize>,
+            child_count: usize,
+        }
+
+        let mut groups: Vec<Group> = Vec::new();
+        for (idx, entry) in self.entries.iter().enumerate() {
+            if entry.status != KeymapStatus::Active
+                || !context_matches(&entry.context, context)
+                || entry.chord.len() <= prefix.len()
+                || &entry.chord[..prefix.len()] != prefix
+            {
+                continue;
+            }
+
+            let next = entry.chord[prefix.len()].clone();
+            let group_idx = match groups.iter().position(|group| group.next == next) {
+                Some(group_idx) => group_idx,
+                None => {
+                    groups.push(Group {
+                        next,
+                        exact_idx: None,
+                        child_count: 0,
+                    });
+                    groups.len() - 1
+                }
+            };
+
+            if entry.chord.len() == prefix.len() + 1 {
+                let exact_idx = groups[group_idx]
+                    .exact_idx
+                    .map(|prev_idx| {
+                        if specifier_left_wins(&self.entries[prev_idx], entry) {
+                            prev_idx
+                        } else {
+                            idx
+                        }
+                    })
+                    .unwrap_or(idx);
+                groups[group_idx].exact_idx = Some(exact_idx);
+            } else {
+                groups[group_idx].child_count += 1;
+            }
+        }
+
+        let mut hints: Vec<KeymapPrefixHint> = groups
+            .into_iter()
+            .map(|group| {
+                let exact = group.exact_idx.map(|idx| &self.entries[idx]);
+                let description =
+                    exact
+                        .map(|entry| entry.description.clone())
+                        .unwrap_or_else(|| match group.child_count {
+                            1 => "+1 keymap".to_string(),
+                            n => format!("+{n} keymaps"),
+                        });
+                KeymapPrefixHint {
+                    key: group.next.render(),
+                    full_key: exact
+                        .map(|entry| render_chord(&entry.chord))
+                        .unwrap_or_default(),
+                    description,
+                    command: exact.map(|entry| entry.command.clone()).unwrap_or_default(),
+                    plugin_id: exact
+                        .map(|entry| entry.plugin_id.clone())
+                        .unwrap_or_default(),
+                    source: exact
+                        .map(|entry| entry.source.as_str().to_string())
+                        .unwrap_or_default(),
+                    child_count: group.child_count,
+                    is_group: group.child_count > 0,
+                }
+            })
+            .collect();
+        hints.sort_by(|a, b| {
+            a.key
+                .cmp(&b.key)
+                .then(a.description.cmp(&b.description))
+                .then(a.command.cmp(&b.command))
+        });
+        hints
     }
 
     /// Public dispatch. Walks [`Self::match_chord`] and, on a match,
@@ -1020,6 +1133,44 @@ pub fn keymap_triggered_payload(
     p
 }
 
+/// Build the typed `KeymapPrefixChanged` payload. The host owns chord
+/// parsing and conflict filtering; plugins own how the resulting hint
+/// data is presented.
+pub fn keymap_prefix_changed_payload(
+    active: bool,
+    context: &str,
+    prefix: &str,
+    hints: Vec<KeymapPrefixHint>,
+    reason: &str,
+) -> EventPayload {
+    let mut p = EventPayload::new();
+    p.insert("active".into(), serde_json::Value::Bool(active));
+    p.insert("context".into(), serde_json::Value::String(context.into()));
+    p.insert("prefix".into(), serde_json::Value::String(prefix.into()));
+    p.insert("reason".into(), serde_json::Value::String(reason.into()));
+    p.insert(
+        "hints".into(),
+        serde_json::Value::Array(
+            hints
+                .into_iter()
+                .map(|hint| {
+                    serde_json::json!({
+                        "key": hint.key,
+                        "full_key": hint.full_key,
+                        "description": hint.description,
+                        "command": hint.command,
+                        "plugin_id": hint.plugin_id,
+                        "source": hint.source,
+                        "child_count": hint.child_count,
+                        "is_group": hint.is_group,
+                    })
+                })
+                .collect(),
+        ),
+    );
+    p
+}
+
 fn outcome_label(out: &InvokeOutcome) -> &'static str {
     match out {
         InvokeOutcome::Ok => "ok",
@@ -1121,23 +1272,29 @@ fn context_matches(binding_context: &str, active_context: &str) -> bool {
 /// contexts (one `global`, one `repository`), prefer the more
 /// specific (longer) context. Ties on length break by lex.
 fn specifier_wins<'a>(a: &'a KeymapEntry, b: &'a KeymapEntry) -> &'a KeymapEntry {
+    if specifier_left_wins(a, b) {
+        a
+    } else {
+        b
+    }
+}
+
+fn specifier_left_wins(a: &KeymapEntry, b: &KeymapEntry) -> bool {
     if a.context == b.context {
-        return a;
+        return true;
     }
     let a_specific = a.context != "global";
     let b_specific = b.context != "global";
     match (a_specific, b_specific) {
-        (true, false) => a,
-        (false, true) => b,
+        (true, false) => true,
+        (false, true) => false,
         _ => {
             if a.context.len() > b.context.len() {
-                a
+                true
             } else if b.context.len() > a.context.len() {
-                b
-            } else if a.context <= b.context {
-                a
+                false
             } else {
-                b
+                a.context <= b.context
             }
         }
     }

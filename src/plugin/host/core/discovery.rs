@@ -228,6 +228,8 @@ impl PluginHost {
                     continue;
                 }
             };
+            self.diagnostics
+                .set_plugin_debug(&manifest.id, manifest.debug);
             dir_by_id.insert(manifest.id.clone(), plugin_dir.clone());
             manifests.push(manifest);
         }

@@ -107,6 +107,8 @@ pub enum PluginResourceKind {
     DiffDecoration,
     AssetHandle,
     DockPanel,
+    /// extension points: one chrome layer rendered above a repository pane.
+    ChromeContribution,
 }
 
 impl PluginResourceKind {
@@ -132,6 +134,7 @@ impl PluginResourceKind {
             Self::DiffDecoration => "diff_decoration",
             Self::AssetHandle => "asset_handle",
             Self::DockPanel => "dock_panel",
+            Self::ChromeContribution => "chrome_contribution",
         }
     }
 
@@ -157,6 +160,7 @@ impl PluginResourceKind {
             Self::DiffDecoration,
             Self::AssetHandle,
             Self::DockPanel,
+            Self::ChromeContribution,
         ]
     }
 }

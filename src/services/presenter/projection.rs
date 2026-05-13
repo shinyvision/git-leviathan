@@ -230,11 +230,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         .flat_map(|stash| std::iter::once(stash.hash.clone()).chain(stash.index_hash.clone()))
         .collect();
 
-    let branch_refs: Vec<RepoRef> = refs
-        .iter()
-        .filter(|r| !matches!(r.kind, RepoRefKind::Tag))
-        .cloned()
-        .collect();
+    let branch_refs = refs.clone();
 
     let has_dirty_changes = dirty.as_ref().is_some_and(DirtySnapshot::has_changes);
     let dirty_parent_hashes = if has_dirty_changes {
@@ -1082,6 +1078,36 @@ mod tests {
         });
         assert_eq!(loaded_refs.default_remote_name.as_deref(), Some("origin"));
         assert_eq!(loaded_refs.remote_names, remote_names);
+    }
+
+    #[test]
+    fn projections_preserve_tag_refs_for_plugin_repository_tables() {
+        let refs = vec![RepoRef {
+            name: "v1.0.0".to_string(),
+            kind: RepoRefKind::Tag,
+            target_hash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            remote_name: None,
+            is_current: false,
+            upstream_ref: None,
+        }];
+
+        let projection = project_repo(RepoSnapshot {
+            refs: refs.clone(),
+            ..RepoSnapshot::default()
+        });
+        assert!(matches!(
+            projection.branch_refs.as_slice(),
+            [repo_ref] if repo_ref.kind == RepoRefKind::Tag && repo_ref.name == "v1.0.0"
+        ));
+
+        let loaded_refs = project_refs(RefsSnapshot {
+            refs,
+            ..RefsSnapshot::default()
+        });
+        assert!(matches!(
+            loaded_refs.branch_refs.as_slice(),
+            [repo_ref] if repo_ref.kind == RepoRefKind::Tag && repo_ref.name == "v1.0.0"
+        ));
     }
 
     #[test]

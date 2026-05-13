@@ -58,6 +58,81 @@ Ledger-backed UI contribution handle.
 
 - `LeviathanContributionHandle:remove()` - Remove this contribution if the handle is still live.
 
+### `LeviathanDialogSpec`
+
+Repository-owned toolbar dialog request.
+
+- `id` (`string`; required) - Dialog id.
+- `text` (`string`; required) - Dialog body text.
+- `title` (`string`; optional) - Optional dialog title for hosts that display one.
+- `dismissible` (`boolean`; optional) - When true, Escape can close the dialog if no button handles it.
+- `data` (`LeviathanDialogData[]`; optional) - Opaque string data stored on the dialog.
+- `controls` (`LeviathanDialogControl[]`; optional) - Optional dialog controls.
+- `autofocus` (`string`; optional) - Control id to focus after the dialog opens.
+- `buttons` (`LeviathanDialogButton[]`; required) - Dialog buttons.
+
+### `LeviathanDialogData`
+
+Dialog data item.
+
+- `id` (`string`; required) - Data id.
+- `value` (`string`; required) - Data value.
+
+### `LeviathanDialogControl`
+
+Dialog control.
+
+- `id` (`string`; required) - Control id.
+- `label` (`LeviathanDialogLabel`; optional) - Optional label shown before the control.
+- `text_input` (`LeviathanDialogTextInput`; optional) - Optional text input.
+- `dropdown` (`LeviathanDialogDropdown`; optional) - Optional dropdown.
+
+### `LeviathanDialogLabel`
+
+Dialog control label.
+
+- `text` (`string`; required) - Label text.
+- `style` (`string`; optional) - Label style token.
+
+### `LeviathanDialogTextInput`
+
+Dialog text input.
+
+- `placeholder` (`string`; optional) - Placeholder text.
+- `value` (`string`; optional) - Initial value.
+- `submit_button_id` (`string`; optional) - Button id triggered by Enter from this input.
+- `width` (`integer`; optional) - Control width in pixels.
+
+### `LeviathanDialogDropdown`
+
+Optional dialog dropdown content.
+
+- `placeholder` (`string`; optional) - Placeholder text.
+- `options` (`LeviathanDialogDropdownOption[]`; required) - Dropdown options.
+- `selected_option_id` (`string`; optional) - Initially selected option id.
+- `open` (`boolean`; optional) - Initial open state.
+- `width` (`integer`; optional) - Control width in pixels.
+- `leading_icon` (`string`; optional) - Optional leading icon name.
+
+### `LeviathanDialogDropdownOption`
+
+Dialog dropdown option.
+
+- `id` (`string`; required) - Option id.
+- `text` (`string`; required) - Option label.
+
+### `LeviathanDialogButton`
+
+Dialog button.
+
+- `id` (`string`; optional) - Button id passed to its callback.
+- `style` (`"red"|"green"|"blue"|"white"`; required) - Button color style.
+- `text` (`string`; required) - Button label.
+- `on_click` (`fun(id: string)`; required) - Callback invoked by clicking the button or pressing one of its keys.
+- `keys` (`string[]`; optional) - Keys that trigger this button, e.g. `y`, `n`, `Esc`.
+- `closes_dialog` (`boolean`; optional) - Whether the dialog closes before the callback runs.
+- `enabled` (`boolean`; optional) - Whether the button is initially enabled.
+
 ### `LeviathanContextMenuItem`
 
 Context-menu contribution spec.
@@ -72,7 +147,7 @@ Context-menu contribution spec.
 Static or dynamic graph-row decoration contribution.
 
 - `id` (`string`; required) - Contribution id.
-- `commit_hash` (`string`; optional) - Static target commit hash.
+- `commit` (`LeviathanCommit`; optional) - Static target commit.
 - `decoration` (`LeviathanGraphDecoration`; optional) - Static graph decoration.
 - `provider` (`fun(ctx: RepositoryGraphRowContext): LeviathanGraphDecoration|LeviathanGraphDecoration[]|nil`; optional) - Dynamic provider called per graph row.
 
@@ -83,6 +158,37 @@ Static or dynamic diff decoration contribution.
 - `id` (`string`; required) - Contribution id.
 - `decoration` (`LeviathanDiffDecoration`; optional) - Static diff decoration.
 - `provider` (`fun(ctx: RepositoryDiffLineContext): LeviathanDiffDecoration|LeviathanDiffDecoration[]|nil`; optional) - Dynamic provider called per diff line.
+
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
 
 ## Functions
 
@@ -97,6 +203,64 @@ Register an overlay widget the host renders above the active screen.
 
 **Parameters:**
 - `spec` (`LeviathanOverlaySpec`; required) - Overlay descriptor (id, widget, dismissible, priority, key_events).
+
+### `leviathan.ui.dialog(spec)`
+
+Compatibility callable alias for `leviathan.ui.dialog.open`; opens a repository-owned toolbar dialog on the active repository screen.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `spec` (`LeviathanDialogSpec`; required) - Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+
+### `leviathan.ui.dialog.open(spec)`
+
+Open a repository-owned toolbar dialog on the active repository screen; button keys, including Escape, are data-driven.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `spec` (`LeviathanDialogSpec`; required) - Repository toolbar dialog descriptor (id, text, optional controls, buttons).
+
+### `leviathan.ui.dialog.focus_control(dialog_id, control_id)`
+
+Focus a text input control in the active repository toolbar dialog.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `dialog_id` (`string`; required) - Active toolbar dialog id.
+- `control_id` (`string`; required) - Dialog control id to focus.
+
+**Returns:**
+- `boolean|nil` - True on success, nil on failure.
+- `string|nil` - Error message on failure.
+
+### `leviathan.ui.dialog.press_button(dialog_id, button_id)`
+
+Press a button in the active repository toolbar dialog.
+
+**Capabilities:** `ui:overlay`
+
+**Since:** `1.0`
+**Stability:** `stable` (v1)
+
+**Parameters:**
+- `dialog_id` (`string`; required) - Active toolbar dialog id.
+- `button_id` (`string`; required) - Dialog button id to press.
+
+**Returns:**
+- `boolean|nil` - True on success, nil on failure.
+- `string|nil` - Error message on failure.
 
 ### `leviathan.ui.remove_overlay(id)`
 
@@ -140,7 +304,7 @@ Contribute a context-menu item at an extension point.
 - `region` (`string`; required) - Extension point address (e.g. "repository.diff.context_menu").
 - `item` (`LeviathanContextMenuItem`; required) - Menu item (id, label, command, priority, condition_capability).
 
-### `leviathan.ui.graph_decoration(commit_hash, decoration)`
+### `leviathan.ui.graph_decoration(commit, decoration)`
 
 Attach a decoration to a commit row (badge / icon / marker / lane).
 
@@ -150,7 +314,7 @@ Attach a decoration to a commit row (badge / icon / marker / lane).
 **Stability:** `stable` (v1)
 
 **Parameters:**
-- `commit_hash` (`string`; required) - Commit row hash the decoration applies to.
+- `commit` (`LeviathanCommit`; required) - Commit row the decoration applies to.
 - `decoration` (`LeviathanGraphDecoration`; required) - Decoration AST: badge / icon / marker / lane.
 
 ### `leviathan.ui.diff_decoration(decoration)`

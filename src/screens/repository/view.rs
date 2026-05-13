@@ -4,7 +4,7 @@
 
 use iced::{
     mouse,
-    widget::{column, container, mouse_area, responsive, row, MouseArea},
+    widget::{column, container, mouse_area, responsive, row, stack, MouseArea},
     Element, Length, Padding, Theme,
 };
 
@@ -26,6 +26,7 @@ use super::{RepositoryMessage, RepositoryScreen};
 pub(in crate::screens::repository) fn view_with_repo_region<'a>(
     screen: &'a RepositoryScreen,
     registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+    chrome_registry: &'a crate::widgets::chrome::repo_region::RepoChromeRegistry,
 ) -> Element<'a, Message> {
     if screen.panels.diff.is_conflict_fullscreen() {
         let center_graph = screen.panels.center.view_with(
@@ -43,7 +44,7 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
         let center = screen
             .panels
             .diff
-            .view_or_passthrough(center_graph, screen.is_git_write_in_flight());
+            .view_or_passthrough(center_graph, screen.is_blocking_git_write_in_flight());
         return container(center)
             .style(|_: &Theme| container::Style {
                 background: Some(theme::BG_BASE.into()),
@@ -54,7 +55,8 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
             .into();
     }
 
-    let body = responsive(move |size| build_body_with_region(screen, registry, size));
+    let body =
+        responsive(move |size| build_body_with_region(screen, registry, chrome_registry, size));
 
     container(body)
         .style(|_: &Theme| container::Style {
@@ -69,6 +71,7 @@ pub(in crate::screens::repository) fn view_with_repo_region<'a>(
 fn build_body_with_region<'a>(
     screen: &'a RepositoryScreen,
     registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
+    chrome_registry: &'a crate::widgets::chrome::repo_region::RepoChromeRegistry,
     size: iced::Size,
 ) -> Element<'a, Message> {
     use crate::widgets::chrome::repo_region as rr;
@@ -99,6 +102,11 @@ fn build_body_with_region<'a>(
         rr::render_top(registry, rr::Pane::Sidebar),
         rr::render_bottom(registry, rr::Pane::Sidebar),
     );
+    let sidebar = wrap_with_chrome(
+        sidebar,
+        chrome_registry.render_overlay(rr::ChromePane::Sidebar),
+        false,
+    );
     let center_graph = screen.panels.center.view_with(
         &panels::center::CenterViewCtx {
             data: &screen.data,
@@ -114,11 +122,21 @@ fn build_body_with_region<'a>(
     let center_body = screen
         .panels
         .diff
-        .view_or_passthrough(center_graph, screen.is_git_write_in_flight());
+        .view_or_passthrough(center_graph, screen.is_blocking_git_write_in_flight());
     let center = panels::center::wrap_with_slots(
         center_body,
         rr::render_top(registry, rr::Pane::Graph),
         rr::render_bottom(registry, rr::Pane::Graph),
+    );
+    let center_chrome_pane = if screen.panels.diff.is_active() {
+        rr::ChromePane::Diff
+    } else {
+        rr::ChromePane::Graph
+    };
+    let center = wrap_with_chrome(
+        center,
+        chrome_registry.render_overlay(center_chrome_pane),
+        true,
     );
 
     let detail = screen.panels.detail.view_with(
@@ -133,11 +151,32 @@ fn build_body_with_region<'a>(
         rr::render_top(registry, rr::Pane::Details),
         rr::render_bottom(registry, rr::Pane::Details),
     );
+    let detail = wrap_with_chrome(
+        detail,
+        chrome_registry.render_overlay(rr::ChromePane::Details),
+        false,
+    );
+
+    let sidebar = pane_frame(
+        sidebar,
+        Length::Fixed(sidebar_width + theme::PANE_SPLITTER_SIZE),
+    );
+    let center = pane_frame(center, Length::Fill);
 
     match orientation {
-        DetailOrientation::Vertical => row![sidebar, center, detail].height(Length::Fill).into(),
+        DetailOrientation::Vertical => {
+            let detail = pane_frame(
+                detail,
+                Length::Fixed(detail_width + theme::PANE_SPLITTER_SIZE),
+            );
+            row![sidebar, center, detail]
+                .height(Length::Fill)
+                .width(Length::Fill)
+                .into()
+        }
         DetailOrientation::Horizontal => {
             let splitter = detail_height_splitter(screen.data.resize.detail_height_resizing);
+            let detail = pane_frame(detail, Length::Fill);
             let detail_pane = container(detail)
                 .width(Length::Fill)
                 .height(Length::Fixed(screen.data.resize.detail_height));
@@ -155,10 +194,45 @@ fn build_body_with_region<'a>(
     }
 }
 
+fn pane_frame<'a>(pane: Element<'a, Message>, width: Length) -> Element<'a, Message> {
+    container(pane).width(width).height(Length::Fill).into()
+}
+
+fn wrap_with_chrome<'a>(
+    body: Element<'a, Message>,
+    layers: Option<Vec<Element<'a, Message>>>,
+    fill: bool,
+) -> Element<'a, Message> {
+    match layers {
+        None => body,
+        Some(layers) => {
+            let mut children: Vec<Element<'a, Message>> = Vec::with_capacity(layers.len() + 1);
+            children.push(body);
+            for layer in layers {
+                children.push(non_interactive(layer));
+            }
+            let stacked = stack(children);
+            if fill {
+                stacked.width(Length::Fill).height(Length::Fill).into()
+            } else {
+                stacked.into()
+            }
+        }
+    }
+}
+
+fn non_interactive<'a>(layer: Element<'a, Message>) -> Element<'a, Message> {
+    container(layer)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .clip(true)
+        .into()
+}
+
 fn detail_height_splitter(is_resizing: bool) -> Element<'static, Message> {
     let handle = container(horizontal_space())
         .width(Length::Fill)
-        .height(Length::Fixed(5.0))
+        .height(Length::Fixed(theme::PANE_SPLITTER_SIZE))
         .style(move |_: &Theme| container::Style {
             background: if is_resizing {
                 Some(theme::ACCENT_BLUE.into())

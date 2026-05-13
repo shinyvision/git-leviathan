@@ -15,6 +15,9 @@ tables except `[dependencies]`).
 ## Optional Fields
 
 - `description` (string) — one-line summary.
+- `debug` (boolean, default `false`) — when `true`, this plugin's
+  diagnostics and explicit `leviathan.log` messages are forwarded to the host
+  process' stdout. Diagnostics are retained in devtools either way.
 - `capabilities` (string array) — host calls the plugin needs. Examples:
   `"fs:read"`, `"fs:read:any"`, `"fs:write:state"`, `"fs:write:plugin"`,
   `"process:spawn"`, `"net:fetch"`, `"clipboard"`, `"notify"`, `"env"`.
@@ -42,6 +45,7 @@ id = "git-tools"
 name = "Git Tools"
 version = "1.2.0"
 api_version = "1.0"
+debug = true
 description = "Useful git extensions."
 capabilities = ["fs:read:workdir", "process:spawn"]
 provides_services = ["diff_viewer@1"]

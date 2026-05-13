@@ -15,7 +15,10 @@ mod update;
 pub(crate) mod view;
 
 pub(in crate::screens::repository) use state::DetailPanel;
-pub(in crate::screens::repository) use state::{dirty_commit_message_text, split_commit_message};
+pub(in crate::screens::repository) use state::{
+    dirty_commit_message_editor_id, dirty_commit_message_text, reword_commit_message_editor_id,
+    split_commit_message,
+};
 pub(in crate::screens::repository) use update::update as update_detail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

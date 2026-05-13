@@ -44,6 +44,14 @@ impl App {
                 self.plugin_host
                     .dispatch_overlay_event(&plugin_id, &overlay_id, &event, value);
             }
+            PluginMessage::RepositoryDialogButtonPressed {
+                plugin_id,
+                dialog_id,
+                button_id,
+            } => {
+                self.plugin_host
+                    .dispatch_dialog_button_callback(&plugin_id, &dialog_id, &button_id);
+            }
             PluginMessage::SplitDragBegin {
                 split_key,
                 divider_index,
@@ -147,7 +155,10 @@ impl App {
             }
             AppMessage::RepoFilesChanged { tab_id, path } => self.reload_refs_for_tab(tab_id, path),
             AppMessage::WindowFocused => self.on_window_focused(),
-            AppMessage::WindowUnfocused => Task::none(),
+            AppMessage::WindowUnfocused => {
+                self.clear_key_chord("focus_lost");
+                Task::none()
+            }
             AppMessage::FetchTick(_) => {
                 if !self.tabs.is_empty() {
                     self.try_start_fetch()

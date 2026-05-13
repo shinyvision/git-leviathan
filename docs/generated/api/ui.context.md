@@ -28,6 +28,7 @@ Base UI context.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -46,6 +47,7 @@ Context passed to main-bar dynamic widgets.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -64,6 +66,7 @@ Context passed to tab-bar dynamic widgets.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -82,6 +85,7 @@ Reserved status-bar context schema.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -100,6 +104,7 @@ Context passed to repository sidebar slot widgets.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -118,6 +123,7 @@ Context passed to repository graph slot widgets.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -136,6 +142,7 @@ Reserved repository graph row context schema.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -154,6 +161,7 @@ Context passed to repository details slot widgets.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -172,6 +180,7 @@ Reserved repository diff context schema.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -190,6 +199,7 @@ Reserved repository diff line context schema.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -208,6 +218,7 @@ Reserved overlay context schema.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -226,6 +237,7 @@ Context shape returned outside a mounted slot render.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -252,6 +264,7 @@ Context passed to dock panel render callbacks.
 - `repository` (`LeviathanRepositorySummary`; required) - Active repository summary without commit lists or diffs.
 - `tab` (`LeviathanTabSummary`; required) - Active tab summary.
 - `selection` (`LeviathanSelectionSummary`; required) - Selection summary when the host has one for the surface.
+- `dialog` (`LeviathanToolbarDialogSummary`; required) - Active repository toolbar dialog summary.
 - `focus` (`LeviathanFocusSummary`; required) - Focused surface, region, pane, and section where available.
 - `viewport` (`LeviathanViewportSummary`; required) - Viewport constraints when known.
 - `payload` (`table`; required) - Surface-specific ids and lightweight metadata.
@@ -294,17 +307,91 @@ Selection summary in a UI context.
 
 - `available` (`boolean`; required) - Whether selection data is available for this surface.
 - `kind` (`string`; required) - Selection kind.
-- `selected_commit_id` (`string|nil`; required) - Selected commit id when available.
+- `commit` (`LeviathanCommit|nil`; required) - Selected commit data when a commit row is selected.
 - `selected_file_path` (`string|nil`; required) - Selected file path when available.
+
+### `LeviathanCommit`
+
+Commit data exposed to Lua APIs.
+
+- `kind` (`string`; required) - Commit row kind: commit, dirty, or stash.
+- `hash` (`string`; required) - Full commit hash, or empty for an uncommitted dirty row.
+- `short_hash` (`string`; required) - Short display hash.
+- `summary` (`string`; required) - First line of the commit message.
+- `message` (`string`; required) - Full commit message when available.
+- `author` (`string`; required) - Commit author display name.
+- `date` (`string`; required) - Host-formatted commit date when available.
+- `timestamp` (`integer|nil`; required) - Author timestamp in seconds when available.
+- `parents` (`string[]`; required) - Full parent hashes in git parent order.
+- `index` (`integer|nil`; required) - Zero-based visible commit row index when available.
+- `is_merge` (`boolean`; required) - Whether the commit has multiple parents.
+- `is_merge_in_progress` (`boolean`; required) - Whether the dirty row represents an in-progress merge.
+- `actions` (`LeviathanCommitActions`; required) - Host-computed commit actions.
+
+### `LeviathanCommitActions`
+
+Host-computed actions for a commit.
+
+- `reword` (`LeviathanActionAvailability`; required) - Reword availability for this commit in the current tree.
+
+### `LeviathanActionAvailability`
+
+Availability state for a host action.
+
+- `enabled` (`boolean`; required) - Whether the action can run.
+- `reason` (`string|nil`; required) - Stable disabled reason when available.
+
+### `LeviathanToolbarDialogSummary`
+
+Active repository toolbar dialog summary in a UI context.
+
+- `active` (`boolean`; required) - Whether a repository toolbar dialog is active.
+- `id` (`string`; required) - Active dialog id, or empty string when none is active.
+- `owner` (`string`; required) - `native`, `plugin`, or `none`.
+- `plugin_id` (`string|nil`; required) - Owner plugin id for plugin-owned dialogs.
+- `data` (`LeviathanToolbarDialogData[]`; required) - Opaque dialog data rows.
+- `controls` (`LeviathanToolbarDialogControl[]`; required) - Dialog controls and current values.
+- `buttons` (`LeviathanToolbarDialogButton[]`; required) - Dialog buttons and enabled state.
+
+### `LeviathanToolbarDialogData`
+
+Toolbar dialog data item.
+
+- `id` (`string`; required) - Data id.
+- `value` (`string`; required) - Data value.
+
+### `LeviathanToolbarDialogControl`
+
+Toolbar dialog control summary.
+
+- `id` (`string`; required) - Control id.
+- `kind` (`string`; required) - Control kind such as `text_input` or `dropdown`.
+- `value` (`string|nil`; required) - Current control value when available.
+
+### `LeviathanToolbarDialogButton`
+
+Toolbar dialog button summary.
+
+- `id` (`string`; required) - Button id.
+- `text` (`string`; required) - Button label.
+- `enabled` (`boolean`; required) - Whether the button can currently be pressed.
 
 ### `LeviathanFocusSummary`
 
 Focus summary in a UI context.
 
-- `surface` (`string`; required) - Focused surface.
-- `region` (`string`; optional) - Focused region.
-- `pane` (`string`; optional) - Focused pane.
-- `section` (`string`; optional) - Focused section.
+- `surface` (`string`; required) - Active focus surface id (e.g. `repository.graph`).
+- `kind` (`string`; required) - Broad focus owner: `repository`, `plugin_screen`, `overlay`, `tab_bar`, `global`, or `none`.
+- `region` (`string`; optional) - Focused region when applicable.
+- `pane` (`string`; optional) - Focused pane when applicable.
+- `section` (`string`; optional) - Focused section when applicable.
+- `plugin_id` (`string`; optional) - Focused plugin id when focus is on a plugin screen or overlay.
+- `screen_id` (`string`; optional) - Focused plugin screen id when focus is on a plugin screen.
+- `overlay_id` (`string`; optional) - Focused overlay id when focus is on an overlay.
+- `reason` (`string`; optional) - Last focus-change reason as a snake_case string.
+- `matches_surface` (`boolean`; required) - True when the active focus surface equals the rendered context surface.
+- `matches_region` (`boolean`; required) - True when the active focus shares a region with the rendered context.
+- `matches_pane` (`boolean`; required) - True when the active focus shares a pane with the rendered context.
 
 ### `LeviathanViewportSummary`
 

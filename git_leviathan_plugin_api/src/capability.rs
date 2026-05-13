@@ -98,6 +98,9 @@ pub enum Capability {
     UiStatus,
     /// `ui:style:raw_color`.
     UiStyleRawColor,
+    /// `ui:chrome:<point_id>` (extension points) — render a non-layout
+    /// chrome layer above a repository pane.
+    UiChrome { point: String },
     /// `command:invoke:<id>`.
     CommandInvoke { id: String },
 }
@@ -278,6 +281,9 @@ impl TryFrom<String> for Capability {
             ["ui", "dock"] => Ok(Capability::UiDock),
             ["ui", "status"] => Ok(Capability::UiStatus),
             ["ui", "style", "raw_color"] => Ok(Capability::UiStyleRawColor),
+            ["ui", "chrome", point] => Ok(Capability::UiChrome {
+                point: (*point).to_string(),
+            }),
             ["command", "invoke", id] => Ok(Capability::CommandInvoke {
                 id: (*id).to_string(),
             }),
@@ -359,6 +365,7 @@ impl From<Capability> for String {
             Capability::UiDock => "ui:dock".into(),
             Capability::UiStatus => "ui:status".into(),
             Capability::UiStyleRawColor => "ui:style:raw_color".into(),
+            Capability::UiChrome { point } => format!("ui:chrome:{point}"),
             Capability::CommandInvoke { id } => format!("command:invoke:{id}"),
         }
     }

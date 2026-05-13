@@ -10,12 +10,12 @@ use crate::core::TabId;
 use crate::message::{AppMessage, Message, SyntaxGrammarCommandOutcome};
 use crate::plugin::core_commands::CoreCommandAction;
 use crate::plugin::tab_snapshot::TabRegistryOp;
-use crate::screens::repository::panel_messages::{CenterAction, DetailAction, DiffPanelAction};
+use crate::screens::repository::panel_messages::DiffPanelAction;
 use crate::screens::repository::RepositoryMessage;
 use crate::services::GitError;
 use crate::toast::{auto_dismiss_task, ToastData};
 use crate::view_model::LoadedRepo;
-use crate::work::{presentation_work, ui_message};
+use crate::work::presentation_work;
 
 use super::{tabs, App};
 
@@ -118,18 +118,6 @@ impl App {
                 let _ = self.apply_tab_registry_op(TabRegistryOp::Reorder(paths));
                 Task::none()
             }
-            CoreCommandAction::Refresh => self
-                .tabs
-                .active_screen()
-                .map(|screen| screen.reload_refs_task())
-                .unwrap_or_else(Task::none),
-            CoreCommandAction::Fetch => self.try_start_fetch(),
-            CoreCommandAction::CreateBranchAtSelected { commit_idx, hash } => {
-                self.create_branch_at_selected(commit_idx, hash)
-            }
-            CoreCommandAction::CopyCommitHash { hash } => self.copy_commit_hash(hash),
-            CoreCommandAction::OpenSelectedDiff => self.open_selected_diff(),
-            CoreCommandAction::StartRewordSelected => self.start_reword_selected(),
             CoreCommandAction::RefreshGrammarRegistry { path } => {
                 self.refresh_grammar_registry(path)
             }
@@ -146,42 +134,6 @@ impl App {
             .iter()
             .find(|tab| tab.id == active)
             .map(|tab| tab.path_key().to_string())
-    }
-
-    fn create_branch_at_selected(
-        &self,
-        commit_idx: Option<usize>,
-        hash: Option<String>,
-    ) -> Task<Message> {
-        let Some(screen) = self.tabs.active_screen() else {
-            return Task::none();
-        };
-        let Some((idx, commit_hash)) = commit_idx
-            .zip(hash)
-            .or_else(|| screen.selected_commit_hash())
-        else {
-            return Task::none();
-        };
-        ui_message(Message::repo(RepositoryMessage::Center(
-            CenterAction::CreateBranchHereRequested {
-                commit_idx: idx,
-                commit_hash,
-            },
-        )))
-    }
-
-    fn copy_commit_hash(&self, hash: Option<String>) -> Task<Message> {
-        let hash = hash.or_else(|| {
-            self.tabs
-                .active_screen()
-                .and_then(|screen| screen.selected_commit_hash().map(|(_, hash)| hash))
-        });
-        match hash {
-            Some(hash) => ui_message(Message::repo(RepositoryMessage::Detail(
-                DetailAction::CopyCommitShaRequested(hash),
-            ))),
-            None => Task::none(),
-        }
     }
 
     fn refresh_grammar_registry(&mut self, path: String) -> Task<Message> {
@@ -280,40 +232,6 @@ impl App {
             Task::none()
         };
         Task::batch(vec![toast_task, diff_task])
-    }
-
-    fn open_selected_diff(&self) -> Task<Message> {
-        let Some(screen) = self.tabs.active_screen() else {
-            return Task::none();
-        };
-        match screen.selected_diff_target() {
-            Some(crate::screens::repository::SelectedDiffTarget::Dirty { path, is_staged }) => {
-                Task::done(Message::repo(RepositoryMessage::Detail(
-                    DetailAction::DirtyFileClicked { path, is_staged },
-                )))
-            }
-            Some(crate::screens::repository::SelectedDiffTarget::Commit { commit_idx, path }) => {
-                Task::done(Message::repo(RepositoryMessage::Detail(
-                    DetailAction::CommitFileClicked { commit_idx, path },
-                )))
-            }
-            None => Task::none(),
-        }
-    }
-
-    fn start_reword_selected(&self) -> Task<Message> {
-        let Some(screen) = self.tabs.active_screen() else {
-            return Task::none();
-        };
-        let Some((hash, message)) = screen.selected_commit_reword_seed() else {
-            return Task::none();
-        };
-        Task::done(Message::repo(RepositoryMessage::Detail(
-            DetailAction::RewordStarted {
-                hash,
-                original_message: message,
-            },
-        )))
     }
 }
 

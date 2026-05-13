@@ -1533,10 +1533,15 @@ fn install_noop_function(lua: &Lua, root: &Table, path: &str) -> DynResult<()> {
     let mut segments = path.split('.').peekable();
     while let Some(segment) = segments.next() {
         if segments.peek().is_none() {
-            table.set(
-                segment,
-                lua.create_function(|_, _: mlua::MultiValue| Ok(true))?,
-            )?;
+            match table.get::<mlua::Value>(segment)? {
+                mlua::Value::Table(existing) => set_noop_call(lua, &existing)?,
+                _ => {
+                    table.set(
+                        segment,
+                        lua.create_function(|_, _: mlua::MultiValue| Ok(true))?,
+                    )?;
+                }
+            }
         } else {
             let next = match table.get::<mlua::Value>(segment)? {
                 mlua::Value::Table(t) => t,
@@ -1545,11 +1550,27 @@ fn install_noop_function(lua: &Lua, root: &Table, path: &str) -> DynResult<()> {
                     table.set(segment, fresh.clone())?;
                     fresh
                 }
+                mlua::Value::Function(_) => {
+                    let fresh = lua.create_table()?;
+                    set_noop_call(lua, &fresh)?;
+                    table.set(segment, fresh.clone())?;
+                    fresh
+                }
                 _ => return Err(format!("cannot install stub at `{path}`").into()),
             };
             table = next;
         }
     }
+    Ok(())
+}
+
+fn set_noop_call(lua: &Lua, table: &Table) -> mlua::Result<()> {
+    let mt = lua.create_table()?;
+    mt.set(
+        "__call",
+        lua.create_function(|_, _: mlua::MultiValue| Ok(true))?,
+    )?;
+    table.set_metatable(Some(mt));
     Ok(())
 }
 

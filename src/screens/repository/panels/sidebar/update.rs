@@ -147,6 +147,10 @@ pub(super) fn update(
     ctx: &mut ScreenCtx<'_>,
     repository_panel: &mut CenterPanel,
 ) -> Task<Message> {
+    if action_focuses_sidebar(&action) {
+        ctx.input.focused_panel = FocusedPanel::Sidebar;
+    }
+
     match action {
         SidebarAction::SectionToggled(idx) => {
             if let Some((kind, expanded)) =
@@ -297,15 +301,27 @@ pub(super) fn update(
             ctx.data.resize.stop_detail();
             Task::none()
         }
-        SidebarAction::Focused => {
-            ctx.input.focused_panel = FocusedPanel::Sidebar;
-            Task::none()
-        }
+        SidebarAction::Focused => Task::none(),
         SidebarAction::FilterChanged(q) => {
             panel.set_filter_query(q);
             Task::none()
         }
     }
+}
+
+fn action_focuses_sidebar(action: &SidebarAction) -> bool {
+    matches!(
+        action,
+        SidebarAction::SectionToggled(_)
+            | SidebarAction::BranchPressed { .. }
+            | SidebarAction::BranchRightClicked { .. }
+            | SidebarAction::StashPressed { .. }
+            | SidebarAction::WorktreeEntryPressed { .. }
+            | SidebarAction::WorktreeEntryRightClicked { .. }
+            | SidebarAction::ResizeStarted { .. }
+            | SidebarAction::Focused
+            | SidebarAction::FilterChanged(_)
+    )
 }
 
 fn checkout_task(ctx: &mut ScreenCtx<'_>, branch_name: String, is_remote: bool) -> Task<Message> {

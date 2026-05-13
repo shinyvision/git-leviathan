@@ -142,6 +142,9 @@ impl DiffPanel {
                 ours_scroll_offset_x: 0.0,
                 theirs_scroll_offset_x: 0.0,
                 output_scroll_offset_x: 0.0,
+                ours_viewport_height: None,
+                theirs_viewport_height: None,
+                output_viewport_height: None,
             });
             return DiffPanelAction::LoadConflictResolution { generation, path };
         }

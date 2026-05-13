@@ -4,7 +4,8 @@ use iced::Task;
 
 use crate::core::TabId;
 use crate::message::Message;
-use crate::screens::repository::{GitWriteIntent, RepositoryMessage};
+use crate::plugin::ui::focus::FocusReason;
+use crate::screens::repository::RepositoryMessage;
 
 use super::fetch_policy::FetchCancellation;
 use super::App;
@@ -38,13 +39,6 @@ impl GitOperationQueue {
         });
     }
 
-    pub(super) fn push_front_repository(&mut self, tab_id: TabId, message: RepositoryMessage) {
-        self.pending.push_front(QueuedGitOperation::Repository {
-            tab_id,
-            message: Box::new(message),
-        });
-    }
-
     pub(super) fn pop_front(&mut self) -> Option<QueuedGitOperation> {
         self.pending.pop_front()
     }
@@ -56,8 +50,14 @@ impl App {
         tab_id: TabId,
         message: RepositoryMessage,
     ) -> Task<Message> {
+        if matches!(message, RepositoryMessage::FetchRequested) {
+            return self.try_start_fetch_for_tab(tab_id);
+        }
+        if matches!(message, RepositoryMessage::FocusPanel(_)) {
+            self.pending_focus_reason = Some(FocusReason::Keymap);
+        }
         match message.git_write_intent() {
-            Some(intent) => self.request_git_operation(tab_id, message, intent),
+            Some(_) => self.request_git_operation(tab_id, message),
             None => self.dispatch_repository_message(tab_id, message),
         }
     }
@@ -77,18 +77,8 @@ impl App {
         &mut self,
         tab_id: TabId,
         message: RepositoryMessage,
-        intent: GitWriteIntent,
     ) -> Task<Message> {
-        if intent == GitWriteIntent::FastLocal
-            && self.only_fetch_in_flight()
-            && self.cancel_active_fetch().is_some()
-        {
-            if self.git_queue.is_empty() {
-                return self.dispatch_repository_message(tab_id, message);
-            }
-            self.git_queue.push_front_repository(tab_id, message);
-            return self.drain_git_operation_queue();
-        }
+        let _ = self.cancel_active_fetch();
 
         if self.git_operation_in_flight() {
             self.git_queue.push_back_repository(tab_id, message);
@@ -146,50 +136,12 @@ impl App {
         Some(cancelled)
     }
 
-    fn only_fetch_in_flight(&self) -> bool {
-        let Some(active_fetch) = self.fetch.active() else {
-            return false;
-        };
-        self.tabs.tabs().iter().all(|tab| {
-            let Some(screen) = self.tabs.screen(tab.id) else {
-                return true;
-            };
-            !screen.is_git_write_in_flight() || tab.id == active_fetch.tab_id
-        })
-    }
-
     fn finish_cancelled_fetch(&mut self, cancelled: FetchCancellation) {
+        crate::services::kill_running_fetch_processes();
         if let Some(screen) = self.tabs.screen_mut(cancelled.tab_id) {
             let _ = screen.finish_git_write(cancelled.operation_id);
         }
         self.plugin_host
             .fire_event_typed("FetchFinished", Self::fetch_all_remotes_payload());
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn front_insert_runs_before_existing_work() {
-        let mut queue = GitOperationQueue::new();
-        queue.push_back_repository(TabId(1), RepositoryMessage::PullRequested);
-        queue.push_front_repository(TabId(3), RepositoryMessage::PushRequested);
-
-        assert!(matches!(
-            queue.pop_front(),
-            Some(QueuedGitOperation::Repository {
-                tab_id: TabId(3),
-                ..
-            })
-        ));
-        assert!(matches!(
-            queue.pop_front(),
-            Some(QueuedGitOperation::Repository {
-                tab_id: TabId(1),
-                ..
-            })
-        ));
     }
 }

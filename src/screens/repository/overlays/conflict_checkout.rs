@@ -1,15 +1,18 @@
-//! Conflict bar shown when double-clicking a remote branch whose local
-//! counterpart already exists. Offers create-new-branch or reset-local.
+//! Conflict bar shown when checking out a remote branch whose local counterpart exists.
 
-use iced::{widget::text, Element};
-
-use crate::{message::Message, style, theme};
-
-use super::super::{panel_messages::OverlayPanelAction, RepositoryMessage};
-use super::widgets::{
-    overlay_button, overlay_button_disabled, overlay_cancel_button, overlay_row,
-    overlay_text_input, sliding_main_bar_overlay, CREATE_BUTTON, DANGER_BUTTON,
+use super::dialog::model::{
+    Dialog, DialogButton, DialogButtonId, DialogButtonStyle, DialogControl, DialogControlId,
+    DialogData, DialogId, DialogKey, DialogMessage, DialogOwner, DialogTextInput,
 };
+
+pub(crate) const DIALOG_ID: &str = "native.conflict_checkout";
+const OWNER_ID: &str = "conflict_checkout";
+const CONTROL_BRANCH_NAME: &str = "branch_name";
+const DATA_BRANCH_NAME: &str = "branch_name";
+const DATA_REMOTE_REF: &str = "remote_ref";
+pub(crate) const CREATE_BUTTON_ID: &str = "create";
+pub(crate) const RESET_BUTTON_ID: &str = "reset";
+pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
 #[derive(Debug, Clone)]
 pub(crate) struct State {
@@ -18,43 +21,129 @@ pub(crate) struct State {
     pub new_branch_input: String,
 }
 
-pub(crate) fn view<'a>(state: &'a State, slide_offset: f32) -> Element<'a, Message> {
-    let has_name = !state.new_branch_input.trim().is_empty();
-
-    let label = text(format!("A local '{}' already exists.", state.branch_name))
-        .size(theme::FONT_SM)
-        .style(style::primary_text);
-
-    let name_input = overlay_text_input("branch name", &state.new_branch_input, |s| {
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::ConflictNewBranchInput(s))
-    });
-
-    let create_btn = if has_name {
-        overlay_button(
-            "Create Branch Here",
-            CREATE_BUTTON,
-            RepositoryMessage::OverlayPanel(OverlayPanelAction::ConflictCreateBranch),
-        )
-    } else {
-        overlay_button_disabled("Create Branch Here", CREATE_BUTTON)
+pub(crate) fn dialog(state: State) -> Dialog {
+    let mut dialog = Dialog {
+        id: DialogId(DIALOG_ID.into()),
+        owner: DialogOwner::native(OWNER_ID),
+        message: DialogMessage {
+            title: None,
+            text: format!("A local '{}' already exists.", state.branch_name),
+        },
+        data: vec![
+            DialogData {
+                id: DATA_BRANCH_NAME.into(),
+                value: state.branch_name,
+            },
+            DialogData {
+                id: DATA_REMOTE_REF.into(),
+                value: state.remote_ref,
+            },
+        ],
+        controls: vec![DialogControl {
+            id: DialogControlId(CONTROL_BRANCH_NAME.into()),
+            label: None,
+            text_input: Some(DialogTextInput {
+                placeholder: "branch name".into(),
+                value: state.new_branch_input,
+                submit_button_id: Some(DialogButtonId(CREATE_BUTTON_ID.into())),
+                width: None,
+            }),
+            dropdown: None,
+        }],
+        buttons: vec![
+            DialogButton {
+                id: DialogButtonId(CREATE_BUTTON_ID.into()),
+                text: "Create Branch Here".into(),
+                style: DialogButtonStyle("create".into()),
+                keys: vec![DialogKey("enter".into())],
+                closes_dialog: false,
+                enabled: false,
+            },
+            DialogButton {
+                id: DialogButtonId(RESET_BUTTON_ID.into()),
+                text: "Reset Local to Here".into(),
+                style: DialogButtonStyle("danger".into()),
+                keys: Vec::new(),
+                closes_dialog: false,
+                enabled: true,
+            },
+            DialogButton {
+                id: DialogButtonId(CANCEL_BUTTON_ID.into()),
+                text: "Cancel".into(),
+                style: DialogButtonStyle("cancel".into()),
+                keys: vec![DialogKey("esc".into())],
+                closes_dialog: true,
+                enabled: true,
+            },
+        ],
+        dismissible: true,
+        autofocus: None,
     };
-    let reset_btn = overlay_button(
-        "Reset Local to Here",
-        DANGER_BUTTON,
-        RepositoryMessage::OverlayPanel(OverlayPanelAction::ConflictResetLocal),
-    );
-    let cancel_btn = overlay_cancel_button(RepositoryMessage::OverlayPanel(
-        OverlayPanelAction::ConflictCancel,
-    ));
+    refresh_enabled(&mut dialog);
+    dialog
+}
 
-    sliding_main_bar_overlay(
-        overlay_row(vec![
-            label.into(),
-            name_input,
-            create_btn,
-            reset_btn,
-            cancel_btn,
-        ]),
-        slide_offset,
-    )
+pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
+    dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
+}
+
+pub(crate) fn branch_name(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_BRANCH_NAME)?.to_string())
+}
+
+pub(crate) fn remote_ref(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    Some(dialog.data_value(DATA_REMOTE_REF)?.to_string())
+}
+
+pub(crate) fn new_branch_input(dialog: &Dialog) -> Option<String> {
+    if !is_dialog(dialog) {
+        return None;
+    }
+    dialog
+        .controls
+        .iter()
+        .find(|control| control.id.0 == CONTROL_BRANCH_NAME)?
+        .text_input
+        .as_ref()
+        .map(|input| input.value.clone())
+}
+
+pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
+    if !is_dialog(dialog) {
+        return;
+    }
+    let branch_name = new_branch_input(dialog).unwrap_or_default();
+    set_button_enabled(dialog, CREATE_BUTTON_ID, !branch_name.trim().is_empty());
+}
+
+fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
+    if let Some(button) = dialog
+        .buttons
+        .iter_mut()
+        .find(|button| button.id.0 == button_id)
+    {
+        button.enabled = enabled;
+    }
+}
+
+pub(crate) fn is_create_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CREATE_BUTTON_ID
+}
+
+pub(crate) fn is_reset_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == RESET_BUTTON_ID
+}
+
+pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
+    button_id.0 == CANCEL_BUTTON_ID
+}
+
+pub(crate) fn is_write_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    dialog_id.0 == DIALOG_ID && (is_create_button(button_id) || is_reset_button(button_id))
 }

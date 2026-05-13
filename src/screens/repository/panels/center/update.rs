@@ -15,10 +15,12 @@ use crate::{
 use super::super::super::{
     overlays::{
         cherry_pick_confirm, create_branch, create_tag, delete_branch, delete_tag, rename_branch,
-        revert_confirm, stash_delete, ActiveDialog,
+        revert_confirm, stash_delete,
     },
     panel_messages::CenterAction,
-    state::{eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState},
+    state::{
+        eligible_tag_push_remote_names, CommitContextMenuState, ContextMenuState, FocusedPanel,
+    },
     RepositoryMessage,
 };
 use super::super::detail::DetailPanel;
@@ -32,7 +34,14 @@ pub(in crate::screens::repository) fn update(
     action: CenterAction,
     ctx: &mut ScreenCtx<'_>,
 ) -> Task<Message> {
+    if action_focuses_center(&action) {
+        ctx.input.focused_panel = FocusedPanel::Center;
+    }
+
     match action {
+        CenterAction::CommitClicked(idx) => {
+            update(panel, detail_panel, CenterAction::CommitSelected(idx), ctx)
+        }
         CenterAction::CommitSelected(idx) => {
             ctx.data.branch_popout.close();
             let mods = ctx.input.modifiers;
@@ -51,6 +60,28 @@ pub(in crate::screens::repository) fn update(
         CenterAction::ModifiersChanged(mods) => {
             ctx.input.modifiers = mods;
             Task::none()
+        }
+        CenterAction::NavigateFirst => {
+            if ctx.data.snapshot.commits().is_empty() {
+                return Task::none();
+            }
+            let follow_up =
+                panel.select_commit(0, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+            Task::batch(vec![
+                update(panel, detail_panel, follow_up, ctx),
+                panel.scroll_to_commit(0).unwrap_or(Task::none()),
+            ])
+        }
+        CenterAction::NavigateLast => {
+            let Some(last) = ctx.data.snapshot.commits().len().checked_sub(1) else {
+                return Task::none();
+            };
+            let follow_up =
+                panel.select_commit(last, &mut ctx.data.selection, &mut ctx.data.branch_popout);
+            Task::batch(vec![
+                update(panel, detail_panel, follow_up, ctx),
+                panel.scroll_to_commit(last).unwrap_or(Task::none()),
+            ])
         }
         CenterAction::NavigateUp => {
             let current = ctx.data.selection.selected_commit();
@@ -434,7 +465,7 @@ pub(in crate::screens::repository) fn update(
             }
 
             ctx.overlay_manager
-                .open(ActiveDialog::DeleteBranch(delete_branch::State {
+                .open_toolbar_dialog(delete_branch::dialog(delete_branch::State {
                     branch_name,
                     is_remote,
                     has_remote,
@@ -451,11 +482,10 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::RenameBranch(rename_branch::State {
+                .open_toolbar_dialog(rename_branch::dialog(rename_branch::State {
                     branch_name: branch_name.clone(),
                     is_remote,
                     new_branch_input: branch_name,
-                    needs_focus: true,
                     remote_name,
                     remote_ref,
                 }));
@@ -463,14 +493,10 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::CommitRightClicked { commit_idx } => {
             ctx.data.branch_popout.close();
-            if matches!(
-                ctx.overlay_manager.active(),
-                Some(
-                    ActiveDialog::DeleteBranch(_)
-                        | ActiveDialog::RenameBranch(_)
-                        | ActiveDialog::CreateBranchHere(_)
-                )
-            ) {
+            if ctx.overlay_manager.is_delete_branch_dialog_open()
+                || ctx.overlay_manager.is_rename_branch_dialog_open()
+                || ctx.overlay_manager.is_create_branch_dialog_open()
+            {
                 ctx.overlay_manager.close();
             }
 
@@ -575,7 +601,7 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::StashDelete(stash_delete::State {
+                .open_toolbar_dialog(stash_delete::dialog(stash_delete::State {
                     stash_index,
                     display_name,
                 }));
@@ -586,37 +612,35 @@ pub(in crate::screens::repository) fn update(
             commit_hash,
         } => {
             ctx.data.branch_popout.close_context_menu();
+            let existing = crate::screens::repository::overlays::existing_branches(ctx.data);
             ctx.overlay_manager
-                .open(ActiveDialog::CreateBranchHere(create_branch::State {
-                    commit_hash,
-                    branch_name_input: String::new(),
-                    needs_focus: true,
-                }));
+                .open_toolbar_dialog(create_branch::dialog(
+                    create_branch::State {
+                        commit_hash,
+                        branch_name_input: String::new(),
+                    },
+                    &existing,
+                ));
             panel.restore_center_list_scroll()
         }
         CenterAction::SquashCommitsRequested { indices: _, hashes } => {
             ctx.data.branch_popout.close_context_menu();
-            let Some(operation_id) = ctx.data.operations.begin_write() else {
+            squash_commits(ctx, hashes)
+        }
+        CenterAction::SquashSelectedCommitsRequested => {
+            ctx.data.branch_popout.close_context_menu();
+            let selected_indices = ctx.data.selection.selected_indices();
+            if selected_indices.len() < 2 {
                 return Task::none();
-            };
-            let repo = ctx.repository.clone();
-            let presenter = ctx.presenter.clone();
-            let tab_id = ctx.tab_id;
-            Task::perform(
-                git_write_work(move || {
-                    repo.squash_commits(hashes)
-                        .map(|s| presenter.project_loaded(s))
-                }),
-                move |result| {
-                    Message::tab(
-                        tab_id,
-                        RepositoryMessage::SquashCompleted {
-                            operation_id,
-                            result,
-                        },
-                    )
-                },
-            )
+            }
+            let hashes = selected_indices
+                .iter()
+                .filter_map(|&idx| ctx.data.commit_hash(idx))
+                .collect::<Vec<_>>();
+            if hashes.len() < 2 {
+                return Task::none();
+            }
+            squash_commits(ctx, hashes)
         }
         CenterAction::CenterListScrolled(viewport) => {
             let viewport_changed = panel.center_list.update(viewport);
@@ -768,17 +792,16 @@ pub(in crate::screens::repository) fn update(
         CenterAction::CreateTagHereRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::CreateTagHere(create_tag::State {
+                .open_toolbar_dialog(create_tag::dialog(create_tag::State {
                     commit_hash,
                     tag_name_input: String::new(),
-                    needs_focus: true,
                 }));
             panel.restore_center_list_scroll()
         }
         CenterAction::CherryPickRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::CherryPick(cherry_pick_confirm::State {
+                .open_toolbar_dialog(cherry_pick_confirm::dialog(cherry_pick_confirm::State {
                     commit_hash,
                 }));
             panel.restore_center_list_scroll()
@@ -786,7 +809,9 @@ pub(in crate::screens::repository) fn update(
         CenterAction::RevertCommitRequested { commit_hash } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::Revert(revert_confirm::State { commit_hash }));
+                .open_toolbar_dialog(revert_confirm::dialog(revert_confirm::State {
+                    commit_hash,
+                }));
             panel.restore_center_list_scroll()
         }
         CenterAction::PushTagRequested {
@@ -826,7 +851,7 @@ pub(in crate::screens::repository) fn update(
         } => {
             ctx.data.branch_popout.close_context_menu();
             ctx.overlay_manager
-                .open(ActiveDialog::DeleteTag(delete_tag::State {
+                .open_toolbar_dialog(delete_tag::dialog(delete_tag::State {
                     tag_name,
                     tag_remote_names,
                 }));
@@ -834,4 +859,60 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::None => Task::none(),
     }
+}
+
+fn action_focuses_center(action: &CenterAction) -> bool {
+    matches!(
+        action,
+        CenterAction::CommitClicked(_)
+            | CenterAction::BranchLabelClicked { .. }
+            | CenterAction::BranchLabelPressed(_)
+            | CenterAction::RemoteBranchLabelPressed { .. }
+            | CenterAction::BranchLabelRightClicked { .. }
+            | CenterAction::BranchMergeRequested { .. }
+            | CenterAction::BranchFastForwardRequested { .. }
+            | CenterAction::BranchRebaseRequested { .. }
+            | CenterAction::ResetSubmenuRequested { .. }
+            | CenterAction::ResetToCommitRequested { .. }
+            | CenterAction::BranchDeleteRequested { .. }
+            | CenterAction::BranchRenameRequested { .. }
+            | CenterAction::CommitRightClicked { .. }
+            | CenterAction::CherryPickRequested { .. }
+            | CenterAction::RevertCommitRequested { .. }
+            | CenterAction::StashCreateRequested
+            | CenterAction::StashApplyRequested { .. }
+            | CenterAction::StashPopRequested { .. }
+            | CenterAction::StashDeleteRequested { .. }
+            | CenterAction::CreateBranchHereRequested { .. }
+            | CenterAction::SquashCommitsRequested { .. }
+            | CenterAction::SquashSelectedCommitsRequested
+            | CenterAction::CreateTagHereRequested { .. }
+            | CenterAction::PushTagRequested { .. }
+            | CenterAction::DeleteTagRequested { .. }
+            | CenterAction::GraphColumnResizeStarted { .. }
+    )
+}
+
+fn squash_commits(ctx: &mut ScreenCtx<'_>, hashes: Vec<String>) -> Task<Message> {
+    let Some(operation_id) = ctx.data.operations.begin_write() else {
+        return Task::none();
+    };
+    let repo = ctx.repository.clone();
+    let presenter = ctx.presenter.clone();
+    let tab_id = ctx.tab_id;
+    Task::perform(
+        git_write_work(move || {
+            repo.squash_commits(hashes)
+                .map(|s| presenter.project_loaded(s))
+        }),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::SquashCompleted {
+                    operation_id,
+                    result,
+                },
+            )
+        },
+    )
 }

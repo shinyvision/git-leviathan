@@ -5,7 +5,6 @@ use crate::{
     work::git_write_work,
 };
 
-use super::super::overlays::ActiveDialog;
 use super::super::state::OperationId;
 use super::super::{RepositoryMessage, RepositoryScreen};
 
@@ -20,10 +19,7 @@ pub(super) fn on_tag_created(
     }
     match result {
         Ok(loaded) => {
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::CreateTagHere(_))
-            ) {
+            if screen.overlay_manager.is_create_tag_dialog_open() {
                 screen.overlay_manager.close();
             }
             let task = super::helpers::handle_repo_loaded(screen, loaded);
@@ -53,14 +49,8 @@ pub(super) fn on_tag_deleted(
     }
     match result {
         Ok(loaded) => {
-            let remote_names = match screen.overlay_manager.active() {
-                Some(ActiveDialog::DeleteTag(s)) => s.tag_remote_names.clone(),
-                _ => Vec::new(),
-            };
-            if matches!(
-                screen.overlay_manager.active(),
-                Some(ActiveDialog::DeleteTag(_))
-            ) {
+            let remote_names = screen.overlay_manager.delete_tag_remote_names();
+            if screen.overlay_manager.is_delete_tag_dialog_open() {
                 screen.overlay_manager.close();
             }
             let reload_task = super::helpers::handle_repo_loaded(screen, loaded);

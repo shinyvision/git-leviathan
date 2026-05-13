@@ -19,6 +19,7 @@ pub mod bridge;
 pub mod capabilities;
 pub mod capability_grants;
 pub mod commands;
+pub mod commit_data;
 pub mod core_commands;
 pub mod dependency;
 pub mod devtools;

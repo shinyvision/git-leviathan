@@ -108,6 +108,72 @@ fn repository_status_returns_table_with_capability() {
 }
 
 #[test]
+fn repository_commits_returns_leviathan_commit_rows() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "commit_rows",
+        &manifest_with_caps("commit_rows", &["git:read:log"]),
+        r#"
+        leviathan.api.schedule(function()
+            local commits, err = leviathan.repository.commits({ limit = 1 })
+            _G.commits_ok = commits and 1 or 0
+            _G.commits_err = err or ""
+            local commit = commits and commits[1] or nil
+            if commit then
+                _G.commit_kind = commit.kind or ""
+                _G.commit_summary = commit.summary or ""
+                _G.commit_message = commit.message or ""
+                _G.commit_has_parents = type(commit.parents) == "table" and 1 or 0
+                _G.commit_can_reword = commit.actions
+                    and commit.actions.reword
+                    and commit.actions.reword.enabled
+                    and 1
+                    or 0
+            end
+        end)
+        "#,
+    )
+    .expect("load");
+
+    let (_repo_dir, _repo) = init_test_repo("repository_git_api_commit_rows");
+    let gw = GitRepositoryGateway::from_path(_repo_dir.path_str());
+    host.host_mut().set_repository_gateway(Some(gw));
+    host.tick();
+
+    let err = host
+        .read_global_string("commit_rows", "commits_err")
+        .unwrap_or_default();
+    assert_eq!(
+        host.read_global_i64("commit_rows", "commits_ok"),
+        Some(1),
+        "err: {err}"
+    );
+    assert_eq!(
+        host.read_global_string("commit_rows", "commit_kind")
+            .as_deref(),
+        Some("commit")
+    );
+    assert_eq!(
+        host.read_global_string("commit_rows", "commit_summary")
+            .as_deref(),
+        Some("base")
+    );
+    assert_eq!(
+        host.read_global_string("commit_rows", "commit_message")
+            .as_deref(),
+        Some("base")
+    );
+    assert_eq!(
+        host.read_global_i64("commit_rows", "commit_has_parents"),
+        Some(1)
+    );
+    assert_eq!(
+        host.read_global_i64("commit_rows", "commit_can_reword"),
+        Some(1)
+    );
+}
+
+#[test]
 fn checkout_with_capability_moves_head_and_fires_head_changed() {
     let mut host = MockHost::new();
     host.load_inline(

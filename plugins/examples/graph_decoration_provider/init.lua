@@ -1,4 +1,4 @@
-leviathan.ui.graph_decoration("HEAD", {
+leviathan.ui.graph_decoration({ hash = "HEAD" }, {
   kind = "badge",
   id = "example.graph.head",
   text = "HEAD",

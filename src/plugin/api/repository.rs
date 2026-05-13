@@ -20,13 +20,14 @@
 //!   is_bare = false,                        -- true when a repo is open but has no working tree
 //!   head_hash = "abc123...",                -- "" when no repo / unborn HEAD
 //!   default_remote_name = "origin",         -- "" when no remotes configured
+//!   remote_names = { "origin", ... },
 //!   local_branches = { <LocalBranch>, ... },
 //!   remote_branches = { <RemoteBranch>, ... },
 //!   tags = { <Tag>, ... },
 //! }
 //! LocalBranch  = { name, hash, is_current, upstream_branch = <RemoteBranch | nil> }
 //! RemoteBranch = { name, remote_name, hash }
-//! Tag          = { name, hash }
+//! Tag          = { name, hash, remote_names = { "origin", ... } }
 //! ```
 //!
 //! `current_branch` is the same `LocalBranch` table (same identity) as
@@ -37,24 +38,36 @@
 //! Mutations made by a plugin to the table are not propagated back — the
 //! table is rebuilt on every sync.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 
-use mlua::{Lua, Table, Value as LuaValue};
+use mlua::{Lua, LuaSerdeExt, Table, Value as LuaValue};
 use serde_json;
 
 use crate::plugin::capabilities::CapabilityGuard;
+use crate::plugin::commit_data::{CommitActionAvailability, CommitData};
 use crate::plugin::diagnostic::{
     DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
 };
 use crate::plugin::git_ops::GitOpsContext;
 use crate::plugin::resources::{GenerationId, PluginId};
-use crate::services::{RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
+use crate::services::{CommitSnapshot, RepoRef, RepoRefKind, COMMIT_LOAD_LIMIT};
 
 /// Build the full `leviathan.repository` table from the latest refs.
 ///
 /// Returns the fresh table to the caller; installing it onto the
 /// `leviathan` global is the host's job.
+pub struct RepositoryTableInput<'a> {
+    pub repo_name: &'a str,
+    pub workdir_path: &'a str,
+    pub current_branch_name: &'a str,
+    pub head_hash: &'a str,
+    pub default_remote_name: &'a str,
+    pub remote_names: &'a [String],
+    pub refs: &'a [RepoRef],
+    pub tag_remote_names: &'a BTreeMap<String, Vec<String>>,
+}
+
 pub fn build_table(
     lua: &Lua,
     repo_name: &str,
@@ -64,6 +77,37 @@ pub fn build_table(
     default_remote_name: &str,
     refs: &[RepoRef],
 ) -> mlua::Result<Table> {
+    let tag_remote_names = BTreeMap::new();
+    let remote_names = Vec::new();
+    build_table_with_tag_remotes(
+        lua,
+        RepositoryTableInput {
+            repo_name,
+            workdir_path,
+            current_branch_name,
+            head_hash,
+            default_remote_name,
+            remote_names: &remote_names,
+            refs,
+            tag_remote_names: &tag_remote_names,
+        },
+    )
+}
+
+pub fn build_table_with_tag_remotes(
+    lua: &Lua,
+    input: RepositoryTableInput<'_>,
+) -> mlua::Result<Table> {
+    let RepositoryTableInput {
+        repo_name,
+        workdir_path,
+        current_branch_name,
+        head_hash,
+        default_remote_name,
+        remote_names,
+        refs,
+        tag_remote_names,
+    } = input;
     let locals: Vec<&RepoRef> = refs
         .iter()
         .filter(|r| matches!(r.kind, RepoRefKind::LocalBranch))
@@ -107,7 +151,11 @@ pub fn build_table(
 
     let tags_table = lua.create_table()?;
     for (i, tag) in tags.iter().enumerate() {
-        tags_table.raw_set(i + 1, build_tag(lua, tag)?)?;
+        let remote_names = tag_remote_names
+            .get(&tag.name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        tags_table.raw_set(i + 1, build_tag(lua, tag, remote_names)?)?;
     }
 
     let repo = lua.create_table()?;
@@ -116,6 +164,7 @@ pub fn build_table(
     repo.set("current_branch_name", current_branch_name)?;
     repo.set("head_hash", head_hash)?;
     repo.set("default_remote_name", default_remote_name)?;
+    repo.set("remote_names", build_string_array(lua, remote_names)?)?;
     let is_open = !repo_name.is_empty();
     repo.set("is_open", is_open)?;
     let is_detached = !head_hash.is_empty() && current_branch.is_none();
@@ -134,10 +183,19 @@ pub fn build_table(
     Ok(repo)
 }
 
-fn build_tag(lua: &Lua, tag: &RepoRef) -> mlua::Result<Table> {
+fn build_string_array(lua: &Lua, values: &[String]) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    for (i, value) in values.iter().enumerate() {
+        table.raw_set(i + 1, value.as_str())?;
+    }
+    Ok(table)
+}
+
+fn build_tag(lua: &Lua, tag: &RepoRef, remote_names: &[String]) -> mlua::Result<Table> {
     let t = lua.create_table()?;
     t.set("name", tag.name.as_str())?;
     t.set("hash", tag.target_hash.as_str())?;
+    t.set("remote_names", build_string_array(lua, remote_names)?)?;
     Ok(t)
 }
 
@@ -185,6 +243,56 @@ fn resolve_upstream(
     remote_lookup
         .get(&(remote_name.to_string(), branch_name.to_string()))
         .cloned()
+}
+
+fn rewordable_commit_hashes(
+    head_hash: Option<&str>,
+    commits: &[CommitSnapshot],
+) -> HashSet<String> {
+    let lookup: HashMap<&str, &CommitSnapshot> = commits
+        .iter()
+        .map(|commit| (commit.hash.as_str(), commit))
+        .collect();
+    let mut result = HashSet::new();
+    let Some(mut hash) = head_hash else {
+        return result;
+    };
+
+    while result.insert(hash.to_string()) {
+        let Some(commit) = lookup.get(hash) else {
+            break;
+        };
+        let Some(parent) = commit.parent_hashes.first() else {
+            break;
+        };
+        hash = parent;
+    }
+    result
+}
+
+fn commit_hash_arg(opts: &Table, missing: &str) -> Result<String, String> {
+    match opts.get::<LuaValue>("commit").map_err(|e| e.to_string())? {
+        LuaValue::Nil => Err(missing.to_string()),
+        LuaValue::String(value) => {
+            let hash = value.to_str().map_err(|e| e.to_string())?.to_string();
+            if hash.is_empty() {
+                Err(missing.to_string())
+            } else {
+                Ok(hash)
+            }
+        }
+        LuaValue::Table(table) => {
+            let hash: String = table
+                .get("hash")
+                .map_err(|_| "commit.hash must be a non-empty string".to_string())?;
+            if hash.is_empty() {
+                Err("commit.hash must be a non-empty string".to_string())
+            } else {
+                Ok(hash)
+            }
+        }
+        _ => Err("commit must be a LeviathanCommit table".to_string()),
+    }
 }
 
 /// typed read APIs.
@@ -355,24 +463,25 @@ pub fn install_read_functions(
                     None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
                     Some(gw) => match gw.load_repo(limit.min(COMMIT_LOAD_LIMIT)) {
                         Ok(snap) => {
-                            let arr = lua_inner.create_table()?;
-                            for (i, c) in snap.commits.iter().take(limit).enumerate() {
-                                let row = lua_inner.create_table()?;
-                                row.set("hash", c.hash.as_str())?;
-                                row.set(
-                                    "summary",
-                                    c.message.lines().next().unwrap_or("").to_string(),
-                                )?;
-                                row.set("author", c.author_name.as_str())?;
-                                row.set("timestamp", c.authored_at)?;
-                                let parents = lua_inner.create_table()?;
-                                for (j, ph) in c.parent_hashes.iter().enumerate() {
-                                    parents.set(j + 1, ph.as_str())?;
-                                }
-                                row.set("parents", parents)?;
-                                arr.set(i + 1, row)?;
-                            }
-                            Ok((LuaValue::Table(arr), None::<String>))
+                            let rewordable =
+                                rewordable_commit_hashes(snap.head_hash.as_deref(), &snap.commits);
+                            let commits: Vec<_> = snap
+                                .commits
+                                .iter()
+                                .take(limit)
+                                .enumerate()
+                                .map(|(index, commit)| {
+                                    let reword = if rewordable.contains(&commit.hash) {
+                                        CommitActionAvailability::enabled()
+                                    } else {
+                                        CommitActionAvailability::disabled(
+                                            "commit_not_on_first_parent_chain",
+                                        )
+                                    };
+                                    CommitData::from_snapshot(commit, Some(index), reword)
+                                })
+                                .collect();
+                            Ok((lua_inner.to_value(&commits)?, None::<String>))
                         }
                         Err(e) => {
                             record_read_failed(
@@ -402,14 +511,9 @@ pub fn install_read_functions(
                 if let Err(reason) = g.check_named("git:read:diff") {
                     return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
                 }
-                let commit: String = match opts.get::<Option<String>>("commit") {
-                    Ok(Some(s)) if !s.is_empty() => s,
-                    _ => {
-                        return Ok((
-                            LuaValue::Nil,
-                            Some("missing required arg `commit`".to_string()),
-                        ))
-                    }
+                let commit = match commit_hash_arg(&opts, "missing required arg `commit`") {
+                    Ok(hash) => hash,
+                    Err(err) => return Ok((LuaValue::Nil, Some(err))),
                 };
                 match ctx.gateway.get() {
                     None => Ok((LuaValue::Nil, Some("no repository open".to_string()))),
@@ -423,7 +527,10 @@ pub fn install_read_functions(
                                 arr.set(i + 1, row)?;
                             }
                             let wrap = lua_inner.create_table()?;
-                            wrap.set("commit", diff.hash.as_str())?;
+                            wrap.set(
+                                "commit",
+                                lua_inner.to_value(&CommitData::from_hash(&diff.hash))?,
+                            )?;
                             wrap.set("modified_count", diff.modified_count)?;
                             wrap.set("added_count", diff.added_count)?;
                             wrap.set("deleted_count", diff.deleted_count)?;
@@ -452,9 +559,9 @@ pub fn install_read_functions(
                 if let Err(reason) = g.check_named("git:read:show") {
                     return Ok((LuaValue::Nil, Some(format!("capability denied: {reason}"))));
                 }
-                let commit: String = match opts.get::<Option<String>>("commit") {
-                    Ok(Some(s)) if !s.is_empty() => s,
-                    _ => return Ok((LuaValue::Nil, Some("missing arg `commit`".to_string()))),
+                let commit = match commit_hash_arg(&opts, "missing arg `commit`") {
+                    Ok(hash) => hash,
+                    Err(err) => return Ok((LuaValue::Nil, Some(err))),
                 };
                 let path: String = match opts.get::<Option<String>>("path") {
                     Ok(Some(s)) if !s.is_empty() => s,
@@ -465,7 +572,10 @@ pub fn install_read_functions(
                     Some(gw) => match gw.load_commit_file_diff(&commit, &path) {
                         Ok(d) => {
                             let t = lua_inner.create_table()?;
-                            t.set("commit", commit.as_str())?;
+                            t.set(
+                                "commit",
+                                lua_inner.to_value(&CommitData::from_hash(&commit))?,
+                            )?;
                             t.set("path", path.as_str())?;
                             let lines_tbl = lua_inner.create_table()?;
                             for (i, line) in d.lines.iter().enumerate() {
@@ -656,6 +766,30 @@ mod tests {
         let lua = Lua::new();
         let t = build_table(&lua, "repo", "/tmp/repo", "main", "", "origin", &[]).unwrap();
         assert_eq!(t.get::<String>("default_remote_name").unwrap(), "origin");
+    }
+
+    #[test]
+    fn configured_remote_names_are_exposed_on_table() {
+        let lua = Lua::new();
+        let remote_names = vec!["origin".to_string(), "upstream".to_string()];
+        let tag_remote_names = BTreeMap::new();
+        let t = build_table_with_tag_remotes(
+            &lua,
+            RepositoryTableInput {
+                repo_name: "repo",
+                workdir_path: "/tmp/repo",
+                current_branch_name: "main",
+                head_hash: "",
+                default_remote_name: "origin",
+                remote_names: &remote_names,
+                refs: &[],
+                tag_remote_names: &tag_remote_names,
+            },
+        )
+        .unwrap();
+        let remotes: mlua::Table = t.get("remote_names").unwrap();
+        assert_eq!(remotes.get::<String>(1).unwrap(), "origin");
+        assert_eq!(remotes.get::<String>(2).unwrap(), "upstream");
     }
 
     #[test]
@@ -896,6 +1030,41 @@ mod tests {
         let t2: mlua::Table = tags.get(2).unwrap();
         assert_eq!(t2.get::<String>("name").unwrap(), "v1.1.0");
         assert_eq!(t2.get::<String>("hash").unwrap(), "cccc");
+    }
+
+    #[test]
+    fn tags_include_known_remote_names() {
+        let lua = Lua::new();
+        let refs = vec![tag("v1.0.0", "bbbb"), tag("v1.1.0", "cccc")];
+        let mut tag_remote_names = BTreeMap::new();
+        tag_remote_names.insert(
+            "v1.0.0".to_string(),
+            vec!["origin".to_string(), "upstream".to_string()],
+        );
+
+        let t = build_table_with_tag_remotes(
+            &lua,
+            RepositoryTableInput {
+                repo_name: "repo",
+                workdir_path: "/tmp/repo",
+                current_branch_name: "main",
+                head_hash: "",
+                default_remote_name: "",
+                remote_names: &[],
+                refs: &refs,
+                tag_remote_names: &tag_remote_names,
+            },
+        )
+        .unwrap();
+        let tags: mlua::Table = t.get("tags").unwrap();
+        let t1: mlua::Table = tags.get(1).unwrap();
+        let remote_names: mlua::Table = t1.get("remote_names").unwrap();
+        assert_eq!(remote_names.get::<String>(1).unwrap(), "origin");
+        assert_eq!(remote_names.get::<String>(2).unwrap(), "upstream");
+
+        let t2: mlua::Table = tags.get(2).unwrap();
+        let remote_names: mlua::Table = t2.get("remote_names").unwrap();
+        assert_eq!(remote_names.len().unwrap(), 0);
     }
 
     #[test]

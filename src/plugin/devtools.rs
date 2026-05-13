@@ -12,6 +12,7 @@ pub struct PluginSummary {
     pub name: String,
     pub version: String,
     pub api_version: String,
+    pub debug: bool,
     pub last_reload_error: Option<String>,
     pub provides_services: Vec<String>,
     pub consumes_services: Vec<String>,

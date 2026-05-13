@@ -2,10 +2,11 @@
 //! pipeline.
 
 use crate::plugin::diagnostic::{
-    DiagnosticSeverity, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
+    DiagnosticSeverity, DiagnosticSink, DiagnosticStore, PluginDiagnostic, PluginSourceSpan,
 };
 use crate::plugin::resources::PluginId;
 use crate::plugin::tests::harness::MockHost;
+use std::sync::{Arc, Mutex};
 
 /// Assert at least one diagnostic exists with the given `(plugin_id,
 /// code, severity)` tuple. Returns the matched diagnostic for
@@ -59,6 +60,26 @@ version = "0.1.0"
 api_version = "1.0"
 "#;
 
+#[derive(Clone, Default)]
+struct CaptureSink {
+    rows: Arc<Mutex<Vec<String>>>,
+}
+
+impl CaptureSink {
+    fn rows(&self) -> Vec<String> {
+        self.rows.lock().expect("capture lock").clone()
+    }
+}
+
+impl DiagnosticSink for CaptureSink {
+    fn emit(&self, diagnostic: &PluginDiagnostic) {
+        self.rows
+            .lock()
+            .expect("capture lock")
+            .push(format!("{}/{}", diagnostic.plugin_id, diagnostic.code));
+    }
+}
+
 #[test]
 fn happy_path_load_emits_only_info_diagnostics() {
     let mut host = MockHost::new();
@@ -72,6 +93,61 @@ fn happy_path_load_emits_only_info_diagnostics() {
         DiagnosticSeverity::Info,
     );
     assert_eq!(info.generation_id.unwrap().get(), 1);
+}
+
+#[test]
+fn manifest_debug_gates_terminal_sink_without_dropping_diagnostics() {
+    let capture = CaptureSink::default();
+    let store = DiagnosticStore::with_plugin_debug_sink(Arc::new(capture.clone()));
+    let mut host = MockHost::new();
+    host.host_mut().set_diagnostic_store(store.clone());
+
+    host.load_inline(
+        "quiet",
+        r#"
+id = "quiet"
+name = "Quiet"
+version = "0.1.0"
+api_version = "1.0"
+debug = false
+"#,
+        r#"leviathan.log("quiet explicit log")"#,
+    )
+    .expect("quiet load");
+    host.load_inline(
+        "loud",
+        r#"
+id = "loud"
+name = "Loud"
+version = "0.1.0"
+api_version = "1.0"
+debug = true
+"#,
+        r#"leviathan.log("loud explicit log")"#,
+    )
+    .expect("loud load");
+
+    assert_eq!(
+        store
+            .by_code("host.plugin_loaded")
+            .into_iter()
+            .filter(|d| d.plugin_id.as_str() == "quiet" || d.plugin_id.as_str() == "loud")
+            .count(),
+        2
+    );
+    let rows = capture.rows();
+    assert!(
+        rows.iter().any(|row| row == "loud/plugin.log"),
+        "debug plugin explicit logs should reach sink: {rows:?}"
+    );
+    assert!(
+        rows.iter().any(|row| row == "loud/host.plugin_loaded"),
+        "debug plugin diagnostics should reach sink: {rows:?}"
+    );
+    assert!(
+        rows.iter().all(|row| !row.starts_with("quiet/")),
+        "non-debug plugin should not reach sink: {rows:?}"
+    );
 }
 
 #[test]

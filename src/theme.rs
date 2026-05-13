@@ -212,6 +212,7 @@ pub const SIDEBAR_WIDTH: u16 = 240;
 pub const BRANCH_COL_WIDTH: u16 = 185;
 pub const DETAIL_PANEL_WIDTH: u16 = 510;
 pub const DETAIL_PANEL_HEIGHT: u16 = 320;
+pub const PANE_SPLITTER_SIZE: f32 = 5.0;
 
 pub const MIN_CENTER_WIDTH: f32 = 460.0;
 

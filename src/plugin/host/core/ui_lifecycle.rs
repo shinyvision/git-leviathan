@@ -67,6 +67,7 @@ impl PluginHost {
         let mut disable_after_failures = false;
         let mut effects = Vec::new();
         let tabs = self.last_tab_snapshot.clone();
+        let focus = self.last_focus_snapshot.clone();
         {
             let Some(plugin) = self.plugins.get_mut(plugin_id) else {
                 return;
@@ -115,7 +116,7 @@ impl PluginHost {
                     return;
                 }
             };
-            let ctx_lua = match screen_context_lua(plugin, &tabs) {
+            let ctx_lua = match screen_context_lua(plugin, &tabs, Some(&focus)) {
                 Ok(v) => v,
                 Err(e) => {
                     self.diagnostics.record(
@@ -305,6 +306,99 @@ impl PluginHost {
         self.drain_lua_command_effects();
     }
 
+    pub fn dispatch_dialog_button_callback(
+        &mut self,
+        plugin_id: &str,
+        dialog_id: &str,
+        button_id: &str,
+    ) {
+        let chunk_name = format!("plugins/{plugin_id}/init.lua");
+        let mut disable_after_failures = false;
+        let effects: Vec<crate::plugin::navigation::PluginNavigationEffect> = {
+            let Some(plugin) = self.plugins.get(plugin_id) else {
+                return;
+            };
+            let generation_id = plugin.generation.generation_id;
+            let func: Function = {
+                let callbacks = plugin.dialog_callbacks.borrow();
+                let Some(key) = callbacks.get(plugin_id, dialog_id, button_id) else {
+                    return;
+                };
+                match plugin.lua().registry_value(key) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        self.diagnostics.record(
+                            PluginDiagnostic::new(
+                                PluginId::from(plugin_id),
+                                DiagnosticSeverity::Error,
+                                "lua.handler_lookup_failed",
+                                format!("dialog button callback lookup failed: {e}"),
+                            )
+                            .with_generation(generation_id)
+                            .with_source(
+                                PluginSourceSpan::ApiFunction {
+                                    name: format!("dialog:{dialog_id}.button:{button_id}.on_click"),
+                                },
+                            ),
+                        );
+                        return;
+                    }
+                }
+            };
+            let cb_id = format!("dialog:{dialog_id}.button:{button_id}.on_click");
+            match self
+                .budget_tracker
+                .track_call::<Option<Table>, mlua::Error>(
+                    CallbackKind::UiCallback,
+                    &PluginId::from(plugin_id),
+                    generation_id,
+                    &cb_id,
+                    || func.call(button_id.to_string()),
+                ) {
+                PerfOutcome::Ok(Some(t)) => parse_navigation_effects(
+                    plugin_id,
+                    dialog_id,
+                    generation_id,
+                    "dialog.button.on_click",
+                    &t,
+                    &self.diagnostics,
+                ),
+                PerfOutcome::Ok(None) => Vec::new(),
+                PerfOutcome::Skipped => {
+                    disable_after_failures = true;
+                    Vec::new()
+                }
+                PerfOutcome::Err(e) => {
+                    disable_after_failures = self.budget_tracker.is_tripped(
+                        &PluginId::from(plugin_id),
+                        generation_id,
+                        &cb_id,
+                    );
+                    self.diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Error,
+                            "lua.callback_error",
+                            format!("dialog button callback error in {dialog_id}.{button_id}"),
+                        )
+                        .with_generation(generation_id)
+                        .with_mlua_error(&chunk_name, &e),
+                    );
+                    Vec::new()
+                }
+            }
+        };
+        if disable_after_failures {
+            self.disable_plugin(plugin_id);
+            return;
+        }
+        self.apply_navigation_effects(&effects);
+        self.pending_navigation_effects.extend(effects);
+        let only = HashSet::from([plugin_id.to_string()]);
+        self.invalidate_dynamic_widgets(&[UiInvalidationCause::PluginStateChanged], Some(&only));
+        self.drain_lua_command_effects();
+    }
+
     pub fn autofocus_overlay_text_input_id(&self) -> Option<iced::widget::Id> {
         for overlay in self.extension_registry.overlays() {
             let Some(node_id) = autofocus_text_input_node_id(&overlay.widget) else {
@@ -355,6 +449,7 @@ impl PluginHost {
         value: serde_json::Value,
     ) -> bool {
         let tabs = self.last_tab_snapshot.clone();
+        let focus = self.last_focus_snapshot.clone();
         let Some(plugin) = self.plugins.get_mut(plugin_id) else {
             return false;
         };
@@ -369,7 +464,7 @@ impl PluginHost {
             let Ok(de_fn) = plugin.lua().registry_value::<Function>(de_key) else {
                 return false;
             };
-            let Ok(ctx_lua) = screen_context_lua(plugin, &tabs) else {
+            let Ok(ctx_lua) = screen_context_lua(plugin, &tabs, Some(&focus)) else {
                 return false;
             };
             match de_fn.call::<LuaValue>((input, ctx_lua)) {
@@ -406,7 +501,11 @@ impl PluginHost {
             Some(k) => plugin.lua().registry_value(k).unwrap_or(LuaValue::Nil),
             None => LuaValue::Nil,
         };
-        let Ok(ctx_lua) = screen_context_lua(plugin, &self.last_tab_snapshot) else {
+        let Ok(ctx_lua) = screen_context_lua(
+            plugin,
+            &self.last_tab_snapshot,
+            Some(&self.last_focus_snapshot),
+        ) else {
             return true;
         };
         func.call::<bool>((state_val, ctx_lua)).unwrap_or(true)
@@ -497,6 +596,7 @@ impl PluginHost {
             self.lazy_registry
                 .entries_mut()
                 .retain(|e| e.plugin_id != plugin_id);
+            self.diagnostics.clear_plugin_debug(plugin_id);
             return Ok(());
         }
         let mut plugin = self.plugins.remove(plugin_id).ok_or_else(|| {
@@ -537,13 +637,14 @@ impl PluginHost {
         // re-runs inside `drop_for_plugin`, so any conflict-loser
         // bindings from peers automatically reactivate.
         self.keymap_registry.borrow_mut().drop_for_plugin(plugin_id);
+        let had_chrome = !plugin.chrome_widgets.borrow().is_empty();
         self.cleanup_ledger(&plugin.generation.ledger);
         // Remove ops are owned host state, but they are not slot
         // resources. Drop them explicitly so peer/built-in slots can
         // reappear when registries are replayed after this plugin unloads.
         let slot_ops_len_before = self.slot_ops.len();
         self.slot_ops.retain(|op| !op_belongs_to(op, plugin_id));
-        if self.slot_ops.len() != slot_ops_len_before {
+        if self.slot_ops.len() != slot_ops_len_before || had_chrome {
             self.mark_slot_ops_changed();
         }
         // extension points: drop overlays / context-menu items / decorations
@@ -574,6 +675,7 @@ impl PluginHost {
         }
         self.last_reload_errors.remove(plugin_id);
         self.runtime_path_registry.unregister(plugin_id);
+        self.diagnostics.clear_plugin_debug(plugin_id);
         drop(plugin);
         Ok(())
     }
@@ -647,6 +749,7 @@ impl PluginHost {
             auto_grant_capabilities,
             git_ctx: self.git_ops_context(),
             pending_git_events: self.pending_git_events.clone(),
+            pending_ui_effects: self.pending_ui_effects.clone(),
             async_jobs: self.async_jobs.clone(),
             timers: self.timers.clone(),
             watchers: self.watchers.clone(),
@@ -757,6 +860,7 @@ impl PluginHost {
             generation,
             slot_handlers,
             overlay_callbacks,
+            dialog_callbacks,
             decoration_provider_callbacks,
             screens,
             dock_panels,
@@ -782,6 +886,7 @@ impl PluginHost {
             timer_callbacks: staged_timer_callbacks,
             watcher_callbacks: staged_watcher_callbacks,
             extension_registry: staged_extension_registry,
+            chrome_widgets: staged_chrome_widgets,
         } = artifacts;
 
         let plugin_id_str = plugin_id.as_str().to_string();
@@ -926,6 +1031,7 @@ impl PluginHost {
             CommandPluginContext {
                 lua: Rc::clone(&generation.lua),
                 capability_guard: staged_capability_guard,
+                ui_context: ui_context.clone(),
                 generation_id,
             },
         );
@@ -972,12 +1078,14 @@ impl PluginHost {
             manifest,
             slot_handlers,
             overlay_callbacks,
+            dialog_callbacks,
             decoration_provider_callbacks,
             screens,
             dock_panels,
             settings_panel,
             screen_state,
             dynamic_widgets,
+            chrome_widgets: staged_chrome_widgets,
             ui_context,
             deferred,
             user_commands,
@@ -997,6 +1105,7 @@ impl PluginHost {
 
     pub fn open_screen(&mut self, plugin_id: String, screen_id: String) {
         let tabs = self.last_tab_snapshot.clone();
+        let focus = self.last_focus_snapshot.clone();
         let needs_init = self
             .plugins
             .get(&plugin_id)
@@ -1010,7 +1119,7 @@ impl PluginHost {
                     let generation_id = plugin.generation.generation_id;
                     match plugin.lua().registry_value::<Function>(&screen_def.init) {
                         Ok(init_fn) => {
-                            let ctx_lua = match screen_context_lua(plugin, &tabs) {
+                            let ctx_lua = match screen_context_lua(plugin, &tabs, Some(&focus)) {
                                 Ok(ctx) => ctx,
                                 Err(e) => {
                                     pending.push(
@@ -1088,6 +1197,7 @@ impl PluginHost {
         let mut ok_tree: Option<WidgetAst> = None;
         let mut disable_after_failures = false;
         let tabs = self.last_tab_snapshot.clone();
+        let focus = self.last_focus_snapshot.clone();
         {
             let Some(plugin) = self.plugins.get(&plugin_id) else {
                 self.widget_tree = None;
@@ -1105,7 +1215,7 @@ impl PluginHost {
                         Some(k) => plugin.lua().registry_value(k).unwrap_or(LuaValue::Nil),
                         None => LuaValue::Nil,
                     };
-                    let ctx_lua = match screen_context_lua(plugin, &tabs) {
+                    let ctx_lua = match screen_context_lua(plugin, &tabs, Some(&focus)) {
                         Ok(ctx) => ctx,
                         Err(e) => {
                             pending.push(
@@ -1353,13 +1463,18 @@ impl PluginHost {
     }
 }
 
-fn screen_context_lua(plugin: &LoadedPlugin, tabs: &TabsSnapshot) -> mlua::Result<LuaValue> {
+fn screen_context_lua(
+    plugin: &LoadedPlugin,
+    tabs: &TabsSnapshot,
+    focus: Option<&crate::plugin::ui::focus::FocusSnapshot>,
+) -> mlua::Result<LuaValue> {
     let ctx = crate::plugin::ui::context::context_for_surface(
         plugin.id(),
         plugin.generation.generation_id,
         crate::plugin::ui::context::UiContextSurface::Screen,
         None,
         tabs,
+        focus,
     );
     plugin.ui_context.set(ctx.clone());
     plugin.lua().to_value(&ctx)

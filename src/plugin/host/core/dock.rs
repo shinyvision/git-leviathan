@@ -242,6 +242,7 @@ impl PluginHost {
             &panel,
             self.repository_context_snapshot().as_ref(),
             &self.last_tab_snapshot,
+            Some(&self.last_focus_snapshot),
         ))
     }
 

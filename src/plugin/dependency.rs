@@ -479,6 +479,7 @@ mod tests {
             name: id.to_string(),
             version: Version::parse(version).unwrap(),
             api_version: ApiVersion { major: 1, minor: 0 },
+            debug: false,
             description: None,
             capabilities: vec![],
             provides_services: vec![],
