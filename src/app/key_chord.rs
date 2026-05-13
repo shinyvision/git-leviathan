@@ -50,6 +50,10 @@ impl KeyChordState {
         self.buffer.push(stroke);
     }
 
+    pub(super) fn pop(&mut self) -> Option<Keystroke> {
+        self.buffer.pop()
+    }
+
     pub(super) fn replace_with(&mut self, context: String, stroke: Keystroke) {
         self.context = Some(context);
         self.buffer.clear();
@@ -74,6 +78,24 @@ impl App {
             self.plugin_host
                 .fire_event_typed("KeymapPrefixChanged", payload);
         }
+    }
+
+    pub(super) fn pop_key_chord(&mut self) {
+        if !self.key_chord.is_active() {
+            return;
+        }
+
+        if self.key_chord.buffer().len() == 1 {
+            self.clear_key_chord("cancelled");
+            return;
+        }
+
+        let _ = self.key_chord.pop();
+        let Some(context) = self.key_chord.context().map(str::to_owned) else {
+            self.clear_key_chord("cancelled");
+            return;
+        };
+        self.publish_key_chord_pending(&context, "backspace");
     }
 
     pub(super) fn publish_key_chord_pending(&mut self, context: &str, reason: &'static str) {

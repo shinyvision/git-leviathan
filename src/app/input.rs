@@ -90,6 +90,11 @@ impl App {
             }
         }
 
+        if is_backspace_key(&key) && self.key_chord.is_active() {
+            self.pop_key_chord();
+            return Task::none();
+        }
+
         if let Some(keystroke) = keystroke_from_iced_key(&modified_key, modifiers) {
             let context = self.keymap_context();
             if self.handle_keymap_candidate(context, keystroke) {
@@ -219,6 +224,10 @@ fn is_escape_key(key: &keyboard::Key) -> bool {
     matches!(key, keyboard::Key::Named(keyboard::key::Named::Escape))
 }
 
+fn is_backspace_key(key: &keyboard::Key) -> bool {
+    matches!(key, keyboard::Key::Named(keyboard::key::Named::Backspace))
+}
+
 fn overlay_key_name_from_iced_key(key: &keyboard::Key) -> Option<Cow<'static, str>> {
     match key.as_ref() {
         keyboard::Key::Named(named) => named_key_name(named).map(Cow::Borrowed),
@@ -331,6 +340,7 @@ fn named_key_name(named: keyboard::key::Named) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::plugin::keymap::Keystroke;
 
     #[test]
     fn converts_shifted_colon_to_bare_punctuation() {
@@ -363,6 +373,90 @@ mod tests {
         .expect("escape should convert");
 
         assert_eq!(stroke, Keystroke::plain("esc"));
+    }
+
+    fn empty_test_app() -> App {
+        use std::sync::Arc;
+
+        use crate::app::{
+            build_slot_registries, fetch_policy::FetchPolicy, git_queue::GitOperationQueue,
+            key_chord::KeyChordState, tabs::TabManager,
+        };
+        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+        use crate::plugin::PluginHost;
+        use crate::screens::BlankScreen;
+        use crate::services::DefaultPresenter;
+        use crate::toast::ToastManager;
+
+        let mut plugin_host = PluginHost::new();
+        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(Arc::new(NullSink)));
+        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
+            build_slot_registries(&plugin_host);
+
+        App {
+            tabs: TabManager::new(Arc::new(DefaultPresenter::new())),
+            blank_screen: BlankScreen::new(),
+            no_git_screen: None,
+            toasts: ToastManager::default(),
+            last_animation_tick: None,
+            fetch: FetchPolicy::new(),
+            git_queue: GitOperationQueue::new(),
+            reload_refs_abort: None,
+            plugin_host,
+            key_chord: KeyChordState::new(),
+            main_bar_registry,
+            tab_bar_registry,
+            repo_region_registry,
+            repo_chrome_registry,
+            slot_registry_revision: 0,
+            pending_focus_reason: None,
+        }
+    }
+
+    fn press_char(app: &mut App, character: &str) {
+        let key = keyboard::Key::Character(character.into());
+        let _ = app.handle_key_pressed(key.clone(), key, keyboard::Modifiers::default());
+    }
+
+    fn press_named(app: &mut App, named: keyboard::key::Named) {
+        let key = keyboard::Key::Named(named);
+        let _ = app.handle_key_pressed(key.clone(), key, keyboard::Modifiers::default());
+    }
+
+    #[test]
+    fn backspace_pops_pending_key_chord_to_previous_prefix() {
+        let mut app = empty_test_app();
+        app.plugin_host
+            .set_builtin_keymap("global", "gab", "test.noop", "Open branch");
+
+        press_char(&mut app, "g");
+        press_char(&mut app, "a");
+        assert_eq!(
+            app.key_chord.buffer(),
+            [Keystroke::plain("g"), Keystroke::plain("a")]
+        );
+
+        press_named(&mut app, keyboard::key::Named::Backspace);
+
+        assert_eq!(app.key_chord.buffer(), [Keystroke::plain("g")]);
+        assert_eq!(app.key_chord.context(), Some("global"));
+        assert!(app.key_chord.prefix_published());
+    }
+
+    #[test]
+    fn backspace_cancels_pending_key_chord_when_final_key_is_removed() {
+        let mut app = empty_test_app();
+        app.plugin_host
+            .set_builtin_keymap("global", "gab", "test.noop", "Open branch");
+
+        press_char(&mut app, "g");
+        assert_eq!(app.key_chord.buffer(), [Keystroke::plain("g")]);
+
+        press_named(&mut app, keyboard::key::Named::Backspace);
+
+        assert!(!app.key_chord.is_active());
+        assert_eq!(app.key_chord.context(), None);
+        assert!(!app.key_chord.prefix_published());
     }
 
     fn overlay(id: &str, priority: i32, key_events: &[&str]) -> OverlayRecord {
