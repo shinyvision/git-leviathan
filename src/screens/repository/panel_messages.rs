@@ -149,6 +149,7 @@ pub enum CenterAction {
         indices: Vec<usize>,
         hashes: Vec<String>,
     },
+    SquashSelectedCommitsRequested,
     CreateTagHereRequested {
         commit_hash: String,
     },

@@ -318,6 +318,7 @@ fn center_write_intent(action: &CenterAction) -> Option<GitWriteIntent> {
         | CenterAction::StashApplyRequested { .. }
         | CenterAction::StashPopRequested { .. }
         | CenterAction::SquashCommitsRequested { .. }
+        | CenterAction::SquashSelectedCommitsRequested
         | CenterAction::PushTagRequested { .. } => Some(GitWriteIntent::Normal),
         _ => None,
     }

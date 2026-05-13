@@ -616,27 +616,22 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::SquashCommitsRequested { indices: _, hashes } => {
             ctx.data.branch_popout.close_context_menu();
-            let Some(operation_id) = ctx.data.operations.begin_write() else {
+            squash_commits(ctx, hashes)
+        }
+        CenterAction::SquashSelectedCommitsRequested => {
+            ctx.data.branch_popout.close_context_menu();
+            let selected_indices = ctx.data.selection.selected_indices();
+            if selected_indices.len() < 2 {
                 return Task::none();
-            };
-            let repo = ctx.repository.clone();
-            let presenter = ctx.presenter.clone();
-            let tab_id = ctx.tab_id;
-            Task::perform(
-                git_write_work(move || {
-                    repo.squash_commits(hashes)
-                        .map(|s| presenter.project_loaded(s))
-                }),
-                move |result| {
-                    Message::tab(
-                        tab_id,
-                        RepositoryMessage::SquashCompleted {
-                            operation_id,
-                            result,
-                        },
-                    )
-                },
-            )
+            }
+            let hashes = selected_indices
+                .iter()
+                .filter_map(|&idx| ctx.data.commit_hash(idx))
+                .collect::<Vec<_>>();
+            if hashes.len() < 2 {
+                return Task::none();
+            }
+            squash_commits(ctx, hashes)
         }
         CenterAction::CenterListScrolled(viewport) => {
             let viewport_changed = panel.center_list.update(viewport);
@@ -855,4 +850,28 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::None => Task::none(),
     }
+}
+
+fn squash_commits(ctx: &mut ScreenCtx<'_>, hashes: Vec<String>) -> Task<Message> {
+    let Some(operation_id) = ctx.data.operations.begin_write() else {
+        return Task::none();
+    };
+    let repo = ctx.repository.clone();
+    let presenter = ctx.presenter.clone();
+    let tab_id = ctx.tab_id;
+    Task::perform(
+        git_write_work(move || {
+            repo.squash_commits(hashes)
+                .map(|s| presenter.project_loaded(s))
+        }),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::SquashCompleted {
+                    operation_id,
+                    result,
+                },
+            )
+        },
+    )
 }

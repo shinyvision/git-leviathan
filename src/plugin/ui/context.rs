@@ -235,42 +235,44 @@ pub fn context_for_surface_with_selection(
     tabs: &TabsSnapshot,
     focus: Option<&FocusSnapshot>,
 ) -> Value {
-    context_for_surface_with_selection_and_dialog(
+    context_for_surface_with_selection_and_dialog(SurfaceContextRequest {
         plugin_id,
         generation_id,
         surface,
         repository,
         selection,
-        None,
+        dialog: None,
         tabs,
         focus,
-    )
+    })
 }
 
-pub fn context_for_surface_with_selection_and_dialog(
-    plugin_id: &str,
-    generation_id: GenerationId,
-    surface: UiContextSurface,
-    repository: Option<&RepositoryContextSnapshot>,
-    selection: Option<&SelectionContextSnapshot>,
-    dialog: Option<&ToolbarDialogContextSnapshot>,
-    tabs: &TabsSnapshot,
-    focus: Option<&FocusSnapshot>,
-) -> Value {
-    let parts = surface_parts(surface);
-    let focus_value = build_focus_value(&parts, focus);
+pub struct SurfaceContextRequest<'a> {
+    pub plugin_id: &'a str,
+    pub generation_id: GenerationId,
+    pub surface: UiContextSurface,
+    pub repository: Option<&'a RepositoryContextSnapshot>,
+    pub selection: Option<&'a SelectionContextSnapshot>,
+    pub dialog: Option<&'a ToolbarDialogContextSnapshot>,
+    pub tabs: &'a TabsSnapshot,
+    pub focus: Option<&'a FocusSnapshot>,
+}
+
+pub fn context_for_surface_with_selection_and_dialog(request: SurfaceContextRequest<'_>) -> Value {
+    let parts = surface_parts(request.surface);
+    let focus_value = build_focus_value(&parts, request.focus);
     json!({
         "version": 1,
         "type": parts.context_type,
-        "plugin_id": plugin_id,
-        "generation_id": generation_id.get(),
+        "plugin_id": request.plugin_id,
+        "generation_id": request.generation_id.get(),
         "surface": parts.surface_name,
         "features": features(),
         "theme": theme_tokens(),
-        "repository": repository_summary(repository),
-        "tab": tab_summary(tabs),
-        "selection": selection_summary(selection),
-        "dialog": dialog_summary(dialog),
+        "repository": repository_summary(request.repository),
+        "tab": tab_summary(request.tabs),
+        "selection": selection_summary(request.selection),
+        "dialog": dialog_summary(request.dialog),
         "focus": focus_value,
         "viewport": viewport_summary(),
         "payload": parts.payload,

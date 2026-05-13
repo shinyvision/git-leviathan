@@ -1057,11 +1057,18 @@ fn built_in_command_ids() -> BTreeSet<String> {
         "repository.open_search",
         "repository.jump_top",
         "repository.jump_bottom",
+        "repository.move_selection",
+        "repository.clear_multi_selection",
+        "repository.escape",
         "repository.stage_selected_file",
         "repository.unstage_selected_file",
         "repository.discard_selected_file",
         "repository.focus_panel",
+        "repository.focus_commit_message",
+        "branch.create",
+        "branch.checkout",
         "branch.merge",
+        "commit.reword",
         "git.checkout",
         "git.create_branch",
         "git.delete_branch",
@@ -1075,6 +1082,7 @@ fn built_in_command_ids() -> BTreeSet<String> {
         "git.push",
         "git.merge",
         "git.rebase",
+        "commit.squash_selected",
         "git.stage",
         "git.blame",
         "git.discard",
@@ -1172,6 +1180,7 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             "payload",
             "schema",
             "values",
+            "dialog",
         ]
         .into_iter()
         .collect(),
@@ -1194,6 +1203,8 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
             "payload",
             "schema",
             "values",
+            "dialog",
+            "current",
         ]
         .into_iter()
         .collect(),
@@ -1223,11 +1234,18 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
         [
             "available",
             "kind",
+            "commit",
             "selected_commit_id",
             "selected_file_path",
         ]
         .into_iter()
         .collect(),
+    );
+    map.insert(
+        "ctx.dialog",
+        ["active", "id", "controls", "buttons"]
+            .into_iter()
+            .collect(),
     );
     map.insert(
         "ctx.focus",
@@ -1283,11 +1301,18 @@ fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
         [
             "available",
             "kind",
+            "commit",
             "selected_commit_id",
             "selected_file_path",
         ]
         .into_iter()
         .collect(),
+    );
+    map.insert(
+        "context.dialog",
+        ["active", "id", "controls", "buttons"]
+            .into_iter()
+            .collect(),
     );
     map.insert(
         "context.focus",

@@ -365,6 +365,17 @@ fn specs() -> Vec<CoreCommandSpec> {
         .cap("git:write:rebase")
         .action(|_| Ok(repository(RepositoryMessage::StartRewordSelected))),
         spec(
+            "commit.squash_selected",
+            "Commit: Squash Selected",
+            "Squash the selected commits.",
+            "repository",
+        )
+        .cap("git:write:commit")
+        .cap("git:write:rebase")
+        .cap("git:write:reset")
+        .destructive()
+        .action(|_| stash(CenterAction::SquashSelectedCommitsRequested)),
+        spec(
             "commit.reword.focus_message",
             "Commit: Focus Reword Message",
             "Focus the active reword message editor.",
@@ -940,6 +951,7 @@ mod tests {
             "repository.discard_selected_file",
             "repository.focus_panel",
             "repository.focus_commit_message",
+            "commit.squash_selected",
             "commit.copy_hash",
             "conflict.save_resolution",
             "syntax.grammar.install",
@@ -1029,6 +1041,13 @@ mod tests {
         matches!(
             message,
             RepositoryMessage::Detail(DetailAction::RewordCanceled)
+        )
+    }
+
+    fn is_squash_selected_commits(message: &RepositoryMessage) -> bool {
+        matches!(
+            message,
+            RepositoryMessage::Center(CenterAction::SquashSelectedCommitsRequested)
         )
     }
 
@@ -1280,6 +1299,7 @@ mod tests {
             ),
             ("commit.reword.confirm", is_reword_confirmed),
             ("commit.reword.cancel", is_reword_canceled),
+            ("commit.squash_selected", is_squash_selected_commits),
         ] {
             let actions = CoreCommandActions::new();
             let mut registry = CommandRegistry::new();

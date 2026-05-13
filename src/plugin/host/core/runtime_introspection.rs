@@ -3,14 +3,16 @@ use super::*;
 impl PluginHost {
     pub fn current_ui_context_snapshot(&self) -> serde_json::Value {
         crate::plugin::ui::context::context_for_surface_with_selection_and_dialog(
-            crate::plugin::commands::HOST_COMMAND_PLUGIN_ID,
-            GenerationId::new(0),
-            crate::plugin::ui::context::UiContextSurface::Screen,
-            self.repository_context_snapshot().as_ref(),
-            Some(&self.last_selection_snapshot),
-            Some(&self.last_toolbar_dialog_snapshot),
-            &self.last_tab_snapshot,
-            Some(&self.last_focus_snapshot),
+            crate::plugin::ui::context::SurfaceContextRequest {
+                plugin_id: crate::plugin::commands::HOST_COMMAND_PLUGIN_ID,
+                generation_id: GenerationId::new(0),
+                surface: crate::plugin::ui::context::UiContextSurface::Screen,
+                repository: self.repository_context_snapshot().as_ref(),
+                selection: Some(&self.last_selection_snapshot),
+                dialog: Some(&self.last_toolbar_dialog_snapshot),
+                tabs: &self.last_tab_snapshot,
+                focus: Some(&self.last_focus_snapshot),
+            },
         )
     }
 
