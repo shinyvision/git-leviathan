@@ -16,7 +16,7 @@ mod keymaps;
 mod lazy_loading;
 mod performance_budgets;
 mod persistence_settings;
-mod phase16_hardening;
+mod hardening;
 mod plugin_services;
 mod plugin_ui_chrome;
 mod plugin_ui_contract;
