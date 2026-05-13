@@ -67,7 +67,7 @@ pub const API_MODULES: &[ApiModule] = &[
         version: V1,
         doc: "Context-aware keymap registry.",
         functions: KEYMAP_FUNCTIONS,
-        events: &["KeymapTriggered"],
+        events: &["KeymapTriggered", "KeymapPrefixChanged"],
         types: &[
             "leviathan.keymap",
             "LeviathanKeymapOpts",
@@ -107,6 +107,7 @@ pub const API_MODULES: &[ApiModule] = &[
             "SettingsChanged",
             "CommandExecuted",
             "KeymapTriggered",
+            "KeymapPrefixChanged",
         ],
         types: &[
             "leviathan.autocmd",

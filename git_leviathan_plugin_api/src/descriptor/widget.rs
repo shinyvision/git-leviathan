@@ -878,6 +878,18 @@ pub struct Border {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct Shadow {
+    #[serde(default)]
+    pub color: Option<ColorValue>,
+    #[serde(default)]
+    pub offset_x: Option<f32>,
+    #[serde(default)]
+    pub offset_y: Option<f32>,
+    #[serde(default)]
+    pub blur_radius: Option<f32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 pub struct ButtonStyle {
     #[serde(default)]
     pub background: Option<ColorValue>,
@@ -912,6 +924,8 @@ pub struct TextWidget {
     pub size: Option<f32>,
     #[serde(default)]
     pub color: Option<ColorValue>,
+    #[serde(default)]
+    pub font: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -1008,6 +1022,10 @@ pub struct ContainerWidget {
     pub child: Option<Box<WidgetKind>>,
     #[serde(default)]
     pub bg: Option<ColorValue>,
+    #[serde(default)]
+    pub border: Option<Border>,
+    #[serde(default)]
+    pub shadow: Option<Shadow>,
     #[serde(default)]
     pub width: Option<Length>,
     #[serde(default)]

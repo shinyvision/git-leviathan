@@ -33,9 +33,6 @@ pub fn render(app: &App) -> Element<'_, Message> {
 fn app_screen_view<'a>(body: Element<'a, Message>, app: &'a App) -> Element<'a, Message> {
     let mut layers: Vec<Element<Message>> = vec![body];
     layers.extend(plugin_overlay::layers(&app.plugin_host));
-    if let Some(keymap_overlay) = super::key_chord::layer(app) {
-        layers.push(keymap_overlay);
-    }
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);
     }
@@ -70,9 +67,6 @@ fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Messag
 
     let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(plugin_overlay::layers(&app.plugin_host));
-    if let Some(keymap_overlay) = super::key_chord::layer(app) {
-        layers.push(keymap_overlay);
-    }
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);
     }
@@ -105,9 +99,6 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
     let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(<RepositoryScreen as Screen>::overlay_layers(screen));
     layers.extend(plugin_overlay::layers(&app.plugin_host));
-    if let Some(keymap_overlay) = super::key_chord::layer(app) {
-        layers.push(keymap_overlay);
-    }
 
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);

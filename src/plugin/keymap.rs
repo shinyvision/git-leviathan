@@ -383,7 +383,8 @@ pub struct KeymapPrefixHint {
     /// The full chord when the next key completes a command. Empty for
     /// pure intermediate groups.
     pub full_key: String,
-    /// Human-facing description, falling back to the command name.
+    /// Human-facing description supplied by the keymap owner. Pure
+    /// intermediate groups receive a generated count label.
     pub description: String,
     pub command: String,
     pub plugin_id: String,
@@ -863,18 +864,13 @@ impl KeymapRegistry {
             .into_iter()
             .map(|group| {
                 let exact = group.exact_idx.map(|idx| &self.entries[idx]);
-                let description = exact
-                    .map(|entry| {
-                        if entry.description.is_empty() {
-                            entry.command.clone()
-                        } else {
-                            entry.description.clone()
-                        }
-                    })
-                    .unwrap_or_else(|| match group.child_count {
-                        1 => "+1 keymap".to_string(),
-                        n => format!("+{n} keymaps"),
-                    });
+                let description =
+                    exact
+                        .map(|entry| entry.description.clone())
+                        .unwrap_or_else(|| match group.child_count {
+                            1 => "+1 keymap".to_string(),
+                            n => format!("+{n} keymaps"),
+                        });
                 KeymapPrefixHint {
                     key: group.next.render(),
                     full_key: exact
@@ -1134,6 +1130,44 @@ pub fn keymap_triggered_payload(
         serde_json::Value::String(plugin_id.into()),
     );
     p.insert("ok".into(), serde_json::Value::Bool(ok));
+    p
+}
+
+/// Build the typed `KeymapPrefixChanged` payload. The host owns chord
+/// parsing and conflict filtering; plugins own how the resulting hint
+/// data is presented.
+pub fn keymap_prefix_changed_payload(
+    active: bool,
+    context: &str,
+    prefix: &str,
+    hints: Vec<KeymapPrefixHint>,
+    reason: &str,
+) -> EventPayload {
+    let mut p = EventPayload::new();
+    p.insert("active".into(), serde_json::Value::Bool(active));
+    p.insert("context".into(), serde_json::Value::String(context.into()));
+    p.insert("prefix".into(), serde_json::Value::String(prefix.into()));
+    p.insert("reason".into(), serde_json::Value::String(reason.into()));
+    p.insert(
+        "hints".into(),
+        serde_json::Value::Array(
+            hints
+                .into_iter()
+                .map(|hint| {
+                    serde_json::json!({
+                        "key": hint.key,
+                        "full_key": hint.full_key,
+                        "description": hint.description,
+                        "command": hint.command,
+                        "plugin_id": hint.plugin_id,
+                        "source": hint.source,
+                        "child_count": hint.child_count,
+                        "is_group": hint.is_group,
+                    })
+                })
+                .collect(),
+        ),
+    );
     p
 }
 

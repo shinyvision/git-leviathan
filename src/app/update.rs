@@ -156,7 +156,7 @@ impl App {
             AppMessage::RepoFilesChanged { tab_id, path } => self.reload_refs_for_tab(tab_id, path),
             AppMessage::WindowFocused => self.on_window_focused(),
             AppMessage::WindowUnfocused => {
-                self.key_chord.clear();
+                self.clear_key_chord("focus_lost");
                 Task::none()
             }
             AppMessage::FetchTick(_) => {

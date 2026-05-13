@@ -11,10 +11,12 @@
 
 use std::path::Path;
 
-use iced::{widget::text, Alignment, Border, Color, Element, Length, Theme};
+use iced::{widget::text, Alignment, Border, Color, Element, Length, Shadow, Theme, Vector};
 
 use crate::message::Message;
-use crate::plugin::ui::widget_ast::{AstAlignX, AstAlignY, AstBorder, AstColor, AstLength};
+use crate::plugin::ui::widget_ast::{
+    AstAlignX, AstAlignY, AstBorder, AstColor, AstLength, AstShadow,
+};
 
 /// Convert an AST length to iced. `Auto` means "no opinion" — the caller
 /// picks its own per-widget default (rows want `Fill`, padding wants
@@ -100,6 +102,14 @@ pub(super) fn border_to_iced(b: &AstBorder) -> Border {
         color,
         width: b.width,
         radius: b.radius.into(),
+    }
+}
+
+pub(super) fn shadow_to_iced(s: &AstShadow) -> Shadow {
+    Shadow {
+        color: opt_color_to_iced(&s.color).unwrap_or(Color::TRANSPARENT),
+        offset: Vector::new(s.offset_x, s.offset_y),
+        blur_radius: s.blur_radius,
     }
 }
 

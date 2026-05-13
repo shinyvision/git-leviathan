@@ -22,7 +22,7 @@ impl App {
             modifiers.control() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
 
         if is_ctrl_tab {
-            self.key_chord.clear();
+            self.clear_key_chord("cancelled");
             let target = if modifiers.shift() {
                 self.tabs.prev_tab_id_circular()
             } else {
@@ -45,14 +45,14 @@ impl App {
         if is_escape_key(&key) {
             if let Some(screen) = self.tabs.active_screen_mut() {
                 if let Some(task) = screen.handle_overlay_key_pressed(&key, modifiers) {
-                    self.key_chord.clear();
+                    self.clear_key_chord("cancelled");
                     return task;
                 }
             }
         }
 
         if is_escape_key(&key) && self.key_chord.is_active() {
-            self.key_chord.clear();
+            self.clear_key_chord("cancelled");
             return Task::none();
         }
 
@@ -117,26 +117,33 @@ impl App {
 
     fn handle_keymap_candidate(&mut self, context: String, keystroke: Keystroke) -> bool {
         if self.key_chord.context() != Some(context.as_str()) {
+            self.clear_key_chord("context_changed");
             self.key_chord.reset_for_context(context.clone());
         }
 
         self.key_chord.push(keystroke.clone());
         match self.dispatch_current_key_chord(&context) {
-            KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending => true,
+            KeymapDispatchOutcome::Dispatched { .. } => true,
+            KeymapDispatchOutcome::Pending => {
+                self.publish_key_chord_pending(&context, "pending");
+                true
+            }
             KeymapDispatchOutcome::Unhandled => {
                 let should_retry_current = self.key_chord.buffer().len() > 1;
-                self.key_chord.clear();
                 if !should_retry_current {
+                    self.clear_key_chord("unhandled");
                     return false;
                 }
 
                 self.key_chord.replace_with(context.clone(), keystroke);
                 match self.dispatch_current_key_chord(&context) {
-                    KeymapDispatchOutcome::Dispatched { .. } | KeymapDispatchOutcome::Pending => {
+                    KeymapDispatchOutcome::Dispatched { .. } => true,
+                    KeymapDispatchOutcome::Pending => {
+                        self.publish_key_chord_pending(&context, "pending");
                         true
                     }
                     KeymapDispatchOutcome::Unhandled => {
-                        self.key_chord.clear();
+                        self.clear_key_chord("unhandled");
                         false
                     }
                 }
@@ -148,7 +155,7 @@ impl App {
         let buffer = self.key_chord.buffer().to_vec();
         let outcome = self.plugin_host.dispatch_key(context, &buffer);
         if matches!(outcome, KeymapDispatchOutcome::Dispatched { .. }) {
-            self.key_chord.clear();
+            self.clear_key_chord("dispatched");
         }
         outcome
     }

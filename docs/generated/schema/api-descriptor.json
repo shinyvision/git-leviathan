@@ -791,6 +791,46 @@
     },
     {
       "aliases": [],
+      "doc": "Fired when the in-flight keymap prefix changes so plugins can render their own hint UI.",
+      "is_alias": false,
+      "name": "KeymapPrefixChanged",
+      "payload_fields": [
+        {
+          "doc": "True while the host is buffering a keymap prefix.",
+          "lua_type": "boolean",
+          "name": "active",
+          "required": true
+        },
+        {
+          "doc": "Active keymap context.",
+          "lua_type": "string",
+          "name": "context",
+          "required": true
+        },
+        {
+          "doc": "Rendered in-flight chord prefix.",
+          "lua_type": "string",
+          "name": "prefix",
+          "required": true
+        },
+        {
+          "doc": "Array of next-key hint rows after conflict filtering.",
+          "lua_type": "table",
+          "name": "hints",
+          "required": true
+        },
+        {
+          "doc": "Why the prefix state changed (`pending`, `dispatched`, `cancelled`, `unhandled`, `context_changed`, or `focus_lost`).",
+          "lua_type": "string",
+          "name": "reason",
+          "required": true
+        }
+      ],
+      "payload_type": "table",
+      "since": "1.0"
+    },
+    {
+      "aliases": [],
       "doc": "Fired when the active focus surface changes.",
       "is_alias": false,
       "name": "FocusChanged",
@@ -1463,7 +1503,8 @@
       "capabilities": [],
       "doc": "Context-aware keymap registry.",
       "events": [
-        "KeymapTriggered"
+        "KeymapTriggered",
+        "KeymapPrefixChanged"
       ],
       "functions": [
         {
@@ -1635,7 +1676,8 @@
         "ThemeChanged",
         "SettingsChanged",
         "CommandExecuted",
-        "KeymapTriggered"
+        "KeymapTriggered",
+        "KeymapPrefixChanged"
       ],
       "functions": [
         {

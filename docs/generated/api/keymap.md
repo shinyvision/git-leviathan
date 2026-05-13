@@ -49,6 +49,12 @@ Reference to the winning binding for a conflict-lost keymap row.
   - `command` (`string`; required) - Command the chord dispatched to.
   - `plugin_id` (`string`; required) - Owning plugin id of the matched keymap; `<host>` for built-ins, `<user>` for user-config.
   - `ok` (`boolean`; required) - True when the underlying command dispatch returned `Ok`.
+- `KeymapPrefixChanged` (table) - Fired when the in-flight keymap prefix changes so plugins can render their own hint UI.
+  - `active` (`boolean`; required) - True while the host is buffering a keymap prefix.
+  - `context` (`string`; required) - Active keymap context.
+  - `prefix` (`string`; required) - Rendered in-flight chord prefix.
+  - `hints` (`table`; required) - Array of next-key hint rows after conflict filtering.
+  - `reason` (`string`; required) - Why the prefix state changed (`pending`, `dispatched`, `cancelled`, `unhandled`, `context_changed`, or `focus_lost`).
 
 ## Functions
 

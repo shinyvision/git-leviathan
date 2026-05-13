@@ -220,6 +220,39 @@ const PAYLOAD_KEYMAP: &[ApiTypeField] = &[
     },
 ];
 
+const PAYLOAD_KEYMAP_PREFIX: &[ApiTypeField] = &[
+    ApiTypeField {
+        name: "active",
+        lua_type: "boolean",
+        required: true,
+        doc: "True while the host is buffering a keymap prefix.",
+    },
+    ApiTypeField {
+        name: "context",
+        lua_type: "string",
+        required: true,
+        doc: "Active keymap context.",
+    },
+    ApiTypeField {
+        name: "prefix",
+        lua_type: "string",
+        required: true,
+        doc: "Rendered in-flight chord prefix.",
+    },
+    ApiTypeField {
+        name: "hints",
+        lua_type: "table",
+        required: true,
+        doc: "Array of next-key hint rows after conflict filtering.",
+    },
+    ApiTypeField {
+        name: "reason",
+        lua_type: "string",
+        required: true,
+        doc: "Why the prefix state changed (`pending`, `dispatched`, `cancelled`, `unhandled`, `context_changed`, or `focus_lost`).",
+    },
+];
+
 pub const API_EVENTS: &[ApiEvent] = &[
     // ---- Lifecycle ----
     ApiEvent {
@@ -440,6 +473,15 @@ pub const API_EVENTS: &[ApiEvent] = &[
         doc: "Fired after a keymap chord matches and the host dispatches the underlying command.",
         payload_type: "table",
         payload_fields: PAYLOAD_KEYMAP,
+        aliases: &[],
+        is_alias: false,
+    },
+    ApiEvent {
+        name: "KeymapPrefixChanged",
+        since: "1.0",
+        doc: "Fired when the in-flight keymap prefix changes so plugins can render their own hint UI.",
+        payload_type: "table",
+        payload_fields: PAYLOAD_KEYMAP_PREFIX,
         aliases: &[],
         is_alias: false,
     },

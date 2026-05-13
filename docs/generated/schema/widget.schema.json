@@ -34,6 +34,13 @@
           ],
           "format": "int32"
         },
+        "font": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "type": "string",
           "enum": [
@@ -602,6 +609,17 @@
             }
           ]
         },
+        "border": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Border"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "center_x": {
           "default": null,
           "type": [
@@ -703,6 +721,17 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "shadow": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Shadow"
+            },
+            {
+              "type": "null"
+            }
           ]
         },
         "shortcut": {
@@ -6977,6 +7006,46 @@
         }
       }
     },
+    "Shadow": {
+      "type": "object",
+      "properties": {
+        "blur_radius": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "color": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset_x": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        },
+        "offset_y": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "float"
+        }
+      }
+    },
     "SpacingValue": {
       "anyOf": [
         {
@@ -7111,6 +7180,13 @@
                 "null"
               ],
               "format": "int32"
+            },
+            "font": {
+              "default": null,
+              "type": [
+                "string",
+                "null"
+              ]
             },
             "kind": {
               "type": "string",
@@ -7680,6 +7756,17 @@
                 }
               ]
             },
+            "border": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Border"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "center_x": {
               "default": null,
               "type": [
@@ -7781,6 +7868,17 @@
               "type": [
                 "string",
                 "null"
+              ]
+            },
+            "shadow": {
+              "default": null,
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/Shadow"
+                },
+                {
+                  "type": "null"
+                }
               ]
             },
             "shortcut": {

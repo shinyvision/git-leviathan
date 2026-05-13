@@ -13,7 +13,7 @@ use iced::{
 use crate::message::Message;
 use crate::plugin::ui::widget_ast::{ContainerNode, WidgetAst, WidgetNode};
 
-use super::common::{length_or, opt_color_to_iced};
+use super::common::{border_to_iced, length_or, opt_color_to_iced, shadow_to_iced};
 use super::BuildCtx;
 
 pub(super) fn build(node: &ContainerNode, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
@@ -37,9 +37,13 @@ pub(super) fn build(node: &ContainerNode, ctx: &BuildCtx<'_>) -> Element<'static
     if node.center_y {
         cont = cont.center_y(Length::Fill);
     }
-    if let Some(color) = bg {
+    if bg.is_some() || node.border.is_some() || node.shadow.is_some() {
+        let border = node.border.as_ref().map(border_to_iced).unwrap_or_default();
+        let shadow = node.shadow.as_ref().map(shadow_to_iced).unwrap_or_default();
         cont = cont.style(move |_: &Theme| container::Style {
-            background: Some(Background::Color(color)),
+            background: bg.map(Background::Color),
+            border,
+            shadow,
             ..Default::default()
         });
     }

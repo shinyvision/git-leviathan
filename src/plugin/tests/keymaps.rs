@@ -5,7 +5,10 @@
 //! ordering follows the "Required tests" list in the keymaps brief.
 
 use crate::plugin::commands::{InvokeOutcome, HOST_COMMAND_PLUGIN_ID};
-use crate::plugin::keymap::{parse_key_sequence, KeymapDispatchOutcome, Keystroke, MatchOutcome};
+use crate::plugin::keymap::{
+    keymap_prefix_changed_payload, parse_key_sequence, KeymapDispatchOutcome, Keystroke,
+    MatchOutcome,
+};
 use crate::plugin::tests::harness::MockHost;
 
 fn manifest(id: &str) -> String {
@@ -168,8 +171,10 @@ fn prefix_hints_group_next_keys_for_overlay() {
         r#"
         leviathan.command.create("p.top", { run = function() end })
         leviathan.command.create("p.deep", { run = function() end })
+        leviathan.command.create("p.unlabeled", { run = function() end })
         leviathan.keymap.set("repository", "gg", "p.top", { description = "Back to top" })
         leviathan.keymap.set("repository", "glrmn", "p.deep")
+        leviathan.keymap.set("repository", "gz", "p.unlabeled")
         "#,
     )
     .expect("p loads");
@@ -177,7 +182,7 @@ fn prefix_hints_group_next_keys_for_overlay() {
     let registry = host.keymap_registry();
     let hints = registry.borrow().prefix_hints("repository.graph", &ks("g"));
     let labels: Vec<_> = hints.iter().map(|hint| hint.key.as_str()).collect();
-    assert_eq!(labels, vec!["g", "l"]);
+    assert_eq!(labels, vec!["g", "l", "z"]);
     let gg = hints.iter().find(|hint| hint.key == "g").unwrap();
     assert_eq!(gg.description, "Back to top");
     assert_eq!(gg.command, "p.top");
@@ -185,6 +190,10 @@ fn prefix_hints_group_next_keys_for_overlay() {
     let gl = hints.iter().find(|hint| hint.key == "l").unwrap();
     assert!(gl.is_group);
     assert_eq!(gl.child_count, 1);
+
+    let gz = hints.iter().find(|hint| hint.key == "z").unwrap();
+    assert_eq!(gz.description, "");
+    assert_eq!(gz.command, "p.unlabeled");
 }
 
 #[test]
@@ -607,6 +616,56 @@ fn plugin_keymap_routes_through_command_dispatcher() {
         .expect("command present");
     assert_eq!(post, 1);
     assert_eq!(host.read_global_i64("p", "command_runs"), Some(1));
+}
+
+#[test]
+fn keymap_prefix_changed_event_carries_prefix_hints_for_plugin_ui() {
+    let mut host = MockHost::new();
+    host.load_inline(
+        "p",
+        &manifest("p"),
+        r#"
+        _G.prefix_active = 0
+        _G.prefix_value = ""
+        _G.first_hint = ""
+        _G.first_label = ""
+        leviathan.command.create("p.top", { run = function() end })
+        leviathan.command.create("p.deep", { run = function() end })
+        leviathan.keymap.set("repository", "gg", "p.top", { description = "Back to top" })
+        leviathan.keymap.set("repository", "glrmn", "p.deep")
+        leviathan.autocmd.create("KeymapPrefixChanged", {
+            callback = function(ev)
+                _G.prefix_active = ev.payload.active == true and 1 or 0
+                _G.prefix_value = ev.payload.prefix or ""
+                local hint = ev.payload.hints and ev.payload.hints[1]
+                _G.first_hint = hint and hint.key or ""
+                _G.first_label = hint and hint.description or ""
+            end,
+        })
+        "#,
+    )
+    .expect("p loads");
+
+    let hints = host
+        .keymap_registry()
+        .borrow()
+        .prefix_hints("repository.graph", &ks("g"));
+    let payload = keymap_prefix_changed_payload(true, "repository.graph", "g", hints, "pending");
+    host.dispatch_test_event("KeymapPrefixChanged", serde_json::Value::Object(payload));
+
+    assert_eq!(host.read_global_i64("p", "prefix_active"), Some(1));
+    assert_eq!(
+        host.read_global_string("p", "prefix_value").as_deref(),
+        Some("g")
+    );
+    assert_eq!(
+        host.read_global_string("p", "first_hint").as_deref(),
+        Some("g")
+    );
+    assert_eq!(
+        host.read_global_string("p", "first_label").as_deref(),
+        Some("Back to top")
+    );
 }
 
 #[test]

@@ -133,6 +133,20 @@ pub struct AstBorder {
     pub color: Option<AstColor>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AstFont {
+    Default,
+    Mono,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AstShadow {
+    pub color: Option<AstColor>,
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur_radius: f32,
+}
+
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct AstButtonStyle {
     pub background: Option<AstColor>,
@@ -252,6 +266,7 @@ pub struct TextNode {
     pub value: String,
     pub size: f32,
     pub color: Option<AstColor>,
+    pub font: AstFont,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -307,6 +322,8 @@ pub struct ColumnNode {
 pub struct ContainerNode {
     pub child: Option<Box<WidgetAst>>,
     pub bg: Option<AstColor>,
+    pub border: Option<AstBorder>,
+    pub shadow: Option<AstShadow>,
     pub width: AstLength,
     pub height: AstLength,
     pub max_width: Option<f32>,
@@ -531,7 +548,13 @@ fn decode_text(obj: &Obj, path: &str, ctx: &mut DecodeCtx) -> Result<TextNode, W
     let value = opt_string(obj, "value", path, ctx)?.unwrap_or_default();
     let size = opt_f32(obj, "size", path)?.unwrap_or(14.0);
     let color = opt_color(obj, "color", path, ctx)?;
-    Ok(TextNode { value, size, color })
+    let font = opt_font(obj, "font", path)?.unwrap_or(AstFont::Default);
+    Ok(TextNode {
+        value,
+        size,
+        color,
+        font,
+    })
 }
 
 fn decode_button(
@@ -698,6 +721,8 @@ fn decode_container(
     Ok(ContainerNode {
         child,
         bg: opt_color(obj, "bg", path, ctx)?,
+        border: opt_border(obj, "border", path, ctx)?,
+        shadow: opt_shadow(obj, "shadow", path, ctx)?,
         width: opt_length(obj, "width", path)?,
         height: opt_length(obj, "height", path)?,
         max_width: opt_f32(obj, "max_width", path)?,
@@ -1497,6 +1522,26 @@ fn opt_align_y(obj: &Obj, key: &str, parent: &str) -> Result<Option<AstAlignY>, 
     }
 }
 
+fn opt_font(obj: &Obj, key: &str, parent: &str) -> Result<Option<AstFont>, WidgetDecodeError> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => match s.as_str() {
+            "default" | "system" => Ok(Some(AstFont::Default)),
+            "mono" | "monospace" => Ok(Some(AstFont::Mono)),
+            other => Err(WidgetDecodeError::new(
+                codes::FIELD_TYPE_MISMATCH,
+                format!("{parent}.{key}"),
+                format!("unknown font '{other}'"),
+            )),
+        },
+        Some(other) => Err(WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{parent}.{key}"),
+            format!("field '{key}' must be a string, got {}", json_kind(other)),
+        )),
+    }
+}
+
 fn opt_border(
     obj: &Obj,
     key: &str,
@@ -1521,6 +1566,34 @@ fn opt_border(
         width: opt_f32(inner, "width", &bpath)?.unwrap_or(0.0),
         radius: opt_f32(inner, "radius", &bpath)?.unwrap_or(0.0),
         color: opt_color(inner, "color", &bpath, ctx)?,
+    }))
+}
+
+fn opt_shadow(
+    obj: &Obj,
+    key: &str,
+    parent: &str,
+    ctx: &mut DecodeCtx,
+) -> Result<Option<AstShadow>, WidgetDecodeError> {
+    let Some(v) = obj.get(key) else {
+        return Ok(None);
+    };
+    if matches!(v, Value::Null) {
+        return Ok(None);
+    }
+    let inner = v.as_object().ok_or_else(|| {
+        WidgetDecodeError::new(
+            codes::FIELD_TYPE_MISMATCH,
+            format!("{parent}.{key}"),
+            format!("field '{key}' must be a table, got {}", json_kind(v)),
+        )
+    })?;
+    let spath = format!("{parent}.{key}");
+    Ok(Some(AstShadow {
+        color: opt_color(inner, "color", &spath, ctx)?,
+        offset_x: opt_f32(inner, "offset_x", &spath)?.unwrap_or(0.0),
+        offset_y: opt_f32(inner, "offset_y", &spath)?.unwrap_or(0.0),
+        blur_radius: opt_f32(inner, "blur_radius", &spath)?.unwrap_or(0.0),
     }))
 }
 
@@ -1623,6 +1696,12 @@ fn collect_raw_color_paths(ast: &WidgetAst, path: &str, out: &mut Vec<String>) {
         WidgetNode::Terminal(_) => {}
         WidgetNode::Container(node) => {
             push_raw_color(out, path, "bg", &node.bg);
+            if let Some(border) = &node.border {
+                push_raw_color(out, path, "border.color", &border.color);
+            }
+            if let Some(shadow) = &node.shadow {
+                push_raw_color(out, path, "shadow.color", &shadow.color);
+            }
             if let Some(child) = &node.child {
                 collect_raw_color_paths(child, &format!("{path}.child"), out);
             }
