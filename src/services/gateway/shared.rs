@@ -496,7 +496,7 @@ impl GitWorktreeOps for GitRepositoryGateway {
 
     fn remove_worktree(&self, path: std::path::PathBuf) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.remove_worktree(&path, false)?;
+            service.remove_worktree(&path)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }

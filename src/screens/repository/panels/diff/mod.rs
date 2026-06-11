@@ -114,6 +114,14 @@ pub(in crate::screens::repository) struct DiffPanel {
     pub hovered_canvas: Option<DiffCanvasId>,
     highlight_scheduler: highlight_schedule::DiffHighlightScheduler,
     next_generation: u64,
+    grammar_status_cache: std::cell::RefCell<
+        Option<(
+            highlight_schedule::DiffHighlightDocumentIds,
+            Option<DiffGrammarStatusView>,
+        )>,
+    >,
+    highlight_in_flight: bool,
+    highlight_rescan_requested: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +135,16 @@ pub(in crate::screens::repository) struct DiffGrammarStatusAction {
     pub command_id: &'static str,
     pub label: &'static str,
     pub language: String,
+}
+
+// Separate from DiffPanelAction because the provider isn't Debug; all fields are Send.
+pub(in crate::screens::repository) struct VisibleHighlightJob {
+    pub generation: u64,
+    pub requests: Vec<highlight_schedule::DiffLineHighlightRequest>,
+    pub document_ids: highlight_schedule::DiffHighlightDocumentIds,
+    pub old_document: Option<HighlightDocument>,
+    pub new_document: Option<HighlightDocument>,
+    pub provider: Arc<CachedDiffHighlightProvider>,
 }
 
 impl DiffPanel {
@@ -149,6 +167,9 @@ impl DiffPanel {
             hovered_canvas: None,
             highlight_scheduler: highlight_schedule::DiffHighlightScheduler::default(),
             next_generation: 1,
+            grammar_status_cache: std::cell::RefCell::new(None),
+            highlight_in_flight: false,
+            highlight_rescan_requested: false,
         }
     }
 
@@ -191,6 +212,9 @@ impl DiffPanel {
         self.hovered_canvas = None;
         self.text_search = None;
         self.highlight_scheduler.reset();
+        self.highlight_in_flight = false;
+        self.highlight_rescan_requested = false;
+        self.invalidate_grammar_status_cache();
         crate::services::release_syntax_caches();
         crate::services::release_text_caches();
     }
@@ -408,19 +432,39 @@ impl DiffPanel {
         }
         if should_schedule {
             self.highlight_scheduler.reset();
+            self.highlight_in_flight = false;
+            self.highlight_rescan_requested = false;
         }
         should_schedule
     }
 
-    pub(in crate::screens::repository) fn schedule_visible_highlights(&mut self) -> bool {
-        let Some((generation, data)) = self.active_single_file_render_data() else {
-            return false;
-        };
-        let Some((old_document, new_document, provider)) =
-            self.active_highlight_documents_and_provider(generation)
-        else {
-            return false;
-        };
+    pub(in crate::screens::repository) fn request_visible_highlight(
+        &mut self,
+    ) -> Option<VisibleHighlightJob> {
+        if self.highlight_in_flight {
+            self.highlight_rescan_requested = true;
+            return None;
+        }
+        let job = self.schedule_visible_highlights()?;
+        self.highlight_in_flight = true;
+        self.highlight_rescan_requested = false;
+        Some(job)
+    }
+
+    pub(in crate::screens::repository) fn finish_visible_highlight(
+        &mut self,
+        highlighted: usize,
+    ) -> bool {
+        self.highlight_in_flight = false;
+        highlighted > 0 || std::mem::take(&mut self.highlight_rescan_requested)
+    }
+
+    pub(in crate::screens::repository) fn schedule_visible_highlights(
+        &mut self,
+    ) -> Option<VisibleHighlightJob> {
+        let (generation, data) = self.active_single_file_render_data()?;
+        let (old_document, new_document, provider) =
+            self.active_highlight_documents_and_provider(generation)?;
         let old_document = old_document.cloned();
         let new_document = new_document.cloned();
         let document_ids = highlight_schedule::DiffHighlightDocumentIds::from_documents(
@@ -441,60 +485,42 @@ impl DiffPanel {
                 viewport_height,
             )
             .to_vec();
+        if requests.is_empty() {
+            return None;
+        }
         let schedule_stats = self.highlight_scheduler.last_stats();
-        if !requests.is_empty() {
-            let first = requests[0];
-            let first_side = match first.reference.side {
-                DiffHighlightSide::Old => "old",
-                DiffHighlightSide::New => "new",
-            };
-            crate::perf::Span::new("ui.diff_highlight_schedule")
-                .field("generation", generation)
-                .field("request_generation", first.generation)
-                .field("first_side", first_side)
-                .field("first_line", first.reference.line_number)
-                .field("scroll_y", self.diff_scroll_y)
-                .field("viewport_height", viewport_height)
-                .field("visible_rows", schedule_stats.visible_rows)
-                .field("candidate_rows", schedule_stats.candidate_rows)
-                .field("overscan_rows", schedule_stats.overscan_rows)
-                .field("request_budget", schedule_stats.request_budget)
-                .finish_with("requests", requests.len());
-        }
-        let materialized = highlight_schedule::highlight_scheduled_requests_with_stats(
-            &requests,
+        let first = requests[0];
+        let first_side = match first.reference.side {
+            DiffHighlightSide::Old => "old",
+            DiffHighlightSide::New => "new",
+        };
+        crate::perf::Span::new("ui.diff_highlight_schedule")
+            .field("generation", generation)
+            .field("request_generation", first.generation)
+            .field("first_side", first_side)
+            .field("first_line", first.reference.line_number)
+            .field("scroll_y", self.diff_scroll_y)
+            .field("viewport_height", viewport_height)
+            .field("visible_rows", schedule_stats.visible_rows)
+            .field("candidate_rows", schedule_stats.candidate_rows)
+            .field("overscan_rows", schedule_stats.overscan_rows)
+            .field("request_budget", schedule_stats.request_budget)
+            .finish_with("requests", requests.len());
+        Some(VisibleHighlightJob {
             generation,
+            requests,
             document_ids,
-            old_document.as_ref(),
-            new_document.as_ref(),
-            &provider,
-            highlight_schedule::HIGHLIGHT_REQUEST_BUDGET,
-        );
-        if materialized.highlighted > 0 || !requests.is_empty() {
-            crate::perf::Span::new("ui.diff_highlight_materialize")
-                .field("generation", generation)
-                .field("requested", materialized.requested)
-                .field("provider_hits", materialized.provider_hits)
-                .field("provider_misses", materialized.provider_misses)
-                .field("syntax_cache_hits", materialized.syntax_cache_hits)
-                .field("syntax_cache_misses", materialized.syntax_cache_misses)
-                .field("tree_parse_hits", materialized.tree_parse_hits)
-                .field("tree_parse_misses", materialized.tree_parse_misses)
-                .field("parsed_lines", materialized.parsed_lines)
-                .field("stale_documents", materialized.stale_documents)
-                .field("missing_documents", materialized.missing_documents)
-                .field("missing_grammars", materialized.missing_grammars)
-                .field("missing_lines", materialized.missing_lines)
-                .field("stale_generation", materialized.stale_generation)
-                .finish_with("highlighted", materialized.highlighted);
-        }
-        materialized.highlighted > 0
+            old_document,
+            new_document,
+            provider,
+        })
     }
 
     pub(in crate::screens::repository) fn on_syntax_grammar_assets_changed(
         &mut self,
     ) -> Option<DiffPanelAction> {
         self.highlight_scheduler.reset();
+        self.invalidate_grammar_status_cache();
         if self.dirty_file_diff.is_some() {
             let generation = self.next_diff_generation();
             return rebuild_single_file_after_grammar_change(
@@ -600,14 +626,25 @@ impl DiffPanel {
     }
 
     fn active_grammar_status_view(&self) -> Option<DiffGrammarStatusView> {
-        let statuses = self.active_single_file_documents().map(|(old, new)| {
-            [old, new]
-                .into_iter()
-                .flatten()
-                .filter_map(grammar_status_for_document)
-                .collect::<Vec<_>>()
-        })?;
-        grammar_status_view(statuses)
+        let (old, new) = self.active_single_file_documents()?;
+        let ids = highlight_schedule::DiffHighlightDocumentIds::from_documents(old, new);
+        if let Some((cached_ids, cached_view)) = self.grammar_status_cache.borrow().as_ref() {
+            if *cached_ids == ids {
+                return cached_view.clone();
+            }
+        }
+        let statuses = [old, new]
+            .into_iter()
+            .flatten()
+            .filter_map(grammar_status_for_document)
+            .collect::<Vec<_>>();
+        let view = grammar_status_view(statuses);
+        *self.grammar_status_cache.borrow_mut() = Some((ids, view.clone()));
+        view
+    }
+
+    pub(in crate::screens::repository) fn invalidate_grammar_status_cache(&self) {
+        self.grammar_status_cache.borrow_mut().take();
     }
 
     fn active_single_file_documents(

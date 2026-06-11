@@ -219,18 +219,17 @@ impl App {
             };
             self.show_toast(toast)
         };
-        let diff_task = if changed_assets {
-            self.tabs
-                .active_screen_mut()
-                .map(|screen| {
-                    screen.update(RepositoryMessage::DiffPanel(
-                        DiffPanelAction::SyntaxGrammarAssetsChanged,
-                    ))
-                })
-                .unwrap_or_else(Task::none)
+        // Failed installs hit the else branch so the banner still refreshes (Retry surfaces).
+        let diff_action = if changed_assets {
+            DiffPanelAction::SyntaxGrammarAssetsChanged
         } else {
-            Task::none()
+            DiffPanelAction::RefreshGrammarStatus
         };
+        let diff_task = self
+            .tabs
+            .active_screen_mut()
+            .map(|screen| screen.update(RepositoryMessage::DiffPanel(diff_action)))
+            .unwrap_or_else(Task::none);
         Task::batch(vec![toast_task, diff_task])
     }
 }

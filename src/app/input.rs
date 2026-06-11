@@ -410,6 +410,8 @@ mod tests {
             repo_chrome_registry,
             slot_registry_revision: 0,
             pending_focus_reason: None,
+            settings: None,
+            last_persisted_tabs: None,
         }
     }
 

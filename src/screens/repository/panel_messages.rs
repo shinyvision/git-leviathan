@@ -280,7 +280,11 @@ pub enum DiffPanelAction {
         viewport: iced::widget::scrollable::Viewport,
     },
     ContinueVisibleHighlighting,
+    VisibleHighlightReady {
+        highlighted: usize,
+    },
     SyntaxGrammarAssetsChanged,
+    RefreshGrammarStatus,
     /// Shift+wheel over the diff — scroll horizontally by `delta_lines`,
     /// suppressing the default vertical scroll.
     DiffShiftWheel {

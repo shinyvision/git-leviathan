@@ -1,10 +1,8 @@
-use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use iced::Color;
@@ -198,14 +196,20 @@ impl SyntaxHighlightService {
         let span_key = self.highlight_span_cache_key(document, &detection, syntax, line_number);
 
         {
-            let mut state = document.lazy_state.borrow_mut();
+            let mut state = document
+                .lazy_state
+                .lock()
+                .expect("highlight state mutex poisoned");
             if let Some(spans) = state.cached_line(&span_key) {
                 return HighlightLineResult::Ready(HighlightedLine { line_number, spans });
             }
         }
         if let Ok(mut cache) = HIGHLIGHT_SPAN_CACHE.lock() {
             if let Some(spans) = cache.get(&span_key) {
-                let mut state = document.lazy_state.borrow_mut();
+                let mut state = document
+                    .lazy_state
+                    .lock()
+                    .expect("highlight state mutex poisoned");
                 state.record_span_cache_hit();
                 state.insert_line(span_key, spans.clone());
                 return HighlightLineResult::Ready(HighlightedLine { line_number, spans });
@@ -224,7 +228,10 @@ impl SyntaxHighlightService {
                 if let Ok(mut cache) = HIGHLIGHT_SPAN_CACHE.lock() {
                     cache.insert(span_key.clone(), spans.clone());
                 }
-                let mut state = document.lazy_state.borrow_mut();
+                let mut state = document
+                    .lazy_state
+                    .lock()
+                    .expect("highlight state mutex poisoned");
                 state.insert_line(span_key, spans.clone());
                 HighlightLineResult::Ready(HighlightedLine { line_number, spans })
             }
@@ -363,7 +370,10 @@ impl SyntaxHighlightService {
             if let Ok(mut cache) = HIGHLIGHT_SPAN_CACHE.lock() {
                 cache.insert(span_key.clone(), spans.clone());
             }
-            let mut state = document.lazy_state.borrow_mut();
+            let mut state = document
+                .lazy_state
+                .lock()
+                .expect("highlight state mutex poisoned");
             state.insert_line(span_key, spans.clone());
             if highlighted_line == line_number {
                 requested = Some(spans);
@@ -375,14 +385,20 @@ impl SyntaxHighlightService {
     fn ensure_tree(&self, document: &HighlightDocument, syntax: &TreeSitterSyntax) -> Option<Tree> {
         let key = self.parse_tree_cache_key(document, syntax);
         {
-            let mut state = document.lazy_state.borrow_mut();
+            let mut state = document
+                .lazy_state
+                .lock()
+                .expect("highlight state mutex poisoned");
             if let Some(tree) = state.cached_tree(&key) {
                 return Some(tree);
             }
         }
         if let Ok(mut cache) = PARSE_TREE_CACHE.lock() {
             if let Some(tree) = cache.get(&key) {
-                let mut state = document.lazy_state.borrow_mut();
+                let mut state = document
+                    .lazy_state
+                    .lock()
+                    .expect("highlight state mutex poisoned");
                 state.store_cached_tree(key, tree.clone());
                 return Some(tree);
             }
@@ -396,7 +412,10 @@ impl SyntaxHighlightService {
                 estimated_tree_bytes(document.byte_count(), document.line_count()),
             );
         }
-        let mut state = document.lazy_state.borrow_mut();
+        let mut state = document
+            .lazy_state
+            .lock()
+            .expect("highlight state mutex poisoned");
         state.store_parsed_tree(key, tree.clone(), document.line_count());
         Some(tree)
     }
@@ -566,7 +585,8 @@ pub struct HighlightDocument {
     syntax_token: String,
     path: Option<String>,
     byte_count: usize,
-    lazy_state: Rc<RefCell<LazyHighlightState>>,
+    // Arc<Mutex>, not Rc<RefCell>: keeps HighlightDocument Send for off-thread highlighting.
+    lazy_state: Arc<Mutex<LazyHighlightState>>,
 }
 
 impl HighlightDocument {
@@ -618,7 +638,7 @@ impl HighlightDocument {
             syntax_token: syntax_token.into(),
             path,
             byte_count,
-            lazy_state: Rc::new(RefCell::new(LazyHighlightState::with_limit(
+            lazy_state: Arc::new(Mutex::new(LazyHighlightState::with_limit(
                 line_cache_capacity,
             ))),
         }
@@ -682,7 +702,10 @@ impl HighlightDocument {
     }
 
     pub fn highlight_stats(&self) -> HighlightLazyStats {
-        self.lazy_state.borrow().stats()
+        self.lazy_state
+            .lock()
+            .expect("highlight state mutex poisoned")
+            .stats()
     }
 
     pub fn highlight_generation_id(&self) -> u64 {

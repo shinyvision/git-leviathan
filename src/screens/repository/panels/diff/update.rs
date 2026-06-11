@@ -156,18 +156,25 @@ pub(in crate::screens::repository) fn update(
             panel.diff_scroll_y = off.y;
             panel.diff_scroll_x = off.x;
             panel.diff_viewport_height = Some(viewport.bounds().height);
-            if panel.schedule_visible_highlights() {
+            match panel.request_visible_highlight() {
+                Some(job) => run_visible_highlight_task(ctx.tab_id, job),
+                None => Task::none(),
+            }
+        }
+        DiffPanelAction::ContinueVisibleHighlighting => match panel.request_visible_highlight() {
+            Some(job) => run_visible_highlight_task(ctx.tab_id, job),
+            None => Task::none(),
+        },
+        DiffPanelAction::VisibleHighlightReady { highlighted } => {
+            if panel.finish_visible_highlight(highlighted) {
                 continue_visible_highlighting_task(ctx.tab_id)
             } else {
                 Task::none()
             }
         }
-        DiffPanelAction::ContinueVisibleHighlighting => {
-            if panel.schedule_visible_highlights() {
-                continue_visible_highlighting_task(ctx.tab_id)
-            } else {
-                Task::none()
-            }
+        DiffPanelAction::RefreshGrammarStatus => {
+            panel.invalidate_grammar_status_cache();
+            Task::none()
         }
         DiffPanelAction::SyntaxGrammarAssetsChanged => {
             if let Some(follow_up) = panel.on_syntax_grammar_assets_changed() {
@@ -750,6 +757,51 @@ fn continue_visible_highlighting_task(tab_id: crate::core::TabId) -> Task<Messag
             Message::tab(
                 tab_id,
                 RepositoryMessage::DiffPanel(DiffPanelAction::ContinueVisibleHighlighting),
+            )
+        },
+    )
+}
+
+fn run_visible_highlight_task(
+    tab_id: crate::core::TabId,
+    job: super::VisibleHighlightJob,
+) -> Task<Message> {
+    let super::VisibleHighlightJob {
+        generation,
+        requests,
+        document_ids,
+        old_document,
+        new_document,
+        provider,
+    } = job;
+    Task::perform(
+        presentation_work(move || {
+            let span = crate::perf::Span::new("cpu.diff_highlight_materialize")
+                .field("tab", tab_id)
+                .field("generation", generation)
+                .field("requests", requests.len());
+            let materialized = super::highlight_schedule::highlight_scheduled_requests_with_stats(
+                &requests,
+                generation,
+                document_ids,
+                old_document.as_ref(),
+                new_document.as_ref(),
+                &provider,
+                super::highlight_schedule::HIGHLIGHT_REQUEST_BUDGET,
+            );
+            span.field("provider_hits", materialized.provider_hits)
+                .field("provider_misses", materialized.provider_misses)
+                .field("tree_parse_misses", materialized.tree_parse_misses)
+                .field("parsed_lines", materialized.parsed_lines)
+                .finish_with("highlighted", materialized.highlighted);
+            materialized.highlighted
+        }),
+        move |highlighted| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::DiffPanel(DiffPanelAction::VisibleHighlightReady {
+                    highlighted,
+                }),
             )
         },
     )

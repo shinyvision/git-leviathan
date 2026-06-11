@@ -9,38 +9,7 @@ use super::GitService;
 pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, GitError> {
     let mut results = Vec::new();
 
-    // Resolve the PRIMARY workdir independently of what this service happens
-    // to have open. When a GitService is opened on a linked worktree,
-    // `repo.workdir()` returns that linked workdir — not the primary — and
-    // `repo.worktrees()` never lists the primary (git treats it specially).
-    // Without deriving it here, branches checked out in the primary would
-    // look "unowned" from a secondary, and clicking them would checkout on
-    // the current worktree instead of swapping focus.
-    //
-    // Derivation: `repo.path()` is `.git/` for the primary and
-    // `<primary>/.git/worktrees/<name>/` for a linked worktree. Walk up to
-    // the common `.git` dir, then up one more for the primary workdir.
-    let primary_workdir = if service.repo.is_worktree() {
-        service
-            .repo
-            .path()
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .ok_or_else(|| {
-                GitError::Other("cannot derive primary workdir from linked worktree".to_string())
-            })?
-    } else {
-        service
-            .repo
-            .workdir()
-            .ok_or_else(|| GitError::Other("repository has no workdir (bare)".to_string()))?
-            .to_path_buf()
-    };
-    let primary_path = primary_workdir
-        .canonicalize()
-        .map_err(|e| GitError::Other(format!("canonicalize primary workdir: {e}")))?;
+    let primary_path = primary_workdir(service)?;
     let (primary_head, primary_branch) = head_info_for_workdir(&primary_path)?;
     results.push(WorktreeInfo {
         path: primary_path,
@@ -86,6 +55,41 @@ pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, 
     }
 
     Ok(results)
+}
+
+/// Resolve the PRIMARY workdir independently of what this service happens
+/// to have open. When a GitService is opened on a linked worktree,
+/// `repo.workdir()` returns that linked workdir — not the primary — and
+/// `repo.worktrees()` never lists the primary (git treats it specially).
+/// Without deriving it here, branches checked out in the primary would
+/// look "unowned" from a secondary, and clicking them would checkout on
+/// the current worktree instead of swapping focus.
+///
+/// Derivation: `repo.path()` is `.git/` for the primary and
+/// `<primary>/.git/worktrees/<name>/` for a linked worktree. Walk up to
+/// the common `.git` dir, then up one more for the primary workdir.
+fn primary_workdir(service: &GitService) -> Result<std::path::PathBuf, GitError> {
+    let workdir = if service.repo.is_worktree() {
+        service
+            .repo
+            .path()
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .ok_or_else(|| {
+                GitError::Other("cannot derive primary workdir from linked worktree".to_string())
+            })?
+    } else {
+        service
+            .repo
+            .workdir()
+            .ok_or_else(|| GitError::Other("repository has no workdir (bare)".to_string()))?
+            .to_path_buf()
+    };
+    workdir
+        .canonicalize()
+        .map_err(|e| GitError::Other(format!("canonicalize primary workdir: {e}")))
 }
 
 fn head_info_for_workdir(path: &Path) -> Result<(String, String), GitError> {
@@ -238,14 +242,24 @@ pub(super) fn add_worktree(
     Ok(())
 }
 
-pub(super) fn remove_worktree(
-    service: &GitService,
-    path: &Path,
-    force: bool,
-) -> Result<(), GitError> {
+/// Remove a linked worktree by path.
+///
+/// - If `path` is the primary workdir, returns `Ok(())` without touching
+///   anything — the primary worktree (and its branch) is not deletable
+///   through this entry point.
+/// - If the linked worktree is locked, it is automatically unlocked
+///   before pruning. The branch reference the worktree pointed at is
+///   left in place.
+pub(super) fn remove_worktree(service: &GitService, path: &Path) -> Result<(), GitError> {
     let canonical = path
         .canonicalize()
         .map_err(|e| GitError::Other(format!("canonicalize '{}': {e}", path.display())))?;
+
+    if let Ok(primary) = primary_workdir(service) {
+        if primary == canonical {
+            return Ok(());
+        }
+    }
 
     let names = service
         .repo
@@ -276,10 +290,9 @@ pub(super) fn remove_worktree(
     let lock_status = wt
         .is_locked()
         .map_err(|e| wrap_git2_error(&format!("check lock status for worktree '{name}'"), e))?;
-    if matches!(lock_status, git2::WorktreeLockStatus::Locked(_)) && !force {
-        return Err(GitError::Other(format!(
-            "worktree '{name}' is locked; unlock it first",
-        )));
+    if matches!(lock_status, git2::WorktreeLockStatus::Locked(_)) {
+        wt.unlock()
+            .map_err(|e| wrap_git2_error(&format!("unlock worktree '{name}'"), e))?;
     }
 
     if canonical.exists() {
@@ -293,9 +306,6 @@ pub(super) fn remove_worktree(
 
     let mut prune_opts = git2::WorktreePruneOptions::new();
     prune_opts.valid(true);
-    if force {
-        prune_opts.locked(true);
-    }
     wt.prune(Some(&mut prune_opts))
         .map_err(|e| wrap_git2_error(&format!("prune worktree '{name}'"), e))?;
 
@@ -540,7 +550,7 @@ mod tests {
 
         add_worktree(&service, &wt_path, Some("tmp"), &default_branch).expect("add worktree");
 
-        remove_worktree(&service, &wt_path, false).expect("remove worktree");
+        remove_worktree(&service, &wt_path).expect("remove worktree");
 
         assert!(!wt_path.exists(), "worktree dir should be gone");
         let worktrees = list_worktrees(&service).expect("list after remove");
@@ -574,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_worktree_fails_when_locked() {
+    fn remove_worktree_auto_unlocks_locked_worktree() {
         let (temp, repo) = init_test_repo("worktrees_remove_locked");
         let default_branch = repo
             .head()
@@ -588,7 +598,6 @@ mod tests {
 
         add_worktree(&service, &wt_path, Some("tmp-lock"), &default_branch).expect("add");
 
-        // Lock the worktree through libgit2 so remove_worktree fails.
         let names = service.repo.worktrees().expect("worktrees list");
         let mut locked_name: Option<String> = None;
         for i in 0..names.len() {
@@ -604,13 +613,61 @@ mod tests {
         }
         locked_name.expect("locked a worktree for the test");
 
-        let result = remove_worktree(&service, &wt_path, false);
-        assert!(
-            result.is_err(),
-            "remove should refuse a locked worktree when !force"
-        );
+        remove_worktree(&service, &wt_path).expect("remove should auto-unlock a locked worktree");
 
-        // Unlock for cleanup — CleanupDir will drop the dir; the metadata stays
-        // but that's acceptable for test isolation.
+        assert!(!wt_path.exists(), "worktree dir should be gone");
+        let worktrees = list_worktrees(&service).expect("list after remove");
+        assert_eq!(worktrees.len(), 1, "only primary should remain");
+
+        let repo = git2::Repository::open(temp.path_str()).unwrap();
+        assert!(
+            repo.find_branch("tmp-lock", git2::BranchType::Local)
+                .is_ok(),
+            "branch ref should survive worktree removal",
+        );
+    }
+
+    #[test]
+    fn remove_worktree_is_noop_for_primary() {
+        let (temp, _repo) = init_test_repo("worktrees_remove_primary_noop");
+        let service = GitService::open(temp.path_str()).expect("open service");
+
+        remove_worktree(&service, &temp.path).expect("removing primary should be a no-op");
+
+        let worktrees = list_worktrees(&service).expect("list after no-op");
+        assert_eq!(worktrees.len(), 1, "primary must still exist");
+        assert!(worktrees[0].is_primary);
+        assert!(temp.path.exists(), "primary workdir must still exist");
+    }
+
+    #[test]
+    fn remove_worktree_is_noop_for_primary_when_called_from_secondary() {
+        let (temp, repo) = init_test_repo("worktrees_remove_primary_noop_from_secondary");
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
+        let primary_service = GitService::open(temp.path_str()).expect("open primary service");
+        let wt_path = unique_wt_path("noop_from_secondary");
+        let _cleanup = CleanupDir(wt_path.clone());
+        add_worktree(
+            &primary_service,
+            &wt_path,
+            Some("feat-noop"),
+            &default_branch,
+        )
+        .expect("add secondary");
+
+        let secondary_service =
+            GitService::open(wt_path.to_str().unwrap()).expect("open secondary service");
+
+        remove_worktree(&secondary_service, &temp.path)
+            .expect("removing primary via secondary service should be a no-op");
+
+        let worktrees = list_worktrees(&secondary_service).expect("list");
+        assert_eq!(
+            worktrees.len(),
+            2,
+            "primary and secondary should still be present",
+        );
+        assert!(temp.path.exists(), "primary workdir must still exist");
+        assert!(wt_path.exists(), "secondary workdir must still exist");
     }
 }

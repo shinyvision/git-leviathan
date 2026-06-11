@@ -177,8 +177,8 @@ impl GitService {
         worktrees::add_worktree(self, path, new_branch_name, ref_to_checkout)
     }
 
-    pub fn remove_worktree(&self, path: &std::path::Path, force: bool) -> Result<(), GitError> {
-        worktrees::remove_worktree(self, path, force)
+    pub fn remove_worktree(&self, path: &std::path::Path) -> Result<(), GitError> {
+        worktrees::remove_worktree(self, path)
     }
 
     pub fn load_refs_snapshot(&self, commit_limit: usize) -> crate::services::RefsSnapshot {

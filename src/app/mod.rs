@@ -75,6 +75,8 @@ pub struct App {
     pub(super) repo_chrome_registry: RepoChromeRegistry,
     pub(super) slot_registry_revision: u64,
     pub(super) pending_focus_reason: Option<crate::plugin::ui::focus::FocusReason>,
+    pub(super) settings: Option<SettingsService>,
+    pub(super) last_persisted_tabs: Option<Vec<PersistedPluginTab>>,
 }
 
 impl App {
@@ -116,6 +118,8 @@ impl App {
             repo_chrome_registry,
             slot_registry_revision,
             pending_focus_reason: None,
+            settings: None,
+            last_persisted_tabs: None,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -141,6 +145,7 @@ impl App {
         app.sync_repository_to_plugins();
         app.process_tab_changes();
         app.rebuild_slot_registries();
+        app.last_persisted_tabs = Some(app.collect_plugin_tabs());
         (app, task)
     }
 
@@ -240,9 +245,8 @@ impl App {
         self.tabs.open_plugin_screen(summary, bound_repo_path);
     }
 
-    fn persist_plugin_tabs(&mut self) {
-        let tabs: Vec<PersistedPluginTab> = self
-            .tabs
+    fn collect_plugin_tabs(&self) -> Vec<PersistedPluginTab> {
+        self.tabs
             .tabs()
             .iter()
             .filter_map(|entry| {
@@ -257,9 +261,22 @@ impl App {
                         .serialize_screen_state(screen.plugin_id(), screen.screen_id()),
                 })
             })
-            .collect();
-        if let Ok(settings) = SettingsService::new() {
-            let _ = settings.save_plugin_tabs(&tabs);
+            .collect()
+    }
+
+    fn persist_plugin_tabs(&mut self) {
+        let tabs = self.collect_plugin_tabs();
+        if self.last_persisted_tabs.as_deref() == Some(tabs.as_slice()) {
+            return;
+        }
+
+        if self.settings.is_none() {
+            self.settings = SettingsService::new().ok();
+        }
+        if let Some(settings) = self.settings.as_ref() {
+            if settings.save_plugin_tabs(&tabs).is_ok() {
+                self.last_persisted_tabs = Some(tabs);
+            }
         }
     }
 
@@ -728,6 +745,8 @@ mod tests {
             repo_chrome_registry,
             slot_registry_revision: 0,
             pending_focus_reason: None,
+            settings: None,
+            last_persisted_tabs: None,
         }
     }
 
@@ -1038,6 +1057,8 @@ capabilities = ["ui:region:main_bar"]
             repo_chrome_registry,
             slot_registry_revision,
             pending_focus_reason: None,
+            settings: None,
+            last_persisted_tabs: None,
         };
 
         app.rebuild_slot_registries();

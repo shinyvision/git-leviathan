@@ -372,6 +372,23 @@ fn specs() -> Vec<CoreCommandSpec> {
         .cap("git:write:merge")
         .destructive()
         .action(merge_branch),
+        spec(
+            "branch.reset",
+            "Branch: Reset",
+            "Reset the current branch to a commit.",
+            "repository",
+        )
+        .arg("hash", StringArg, true, None, "Commit hash to reset to.")
+        .arg(
+            "mode",
+            StringArg,
+            false,
+            Some(json!("mixed")),
+            "soft | mixed | hard",
+        )
+        .cap("git:write:reset")
+        .destructive()
+        .action(reset_branch),
         spec("stash.push", "Stash: Push", "Create a stash.", "repository")
             .cap("git:write:stash")
             .action(|_| stash(CenterAction::StashCreateRequested)),
@@ -863,6 +880,26 @@ fn merge_branch(args: &Value) -> Result<CoreCommandAction, String> {
     )))
 }
 
+fn reset_branch(args: &Value) -> Result<CoreCommandAction, String> {
+    use crate::services::ResetMode;
+    let mode = match string_arg(args, "mode").as_deref().unwrap_or("mixed") {
+        "soft" => ResetMode::Soft,
+        "mixed" => ResetMode::Mixed,
+        "hard" => ResetMode::Hard,
+        other => {
+            return Err(format!(
+                "unknown reset mode `{other}`; expected soft, mixed, or hard"
+            ))
+        }
+    };
+    Ok(repository(RepositoryMessage::Center(
+        CenterAction::ResetToCommitRequested {
+            commit_hash: required_string_arg(args, "hash")?,
+            mode,
+        },
+    )))
+}
+
 fn stash(action: CenterAction) -> Result<CoreCommandAction, String> {
     Ok(repository(RepositoryMessage::Center(action)))
 }
@@ -1015,6 +1052,7 @@ mod tests {
             "branch.delete.remote",
             "branch.delete.local_and_remote",
             "branch.merge",
+            "branch.reset",
             "stash.pop",
             "repository.open_search",
             "repository.jump_top",
