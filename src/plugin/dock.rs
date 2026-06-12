@@ -180,19 +180,21 @@ impl DockManager {
     }
 
     pub fn drop_registrations_for_plugin(&self, plugin_id: &str) {
+        let prefix = format!("{plugin_id}:");
         let mut inner = self.inner.borrow_mut();
         inner
             .registrations
-            .retain(|key, _| !key.starts_with(&format!("{plugin_id}:")));
+            .retain(|key, _| !key.starts_with(&prefix));
         save_inner(&inner);
     }
 
     pub fn remove_plugin(&self, plugin_id: &str) {
+        let prefix = format!("{plugin_id}:");
         let mut inner = self.inner.borrow_mut();
         let keys = inner
             .registrations
             .keys()
-            .filter(|key| key.starts_with(&format!("{plugin_id}:")))
+            .filter(|key| key.starts_with(&prefix))
             .cloned()
             .collect::<Vec<_>>();
         for key in keys {

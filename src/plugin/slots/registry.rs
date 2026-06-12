@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use super::address::{Container, SlotAddress};
 
 pub trait IsSlot {
@@ -13,11 +15,18 @@ pub trait IsSlot {
 
 pub struct SlotRegistry<T: IsSlot> {
     slots: Vec<T>,
+    /// Indices into `slots`, sorted by `(priority, insertion index)`.
+    /// Rebuilt only when `slots` mutates so per-frame `iter_container`
+    /// neither allocates nor sorts. `None` means "stale, rebuild on read".
+    sorted: RefCell<Option<Vec<usize>>>,
 }
 
 impl<T: IsSlot> Default for SlotRegistry<T> {
     fn default() -> Self {
-        Self { slots: Vec::new() }
+        Self {
+            slots: Vec::new(),
+            sorted: RefCell::new(None),
+        }
     }
 }
 
@@ -26,7 +35,12 @@ impl<T: IsSlot> SlotRegistry<T> {
         Self::default()
     }
 
+    fn invalidate(&mut self) {
+        *self.sorted.get_mut() = None;
+    }
+
     pub fn add(&mut self, slot: T) -> bool {
+        self.invalidate();
         if let Some(existing) = self
             .slots
             .iter_mut()
@@ -41,12 +55,14 @@ impl<T: IsSlot> SlotRegistry<T> {
     }
 
     pub fn remove(&mut self, address: &SlotAddress) -> bool {
+        self.invalidate();
         let n = self.slots.len();
         self.slots.retain(|s| s.address() != address);
         self.slots.len() != n
     }
 
     pub fn replace(&mut self, address: &SlotAddress, new: T) -> bool {
+        self.invalidate();
         if let Some(existing) = self.slots.iter_mut().find(|s| s.address() == address) {
             *existing = new;
             true
@@ -68,6 +84,7 @@ impl<T: IsSlot> SlotRegistry<T> {
         is_hidden: impl Fn(&SlotAddress) -> bool,
         priority_for: impl Fn(&SlotAddress) -> Option<i32>,
     ) {
+        self.invalidate();
         self.slots.retain(|slot| !is_hidden(slot.address()));
         for slot in &mut self.slots {
             if let Some(priority) = priority_for(slot.address()) {
@@ -84,15 +101,32 @@ impl<T: IsSlot> SlotRegistry<T> {
         self.slots.is_empty()
     }
 
+    fn ensure_sorted(&self) {
+        if self.sorted.borrow().is_some() {
+            return;
+        }
+        let mut order: Vec<usize> = (0..self.slots.len()).collect();
+        order.sort_by(|&ia, &ib| {
+            self.slots[ia]
+                .priority()
+                .cmp(&self.slots[ib].priority())
+                .then(ia.cmp(&ib))
+        });
+        *self.sorted.borrow_mut() = Some(order);
+    }
+
     pub fn iter_container<'a>(&'a self, container: Container) -> impl Iterator<Item = &'a T> + 'a {
-        let mut picked: Vec<(usize, &T)> = self
-            .slots
+        self.ensure_sorted();
+        let picked: Vec<&T> = self
+            .sorted
+            .borrow()
+            .as_ref()
+            .expect("ensure_sorted populated the cache")
             .iter()
-            .enumerate()
-            .filter(move |(_, s)| s.container() == &container)
+            .map(|&i| &self.slots[i])
+            .filter(|s| s.container() == &container)
             .collect();
-        picked.sort_by(|(ia, a), (ib, b)| a.priority().cmp(&b.priority()).then(ia.cmp(ib)));
-        picked.into_iter().map(|(_, s)| s)
+        picked.into_iter()
     }
 }
 
@@ -241,5 +275,31 @@ mod tests {
         reg.add(slot("same", center(), 10));
         assert_eq!(reg.iter_container(left()).count(), 1);
         assert_eq!(reg.iter_container(center()).count(), 1);
+    }
+
+    #[test]
+    fn mutation_after_read_reflects_in_next_iter() {
+        let mut reg: SlotRegistry<TestSlot> = SlotRegistry::new();
+        reg.add(slot("a", center(), 10));
+        reg.add(slot("b", center(), 20));
+        let first: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.display_id())
+            .collect();
+        assert_eq!(first, vec!["a", "b"]);
+
+        reg.add(slot("c", center(), 5));
+        let second: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.display_id())
+            .collect();
+        assert_eq!(second, vec!["c", "a", "b"]);
+
+        reg.apply_visibility_and_priority(|addr| addr.slot_id().as_str() == "a", |_| None);
+        let third: Vec<&str> = reg
+            .iter_container(center())
+            .map(|s| s.display_id())
+            .collect();
+        assert_eq!(third, vec!["c", "b"]);
     }
 }

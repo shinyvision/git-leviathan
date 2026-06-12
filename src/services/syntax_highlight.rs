@@ -18,6 +18,7 @@ pub mod installation;
 mod parser_loading;
 mod queries;
 pub mod registry;
+mod util;
 
 use caches::{
     estimated_tree_bytes, HighlightCache, HighlightDocumentCacheKey, HighlightFileCacheKey,
@@ -35,6 +36,7 @@ use installation::{
 };
 use parser_loading::ParserLoader;
 use registry::{BuiltinSyntaxRegistry, RuntimeGrammarSecurityPolicy, TreeSitterSyntax};
+use util::normalize_language_key;
 
 pub type LanguageDetection = detection::LanguageDetection;
 pub type GrammarInventoryReport = registry::GrammarInventoryReport;
@@ -293,10 +295,12 @@ impl SyntaxHighlightService {
         let mut tree = None;
         let mut spans = Vec::new();
         let mut line_ranges = Vec::new();
+        let document_key = self.highlight_document_cache_key(document, &detection, syntax);
 
         for line_number in 1..=document.line_count() as u32 {
             let line_start = spans.len() as u32;
-            let span_key = self.highlight_span_cache_key(document, &detection, syntax, line_number);
+            let span_key =
+                HighlightSpanCacheKey::new(document_key.clone(), line_number, line_number);
             let line_spans = HIGHLIGHT_SPAN_CACHE
                 .lock()
                 .ok()
@@ -438,12 +442,28 @@ impl SyntaxHighlightService {
     }
 
     pub fn detect_language(&self, document: &HighlightDocument) -> LanguageDetection {
-        detect_language(
+        let registry_identity = self.registry.cache_identity();
+        {
+            let state = document
+                .lazy_state
+                .lock()
+                .expect("highlight state mutex poisoned");
+            if let Some(detection) = state.cached_detection(registry_identity) {
+                return detection;
+            }
+        }
+        let detection = detect_language(
             document.content(),
             document.path(),
             document.syntax_token(),
             &self.registry,
-        )
+        );
+        let mut state = document
+            .lazy_state
+            .lock()
+            .expect("highlight state mutex poisoned");
+        state.store_detection(registry_identity, detection.clone());
+        detection
     }
 
     pub fn syntax_status_for_document(&self, document: &HighlightDocument) -> SyntaxGrammarStatus {
@@ -767,10 +787,6 @@ fn hash_content(content: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
     hasher.finish()
-}
-
-fn normalize_language_key(language: &str) -> String {
-    language.trim().to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone, PartialEq)]

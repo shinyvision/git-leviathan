@@ -1,6 +1,6 @@
 use crate::services::{git_error::GitError, StashSnapshot};
 
-use super::helpers::spawn_git_command;
+use super::helpers::{command_dir, spawn_git_command};
 use super::GitService;
 
 pub(super) fn load_stashes(service: &GitService) -> Vec<StashSnapshot> {
@@ -50,21 +50,12 @@ pub(super) enum StashApplyStatus {
     Conflicted,
 }
 
-fn repo_dir_str(service: &GitService) -> String {
-    service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned()
-}
-
 fn run_stash_subcommand(
     service: &GitService,
     subcmd: &str,
     index: usize,
 ) -> Result<StashApplyStatus, GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
     let stash_ref = format!("stash@{{{}}}", index);
     let op = format!("stash {subcmd}");
     let output = spawn_git_command(&repo_dir, &["stash", subcmd, &stash_ref], &op)?;
@@ -87,7 +78,7 @@ fn run_stash_subcommand(
 }
 
 pub(super) fn create_stash(service: &GitService) -> Result<(), GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
     let output = spawn_git_command(
         &repo_dir,
         &["stash", "push", "--include-untracked"],

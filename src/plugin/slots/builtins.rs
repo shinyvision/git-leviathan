@@ -15,7 +15,7 @@ impl BuiltinSlotDescriptor {
         SlotAddress::new(
             BUILTIN_PLUGIN_ID,
             self.region,
-            parse_container(self.container),
+            Container::parse(self.container),
             self.id,
         )
     }
@@ -132,15 +132,4 @@ pub fn get(region: &str, container: &str, id: &str) -> Option<&'static BuiltinSl
     BUILTIN_SLOTS
         .iter()
         .find(|slot| slot.region == region && slot.container == container && slot.id == id)
-}
-
-fn parse_container(raw: &str) -> Container {
-    if let Some((pane, section)) = raw.split_once('.') {
-        Container::Pane {
-            pane: pane.to_string(),
-            section: section.to_string(),
-        }
-    } else {
-        Container::Section(raw.to_string())
-    }
 }

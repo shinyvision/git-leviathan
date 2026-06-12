@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use mlua::Lua;
+
+use crate::plugin::util::system_time_unix_ms;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PluginId(String);
@@ -184,10 +186,7 @@ pub struct ResourceRecord {
 
 impl ResourceRecord {
     pub fn created_at_unix_ms(&self) -> u128 {
-        self.created_at
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_millis())
-            .unwrap_or(0)
+        system_time_unix_ms(self.created_at)
     }
 }
 

@@ -12,10 +12,11 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Table, Value as LuaValue};
+use serde::Serialize;
 
 use crate::plugin::commands::{
-    dispatch_command_as, CommandDispatchEnv, CommandInvocationCaller, InvokeOutcome, RawCommand,
-    RawCommandArg,
+    dispatch_command_as, CommandArgSummary, CommandDispatchEnv, CommandHooks,
+    CommandInvocationCaller, CommandSummary, InvokeOutcome, RawCommand, RawCommandArg,
 };
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 use crate::plugin::{capabilities::CapabilityGuard, resources::PluginId};
@@ -173,6 +174,87 @@ fn install_command_invoke(
     Ok(())
 }
 
+#[derive(Serialize)]
+struct CommandHooksDto {
+    before: bool,
+    after: bool,
+    veto: bool,
+    replace: bool,
+}
+
+impl From<&CommandHooks> for CommandHooksDto {
+    fn from(h: &CommandHooks) -> Self {
+        Self {
+            before: h.before,
+            after: h.after,
+            veto: h.veto,
+            replace: h.replace,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct CommandArgDto {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+    required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default: Option<serde_json::Value>,
+    doc: String,
+}
+
+impl From<CommandArgSummary> for CommandArgDto {
+    fn from(a: CommandArgSummary) -> Self {
+        Self {
+            name: a.name,
+            ty: a.ty,
+            required: a.required,
+            default: a.default,
+            doc: a.doc,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct CommandSummaryDto {
+    name: String,
+    title: String,
+    description: String,
+    plugin_id: String,
+    context: String,
+    destructive: bool,
+    capabilities: Vec<String>,
+    plugin_invocation_capabilities: Vec<String>,
+    enabled: bool,
+    disabled_reason: Option<String>,
+    keymap_eligible: bool,
+    palette_visible: bool,
+    hooks: CommandHooksDto,
+    args: Vec<CommandArgDto>,
+}
+
+impl From<CommandSummary> for CommandSummaryDto {
+    fn from(s: CommandSummary) -> Self {
+        Self {
+            name: s.name,
+            title: s.title,
+            description: s.description,
+            plugin_id: s.plugin_id,
+            context: s.context,
+            destructive: s.destructive,
+            capabilities: s.capabilities,
+            plugin_invocation_capabilities: s.plugin_invocation_capabilities,
+            enabled: s.enabled,
+            disabled_reason: s.disabled_reason,
+            keymap_eligible: s.keymap_eligible,
+            palette_visible: s.palette_visible,
+            hooks: CommandHooksDto::from(&s.hooks),
+            args: s.args.into_iter().map(CommandArgDto::from).collect(),
+        }
+    }
+}
+
 fn install_command_list(
     lua: &Lua,
     dispatch: CommandDispatchEnv,
@@ -181,49 +263,14 @@ fn install_command_list(
     command.set(
         "list",
         lua.create_function(move |lua_inner, ()| {
-            let summaries = dispatch.commands.borrow().summaries();
-            let json: Vec<serde_json::Value> = summaries
+            let dtos: Vec<CommandSummaryDto> = dispatch
+                .commands
+                .borrow()
+                .summaries()
                 .into_iter()
-                .map(|s| {
-                    let args: Vec<serde_json::Value> = s
-                        .args
-                        .into_iter()
-                        .map(|a| {
-                            let mut arg = serde_json::Map::new();
-                            arg.insert("name".to_string(), serde_json::Value::String(a.name));
-                            arg.insert("type".to_string(), serde_json::Value::String(a.ty));
-                            arg.insert("required".to_string(), serde_json::Value::Bool(a.required));
-                            if let Some(default) = a.default {
-                                arg.insert("default".to_string(), default);
-                            }
-                            arg.insert("doc".to_string(), serde_json::Value::String(a.doc));
-                            serde_json::Value::Object(arg)
-                        })
-                        .collect();
-                    serde_json::json!({
-                        "name": s.name,
-                        "title": s.title,
-                        "description": s.description,
-                        "plugin_id": s.plugin_id,
-                        "context": s.context,
-                        "destructive": s.destructive,
-                        "capabilities": s.capabilities,
-                        "plugin_invocation_capabilities": s.plugin_invocation_capabilities,
-                        "enabled": s.enabled,
-                        "disabled_reason": s.disabled_reason,
-                        "keymap_eligible": s.keymap_eligible,
-                        "palette_visible": s.palette_visible,
-                        "hooks": {
-                            "before": s.hooks.before,
-                            "after": s.hooks.after,
-                            "veto": s.hooks.veto,
-                            "replace": s.hooks.replace,
-                        },
-                        "args": args,
-                    })
-                })
+                .map(CommandSummaryDto::from)
                 .collect();
-            lua_inner.to_value(&json)
+            lua_inner.to_value(&dtos)
         })?,
     )?;
     Ok(())

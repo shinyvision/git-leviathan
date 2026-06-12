@@ -104,6 +104,7 @@ fn dialog_ctx<'a>(operations: &'a mut OperationCoordinator) -> DialogCtx<'a> {
         presenter: Arc::new(DefaultPresenter::new()),
         tab_id: TabId(1),
         active_path: PathBuf::from("."),
+        sidebar_sections: &[],
         operations,
     }
 }

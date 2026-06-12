@@ -20,7 +20,6 @@ use std::sync::mpsc::channel;
 
 use mlua::{Function, Lua, RegistryKey, Table, UserData, UserDataMethods};
 
-use crate::plugin::api::async_runtime::{DeferredCallback, DeferredQueue};
 use crate::plugin::async_jobs::{
     AsyncJobRegistration, AsyncJobRegistry, CancellationToken, JobId, JobOutcome,
 };
@@ -80,7 +79,6 @@ pub struct AsyncInstallContext {
     pub ledger: ResourceLedger,
     pub registry: AsyncJobRegistry,
     pub job_callbacks: Rc<RefCell<JobCallbacks>>,
-    pub deferred: Rc<RefCell<DeferredQueue>>,
     pub plugin_id: PluginId,
     pub generation_id: GenerationId,
 }
@@ -92,7 +90,6 @@ pub fn install(lua: &Lua, leviathan: &Table, ctx: AsyncInstallContext) -> mlua::
         ledger,
         registry,
         job_callbacks,
-        deferred,
         plugin_id,
         generation_id,
     } = ctx;
@@ -122,12 +119,17 @@ pub fn install(lua: &Lua, leviathan: &Table, ctx: AsyncInstallContext) -> mlua::
                 let resource_id = ledger_for_spawn.record(
                     PluginResourceKind::AsyncJob,
                     format!("async.spawn:{}", job_id.get()),
-                    source,
+                    source.clone(),
                 );
 
                 if let Some(callback) = on_complete {
                     let key = lua_inner.create_registry_value(callback)?;
                     job_callbacks_for_spawn.borrow_mut().insert(job_id, key);
+                    ledger_for_spawn.record(
+                        PluginResourceKind::LuaRegistryKey,
+                        format!("async.spawn:{}:on_complete", job_id.get()),
+                        source,
+                    );
                 }
 
                 let (tx, rx) = channel::<JobOutcome>();
@@ -158,32 +160,11 @@ pub fn install(lua: &Lua, leviathan: &Table, ctx: AsyncInstallContext) -> mlua::
 
     leviathan.set("async", async_tbl)?;
 
-    // Top-level alias for the existing api.schedule. Mounted here so
-    // the descriptor coverage test sees the new function.
-    let queue_for_alias = Rc::clone(&deferred);
-    let ledger_for_alias = ledger;
-    leviathan.set(
-        "schedule",
-        lua.create_function(move |lua_inner, f: Function| {
-            let key = lua_inner.create_registry_value(f)?;
-            let source = ResourceLedger::source_location(lua_inner);
-            let resource_id = ledger_for_alias.record(
-                PluginResourceKind::AsyncJob,
-                "leviathan.schedule",
-                source.clone(),
-            );
-            ledger_for_alias.record(
-                PluginResourceKind::LuaRegistryKey,
-                format!("schedule:{resource_id}"),
-                source,
-            );
-            queue_for_alias
-                .borrow_mut()
-                .immediate
-                .push(DeferredCallback { key, resource_id });
-            Ok(())
-        })?,
-    )?;
+    // Top-level alias for the existing api.schedule: share the same Lua
+    // function value so behaviour and ledger bookkeeping stay identical.
+    let api_tbl: Table = leviathan.get("api")?;
+    let schedule: Function = api_tbl.get("schedule")?;
+    leviathan.set("schedule", schedule)?;
 
     Ok(())
 }

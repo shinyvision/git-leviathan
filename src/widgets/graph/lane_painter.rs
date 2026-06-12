@@ -53,7 +53,7 @@ pub(crate) fn build_h_to_v_into(b: &mut Builder, x1: f32, y1: f32, x2: f32, y2: 
 pub fn v_to_h_sample(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> (f32, f32) {
     let horiz_dist = (x2 - x1).abs();
     let vert_dist = (y2 - y1).abs();
-    if horiz_dist < 0.0 || vert_dist < 0.0 {
+    if horiz_dist == 0.0 || vert_dist == 0.0 {
         let x = x1 + (x2 - x1) * t;
         let y = y1 + (y2 - y1) * t;
         return (x, y);

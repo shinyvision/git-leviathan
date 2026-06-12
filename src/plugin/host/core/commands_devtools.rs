@@ -1438,6 +1438,7 @@ impl PluginHost {
                 }
             }
         }
+        self.bump_lua_activity();
         let env = self.command_dispatch_env();
         let outcome = commands::dispatch_command(&env, name, args);
         // Drain queued events immediately so tests that observe

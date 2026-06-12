@@ -157,9 +157,16 @@ pub(super) fn update(
                 panel.toggle_section(ctx.data.snapshot.sidebar_sections(), idx)
             {
                 let repo_path = ctx.fleet.primary_path().to_string_lossy().to_string();
-                if let Ok(settings) = crate::services::SettingsService::new() {
-                    let _ = settings.set_sidebar_section(&repo_path, kind.db_key(), expanded);
-                }
+                let db_key = kind.db_key();
+                return Task::future(async move {
+                    let _ = tokio::task::spawn_blocking(move || {
+                        if let Ok(settings) = crate::services::SettingsService::new() {
+                            let _ = settings.set_sidebar_section(&repo_path, db_key, expanded);
+                        }
+                    })
+                    .await;
+                })
+                .discard();
             }
             Task::none()
         }

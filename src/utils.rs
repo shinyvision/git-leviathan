@@ -14,15 +14,9 @@ pub fn configure_background_command(command: &mut Command) -> &mut Command {
 }
 
 pub fn truncate(s: &str, max: usize) -> &str {
-    if s.chars().nth(max).is_none() {
-        s
-    } else {
-        let end = s
-            .char_indices()
-            .nth(max)
-            .map(|(idx, _)| idx)
-            .unwrap_or(s.len());
-        &s[..end]
+    match s.char_indices().nth(max) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
     }
 }
 

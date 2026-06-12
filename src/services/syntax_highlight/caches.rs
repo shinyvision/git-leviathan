@@ -7,7 +7,7 @@ use tree_sitter::Tree;
 
 use super::queries::QuerySetIdentity;
 use super::registry::ParserCacheIdentity;
-use super::{HighlightLazyStats, HighlightedFile, SyntaxHighlightedSpan};
+use super::{HighlightLazyStats, HighlightedFile, LanguageDetection, SyntaxHighlightedSpan};
 
 pub(super) const DOCUMENT_LINE_CACHE_CAPACITY: usize = 2_048;
 
@@ -256,6 +256,7 @@ pub(super) struct LazyHighlightState {
     tree: Option<(ParseTreeCacheKey, Tree)>,
     line_cache: LruCache<HighlightSpanCacheKey, Arc<[SyntaxHighlightedSpan]>>,
     line_cache_capacity: usize,
+    detection: Option<(u64, LanguageDetection)>,
     stats: HighlightLazyStats,
 }
 
@@ -265,8 +266,20 @@ impl LazyHighlightState {
             tree: None,
             line_cache: LruCache::new(nonzero_capacity(line_cache_capacity)),
             line_cache_capacity,
+            detection: None,
             stats: HighlightLazyStats::default(),
         }
+    }
+
+    pub(super) fn cached_detection(&self, registry_identity: u64) -> Option<LanguageDetection> {
+        self.detection
+            .as_ref()
+            .filter(|(identity, _)| *identity == registry_identity)
+            .map(|(_, detection)| detection.clone())
+    }
+
+    pub(super) fn store_detection(&mut self, registry_identity: u64, detection: LanguageDetection) {
+        self.detection = Some((registry_identity, detection));
     }
 
     pub(super) fn stats(&self) -> HighlightLazyStats {

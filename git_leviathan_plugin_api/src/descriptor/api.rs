@@ -237,24 +237,15 @@ mod tests {
     }
 
     #[test]
-    fn widget_descriptors_cover_runtime_kinds() {
-        let names = WIDGETS.names();
-        for kind in [
-            "text",
-            "button",
-            "row",
-            "column",
-            "container",
-            "padding",
-            "space",
-            "icon",
-            "image",
-            "scrollable",
-            "mouse_area",
-            "tablist",
-            "resizable_split",
-        ] {
-            assert!(names.contains(&kind), "missing widget descriptor {kind}");
+    fn module_types_resolve_in_api_types() {
+        for module in API_MODULES {
+            for name in module.types {
+                assert!(
+                    API_TYPES.iter().any(|ty| ty.name == *name),
+                    "module `{}` lists type `{name}` with no API_TYPES entry",
+                    module.name
+                );
+            }
         }
     }
 

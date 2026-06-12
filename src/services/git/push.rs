@@ -1,6 +1,6 @@
 use git2::BranchType;
 
-use super::helpers::{find_branch_or, spawn_git_command, wrap_git2_error};
+use super::helpers::{command_dir, find_branch_or, spawn_git_command, wrap_git2_error};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -102,7 +102,7 @@ pub(super) fn current_branch_push_remote(service: &GitService) -> Result<String,
 }
 
 pub(super) fn pull_current_branch(service: &GitService) -> Result<(), GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
 
     let ff_output = spawn_git_command(&repo_dir, &["pull", "--ff-only"], "pull --ff-only")?;
 
@@ -247,15 +247,6 @@ fn resolve_upstream(
     Ok(Some((remote, short)))
 }
 
-fn repo_dir_str(service: &GitService) -> String {
-    service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned()
-}
-
 fn run_git_push(
     service: &GitService,
     set_upstream: bool,
@@ -263,7 +254,7 @@ fn run_git_push(
     refspec: &str,
     remote_branch_name: &str,
 ) -> Result<PushOutcome, GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
 
     let mut args: Vec<&str> = vec!["push"];
     if set_upstream {
@@ -282,7 +273,7 @@ fn run_git_push_current_branch(
     branch_name: &str,
     remote_name: &str,
 ) -> Result<PushOutcome, GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
 
     let mut args: Vec<&str> = vec!["push"];
     if force {

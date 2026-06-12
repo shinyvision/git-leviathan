@@ -118,10 +118,9 @@ impl LazyEntry {
     }
 }
 
-/// Lazy registration store. Indexed by trigger kind for O(1)
-/// lookup; the registry itself is small (tens of entries, not
-/// millions) so the linear iteration paths used by region /
-/// repository shape are fine.
+/// Lazy registration store. The registry itself is small (tens of
+/// entries, not millions) so the linear iteration paths used by region
+/// / repository shape are fine.
 #[derive(Debug, Default)]
 pub struct LazyRegistry {
     entries: Vec<LazyEntry>,

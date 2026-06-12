@@ -4,12 +4,10 @@ use std::io::ErrorKind;
 use std::io::{Cursor, Read};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use flate2::read::GzDecoder;
 use semver::Version;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tree_sitter::LANGUAGE_VERSION;
 
 use super::parser_loading;
@@ -21,6 +19,7 @@ use super::registry::{
     PACKAGE_MANIFEST_FILENAME, REGISTRY_CACHE_TTL_SECONDS, REGISTRY_JSON_PATH,
     REGISTRY_SCHEMA_VERSION,
 };
+use super::util::{current_unix_seconds, normalize_language_key, sha256_hex};
 
 pub const GRAMMAR_STATUS_SCHEMA_VERSION: u32 = 1;
 pub const GRAMMAR_STATUS_PATH: &str = "registry/install-status.json";
@@ -1855,26 +1854,6 @@ fn local_path_from_url(url: &str) -> Result<PathBuf, String> {
         return Err(format!("unsupported grammar transport URL: {url}"));
     };
     Ok(PathBuf::from(path))
-}
-
-fn normalize_language_key(language: &str) -> String {
-    language.trim().to_ascii_lowercase()
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
-}
-
-fn current_unix_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
 }
 
 #[cfg(test)]

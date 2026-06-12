@@ -3,17 +3,18 @@
 //! [`crate::widgets::tab_bar::TabBar`].
 
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use iced::Element;
 use serde_json::Value;
 
 use crate::message::Message;
-use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::TablistNode;
 use crate::widgets::tab_bar::parts::{close_button, folder_icon};
 use crate::widgets::tab_bar::{TabBar, TabItem};
 
-use super::{BuildCtx, DispatchScope};
+use super::common::ScopeDispatch;
+use super::BuildCtx;
 
 pub(super) fn build(node: &TablistNode, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
     let active_idx = node.tabs.iter().position(|t| t.id == node.active);
@@ -22,13 +23,15 @@ pub(super) fn build(node: &TablistNode, ctx: &BuildCtx<'_>) -> Element<'static, 
     let on_close = node.on_close.clone();
     let on_reorder = node.on_reorder.clone();
 
-    let dispatch = Dispatch::from_ctx(ctx);
+    let dispatch = ScopeDispatch::from_ctx(ctx);
     let key_for_id: Vec<u64> = node.tabs.iter().map(|t| stable_key(&t.id)).collect();
-    let id_for_key: HashMap<u64, Value> = key_for_id
-        .iter()
-        .zip(node.tabs.iter())
-        .map(|(k, t)| (*k, t.id.clone()))
-        .collect();
+    let id_for_key: Rc<HashMap<u64, Value>> = Rc::new(
+        key_for_id
+            .iter()
+            .zip(node.tabs.iter())
+            .map(|(k, t)| (*k, t.id.clone()))
+            .collect(),
+    );
 
     let active_key = active_idx.map(|i| key_for_id[i]).unwrap_or(u64::MAX);
 
@@ -49,7 +52,7 @@ pub(super) fn build(node: &TablistNode, ctx: &BuildCtx<'_>) -> Element<'static, 
     let mut bar = TabBar::new(items, active_key);
     if let Some(evt) = on_select {
         let dispatch = dispatch.clone();
-        let map = id_for_key.clone();
+        let map = Rc::clone(&id_for_key);
         bar = bar.on_select(move |k| {
             let value = map.get(&k).cloned().unwrap_or(Value::Null);
             dispatch.publish(evt.clone(), value)
@@ -58,7 +61,7 @@ pub(super) fn build(node: &TablistNode, ctx: &BuildCtx<'_>) -> Element<'static, 
     if node.orderable {
         if let Some(evt) = on_reorder {
             let dispatch = dispatch.clone();
-            let map = id_for_key.clone();
+            let map = Rc::clone(&id_for_key);
             bar = bar.on_reorder(move |order: Vec<u64>| {
                 let new_order: Vec<Value> = order
                     .into_iter()
@@ -79,85 +82,4 @@ fn stable_key(id: &Value) -> u64 {
     let mut h = DefaultHasher::new();
     serde_json::to_string(id).unwrap_or_default().hash(&mut h);
     h.finish()
-}
-
-/// Owned snapshot of `BuildCtx.scope` used inside `'static` event closures.
-#[derive(Clone)]
-enum Dispatch {
-    Screen {
-        plugin_id: String,
-        screen_id: String,
-    },
-    Slot {
-        plugin_id: String,
-        region: String,
-        container: String,
-        slot_id: String,
-    },
-    Overlay {
-        plugin_id: String,
-        overlay_id: String,
-    },
-}
-
-impl Dispatch {
-    fn from_ctx(ctx: &BuildCtx<'_>) -> Self {
-        let plugin_id = ctx.plugin_id.to_string();
-        match ctx.scope {
-            DispatchScope::Screen { screen_id } => Self::Screen {
-                plugin_id,
-                screen_id: screen_id.to_string(),
-            },
-            DispatchScope::Slot {
-                region,
-                container,
-                slot_id,
-            } => Self::Slot {
-                plugin_id,
-                region: region.to_string(),
-                container: container.to_string(),
-                slot_id: slot_id.to_string(),
-            },
-            DispatchScope::Overlay { overlay_id } => Self::Overlay {
-                plugin_id,
-                overlay_id: overlay_id.to_string(),
-            },
-        }
-    }
-
-    fn publish(&self, event: String, value: Value) -> Message {
-        match self.clone() {
-            Self::Screen {
-                plugin_id,
-                screen_id,
-            } => Message::Plugin(PluginMessage::Event {
-                plugin_id,
-                screen_id,
-                event,
-                value,
-            }),
-            Self::Slot {
-                plugin_id,
-                region,
-                container,
-                slot_id,
-            } => Message::Plugin(PluginMessage::SlotClicked {
-                plugin_id,
-                region,
-                container,
-                slot_id,
-                event,
-                value,
-            }),
-            Self::Overlay {
-                plugin_id,
-                overlay_id,
-            } => Message::Plugin(PluginMessage::OverlayEvent {
-                plugin_id,
-                overlay_id,
-                event,
-                value,
-            }),
-        }
-    }
 }

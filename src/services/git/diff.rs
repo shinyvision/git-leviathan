@@ -75,16 +75,20 @@ pub(super) fn load_merged_commit_diff(
     repo_path: &str,
     hashes: &[String],
 ) -> Result<MergedCommitDiffResult, GitError> {
+    let (Some(newest_hash), Some(oldest_hash)) = (hashes.first(), hashes.last()) else {
+        return Err(GitError::Other("no commits selected".to_string()));
+    };
+
     let repo = Repository::open(repo_path).map_err(|e| wrap_git2_error("open repo", e))?;
 
     // Net diff: oldest commit's parent tree → newest commit's tree. Git gives us
     // the correct final status per path (e.g. add-then-delete collapses to nothing,
     // modify-then-delete shows as Deleted) and omits no-op paths automatically.
-    let newest_oid = parse_oid(&hashes[0])?;
+    let newest_oid = parse_oid(newest_hash)?;
     let newest_commit = find_commit_or(&repo, newest_oid)?;
     let newest_tree = newest_commit.tree().ok();
 
-    let oldest_oid = parse_oid(hashes.last().unwrap())?;
+    let oldest_oid = parse_oid(oldest_hash)?;
     let oldest_commit = find_commit_or(&repo, oldest_oid)?;
     let oldest_parent_tree = oldest_commit.parent(0).ok().and_then(|p| p.tree().ok());
 

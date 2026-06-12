@@ -676,7 +676,6 @@ pub(super) fn confirm_push_behind_force_push(manager: &mut OverlayManager) -> Di
     let Some(remote_name) = push_behind::remote_name(dialog) else {
         return DialogDispatch::Task(Task::none());
     };
-    manager.toolbar_slide_offset = 0.0;
     manager.open_toolbar_dialog(force_push::dialog(force_push::State {
         branch_name,
         remote_name,

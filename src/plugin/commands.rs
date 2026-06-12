@@ -1381,6 +1381,9 @@ impl PaletteState {
             if !summary.palette_visible {
                 continue;
             }
+            if !summary.enabled {
+                continue;
+            }
             if summary.destructive && !self.show_destructive {
                 continue;
             }
@@ -1748,6 +1751,22 @@ mod tests {
         let names: Vec<&str> = visible.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"Danger"));
         assert!(names.contains(&"Safe"));
+    }
+
+    #[test]
+    fn palette_filter_skips_disabled_commands() {
+        let mut reg = CommandRegistry::new();
+        let store = diag_store();
+        let mut disabled = host_descriptor("Amend");
+        disabled.availability = CommandAvailability::disabled("nothing to amend");
+        reg.register(host_descriptor("Refresh"), &store);
+        reg.register(disabled, &store);
+        let summaries = reg.summaries();
+        let mut palette = PaletteState::new();
+        palette.set_query("");
+        let visible = palette.filter(&summaries);
+        let names: Vec<&str> = visible.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, vec!["Refresh"]);
     }
 
     #[test]

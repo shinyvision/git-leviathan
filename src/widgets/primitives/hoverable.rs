@@ -343,7 +343,6 @@ where
         let children: Vec<_> = layout.children().collect();
 
         // Update hover state based on cursor
-        let _was_hovered = state.is_hovered;
         state.is_hovered = cursor.is_over(bounds);
 
         // Forward event to currently visible child

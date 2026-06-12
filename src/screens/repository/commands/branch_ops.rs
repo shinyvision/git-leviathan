@@ -5,11 +5,12 @@ use crate::{
     services::GitError,
     toast::ToastData,
     view_model::{LoadedBranchMergeOutcome, LoadedRemoteCheckoutOutcome, LoadedRepo},
+    work::git_write_work,
 };
 
 use super::super::overlays::validation;
 use super::super::state::OperationId;
-use super::super::RepositoryScreen;
+use super::super::{RepositoryMessage, RepositoryScreen};
 
 pub(super) fn on_remote_checkout_completed(
     screen: &mut RepositoryScreen,
@@ -186,4 +187,70 @@ pub(super) fn on_branch_rebased(
             )
         }
     }
+}
+
+pub(in crate::screens::repository) fn delete_branch_direct(
+    screen: &mut RepositoryScreen,
+    branch_name: String,
+    is_remote: bool,
+    remote_ref: Option<String>,
+) -> Task<Message> {
+    let branch_ref = if is_remote {
+        remote_ref.unwrap_or_else(|| branch_name.clone())
+    } else {
+        branch_name.clone()
+    };
+    let Some(operation_id) = screen.begin_git_write() else {
+        return Task::none();
+    };
+    let repo = screen.fleet.active().clone();
+    let presenter = screen.presenter.clone();
+    let tab_id = screen.tab_id;
+    Task::perform(
+        git_write_work(move || {
+            repo.delete_branch(&branch_ref, is_remote)
+                .map(|s| presenter.project_loaded(s))
+        }),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::BranchDeleted {
+                    operation_id: Some(operation_id),
+                    branch_name: branch_name.clone(),
+                    is_remote,
+                    result,
+                },
+            )
+        },
+    )
+}
+
+pub(in crate::screens::repository) fn delete_branch_local_and_remote(
+    screen: &mut RepositoryScreen,
+    branch_name: String,
+) -> Task<Message> {
+    let Some(operation_id) = screen.begin_git_write() else {
+        return Task::none();
+    };
+    let repo = screen.fleet.active().clone();
+    let presenter = screen.presenter.clone();
+    let tab_id = screen.tab_id;
+    let delete_branch_name = branch_name.clone();
+    Task::perform(
+        git_write_work(move || {
+            repo.delete_branch_all(&delete_branch_name)
+                .map(|s| presenter.project_loaded(s))
+        }),
+        move |result| {
+            Message::tab(
+                tab_id,
+                RepositoryMessage::BranchDeleted {
+                    operation_id: Some(operation_id),
+                    branch_name: branch_name.clone(),
+                    is_remote: false,
+                    result,
+                },
+            )
+        },
+    )
 }

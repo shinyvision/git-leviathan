@@ -6,15 +6,14 @@ use serde_json::Value;
 
 use crate::message::app::AppMessage;
 use crate::message::Message;
-use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::WidgetAst;
 use crate::plugin::ui::widget_ast_semantic::{
     LayoutNode, SemanticItem, SemanticNode, SemanticOption,
 };
 use crate::theme;
 
-use super::common::opt_color_to_iced;
-use super::{BuildCtx, DispatchScope};
+use super::common::{opt_color_to_iced, ScopeDispatch};
+use super::BuildCtx;
 
 pub(super) fn build(
     ast: &WidgetAst,
@@ -280,31 +279,5 @@ fn value_label(value: &Value) -> String {
 }
 
 fn plugin_event(ctx: &BuildCtx<'_>, event: String, value: Value) -> Message {
-    let plugin_id = ctx.plugin_id.to_string();
-    match ctx.scope {
-        DispatchScope::Screen { screen_id } => Message::Plugin(PluginMessage::Event {
-            plugin_id,
-            screen_id: screen_id.to_string(),
-            event,
-            value,
-        }),
-        DispatchScope::Slot {
-            region,
-            container,
-            slot_id,
-        } => Message::Plugin(PluginMessage::SlotClicked {
-            plugin_id,
-            region: region.to_string(),
-            container: container.to_string(),
-            slot_id: slot_id.to_string(),
-            event,
-            value,
-        }),
-        DispatchScope::Overlay { overlay_id } => Message::Plugin(PluginMessage::OverlayEvent {
-            plugin_id,
-            overlay_id: overlay_id.to_string(),
-            event,
-            value,
-        }),
-    }
+    ScopeDispatch::from_ctx(ctx).publish(event, value)
 }

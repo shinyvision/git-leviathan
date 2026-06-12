@@ -164,6 +164,34 @@ impl GitRepositoryGateway {
         self.with_service(write)?;
         self.with_service_unlocked(|service| Ok(service.load_dirty_snapshot()))
     }
+
+    /// Fold a low-level `PushOutcome` into a `PushGatewayOutcome`, loading the
+    /// post-push repository snapshot for the success arm. Runs inside an active
+    /// `with_service` closure on the already-borrowed service.
+    fn map_push_outcome(
+        service: &mut GitService,
+        outcome: PushOutcome,
+    ) -> Result<PushGatewayOutcome, GitError> {
+        Ok(match outcome {
+            PushOutcome::Pushed => {
+                PushGatewayOutcome::Pushed(Box::new(service.load_repo(COMMIT_LOAD_LIMIT)))
+            }
+            PushOutcome::NeedsUpstream {
+                branch_name,
+                remote_name,
+            } => PushGatewayOutcome::NeedsUpstream {
+                branch_name,
+                remote_name,
+            },
+            PushOutcome::BehindRemote {
+                branch_name,
+                remote_name,
+            } => PushGatewayOutcome::BehindRemote {
+                branch_name,
+                remote_name,
+            },
+        })
+    }
 }
 
 impl RepoRead for GitRepositoryGateway {
@@ -173,6 +201,14 @@ impl RepoRead for GitRepositoryGateway {
 
     fn load_refs_snapshot(&self, commit_limit: usize) -> Result<RefsSnapshot, GitError> {
         self.with_service(|service| Ok(service.load_refs_snapshot(commit_limit)))
+    }
+
+    fn head_hash(&self) -> Result<Option<String>, GitError> {
+        self.with_service(|service| Ok(service.head_hash()))
+    }
+
+    fn current_branch_name(&self) -> Result<Option<String>, GitError> {
+        self.with_service(|service| Ok(service.current_branch_name()))
     }
 
     fn load_commit_diff(
@@ -571,24 +607,9 @@ impl RemoteOps for GitRepositoryGateway {
     }
 
     fn push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
-        self.with_service(|service| match service.push_current_branch()? {
-            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
-                service.load_repo(COMMIT_LOAD_LIMIT),
-            ))),
-            PushOutcome::NeedsUpstream {
-                branch_name,
-                remote_name,
-            } => Ok(PushGatewayOutcome::NeedsUpstream {
-                branch_name,
-                remote_name,
-            }),
-            PushOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            } => Ok(PushGatewayOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            }),
+        self.with_service(|service| {
+            let outcome = service.push_current_branch()?;
+            Self::map_push_outcome(service, outcome)
         })
     }
 
@@ -597,27 +618,10 @@ impl RemoteOps for GitRepositoryGateway {
         remote_name: &str,
         ref_name: &str,
     ) -> Result<PushGatewayOutcome, GitError> {
-        self.with_service(
-            |service| match service.push_ref_to_remote(remote_name, ref_name)? {
-                PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
-                    service.load_repo(COMMIT_LOAD_LIMIT),
-                ))),
-                PushOutcome::NeedsUpstream {
-                    branch_name,
-                    remote_name,
-                } => Ok(PushGatewayOutcome::NeedsUpstream {
-                    branch_name,
-                    remote_name,
-                }),
-                PushOutcome::BehindRemote {
-                    branch_name,
-                    remote_name,
-                } => Ok(PushGatewayOutcome::BehindRemote {
-                    branch_name,
-                    remote_name,
-                }),
-            },
-        )
+        self.with_service(|service| {
+            let outcome = service.push_ref_to_remote(remote_name, ref_name)?;
+            Self::map_push_outcome(service, outcome)
+        })
     }
 
     fn current_branch_push_remote(&self) -> Result<String, GitError> {
@@ -636,20 +640,12 @@ impl RemoteOps for GitRepositoryGateway {
     }
 
     fn force_push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
-        self.with_service(|service| match service.force_push_current_branch()? {
-            PushOutcome::Pushed => Ok(PushGatewayOutcome::Pushed(Box::new(
-                service.load_repo(COMMIT_LOAD_LIMIT),
-            ))),
-            PushOutcome::NeedsUpstream {
-                branch_name,
-                remote_name,
-            } => Ok(PushGatewayOutcome::NeedsUpstream {
-                branch_name,
-                remote_name,
-            }),
-            PushOutcome::BehindRemote { .. } => {
+        self.with_service(|service| {
+            let outcome = service.force_push_current_branch()?;
+            if let PushOutcome::BehindRemote { .. } = outcome {
                 unreachable!("force push should not return BehindRemote")
             }
+            Self::map_push_outcome(service, outcome)
         })
     }
 

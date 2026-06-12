@@ -113,6 +113,46 @@ pub(super) fn wrap_git2_error(op: &str, err: git2::Error) -> GitError {
     }
 }
 
+/// Directory to run `git` subprocesses in: the working tree, falling back to
+/// the parent of the `.git` directory for setups that report no workdir. Bare
+/// repositories have no command directory and yield an error.
+pub(super) fn command_dir(repo: &Repository) -> Result<String, GitError> {
+    repo.workdir()
+        .or_else(|| repo.path().parent())
+        .map(|p| p.to_string_lossy().into_owned())
+        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
+}
+
+/// Whether the repository index currently records merge conflicts. Errors
+/// reading the index are treated as "no conflicts".
+pub(super) fn index_has_conflicts(repo: &Repository) -> bool {
+    let Ok(mut index) = repo.index() else {
+        return false;
+    };
+    let _ = index.read(true);
+    index.has_conflicts()
+}
+
+/// Whether a git subprocess's stdout/stderr mention a merge conflict.
+pub(super) fn output_mentions_conflict(output: &Output) -> bool {
+    String::from_utf8_lossy(&output.stdout).contains("CONFLICT")
+        || String::from_utf8_lossy(&output.stderr).contains("CONFLICT")
+}
+
+/// Best-effort failure detail from a git subprocess: trimmed stderr, else
+/// trimmed stdout, else the exit status.
+pub(super) fn process_output_detail(output: &Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    if !stderr.is_empty() {
+        return stderr;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !stdout.is_empty() {
+        return stdout;
+    }
+    format!("git exited with status {}", output.status)
+}
+
 /// Maps git2's "not-found" to a structured variant; other classes pass
 /// through `wrap_git2_error`.
 pub(super) fn find_branch_or<'repo>(
@@ -161,7 +201,7 @@ pub(super) fn spawn_git_command(
     args: &[&str],
     op: &str,
 ) -> Result<Output, GitError> {
-    spawn_git_command_inner(repo_path, args, op, None)
+    spawn_git_command_inner(repo_path, args, op, None, &[])
 }
 
 pub(super) fn spawn_git_command_with_timeout(
@@ -170,7 +210,19 @@ pub(super) fn spawn_git_command_with_timeout(
     op: &str,
     timeout: Duration,
 ) -> Result<Output, GitError> {
-    spawn_git_command_inner(repo_path, args, op, Some(timeout))
+    spawn_git_command_inner(repo_path, args, op, Some(timeout), &[])
+}
+
+/// Like `spawn_git_command` but with extra environment variables applied to the
+/// child (e.g. `GIT_EDITOR`). Still registers the PID so the child is killable
+/// on shutdown.
+pub(super) fn spawn_git_command_with_env(
+    repo_path: &str,
+    args: &[&str],
+    op: &str,
+    envs: &[(&str, &str)],
+) -> Result<Output, GitError> {
+    spawn_git_command_inner(repo_path, args, op, None, envs)
 }
 
 fn spawn_git_command_inner(
@@ -178,14 +230,19 @@ fn spawn_git_command_inner(
     args: &[&str],
     op: &str,
     timeout: Option<Duration>,
+    envs: &[(&str, &str)],
 ) -> Result<Output, GitError> {
     let mut command = Command::new("git");
-    let child = configure_background_command(&mut command)
+    let configured = configure_background_command(&mut command)
         .current_dir(repo_path)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (key, value) in envs {
+        configured.env(key, value);
+    }
+    let child = configured
         .spawn()
         .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))?;
     let pid = child.id();

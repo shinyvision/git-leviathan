@@ -1,6 +1,9 @@
 use git2::StashFlags;
 
-use super::helpers::{find_commit_or, find_reference_or, spawn_git_command, wrap_git2_error};
+use super::checkout::workdir_has_changes;
+use super::helpers::{
+    command_dir, find_commit_or, find_reference_or, spawn_git_command, wrap_git2_error,
+};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -18,28 +21,20 @@ pub(super) fn maybe_stash_workdir(
         .or_else(|_| git2::Signature::now("Git Leviathan", "git-leviathan@example.invalid"))
         .map_err(|e| GitError::StashFailed(format!("failed to create stash signature: {e}")))?;
 
-    service
+    match service
         .repo
         .stash_save2(&signature, None, Some(StashFlags::INCLUDE_UNTRACKED))
-        .map_err(|e| {
-            GitError::StashFailed(format!("failed to stash local changes {}: {e}", context))
-        })?;
-
-    Ok(true)
-}
-
-fn workdir_has_changes(service: &GitService) -> Result<bool, GitError> {
-    let mut options = git2::StatusOptions::new();
-    options.include_untracked(true).recurse_untracked_dirs(true);
-
-    let statuses = service
-        .repo
-        .statuses(Some(&mut options))
-        .map_err(|e| wrap_git2_error("inspect worktree status", e))?;
-
-    Ok(statuses
-        .iter()
-        .any(|entry| entry.status() != git2::Status::CURRENT))
+    {
+        Ok(_) => Ok(true),
+        // libgit2 returns ENOTFOUND when its own diff sees no stashable content,
+        // even though `workdir_has_changes` flagged the tree (e.g. submodule
+        // state, mode-only differences). Treat as "no stash needed".
+        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
+        Err(e) => Err(GitError::StashFailed(format!(
+            "failed to stash local changes {}: {e}",
+            context
+        ))),
+    }
 }
 
 fn wait_for_clean_workdir(service: &GitService) -> bool {
@@ -70,14 +65,15 @@ pub(super) fn restore_stash(service: &mut GitService, created_stash: bool, conte
         return;
     }
 
-    let repo_dir = service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned();
+    let Ok(repo_dir) = command_dir(&service.repo) else {
+        return;
+    };
 
-    let popped = spawn_git_command(&repo_dir, &["stash", "pop"], "stash pop after squash")
+    // Use git CLI for stash pop: git2's stash_pop skips conflicts silently when
+    // the working tree is clean (it fuzzy-applies rather than 3-way merging).
+    // The CLI performs a proper 3-way merge and exits non-zero on conflict while
+    // keeping the stash entry intact.
+    let popped = spawn_git_command(&repo_dir, &["stash", "pop"], "stash pop after restore")
         .map(|out| out.status.success())
         .unwrap_or(false);
 
@@ -89,7 +85,7 @@ pub(super) fn restore_stash(service: &mut GitService, created_stash: bool, conte
         let _ = spawn_git_command(
             &repo_dir,
             &["reset", "--hard", "HEAD"],
-            "reset after squash stash restore",
+            "reset after failed stash restore",
         );
     }
 }

@@ -555,7 +555,7 @@ impl GitOpsContext {
             self.record_diagnostic(GitDiagnostic {
                 plugin_id,
                 generation_id,
-                code: "git.destructive_blocked",
+                code: "git.capability_denied",
                 severity: DiagnosticSeverity::Error,
                 op: &op,
                 message: format!("git.{op} denied: capability `{cap}` not granted ({reason})"),
@@ -756,15 +756,7 @@ fn run_request(
         GitOpRequest::CreateBranch { name, start_point } => {
             let target = start_point
                 .clone()
-                .or_else(|| {
-                    // Resolve HEAD when start_point omitted. Use the
-                    // gateway's load_repo so we don't reach into git2
-                    // directly.
-                    gateway
-                        .load_repo(crate::services::COMMIT_LOAD_LIMIT)
-                        .ok()
-                        .and_then(|s| s.head_hash)
-                })
+                .or_else(|| gateway.head_hash().ok().flatten())
                 .unwrap_or_else(|| "HEAD".to_string());
             let snapshot = gateway
                 .create_branch_at_commit(name, &target)
@@ -802,9 +794,8 @@ fn run_request(
             let target_hash = match target {
                 Some(t) => t.clone(),
                 None => gateway
-                    .load_repo(crate::services::COMMIT_LOAD_LIMIT)
+                    .head_hash()
                     .map_err(|e| e.to_string())?
-                    .head_hash
                     .ok_or_else(|| "no HEAD to tag".to_string())?,
             };
             let snapshot = gateway
@@ -1002,46 +993,35 @@ fn run_request(
         }
         GitOpRequest::Merge { ref_name } => {
             // The gateway exposes branch-into-branch merges; project
-            // "merge ref into current" by reading the current branch
-            // from a snapshot.
-            let snapshot = gateway
-                .load_repo(crate::services::COMMIT_LOAD_LIMIT)
-                .map_err(|e| e.to_string())?;
-            let target = snapshot
-                .current_branch
-                .clone()
+            // "merge ref into current" by reading the current branch.
+            let target = gateway
+                .current_branch_name()
+                .map_err(|e| e.to_string())?
                 .ok_or_else(|| "no current branch".to_string())?;
             let _ = gateway
                 .merge_branch_into(ref_name, &target)
                 .map_err(|e| e.to_string())?;
-            let post = gateway
-                .load_repo(crate::services::COMMIT_LOAD_LIMIT)
-                .map_err(|e| e.to_string())?;
+            let head = gateway.head_hash().map_err(|e| e.to_string())?;
             let mut head_payload = EventPayload::new();
             head_payload.insert(
                 "hash".into(),
-                serde_json::Value::String(post.head_hash.clone().unwrap_or_default()),
+                serde_json::Value::String(head.unwrap_or_default()),
             );
             Ok(GitOpEvents::one("HeadChanged", head_payload))
         }
         GitOpRequest::Rebase { ref_name } => {
-            let snapshot = gateway
-                .load_repo(crate::services::COMMIT_LOAD_LIMIT)
-                .map_err(|e| e.to_string())?;
-            let source = snapshot
-                .current_branch
-                .clone()
+            let source = gateway
+                .current_branch_name()
+                .map_err(|e| e.to_string())?
                 .ok_or_else(|| "no current branch".to_string())?;
             let _ = gateway
                 .rebase_current_onto(&source, ref_name)
                 .map_err(|e| e.to_string())?;
-            let post = gateway
-                .load_repo(crate::services::COMMIT_LOAD_LIMIT)
-                .map_err(|e| e.to_string())?;
+            let head = gateway.head_hash().map_err(|e| e.to_string())?;
             let mut head_payload = EventPayload::new();
             head_payload.insert(
                 "hash".into(),
-                serde_json::Value::String(post.head_hash.clone().unwrap_or_default()),
+                serde_json::Value::String(head.unwrap_or_default()),
             );
             Ok(GitOpEvents::one("HeadChanged", head_payload))
         }

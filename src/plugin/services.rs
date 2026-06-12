@@ -9,7 +9,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use mlua::{Function, Lua, LuaSerdeExt, RegistryKey, Value as LuaValue};
 
@@ -18,6 +18,7 @@ use git_leviathan_plugin_api::manifest::ServiceDecl;
 use crate::plugin::capabilities::CapabilityGuard;
 use crate::plugin::performance::{BudgetTracker, CallbackKind, Outcome as PerfOutcome};
 use crate::plugin::resources::{GenerationId, PluginId};
+use crate::plugin::util::now_unix_ms;
 
 const SERVICE_TRACE_LIMIT: usize = 128;
 
@@ -256,13 +257,6 @@ impl ServiceRegistry {
         }
         traces.push_back(trace);
     }
-}
-
-fn now_unix_ms() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0)
 }
 
 pub fn dependency_statuses(

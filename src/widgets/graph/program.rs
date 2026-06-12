@@ -3,6 +3,9 @@
 //! Handles tile cache invalidation, selection-cache sync, mouse hit testing,
 //! and viewport-driven tile re-draw. Drawing primitives live in
 //! `rendering.rs`; cache state lives in `cache.rs`.
+use std::borrow::Cow;
+use std::sync::Arc;
+
 use iced::{
     mouse,
     widget::canvas::{self, Canvas, Geometry, Program},
@@ -21,7 +24,7 @@ use super::rendering::{draw_graph_rows, draw_selected_rows};
 #[derive(Debug, Clone)]
 pub struct FullGraphProgram<'a> {
     pub rows: &'a [GraphRow],
-    pub selected_indices: Vec<usize>,
+    pub selected_indices: Arc<[usize]>,
     pub graph_revision: RepoVersion,
     pub visible_row_start: usize,
     pub visible_row_end: usize,
@@ -39,12 +42,18 @@ impl Program<Message> for FullGraphProgram<'_> {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let row_count = self.rows.len();
-        let selected_in_range: Vec<usize> = self
-            .selected_indices
-            .iter()
-            .copied()
-            .filter(|&idx| idx < row_count)
-            .collect();
+        let selected_in_range: Cow<'_, [usize]> =
+            if self.selected_indices.iter().all(|&idx| idx < row_count) {
+                Cow::Borrowed(&self.selected_indices)
+            } else {
+                Cow::Owned(
+                    self.selected_indices
+                        .iter()
+                        .copied()
+                        .filter(|&idx| idx < row_count)
+                        .collect(),
+                )
+            };
 
         if state.last_graph_revision.get() != self.graph_revision {
             state.tiles.borrow_mut().iter().for_each(|t| t.clear());
@@ -71,9 +80,9 @@ impl Program<Message> for FullGraphProgram<'_> {
             }
         }
 
-        if *state.last_selected_indices.borrow() != selected_in_range {
+        if state.last_selected_indices.borrow().as_slice() != selected_in_range.as_ref() {
             state.selection_cache.clear();
-            *state.last_selected_indices.borrow_mut() = selected_in_range.clone();
+            *state.last_selected_indices.borrow_mut() = selected_in_range.to_vec();
         }
 
         let mut geoms: Vec<Geometry> = Vec::new();
@@ -169,7 +178,7 @@ impl Program<Message> for FullGraphProgram<'_> {
 
 pub fn full_graph_widget<'a>(
     rows: &'a [GraphRow],
-    selected_indices: Vec<usize>,
+    selected_indices: Arc<[usize]>,
     width: f32,
     graph_revision: RepoVersion,
     visible_row_start: usize,

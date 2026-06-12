@@ -176,7 +176,7 @@ pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
         && remote_branch_input(dialog)
             .as_deref()
             .is_some_and(|branch| !branch.trim().is_empty());
-    set_button_enabled(dialog, CONFIRM_BUTTON_ID, can_submit);
+    dialog.set_button_enabled(CONFIRM_BUTTON_ID, can_submit);
 }
 
 pub(crate) fn set_submitting(dialog: &mut Dialog, submitting: bool) {
@@ -204,16 +204,6 @@ fn set_data_value(dialog: &mut Dialog, id: &str, value: String) {
     }
 }
 
-fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
-    if let Some(button) = dialog
-        .buttons
-        .iter_mut()
-        .find(|button| button.id.0 == button_id)
-    {
-        button.enabled = enabled;
-    }
-}
-
 fn normalized_remotes(proposed_remote_name: &str, available_remotes: Vec<String>) -> Vec<String> {
     let mut remotes = Vec::new();
     push_unique_remote(&mut remotes, proposed_remote_name);
@@ -229,16 +219,4 @@ fn push_unique_remote(remotes: &mut Vec<String>, remote_name: &str) {
         return;
     }
     remotes.push(remote_name.to_string());
-}
-
-pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CONFIRM_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }

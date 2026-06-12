@@ -14,6 +14,7 @@ use std::thread::JoinHandle;
 use std::time::SystemTime;
 
 use crate::plugin::resources::{GenerationId, PluginId, ResourceId};
+use crate::plugin::util::system_time_unix_ms;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct JobId(u64);
@@ -282,11 +283,7 @@ impl AsyncJobRegistry {
                 plugin_id: r.plugin_id.to_string(),
                 generation_id: r.generation_id.get(),
                 job_id: r.job_id.get(),
-                started_at_unix_ms: r
-                    .started_at
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .map(|d| d.as_millis())
-                    .unwrap_or(0),
+                started_at_unix_ms: system_time_unix_ms(r.started_at),
                 status: r.status.as_str().to_string(),
             })
             .collect();

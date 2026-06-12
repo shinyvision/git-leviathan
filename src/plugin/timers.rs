@@ -53,7 +53,6 @@ struct TimerRecord {
     interval: Duration,
     next_fire: Instant,
     fires: u64,
-    cancelled: bool,
 }
 
 /// Cheap-clone (Arc-backed) per-host registry. Each `LoadedPlugin`
@@ -113,19 +112,15 @@ impl TimerRegistry {
             interval,
             next_fire: Instant::now() + interval,
             fires: 0,
-            cancelled: false,
         };
         let mut inner = self.inner.lock().expect("timer registry poisoned");
         inner.timers.insert(timer_id, record);
     }
 
-    /// Mark a timer cancelled. The next `drain_due` skips it; the
-    /// record is reaped on the same call.
+    /// Remove the timer record so the next `drain_due` skips it.
     pub fn cancel(&self, timer_id: TimerId) {
         let mut inner = self.inner.lock().expect("timer registry poisoned");
-        if let Some(record) = inner.timers.get_mut(&timer_id) {
-            record.cancelled = true;
-        }
+        inner.timers.remove(&timer_id);
     }
 
     pub fn cancel_for_generation(
@@ -149,16 +144,11 @@ impl TimerRegistry {
     /// Pop every due timer at `now`. One-shots are removed; repeating
     /// timers have their `next_fire` advanced by `interval` and their
     /// `fires` counter incremented before staying in the registry.
-    /// Cancelled timers are reaped without firing.
     pub fn drain_due(&self, now: Instant) -> Vec<DueTimer> {
         let mut inner = self.inner.lock().expect("timer registry poisoned");
         let mut due: Vec<DueTimer> = Vec::new();
         let mut to_remove: Vec<TimerId> = Vec::new();
         for (id, record) in inner.timers.iter_mut() {
-            if record.cancelled {
-                to_remove.push(*id);
-                continue;
-            }
             if record.next_fire <= now {
                 due.push(DueTimer {
                     plugin_id: record.plugin_id.clone(),
@@ -182,16 +172,12 @@ impl TimerRegistry {
 
     pub fn is_alive(&self, timer_id: TimerId) -> bool {
         let inner = self.inner.lock().expect("timer registry poisoned");
-        inner
-            .timers
-            .get(&timer_id)
-            .map(|r| !r.cancelled)
-            .unwrap_or(false)
+        inner.timers.contains_key(&timer_id)
     }
 
     pub fn has_timers(&self) -> bool {
         let inner = self.inner.lock().expect("timer registry poisoned");
-        inner.timers.values().any(|r| !r.cancelled)
+        !inner.timers.is_empty()
     }
 
     pub fn summaries(&self) -> Vec<TimerSummary> {

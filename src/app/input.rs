@@ -57,15 +57,15 @@ impl App {
         }
 
         if is_escape_key(&key) {
-            let top_overlay = self
-                .plugin_host
-                .extension_overlays()
-                .into_iter()
-                .find(|overlay| overlay.dismissible);
-            if let Some(overlay) = top_overlay {
+            let dismiss_target =
+                self.plugin_host
+                    .with_top_dismissible_extension_overlay(|overlay| {
+                        (overlay.plugin_id.clone(), overlay.id.clone())
+                    });
+            if let Some((plugin_id, overlay_id)) = dismiss_target {
                 self.plugin_host.dispatch_overlay_event(
-                    &overlay.plugin_id,
-                    &overlay.id,
+                    &plugin_id,
+                    &overlay_id,
                     "escape",
                     serde_json::Value::Null,
                 );
@@ -73,8 +73,11 @@ impl App {
             }
         }
 
-        let overlays = self.plugin_host.extension_overlays();
-        if let Some(event) = overlay_key_event(&overlays, &key, modifiers) {
+        if let Some(event) = self
+            .plugin_host
+            .with_top_extension_overlay(|overlay| overlay_key_event(overlay, &key, modifiers))
+            .flatten()
+        {
             self.plugin_host.dispatch_overlay_event(
                 &event.plugin_id,
                 &event.overlay_id,
@@ -196,12 +199,11 @@ struct OverlayKeyEvent {
 }
 
 fn overlay_key_event(
-    overlays: &[OverlayRecord],
+    top_overlay: &OverlayRecord,
     key: &keyboard::Key,
     modifiers: keyboard::Modifiers,
 ) -> Option<OverlayKeyEvent> {
     let key_name = overlay_key_name_from_iced_key(key)?;
-    let top_overlay = overlays.first()?;
     if !top_overlay.listens_for_key(key_name.as_ref()) {
         return None;
     }
@@ -412,6 +414,10 @@ mod tests {
             pending_focus_reason: None,
             settings: None,
             last_persisted_tabs: None,
+            last_synced_repo: None,
+            tab_changes_revision: None,
+            plugin_tabs_dirty: true,
+            last_lua_activity: 0,
         }
     }
 
@@ -479,13 +485,10 @@ mod tests {
 
     #[test]
     fn overlay_key_event_routes_to_top_opted_in_overlay() {
-        let overlays = vec![
-            overlay("top", 100, &["tab"]),
-            overlay("bottom", 0, &["down"]),
-        ];
+        let top = overlay("top", 100, &["tab"]);
 
         let event = overlay_key_event(
-            &overlays,
+            &top,
             &keyboard::Key::Named(keyboard::key::Named::Tab),
             keyboard::Modifiers::SHIFT,
         )
@@ -498,14 +501,11 @@ mod tests {
     }
 
     #[test]
-    fn overlay_key_event_does_not_route_to_lower_overlay() {
-        let overlays = vec![
-            overlay("top", 100, &["tab"]),
-            overlay("bottom", 0, &["down"]),
-        ];
+    fn overlay_key_event_does_not_route_to_unlisted_key() {
+        let top = overlay("top", 100, &["tab"]);
 
         let event = overlay_key_event(
-            &overlays,
+            &top,
             &keyboard::Key::Named(keyboard::key::Named::ArrowDown),
             keyboard::Modifiers::default(),
         );
@@ -515,9 +515,9 @@ mod tests {
 
     #[test]
     fn overlay_key_event_routes_opted_in_character_keys() {
-        let overlays = vec![overlay("top", 100, &["j"])];
+        let top = overlay("top", 100, &["j"]);
         let event = overlay_key_event(
-            &overlays,
+            &top,
             &keyboard::Key::Character("j".into()),
             keyboard::Modifiers::default(),
         )
@@ -530,9 +530,9 @@ mod tests {
 
     #[test]
     fn overlay_key_event_ignores_unlisted_character_keys() {
-        let overlays = vec![overlay("top", 100, &["k"])];
+        let top = overlay("top", 100, &["k"]);
         let event = overlay_key_event(
-            &overlays,
+            &top,
             &keyboard::Key::Character("j".into()),
             keyboard::Modifiers::default(),
         );

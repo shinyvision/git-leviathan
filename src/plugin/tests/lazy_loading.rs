@@ -44,14 +44,6 @@ api_version = "1.0"
     )
 }
 
-fn diag_codes(host: &MockHost) -> Vec<String> {
-    host.diagnostics()
-        .tail(500)
-        .into_iter()
-        .map(|d| d.code)
-        .collect()
-}
-
 #[test]
 fn lazy_plugin_does_not_load_lua_state_until_trigger() {
     let mut host = MockHost::new();
@@ -268,11 +260,7 @@ fn failed_lazy_activation_is_contained_and_visible() {
     // is `NotFound` (no command was registered) but the host is
     // still healthy.
     let _ = host.invoke_command("boom.run", serde_json::Value::Null);
-    let codes = diag_codes(&host);
-    assert!(
-        codes.iter().any(|c| c == "activation.failed"),
-        "expected activation.failed in: {codes:?}"
-    );
+    host.assert_diag_code("activation.failed");
     let snap = host.introspect();
     let lazy = snap
         .lazy_plugins
@@ -298,11 +286,7 @@ fn repeated_failure_poisons_lazy_plugin() {
 
     let _ = host.invoke_command("poison.run", serde_json::Value::Null);
     let _ = host.invoke_command("poison.run", serde_json::Value::Null);
-    let codes = diag_codes(&host);
-    assert!(
-        codes.iter().any(|c| c == "activation.poisoned"),
-        "expected activation.poisoned in: {codes:?}"
-    );
+    host.assert_diag_code("activation.poisoned");
     let snap = host.introspect();
     let lazy = snap
         .lazy_plugins
@@ -311,9 +295,9 @@ fn repeated_failure_poisons_lazy_plugin() {
         .unwrap();
     assert_eq!(lazy.status, "poisoned");
     // A third invocation must not retry the load.
-    let pre_codes = diag_codes(&host);
+    let pre_codes = host.diag_codes();
     let _ = host.invoke_command("poison.run", serde_json::Value::Null);
-    let post_codes = diag_codes(&host);
+    let post_codes = host.diag_codes();
     let extra_failed = post_codes
         .iter()
         .filter(|c| *c == "activation.failed")

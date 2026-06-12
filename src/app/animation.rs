@@ -13,13 +13,20 @@ use crate::screens::Screen;
 
 use super::App;
 
+/// One 60fps frame, used when there's no previous tick to diff against.
+const DEFAULT_FRAME_DELTA_MS: f32 = 16.0;
+/// Clamp bounds guard against scheduler stalls (a long gap producing one huge
+/// delta) and coalesced ticks (sub-frame deltas), keeping animation steps sane.
+const MIN_FRAME_DELTA_MS: f32 = 1.0;
+const MAX_FRAME_DELTA_MS: f32 = 32.0;
+
 impl App {
     pub(super) fn handle_animation_tick(&mut self, timestamp: Instant) -> Task<Message> {
         let delta_ms = self
             .last_animation_tick
             .map(|last| timestamp.saturating_duration_since(last).as_secs_f32() * 1000.0)
-            .unwrap_or(16.0)
-            .clamp(1.0, 32.0);
+            .unwrap_or(DEFAULT_FRAME_DELTA_MS)
+            .clamp(MIN_FRAME_DELTA_MS, MAX_FRAME_DELTA_MS);
         self.last_animation_tick = Some(timestamp);
         self.toasts.tick(delta_ms);
         if self.no_git_screen.is_some() || self.tabs.is_empty() {

@@ -11,7 +11,6 @@ use crate::plugin::extensions::{
 };
 use crate::plugin::tests::harness::MockHost;
 use crate::plugin::ui::widget_ast::decode;
-use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry};
 
 fn manifest(id: &str, caps: &[&str]) -> String {
     let caps = caps
@@ -28,13 +27,6 @@ api_version = "1.0"
 capabilities = [{caps}]
 "#
     )
-}
-
-fn main_bar_registry(host: &MockHost) -> MainBarRegistry {
-    let mut registry = MainBarRegistry::new();
-    main_bar_builtins::register_all(&mut registry);
-    host.host().apply_main_bar_slots(&mut registry);
-    registry
 }
 
 #[test]
@@ -94,7 +86,7 @@ fn public_ui_spec_fuzz_denies_or_errors_without_crashing() {
             && e.capability.starts_with("ui:")
             && e.outcome == AuditOutcome::Denied
     }));
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(registry.contains_display_id("builtin.fetch_indicator"));
 }
 
@@ -187,7 +179,7 @@ fn repeated_ui_callback_failures_disable_plugin_and_leave_chrome_usable() {
         .plugins
         .iter()
         .all(|p| p.id != "broken_click"));
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(registry.contains_display_id("builtin.fetch_indicator"));
     assert!(!registry.contains_display_id("plugin.broken.click"));
     let codes = host
@@ -229,7 +221,7 @@ fn repeated_screen_callback_failures_disable_plugin_and_clear_screen() {
     assert!(host.host().is_plugin_disabled("broken_screen"));
     assert_eq!(host.host().active_screen(), None);
     assert!(host.host().widget_tree().is_none());
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(registry.contains_display_id("builtin.fetch_indicator"));
     let codes = host
         .diagnostics()
@@ -286,13 +278,15 @@ fn ui_capability_revocation_unmounts_already_mounted_ui() {
         "#,
     )
     .expect("load revoked_ui");
-    assert!(main_bar_registry(&host).contains_display_id("plugin.revoked.slot"));
+    assert!(host
+        .main_bar_registry()
+        .contains_display_id("plugin.revoked.slot"));
 
     host.host_mut()
         .revoke_capability("revoked_ui", "0.1.0", "ui:region:main_bar")
         .expect("revoke ui");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(!registry.contains_display_id("plugin.revoked.slot"));
     assert!(registry.contains_display_id("builtin.fetch_indicator"));
     assert!(host

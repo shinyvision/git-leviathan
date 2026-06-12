@@ -23,21 +23,7 @@
 //! - `devtools_autocmds_reflects_state` — devtools `autocmds` field
 //!   reflects every autocmd surface above.
 //!
-use crate::plugin::tests::harness::MockHost;
-
-const NO_RUNTIME: &str = ""; // marker for "no [runtime] override needed"
-const _: &str = NO_RUNTIME;
-
-fn manifest(id: &str) -> String {
-    format!(
-        r#"
-id = "{id}"
-name = "{id}"
-version = "0.1.0"
-api_version = "1.0"
-"#
-    )
-}
+use crate::plugin::tests::harness::{simple_manifest as manifest, MockHost};
 
 #[test]
 fn typed_event_payload_deserialises_in_lua() {

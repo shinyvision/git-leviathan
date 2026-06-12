@@ -1,4 +1,4 @@
-use super::helpers::spawn_git_command;
+use super::helpers::{command_dir, process_output_detail, spawn_git_command};
 use super::{checkout, GitService};
 use crate::services::git_error::GitError;
 
@@ -46,7 +46,7 @@ pub(super) fn rebase_current_onto(
         )));
     }
 
-    let repo_dir = repo_command_dir_str(service)?;
+    let repo_dir = command_dir(&service.repo)?;
 
     let output = spawn_git_command(&repo_dir, &["rebase", target_ref], "rebase")?;
 
@@ -56,7 +56,7 @@ pub(super) fn rebase_current_onto(
 
     // Conflict (or other failure) — abort so the worktree is left clean, then
     // surface the original stderr to the caller.
-    let detail = rebase_output_detail(&output);
+    let detail = process_output_detail(&output);
 
     if service.repo.state() != git2::RepositoryState::Clean {
         let abort = spawn_git_command(&repo_dir, &["rebase", "--abort"], "rebase --abort");
@@ -72,25 +72,4 @@ pub(super) fn rebase_current_onto(
         "rebase of '{}' onto '{}' failed: {}",
         source_branch, target_ref, detail
     )))
-}
-
-fn repo_command_dir_str(service: &GitService) -> Result<String, GitError> {
-    service
-        .repo
-        .workdir()
-        .or_else(|| service.repo.path().parent())
-        .map(|p| p.to_string_lossy().into_owned())
-        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
-}
-
-fn rebase_output_detail(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !stderr.is_empty() {
-        return stderr;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !stdout.is_empty() {
-        return stdout;
-    }
-    format!("git exited with status {}", output.status)
 }

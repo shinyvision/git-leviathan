@@ -7,16 +7,15 @@ use crate::services::{
 };
 use crate::utils::initials;
 use crate::view_model::{
-    Branch, BranchLabel, BranchLabelKind, CommitDiffState, CommitPresentation, GraphRow,
-    GraphSegment, LoadedDirtyIndex, LoadedDirtyRow, LoadedRefs, LoadedRepo, ProjectionSignature,
-    RepositoryProjection, SidebarSection, SidebarSectionKind, SidebarStash,
+    branch_display_rows, Branch, BranchLabel, BranchLabelKind, CommitDiffState, CommitPresentation,
+    GraphRow, GraphSegment, LoadedDirtyIndex, LoadedDirtyRow, LoadedRefs, LoadedRepo,
+    ProjectionSignature, RepositoryProjection, SidebarSection, SidebarSectionKind, SidebarStash,
 };
-use crate::widgets::branch_label::branch_display_rows;
 
 mod format;
 mod stash;
 
-use format::{format_date, relative_time, short_hash};
+use format::{format_date, message_summary_and_combined, relative_time, short_hash};
 pub use stash::stash_display_name;
 
 const DIRTY_COMMIT_HASH: &str = "__git_leviathan_dirty__";
@@ -271,7 +270,8 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         has_dirty_changes,
     );
 
-    let mut commit_presentations = build_commit_presentations(&commit_snapshots, &refs);
+    let mut commit_presentations =
+        build_commit_presentations(&commit_snapshots, &refs, &stash_hashes);
     if has_dirty_changes {
         commit_presentations.insert(0, empty_commit_presentation());
     }
@@ -309,12 +309,14 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         commit_diff_states.insert(0, dirty_diff);
     }
 
+    let sidebar_sections = build_sidebar_sections(&refs, &stashes, &worktrees);
+
     RepositoryProjection {
         commits,
         commit_presentations,
         commit_diff_states,
         graph_rows,
-        sidebar_sections: build_sidebar_sections(&refs, &stashes, &worktrees),
+        sidebar_sections,
         num_lanes,
         repo_name,
         current_branch: current_branch.unwrap_or_else(|| "HEAD".to_string()),
@@ -322,7 +324,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         default_remote_name,
         remote_names,
         fast_forward_candidates,
-        worktrees: worktrees.clone(),
+        worktrees,
         branch_refs,
     }
 }
@@ -393,6 +395,8 @@ fn mark_stash_graph_paths(
 
     let row_offset = if has_dirty_changes { 1 } else { 0 };
 
+    let row_idx_by_hash = commit_row_index_map(commits);
+
     let stash_positions: Vec<(usize, usize, Option<usize>)> = commits
         .iter()
         .enumerate()
@@ -401,12 +405,10 @@ fn mark_stash_graph_paths(
             let row_idx = idx + row_offset;
             let lane = rows[row_idx].commit_lane;
             let parent_row_idx = commit.parent_hashes.iter().find_map(|parent_hash| {
-                commits
-                    .iter()
-                    .enumerate()
-                    .skip(idx + 1)
-                    .find(|(_, c)| &c.hash == parent_hash)
-                    .map(|(parent_idx, _)| parent_idx + row_offset)
+                row_idx_by_hash
+                    .get(parent_hash.as_str())
+                    .filter(|&&parent_idx| parent_idx > idx)
+                    .map(|parent_idx| parent_idx + row_offset)
             });
             (row_idx, lane, parent_row_idx)
         })
@@ -571,12 +573,15 @@ fn empty_commit_presentation() -> CommitPresentation {
         branch_labels: vec![],
         branch_display_rows: vec![],
         relative_time: None,
+        summary: String::new(),
+        combined_message: String::new(),
     }
 }
 
 fn build_commit_presentations(
     commits: &[CommitSnapshot],
     refs: &[RepoRef],
+    stash_hashes: &HashSet<String>,
 ) -> Vec<CommitPresentation> {
     let ref_map = build_ref_map(refs);
 
@@ -584,11 +589,18 @@ fn build_commit_presentations(
         .iter()
         .map(|commit| {
             let branch_labels = ref_map.get(&commit.hash).cloned().unwrap_or_default();
-            let branch_display_rows = branch_display_rows(&branch_labels);
+            let display_message = if stash_hashes.contains(&commit.hash) {
+                stash_display_name(&commit.message)
+            } else {
+                commit.message.clone()
+            };
+            let (summary, combined_message) = message_summary_and_combined(&display_message);
             CommitPresentation {
-                branch_display_rows,
+                branch_display_rows: vec![],
                 branch_labels,
                 relative_time: relative_time(commit.authored_at),
+                summary,
+                combined_message,
             }
         })
         .collect()
@@ -672,16 +684,19 @@ fn mark_dirty_graph_path(
         .dotted_connectors
         .append(&mut dirty_row.connectors);
 
+    let row_idx_by_hash = commit_row_index_map(commits);
+    let commit_row_idx = |hash: &str| row_idx_by_hash.get(hash).map(|idx| idx + 1);
+
     let mut dirty_paths = Vec::new();
     let first_parent_row_idx = dirty_parent_hashes
         .first()
-        .and_then(|hash| commit_row_idx(commits, hash))
+        .and_then(|hash| commit_row_idx(hash))
         .unwrap_or_else(|| rows.len().saturating_sub(1));
     dirty_paths.push((dirty_lane, first_parent_row_idx));
 
     for (parent_hash, lane) in dirty_parent_hashes.iter().skip(1).zip(connector_lanes) {
         let parent_row_idx =
-            commit_row_idx(commits, parent_hash).unwrap_or_else(|| rows.len().saturating_sub(1));
+            commit_row_idx(parent_hash).unwrap_or_else(|| rows.len().saturating_sub(1));
         dirty_paths.push((lane, parent_row_idx));
     }
 
@@ -701,11 +716,12 @@ fn mark_dirty_graph_path(
     }
 }
 
-fn commit_row_idx(commits: &[CommitSnapshot], hash: &str) -> Option<usize> {
-    commits
-        .iter()
-        .position(|commit| commit.hash == hash)
-        .map(|idx| idx + 1)
+fn commit_row_index_map(commits: &[CommitSnapshot]) -> HashMap<&str, usize> {
+    let mut map = HashMap::with_capacity(commits.len());
+    for (idx, commit) in commits.iter().enumerate() {
+        map.entry(commit.hash.as_str()).or_insert(idx);
+    }
+    map
 }
 
 fn move_lane_segments(
@@ -1027,8 +1043,8 @@ fn find_free_slot_mfp(lanes: &mut Vec<Option<String>>, mfp: &mut Vec<bool>) -> u
 #[cfg(test)]
 mod tests {
     use super::{
-        build_ref_map, compute_graph_rows, format::relative_time_from_diff, project_refs,
-        project_repo,
+        build_ref_map, compute_graph_rows, format::message_summary_and_combined,
+        format::relative_time_from_diff, project_refs, project_repo,
     };
     use crate::{
         core::{ChangeKind, ChangedFile, CommitKind},
@@ -1108,6 +1124,55 @@ mod tests {
             loaded_refs.branch_refs.as_slice(),
             [repo_ref] if repo_ref.kind == RepoRefKind::Tag && repo_ref.name == "v1.0.0"
         ));
+    }
+
+    #[test]
+    fn stash_row_presentation_strips_wip_prefix() {
+        use crate::services::StashSnapshot;
+        let head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa01";
+        let base = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa02";
+        let stash_wip = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa20";
+        let stash_index = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa21";
+
+        let projection = project_repo(RepoSnapshot {
+            commits: vec![commit(head, &[base], "head"), commit(base, &[], "base")],
+            refs: vec![RepoRef {
+                name: "main".into(),
+                kind: RepoRefKind::LocalBranch,
+                target_hash: head.into(),
+                remote_name: None,
+                is_current: true,
+                upstream_ref: None,
+            }],
+            dirty: None,
+            stashes: vec![StashSnapshot {
+                stash_index: 0,
+                hash: stash_wip.into(),
+                parent_hash: base.into(),
+                index_hash: Some(stash_index.into()),
+                message: "WIP on main: deadbeef the work in progress".into(),
+                author_name: "T".into(),
+                authored_at: 0,
+                authored_offset_minutes: 0,
+            }],
+            repo_name: "r".into(),
+            current_branch: Some("main".into()),
+            head_hash: Some(head.into()),
+            has_more_commits: false,
+            ..Default::default()
+        });
+
+        let stash_idx = projection
+            .commits
+            .iter()
+            .position(|c| c.short_hash == "stash@{0}")
+            .expect("stash commit");
+        let presentation = &projection.commit_presentations[stash_idx];
+        assert_eq!(presentation.summary, "deadbeef the work in progress");
+        assert_eq!(
+            presentation.combined_message,
+            "deadbeef the work in progress"
+        );
     }
 
     #[test]
@@ -1758,6 +1823,22 @@ mod tests {
         for (diff, expected) in cases {
             assert_eq!(relative_time_from_diff(diff), expected);
         }
+    }
+
+    #[test]
+    fn message_summary_and_combined_splits_and_joins() {
+        let (summary, combined) = message_summary_and_combined("only summary");
+        assert_eq!(summary, "only summary");
+        assert_eq!(combined, "only summary");
+
+        let (summary, combined) =
+            message_summary_and_combined("subject line\n\nbody one\nbody two");
+        assert_eq!(summary, "subject line");
+        assert_eq!(combined, "subject line body one body two");
+
+        let (summary, combined) = message_summary_and_combined("");
+        assert_eq!(summary, "");
+        assert_eq!(combined, "");
     }
 
     #[test]

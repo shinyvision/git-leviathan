@@ -1,4 +1,7 @@
-use super::helpers::{find_commit_or, spawn_git_command};
+use super::helpers::{
+    command_dir, find_commit_or, index_has_conflicts, output_mentions_conflict, spawn_git_command,
+    spawn_git_command_with_env,
+};
 use super::squash::{maybe_stash_workdir, restore_stash};
 use super::GitService;
 use crate::services::git_error::GitError;
@@ -24,12 +27,7 @@ pub(super) fn cherry_pick_commit(
         ));
     }
 
-    let repo_dir = service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned();
+    let repo_dir = command_dir(&service.repo)?;
 
     let created_stash = if immediate_commit {
         maybe_stash_workdir(service, "before cherry-pick")?
@@ -45,19 +43,19 @@ pub(super) fn cherry_pick_commit(
     }
     args.push(commit_hash);
 
-    let mut command = std::process::Command::new("git");
-    let output = crate::utils::configure_background_command(&mut command)
-        .arg("-C")
-        .arg(&repo_dir)
-        .args(&args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_EDITOR", "true")
-        .env("GIT_SEQUENCE_EDITOR", "true")
-        .output()
-        .map_err(|e| GitError::Other(format!("failed to invoke git cherry-pick: {}", e)))?;
+    let output = spawn_git_command_with_env(
+        &repo_dir,
+        &args,
+        "cherry-pick",
+        &[
+            ("GIT_TERMINAL_PROMPT", "0"),
+            ("GIT_EDITOR", "true"),
+            ("GIT_SEQUENCE_EDITOR", "true"),
+        ],
+    )?;
 
     if !output.status.success() {
-        if index_has_conflicts(service) || output_mentions_conflict(&output) {
+        if index_has_conflicts(&service.repo) || cherry_pick_mentions_conflict(&output) {
             return Ok(CherryPickStatus::Conflicted);
         }
 
@@ -82,21 +80,13 @@ pub(super) fn cherry_pick_commit(
     Ok(CherryPickStatus::Committed)
 }
 
-fn index_has_conflicts(service: &GitService) -> bool {
-    let Ok(mut index) = service.repo.index() else {
-        return false;
-    };
-    let _ = index.read(true);
-    index.has_conflicts()
-}
-
-fn output_mentions_conflict(output: &std::process::Output) -> bool {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    stdout.contains("CONFLICT")
-        || stderr.contains("CONFLICT")
-        || stdout.contains("after resolving the conflicts")
-        || stderr.contains("after resolving the conflicts")
+/// Cherry-pick can leave the index conflict-free yet still report a conflict
+/// that needs resolution (e.g. `-n` with content conflicts), so extend the
+/// shared `CONFLICT` check with cherry-pick's own phrasing.
+fn cherry_pick_mentions_conflict(output: &std::process::Output) -> bool {
+    output_mentions_conflict(output)
+        || String::from_utf8_lossy(&output.stdout).contains("after resolving the conflicts")
+        || String::from_utf8_lossy(&output.stderr).contains("after resolving the conflicts")
 }
 
 #[cfg(test)]

@@ -26,7 +26,7 @@ use crate::{
     assets,
     core::{ChangeKind, ChangedFile, Commit, CommitKind},
     message::Message,
-    services::text_measurement::{cached_measure_width, FontFamily},
+    services::text_measurement::{cached_measure_width, floor_char_boundary, FontFamily},
     style, theme,
     utils::{initials, split_path},
     widgets::{
@@ -596,31 +596,13 @@ fn truncate_path_for_width(path: &str, max_width: f32) -> TruncatedPath {
             };
         }
         let avail = (max_width - ellipsis_width).max(0.0);
-        let chars: Vec<char> = file_part.chars().collect();
-        let mut best = 0;
-        let mut lo = 0;
-        let mut hi = chars.len();
-        while lo < hi {
-            let mid = (lo + hi).div_ceil(2);
-            let w = cached_measure_width(
-                &file_part[..chars[..mid].iter().collect::<String>().len()],
-                FontFamily::Default,
-                font_size,
-            );
-            if w <= avail {
-                best = mid;
-                lo = mid;
-            } else {
-                hi = mid - 1;
-            }
-        }
-        if best == 0 {
+        let byte_end = longest_prefix_within(file_part, avail, font_size);
+        if byte_end == 0 {
             return TruncatedPath {
                 dir_display: String::new(),
                 file_display: "…".to_string(),
             };
         }
-        let byte_end = chars[..best].iter().collect::<String>().len();
         return TruncatedPath {
             dir_display: String::new(),
             file_display: format!("{}…", &file_part[..byte_end]),
@@ -635,34 +617,38 @@ fn truncate_path_for_width(path: &str, max_width: f32) -> TruncatedPath {
         };
     }
 
-    let dir_chars: Vec<char> = dir_part.chars().collect();
-    let mut best = 0;
-    let mut lo = 0;
-    let mut hi = dir_chars.len();
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let substr: String = dir_chars[..mid].iter().collect();
-        let w = cached_measure_width(&substr, FontFamily::Default, font_size);
-        if w <= dir_avail {
-            best = mid;
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-
-    if best == 0 {
+    let byte_end = longest_prefix_within(dir_part, dir_avail, font_size);
+    if byte_end == 0 {
         TruncatedPath {
             dir_display: "…/".to_string(),
             file_display: file_part.to_string(),
         }
     } else {
-        let byte_end = dir_chars[..best].iter().collect::<String>().len();
         TruncatedPath {
             dir_display: format!("{}…/", &dir_part[..byte_end]),
             file_display: file_part.to_string(),
         }
     }
+}
+
+/// Binary-search the longest byte-boundary prefix of `text` whose pixel width
+/// is `<= budget`. Returns the prefix length in bytes (0 when nothing fits).
+fn longest_prefix_within(text: &str, budget: f32, font_size: f32) -> usize {
+    let mut best_byte = 0usize;
+    let mut low = 0usize;
+    let mut high = text.len();
+    while low < high {
+        let mid = (low + high).div_ceil(2);
+        let boundary = floor_char_boundary(text, mid);
+        let w = cached_measure_width(&text[..boundary], FontFamily::Default, font_size);
+        if w <= budget {
+            best_byte = boundary;
+            low = mid;
+        } else {
+            high = mid - 1;
+        }
+    }
+    best_byte
 }
 
 pub(in crate::screens::repository::panels::detail::view) struct FileRowContext<'a> {

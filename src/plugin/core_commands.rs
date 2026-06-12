@@ -381,7 +381,7 @@ fn specs() -> Vec<CoreCommandSpec> {
         .arg("hash", StringArg, true, None, "Commit hash to reset to.")
         .arg(
             "mode",
-            StringArg,
+            CommandArgType::Enum(vec!["soft".into(), "mixed".into(), "hard".into()]),
             false,
             Some(json!("mixed")),
             "soft | mixed | hard",
@@ -556,7 +556,13 @@ fn specs() -> Vec<CoreCommandSpec> {
         )
         .arg(
             "panel",
-            StringArg,
+            CommandArgType::Enum(vec![
+                "sidebar".into(),
+                "center".into(),
+                "graph".into(),
+                "details".into(),
+                "diff".into(),
+            ]),
             true,
             None,
             "sidebar | center | graph | details | diff",

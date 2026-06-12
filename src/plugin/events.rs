@@ -284,13 +284,14 @@ pub fn validate_payload(
     diagnostics: &DiagnosticStore,
 ) -> bool {
     let mut ok = true;
+    let host_id = PluginId::from("<host>");
     for field in descriptor.payload_fields {
         match payload.get(field.name) {
             Some(value) if !lua_type_matches(field.lua_type, value) => {
                 ok = false;
                 diagnostics.record(
                     PluginDiagnostic::new(
-                        PluginId::from("<host>"),
+                        host_id.clone(),
                         DiagnosticSeverity::Warning,
                         "autocmd.payload_mismatch",
                         format!(
@@ -310,7 +311,7 @@ pub fn validate_payload(
                 ok = false;
                 diagnostics.record(
                     PluginDiagnostic::new(
-                        PluginId::from("<host>"),
+                        host_id.clone(),
                         DiagnosticSeverity::Warning,
                         "autocmd.payload_mismatch",
                         format!(

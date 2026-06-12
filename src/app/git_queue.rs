@@ -94,6 +94,9 @@ impl App {
     }
 
     pub(super) fn drain_git_operation_queue(&mut self) -> Task<Message> {
+        if self.git_queue.is_empty() {
+            return Task::none();
+        }
         let mut tasks = Vec::new();
         while !self.git_operation_in_flight() {
             let Some(operation) = self.git_queue.pop_front() else {

@@ -9,19 +9,18 @@ use iced::{
 use serde_json::Value;
 
 use crate::message::Message;
-use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::{TextInputNode, WidgetAst};
 use crate::theme;
 
-use super::common::{border_to_iced, length_explicit, opt_color_to_iced};
-use super::{BuildCtx, DispatchScope};
+use super::common::{border_to_iced, length_explicit, opt_color_to_iced, ScopeDispatch};
+use super::BuildCtx;
 
 pub(super) fn build(
     ast: &WidgetAst,
     node: &TextInputNode,
     ctx: &BuildCtx<'_>,
 ) -> Element<'static, Message> {
-    let dispatch = Dispatch::from_ctx(ctx);
+    let dispatch = ScopeDispatch::from_ctx(ctx);
     let on_input = node.on_input.clone();
     let on_submit = node.on_submit.clone();
 
@@ -89,84 +88,4 @@ pub(crate) fn plugin_text_input_id(plugin_id: &str, scope_key: &str, node_id: &s
     Id::from(format!(
         "plugin:{plugin_id}:{scope_key}:text_input:{node_id}"
     ))
-}
-
-#[derive(Clone)]
-enum Dispatch {
-    Screen {
-        plugin_id: String,
-        screen_id: String,
-    },
-    Slot {
-        plugin_id: String,
-        region: String,
-        container: String,
-        slot_id: String,
-    },
-    Overlay {
-        plugin_id: String,
-        overlay_id: String,
-    },
-}
-
-impl Dispatch {
-    fn from_ctx(ctx: &BuildCtx<'_>) -> Self {
-        let plugin_id = ctx.plugin_id.to_string();
-        match ctx.scope {
-            DispatchScope::Screen { screen_id } => Self::Screen {
-                plugin_id,
-                screen_id: screen_id.to_string(),
-            },
-            DispatchScope::Slot {
-                region,
-                container,
-                slot_id,
-            } => Self::Slot {
-                plugin_id,
-                region: region.to_string(),
-                container: container.to_string(),
-                slot_id: slot_id.to_string(),
-            },
-            DispatchScope::Overlay { overlay_id } => Self::Overlay {
-                plugin_id,
-                overlay_id: overlay_id.to_string(),
-            },
-        }
-    }
-
-    fn publish(&self, event: String, value: Value) -> Message {
-        match self.clone() {
-            Self::Screen {
-                plugin_id,
-                screen_id,
-            } => Message::Plugin(PluginMessage::Event {
-                plugin_id,
-                screen_id,
-                event,
-                value,
-            }),
-            Self::Slot {
-                plugin_id,
-                region,
-                container,
-                slot_id,
-            } => Message::Plugin(PluginMessage::SlotClicked {
-                plugin_id,
-                region,
-                container,
-                slot_id,
-                event,
-                value,
-            }),
-            Self::Overlay {
-                plugin_id,
-                overlay_id,
-            } => Message::Plugin(PluginMessage::OverlayEvent {
-                plugin_id,
-                overlay_id,
-                event,
-                value,
-            }),
-        }
-    }
 }

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -190,6 +190,13 @@ pub struct PluginHost {
     pub(super) core_command_actions: CoreCommandActions,
     pub(super) pending_navigation_effects: Vec<PluginNavigationEffect>,
     pub(super) last_focus_snapshot: FocusSnapshot,
+    /// Monotonic counter bumped whenever the host enters Lua through a
+    /// path that can mutate plugin screen state without the app's own
+    /// dirty tracking noticing: autocmd/event dispatch, command
+    /// invocation, and timer / async-job / watcher / deferred callbacks.
+    /// `App` compares this against its last-seen value to know whether
+    /// plugin-tab state may have changed and needs re-persisting.
+    pub(super) lua_activity: Cell<u64>,
 }
 
 /// Cached repository facts evaluated against lazy activation predicates.

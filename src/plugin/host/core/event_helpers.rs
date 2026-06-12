@@ -40,30 +40,62 @@ pub(super) fn compute_repo_hash<T: std::hash::Hash>(input: &T) -> u64 {
     h.finish()
 }
 
-/// One step of the host's autocmd-install replay. Built by
-/// [`MergedAutocmdOps`] from the three streams the plugin's init
-/// produced (autocmd creates, group creates, group clears) and
-/// emitted in plugin-local declaration order.
-pub(super) enum AutocmdOp {
+/// Plugin-local declaration order is carried by a `sequence` field on
+/// each raw record. Implemented for every lane item so the generic
+/// [`ThreeLaneMerge`] can order them without knowing their concrete
+/// type.
+pub(super) trait HasSequence {
+    fn sequence(&self) -> u64;
+}
+
+impl HasSequence for api::RawAutocmd {
+    fn sequence(&self) -> u64 {
+        self.sequence
+    }
+}
+
+impl HasSequence for api::RawAutocmdGroup {
+    fn sequence(&self) -> u64 {
+        self.sequence
+    }
+}
+
+impl HasSequence for api::RawAutocmdClear {
+    fn sequence(&self) -> u64 {
+        self.sequence
+    }
+}
+
+impl HasSequence for staged_reload::StagedAutocmd {
+    fn sequence(&self) -> u64 {
+        self.sequence
+    }
+}
+
+/// One lane of the three-way merge: an autocmd create (generic over
+/// the create-record type), a group create, or a group clear.
+pub(super) enum Lane<A> {
+    Create(A),
     Group(api::RawAutocmdGroup),
     Clear(api::RawAutocmdClear),
-    Create(api::RawAutocmd),
 }
 
 /// Iterator that merges autocmd / group / clear ops into a single
-/// stream sorted by their plugin-local sequence id.
-pub(super) struct MergedAutocmdOps {
-    autocmds: std::vec::IntoIter<api::RawAutocmd>,
+/// stream sorted by their plugin-local sequence id. Streams produced
+/// by the Lua API are already in ascending sequence order, so a 3-way
+/// head comparison is enough.
+pub(super) struct ThreeLaneMerge<A> {
+    autocmds: std::vec::IntoIter<A>,
     groups: std::vec::IntoIter<api::RawAutocmdGroup>,
     clears: std::vec::IntoIter<api::RawAutocmdClear>,
-    next_autocmd: Option<api::RawAutocmd>,
+    next_autocmd: Option<A>,
     next_group: Option<api::RawAutocmdGroup>,
     next_clear: Option<api::RawAutocmdClear>,
 }
 
-impl MergedAutocmdOps {
+impl<A: HasSequence> ThreeLaneMerge<A> {
     pub(super) fn new(
-        autocmds: Vec<api::RawAutocmd>,
+        autocmds: Vec<A>,
         groups: Vec<api::RawAutocmdGroup>,
         clears: Vec<api::RawAutocmdClear>,
     ) -> Self {
@@ -84,16 +116,12 @@ impl MergedAutocmdOps {
     }
 }
 
-impl Iterator for MergedAutocmdOps {
-    type Item = AutocmdOp;
+impl<A: HasSequence> Iterator for ThreeLaneMerge<A> {
+    type Item = Lane<A>;
     fn next(&mut self) -> Option<Self::Item> {
-        // Pick the head with the smallest sequence; backfill from the
-        // matching iterator. Streams produced by the Lua API are
-        // already in ascending sequence order, so a 3-way head
-        // comparison is enough.
-        let a = self.next_autocmd.as_ref().map(|x| x.sequence);
-        let g = self.next_group.as_ref().map(|x| x.sequence);
-        let c = self.next_clear.as_ref().map(|x| x.sequence);
+        let a = self.next_autocmd.as_ref().map(HasSequence::sequence);
+        let g = self.next_group.as_ref().map(HasSequence::sequence);
+        let c = self.next_clear.as_ref().map(HasSequence::sequence);
         let mut min: Option<(u64, u8)> = None; // (sequence, lane: 0=a, 1=g, 2=c)
         for (lane, value) in [(0u8, a), (1, g), (2, c)] {
             if let Some(seq) = value {
@@ -107,98 +135,39 @@ impl Iterator for MergedAutocmdOps {
             0 => {
                 let item = self.next_autocmd.take()?;
                 self.next_autocmd = self.autocmds.next();
-                Some(AutocmdOp::Create(item))
+                Some(Lane::Create(item))
             }
             1 => {
                 let item = self.next_group.take()?;
                 self.next_group = self.groups.next();
-                Some(AutocmdOp::Group(item))
+                Some(Lane::Group(item))
             }
             _ => {
                 let item = self.next_clear.take()?;
                 self.next_clear = self.clears.next();
-                Some(AutocmdOp::Clear(item))
+                Some(Lane::Clear(item))
             }
         }
     }
 }
+
+/// One step of the host's autocmd-install replay. Built by
+/// [`MergedAutocmdOps`] from the three streams the plugin's init
+/// produced (autocmd creates, group creates, group clears) and
+/// emitted in plugin-local declaration order.
+pub(super) type AutocmdOp = Lane<api::RawAutocmd>;
+
+/// Iterator that merges cold-load autocmd / group / clear ops into a
+/// single stream sorted by their plugin-local sequence id.
+pub(super) type MergedAutocmdOps = ThreeLaneMerge<api::RawAutocmd>;
 
 /// Staged variant of [`AutocmdOp`] used by `commit_staging`. Mirrors
 /// the cold-load merger but operates on `StagedAutocmd` instead of
 /// `RawAutocmd` (the staged record carries the resolved canonical
 /// event name pre-computed during staging).
-pub(super) enum StagedAutocmdOp {
-    Group(api::RawAutocmdGroup),
-    Clear(api::RawAutocmdClear),
-    Create(staged_reload::StagedAutocmd),
-}
+pub(super) type StagedAutocmdOp = Lane<staged_reload::StagedAutocmd>;
 
-pub(super) struct MergedStagedAutocmdOps {
-    autocmds: std::vec::IntoIter<staged_reload::StagedAutocmd>,
-    groups: std::vec::IntoIter<api::RawAutocmdGroup>,
-    clears: std::vec::IntoIter<api::RawAutocmdClear>,
-    next_autocmd: Option<staged_reload::StagedAutocmd>,
-    next_group: Option<api::RawAutocmdGroup>,
-    next_clear: Option<api::RawAutocmdClear>,
-}
-
-impl MergedStagedAutocmdOps {
-    pub(super) fn new(
-        autocmds: Vec<staged_reload::StagedAutocmd>,
-        groups: Vec<api::RawAutocmdGroup>,
-        clears: Vec<api::RawAutocmdClear>,
-    ) -> Self {
-        let mut autocmds = autocmds.into_iter();
-        let mut groups = groups.into_iter();
-        let mut clears = clears.into_iter();
-        let next_autocmd = autocmds.next();
-        let next_group = groups.next();
-        let next_clear = clears.next();
-        Self {
-            autocmds,
-            groups,
-            clears,
-            next_autocmd,
-            next_group,
-            next_clear,
-        }
-    }
-}
-
-impl Iterator for MergedStagedAutocmdOps {
-    type Item = StagedAutocmdOp;
-    fn next(&mut self) -> Option<Self::Item> {
-        let a = self.next_autocmd.as_ref().map(|x| x.sequence);
-        let g = self.next_group.as_ref().map(|x| x.sequence);
-        let c = self.next_clear.as_ref().map(|x| x.sequence);
-        let mut min: Option<(u64, u8)> = None;
-        for (lane, value) in [(0u8, a), (1, g), (2, c)] {
-            if let Some(seq) = value {
-                if min.map(|(s, _)| seq < s).unwrap_or(true) {
-                    min = Some((seq, lane));
-                }
-            }
-        }
-        let (_, lane) = min?;
-        match lane {
-            0 => {
-                let item = self.next_autocmd.take()?;
-                self.next_autocmd = self.autocmds.next();
-                Some(StagedAutocmdOp::Create(item))
-            }
-            1 => {
-                let item = self.next_group.take()?;
-                self.next_group = self.groups.next();
-                Some(StagedAutocmdOp::Group(item))
-            }
-            _ => {
-                let item = self.next_clear.take()?;
-                self.next_clear = self.clears.next();
-                Some(StagedAutocmdOp::Clear(item))
-            }
-        }
-    }
-}
+pub(super) type MergedStagedAutocmdOps = ThreeLaneMerge<staged_reload::StagedAutocmd>;
 
 /// Lightweight snapshot of an [`AutocmdEntry`] used when iterating
 /// during dispatch. Cloning the few primitive fields up front lets
@@ -206,6 +175,7 @@ impl Iterator for MergedStagedAutocmdOps {
 /// holding a borrow on the EventBus across re-entrant dispatch.
 pub(super) struct EntrySnapshot {
     pub(super) id: u64,
+    pub(super) index: usize,
     pub(super) plugin_id: String,
     pub(super) generation_id: GenerationId,
     pub(super) once: bool,

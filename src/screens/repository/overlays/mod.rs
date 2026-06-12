@@ -16,7 +16,6 @@ use crate::{
 };
 
 use self::dialog::model::{Dialog, DialogButtonId, DialogControlId, DialogId, DialogOwner};
-use self::native_dialog_kind::NativeDialogKind;
 use super::panel_messages::OverlayPanelAction;
 use super::state::{OperationCoordinator, RepositoryData};
 
@@ -34,7 +33,6 @@ pub(crate) mod discard;
 pub(crate) mod force_push;
 pub(crate) mod modify_delete_conflict;
 mod native_actions;
-mod native_dialog_kind;
 pub(crate) mod push_behind;
 pub(crate) mod remove_worktree;
 pub(crate) mod rename_branch;
@@ -48,6 +46,31 @@ pub(crate) mod widgets;
 pub(crate) use widgets::{CREATE_BUTTON, OVERLAY_ENTER_OFFSET};
 
 const OVERLAY_SLIDE_SPEED_PX_PER_MS: f32 = 6.25;
+
+const NATIVE_CANCEL_BUTTON_ID: &str = "cancel";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeButtonAction {
+    Cancel,
+    ForcePush,
+    StashDelete,
+    DeleteTag,
+    CherryPick { commit_now: bool },
+    Revert { commit_now: bool },
+    RemoveWorktree,
+    Discard,
+    DeleteBranch,
+    DeleteBranchAll,
+    RenameBranch,
+    CreateBranch,
+    ConflictCreateBranch,
+    ConflictResetLocal,
+    SetUpstream,
+    PushBehindPull,
+    PushBehindForcePush,
+    CreateTag,
+    ResolveModifyDelete(ModifyDeleteConflictChoice),
+}
 
 pub(crate) enum SidePanelOverlay {
     AddRemote(add_remote::State),
@@ -70,6 +93,7 @@ pub(crate) struct DialogCtx<'a> {
     pub presenter: Arc<dyn Presenter>,
     pub tab_id: TabId,
     pub active_path: std::path::PathBuf,
+    pub sidebar_sections: &'a [crate::view_model::SidebarSection],
     pub operations: &'a mut OperationCoordinator,
 }
 
@@ -285,9 +309,6 @@ impl OverlayManager {
     }
 
     pub(crate) fn is_animating(&self) -> bool {
-        if self.toolbar_dialog.is_some() && self.toolbar_slide_offset > 0.0 {
-            return true;
-        }
         if self.toolbar_slide_offset > 0.0 {
             return true;
         }
@@ -515,533 +536,150 @@ impl OverlayManager {
         event: DialogEvent,
         ctx: Option<DialogCtx<'_>>,
     ) -> DialogDispatch {
-        let Some(dialog_kind) = self
-            .toolbar_dialog
-            .as_ref()
-            .filter(|dialog| &dialog.id == dialog_id)
-            .map(NativeDialogKind::from_dialog)
-        else {
-            return DialogDispatch::Task(Task::none());
+        let DialogEvent::ButtonPressed { button_id } = &event else {
+            if matches!(event, DialogEvent::Dismissed) {
+                self.close();
+                return DialogDispatch::CancelClosed;
+            }
+            return self.apply_local_dialog_event(dialog_id, event);
         };
 
-        match dialog_kind {
-            Some(NativeDialogKind::ForcePush) => {
-                self.dispatch_force_push_dialog_event(dialog_id, event, ctx)
+        if !self.has_enabled_toolbar_dialog_button(dialog_id, button_id) {
+            return self.apply_local_dialog_event(dialog_id, event);
+        }
+
+        match self.native_button_action(dialog_id, button_id) {
+            Some(NativeButtonAction::Cancel) => {
+                self.close();
+                DialogDispatch::CancelClosed
             }
-            Some(NativeDialogKind::StashDelete) => {
-                self.dispatch_stash_delete_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::DeleteTag) => {
-                self.dispatch_delete_tag_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::CherryPick) => {
-                self.dispatch_cherry_pick_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::Revert) => {
-                self.dispatch_revert_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::RemoveWorktree) => {
-                self.dispatch_remove_worktree_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::Discard) => {
-                self.dispatch_discard_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::DeleteBranch) => {
-                self.dispatch_delete_branch_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::RenameBranch) => {
-                self.dispatch_rename_branch_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::CreateBranch) => {
-                self.dispatch_create_branch_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::ConflictCheckout) => {
-                self.dispatch_conflict_checkout_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::SetUpstream) => {
-                self.dispatch_set_upstream_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::PushBehind) => {
-                self.dispatch_push_behind_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::CreateTag) => {
-                self.dispatch_create_tag_dialog_event(dialog_id, event, ctx)
-            }
-            Some(NativeDialogKind::ModifyDeleteConflict) => {
-                self.dispatch_modify_delete_conflict_dialog_event(dialog_id, event, ctx)
-            }
+            Some(action) => self.run_native_button_action(action, ctx),
             None => self.apply_local_dialog_event(dialog_id, event),
         }
     }
 
-    fn dispatch_force_push_dialog_event(
-        &mut self,
+    fn native_button_action(
+        &self,
         dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && force_push::is_confirm_button(&button_id) =>
-            {
-                self.confirm_force_push(ctx)
+        button_id: &DialogButtonId,
+    ) -> Option<NativeButtonAction> {
+        let id = dialog_id.0.as_str();
+        let button = button_id.0.as_str();
+        let action = match (id, button) {
+            (force_push::DIALOG_ID, force_push::CONFIRM_BUTTON_ID) => NativeButtonAction::ForcePush,
+            (stash_delete::DIALOG_ID, stash_delete::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::StashDelete
             }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && force_push::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
+            (delete_tag::DIALOG_ID, delete_tag::CONFIRM_BUTTON_ID) => NativeButtonAction::DeleteTag,
+            (cherry_pick_confirm::DIALOG_ID, cherry_pick_confirm::IMMEDIATE_BUTTON_ID) => {
+                NativeButtonAction::CherryPick { commit_now: true }
             }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
+            (cherry_pick_confirm::DIALOG_ID, cherry_pick_confirm::STAGED_BUTTON_ID) => {
+                NativeButtonAction::CherryPick { commit_now: false }
             }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
+            (revert_confirm::DIALOG_ID, revert_confirm::IMMEDIATE_BUTTON_ID) => {
+                NativeButtonAction::Revert { commit_now: true }
+            }
+            (revert_confirm::DIALOG_ID, revert_confirm::IN_PLACE_BUTTON_ID) => {
+                NativeButtonAction::Revert { commit_now: false }
+            }
+            (remove_worktree::DIALOG_ID, remove_worktree::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::RemoveWorktree
+            }
+            (discard::DIALOG_ID, discard::CONFIRM_BUTTON_ID) => NativeButtonAction::Discard,
+            (delete_branch::DIALOG_ID, delete_branch::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::DeleteBranch
+            }
+            (delete_branch::DIALOG_ID, delete_branch::CONFIRM_ALL_BUTTON_ID) => {
+                NativeButtonAction::DeleteBranchAll
+            }
+            (rename_branch::DIALOG_ID, rename_branch::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::RenameBranch
+            }
+            (create_branch::DIALOG_ID, create_branch::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::CreateBranch
+            }
+            (conflict_checkout::DIALOG_ID, conflict_checkout::CREATE_BUTTON_ID) => {
+                NativeButtonAction::ConflictCreateBranch
+            }
+            (conflict_checkout::DIALOG_ID, conflict_checkout::RESET_BUTTON_ID) => {
+                NativeButtonAction::ConflictResetLocal
+            }
+            (set_upstream::DIALOG_ID, set_upstream::CONFIRM_BUTTON_ID) => {
+                NativeButtonAction::SetUpstream
+            }
+            (push_behind::DIALOG_ID, push_behind::PULL_BUTTON_ID) => {
+                NativeButtonAction::PushBehindPull
+            }
+            (push_behind::DIALOG_ID, push_behind::FORCE_BUTTON_ID) => {
+                NativeButtonAction::PushBehindForcePush
+            }
+            (create_tag::DIALOG_ID, create_tag::CONFIRM_BUTTON_ID) => NativeButtonAction::CreateTag,
+            (
+                modify_delete_conflict::DIALOG_ID,
+                modify_delete_conflict::KEEP_MODIFIED_BUTTON_ID,
+            ) => NativeButtonAction::ResolveModifyDelete(ModifyDeleteConflictChoice::KeepModified),
+            (modify_delete_conflict::DIALOG_ID, modify_delete_conflict::DELETE_FILE_BUTTON_ID) => {
+                NativeButtonAction::ResolveModifyDelete(ModifyDeleteConflictChoice::DeleteFile)
+            }
+            (modify_delete_conflict::DIALOG_ID, modify_delete_conflict::KEEP_BASE_BUTTON_ID) => {
+                NativeButtonAction::ResolveModifyDelete(ModifyDeleteConflictChoice::KeepBase)
+            }
+            (_, NATIVE_CANCEL_BUTTON_ID) => NativeButtonAction::Cancel,
+            _ => return None,
+        };
+        Some(action)
     }
 
-    fn dispatch_stash_delete_dialog_event(
+    fn run_native_button_action(
         &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
+        action: NativeButtonAction,
         ctx: Option<DialogCtx<'_>>,
     ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && stash_delete::is_confirm_button(&button_id) =>
-            {
-                self.confirm_stash_delete(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && stash_delete::is_cancel_button(&button_id) =>
-            {
+        match action {
+            NativeButtonAction::Cancel => {
                 self.close();
                 DialogDispatch::CancelClosed
             }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
+            NativeButtonAction::ForcePush => native_actions::confirm_force_push(self, ctx),
+            NativeButtonAction::StashDelete => native_actions::confirm_stash_delete(self, ctx),
+            NativeButtonAction::DeleteTag => native_actions::confirm_delete_tag(self, ctx),
+            NativeButtonAction::CherryPick { commit_now } => {
+                native_actions::confirm_cherry_pick(self, commit_now, ctx)
             }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_delete_tag_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && delete_tag::is_confirm_button(&button_id) =>
-            {
-                self.confirm_delete_tag(ctx)
+            NativeButtonAction::Revert { commit_now } => {
+                native_actions::confirm_revert(self, commit_now, ctx)
             }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && delete_tag::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
+            NativeButtonAction::RemoveWorktree => {
+                native_actions::confirm_remove_worktree(self, ctx)
             }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
+            NativeButtonAction::Discard => native_actions::confirm_discard_dialog(self, ctx),
+            NativeButtonAction::DeleteBranch => native_actions::confirm_delete_branch(self, ctx),
+            NativeButtonAction::DeleteBranchAll => {
+                native_actions::confirm_delete_branch_all(self, ctx)
             }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_cherry_pick_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && cherry_pick_confirm::is_immediate_button(&button_id) =>
-            {
-                self.confirm_cherry_pick(true, ctx)
+            NativeButtonAction::RenameBranch => native_actions::confirm_rename_branch(self, ctx),
+            NativeButtonAction::CreateBranch => native_actions::confirm_create_branch(self, ctx),
+            NativeButtonAction::ConflictCreateBranch => {
+                native_actions::confirm_conflict_create_branch(self, ctx)
             }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && cherry_pick_confirm::is_staged_button(&button_id) =>
-            {
-                self.confirm_cherry_pick(false, ctx)
+            NativeButtonAction::ConflictResetLocal => {
+                native_actions::confirm_conflict_reset_local(self, ctx)
             }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && cherry_pick_confirm::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
+            NativeButtonAction::SetUpstream => native_actions::confirm_set_upstream(self, ctx),
+            NativeButtonAction::PushBehindPull => {
+                native_actions::confirm_push_behind_pull(self, ctx)
             }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
+            NativeButtonAction::PushBehindForcePush => {
+                native_actions::confirm_push_behind_force_push(self)
             }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_revert_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && revert_confirm::is_immediate_button(&button_id) =>
-            {
-                self.confirm_revert(true, ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && revert_confirm::is_in_place_button(&button_id) =>
-            {
-                self.confirm_revert(false, ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && revert_confirm::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_remove_worktree_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && remove_worktree::is_confirm_button(&button_id) =>
-            {
-                self.confirm_remove_worktree(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && remove_worktree::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_discard_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && discard::is_confirm_button(&button_id) =>
-            {
-                self.confirm_discard_dialog(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && discard::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_delete_branch_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && delete_branch::is_confirm_button(&button_id) =>
-            {
-                self.confirm_delete_branch(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && delete_branch::is_confirm_all_button(&button_id) =>
-            {
-                self.confirm_delete_branch_all(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && delete_branch::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_rename_branch_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && rename_branch::is_confirm_button(&button_id) =>
-            {
-                self.confirm_rename_branch(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && rename_branch::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_create_branch_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && create_branch::is_confirm_button(&button_id) =>
-            {
-                self.confirm_create_branch(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && create_branch::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_conflict_checkout_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && conflict_checkout::is_create_button(&button_id) =>
-            {
-                self.confirm_conflict_create_branch(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && conflict_checkout::is_reset_button(&button_id) =>
-            {
-                self.confirm_conflict_reset_local(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && conflict_checkout::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_set_upstream_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && set_upstream::is_confirm_button(&button_id) =>
-            {
-                self.confirm_set_upstream(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && set_upstream::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_push_behind_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && push_behind::is_pull_button(&button_id) =>
-            {
-                self.confirm_push_behind_pull(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && push_behind::is_force_button(&button_id) =>
-            {
-                self.confirm_push_behind_force_push()
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && push_behind::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_create_tag_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && create_tag::is_confirm_button(&button_id) =>
-            {
-                self.confirm_create_tag(ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && create_tag::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
-        }
-    }
-
-    fn dispatch_modify_delete_conflict_dialog_event(
-        &mut self,
-        dialog_id: &DialogId,
-        event: DialogEvent,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        match event {
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && modify_delete_conflict::is_keep_modified_button(&button_id) =>
-            {
+            NativeButtonAction::CreateTag => native_actions::confirm_create_tag(self, ctx),
+            NativeButtonAction::ResolveModifyDelete(choice) => {
                 let Some(ctx) = ctx else {
                     return DialogDispatch::Task(Task::none());
                 };
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepModified, ctx)
+                self.resolve_modify_delete_conflict(choice, ctx)
             }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && modify_delete_conflict::is_delete_file_button(&button_id) =>
-            {
-                let Some(ctx) = ctx else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::DeleteFile, ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && modify_delete_conflict::is_keep_base_button(&button_id) =>
-            {
-                let Some(ctx) = ctx else {
-                    return DialogDispatch::Task(Task::none());
-                };
-                self.resolve_modify_delete_conflict(ModifyDeleteConflictChoice::KeepBase, ctx)
-            }
-            DialogEvent::ButtonPressed { button_id }
-                if self.has_enabled_toolbar_dialog_button(dialog_id, &button_id)
-                    && modify_delete_conflict::is_cancel_button(&button_id) =>
-            {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            DialogEvent::Dismissed => {
-                self.close();
-                DialogDispatch::CancelClosed
-            }
-            event => self.apply_local_dialog_event(dialog_id, event),
         }
     }
 
@@ -1059,78 +697,6 @@ impl OverlayManager {
                     .iter()
                     .any(|button| &button.id == button_id && button.enabled)
             })
-    }
-
-    fn confirm_force_push(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_force_push(self, ctx)
-    }
-
-    fn confirm_stash_delete(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_stash_delete(self, ctx)
-    }
-
-    fn confirm_delete_tag(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_delete_tag(self, ctx)
-    }
-
-    fn confirm_cherry_pick(
-        &mut self,
-        commit_now: bool,
-        ctx: Option<DialogCtx<'_>>,
-    ) -> DialogDispatch {
-        native_actions::confirm_cherry_pick(self, commit_now, ctx)
-    }
-
-    fn confirm_revert(&mut self, commit_now: bool, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_revert(self, commit_now, ctx)
-    }
-
-    fn confirm_remove_worktree(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_remove_worktree(self, ctx)
-    }
-
-    fn confirm_discard_dialog(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_discard_dialog(self, ctx)
-    }
-
-    fn confirm_delete_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_delete_branch(self, ctx)
-    }
-
-    fn confirm_delete_branch_all(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_delete_branch_all(self, ctx)
-    }
-
-    fn confirm_rename_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_rename_branch(self, ctx)
-    }
-
-    fn confirm_create_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_create_branch(self, ctx)
-    }
-
-    fn confirm_conflict_create_branch(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_conflict_create_branch(self, ctx)
-    }
-
-    fn confirm_conflict_reset_local(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_conflict_reset_local(self, ctx)
-    }
-
-    fn confirm_set_upstream(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_set_upstream(self, ctx)
-    }
-
-    fn confirm_push_behind_pull(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_push_behind_pull(self, ctx)
-    }
-
-    fn confirm_push_behind_force_push(&mut self) -> DialogDispatch {
-        native_actions::confirm_push_behind_force_push(self)
-    }
-
-    fn confirm_create_tag(&mut self, ctx: Option<DialogCtx<'_>>) -> DialogDispatch {
-        native_actions::confirm_create_tag(self, ctx)
     }
 
     fn dispatch_plugin_dialog_event(
@@ -1327,7 +893,7 @@ impl OverlayManager {
             | action @ OverlayPanelAction::AddRemotePullUrlChanged(_)
             | action @ OverlayPanelAction::AddRemotePushUrlChanged(_)
             | action @ OverlayPanelAction::AddRemoteConfirmed
-            | action @ OverlayPanelAction::CreateWorktreeOpen { .. }
+            | action @ OverlayPanelAction::CreateWorktreeOpen
             | action @ OverlayPanelAction::CreateWorktreeClose
             | action @ OverlayPanelAction::CreateWorktreeReferenceChanged(_)
             | action @ OverlayPanelAction::CreateWorktreeDropdownToggled
@@ -1350,6 +916,50 @@ pub(crate) fn existing_branches(data: &RepositoryData) -> Vec<String> {
         .iter()
         .flat_map(|section| section.branches.iter().map(|b| b.name.clone()))
         .collect()
+}
+
+/// Whether pressing `button_id` on dialog `dialog_id` begins a git write, and
+/// thus must route through the serialized git queue. Buttons that only open
+/// another dialog (e.g. `push_behind`'s Force, which opens `force_push`) are
+/// not writes. This is the single source of truth feeding
+/// `RepositoryMessage::git_write_intent`.
+pub(crate) fn dialog_button_writes(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
+    let id = dialog_id.0.as_str();
+    let button = button_id.0.as_str();
+    match id {
+        force_push::DIALOG_ID => button == force_push::CONFIRM_BUTTON_ID,
+        stash_delete::DIALOG_ID => button == stash_delete::CONFIRM_BUTTON_ID,
+        delete_tag::DIALOG_ID => button == delete_tag::CONFIRM_BUTTON_ID,
+        cherry_pick_confirm::DIALOG_ID => {
+            button == cherry_pick_confirm::IMMEDIATE_BUTTON_ID
+                || button == cherry_pick_confirm::STAGED_BUTTON_ID
+        }
+        revert_confirm::DIALOG_ID => {
+            button == revert_confirm::IMMEDIATE_BUTTON_ID
+                || button == revert_confirm::IN_PLACE_BUTTON_ID
+        }
+        remove_worktree::DIALOG_ID => button == remove_worktree::CONFIRM_BUTTON_ID,
+        discard::DIALOG_ID => button == discard::CONFIRM_BUTTON_ID,
+        delete_branch::DIALOG_ID => {
+            button == delete_branch::CONFIRM_BUTTON_ID
+                || button == delete_branch::CONFIRM_ALL_BUTTON_ID
+        }
+        rename_branch::DIALOG_ID => button == rename_branch::CONFIRM_BUTTON_ID,
+        create_branch::DIALOG_ID => button == create_branch::CONFIRM_BUTTON_ID,
+        conflict_checkout::DIALOG_ID => {
+            button == conflict_checkout::CREATE_BUTTON_ID
+                || button == conflict_checkout::RESET_BUTTON_ID
+        }
+        set_upstream::DIALOG_ID => button == set_upstream::CONFIRM_BUTTON_ID,
+        push_behind::DIALOG_ID => button == push_behind::PULL_BUTTON_ID,
+        create_tag::DIALOG_ID => button == create_tag::CONFIRM_BUTTON_ID,
+        modify_delete_conflict::DIALOG_ID => {
+            button == modify_delete_conflict::KEEP_MODIFIED_BUTTON_ID
+                || button == modify_delete_conflict::DELETE_FILE_BUTTON_ID
+                || button == modify_delete_conflict::KEEP_BASE_BUTTON_ID
+        }
+        _ => false,
+    }
 }
 
 fn bar_with_overlay<'a>(

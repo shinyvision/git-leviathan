@@ -54,13 +54,17 @@ impl DiffCache {
     /// Replace the cache wholesale with the states from a fresh projection,
     /// first merging in any previously-loaded diffs by hash so the details
     /// panel does not re-enter "Loading files…".
+    ///
+    /// `prev_keys` carries only `(hash, kind)` for each previous commit —
+    /// the sole fields `preserve_across_reload` reads — so the reload path
+    /// avoids deep-cloning every `Commit` just to feed the cache carry.
     pub(in crate::screens::repository) fn replace(
         &mut self,
-        prev_commits: &[Commit],
+        prev_keys: &[(String, CommitKind)],
         new_commits: &[Commit],
         mut new_states: Vec<CommitDiffState>,
     ) {
-        preserve_across_reload(prev_commits, &self.states, new_commits, &mut new_states);
+        preserve_across_reload(prev_keys, &self.states, new_commits, &mut new_states);
         self.states = new_states;
     }
 
@@ -114,18 +118,18 @@ impl DiffCache {
 }
 
 fn preserve_across_reload(
-    prev_commits: &[Commit],
+    prev_keys: &[(String, CommitKind)],
     prev_states: &[CommitDiffState],
     new_commits: &[Commit],
     new_states: &mut [CommitDiffState],
 ) {
-    let cached: HashMap<String, CommitDiffState> = prev_commits
+    let cached: HashMap<String, CommitDiffState> = prev_keys
         .iter()
         .zip(prev_states.iter())
-        .filter(|(commit, diff)| {
-            matches!(commit.kind, CommitKind::Commit | CommitKind::Stash) && diff.diff_loaded
+        .filter(|((_, kind), diff)| {
+            matches!(kind, CommitKind::Commit | CommitKind::Stash) && diff.diff_loaded
         })
-        .map(|(commit, diff)| (commit.hash.clone(), diff.clone()))
+        .map(|((hash, _), diff)| (hash.clone(), diff.clone()))
         .collect();
 
     for (commit, diff_slot) in new_commits.iter().zip(new_states.iter_mut()) {
@@ -158,6 +162,10 @@ mod tests {
 
     fn empty_states(count: usize) -> Vec<CommitDiffState> {
         (0..count).map(|_| CommitDiffState::empty()).collect()
+    }
+
+    fn keys_of(commits: &[Commit]) -> Vec<(String, CommitKind)> {
+        commits.iter().map(|c| (c.hash.clone(), c.kind)).collect()
     }
 
     #[test]
@@ -288,7 +296,7 @@ mod tests {
         ];
         let new_states = empty_states(new_commits.len());
 
-        cache.replace(&prev_commits, &new_commits, new_states);
+        cache.replace(&keys_of(&prev_commits), &new_commits, new_states);
 
         assert!(!cache.states[0].diff_loaded, "new commit stays unloaded");
         assert!(
@@ -314,7 +322,7 @@ mod tests {
         let new_commits = vec![sample_commit("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")];
         let new_states = empty_states(new_commits.len());
 
-        cache.replace(&prev_commits, &new_commits, new_states);
+        cache.replace(&keys_of(&prev_commits), &new_commits, new_states);
 
         assert!(!cache.states[0].diff_loaded);
     }

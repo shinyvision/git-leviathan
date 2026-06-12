@@ -534,12 +534,9 @@ fn repository_summary(repository: Option<&RepositoryContextSnapshot>) -> Value {
 }
 
 fn tab_summary(tabs: &TabsSnapshot) -> Value {
-    let active = tabs.active_id.and_then(|id| {
-        tabs.tabs
-            .iter()
-            .position(|tab| tab.id == id)
-            .map(|idx| (id, idx))
-    });
+    let active_id = tabs.active_id;
+    let active_index = active_id.and_then(|id| tabs.tabs.iter().position(|tab| tab.id == id));
+    let active = active_id.zip(active_index);
     match active {
         Some((id, index)) => {
             let tab = &tabs.tabs[index];

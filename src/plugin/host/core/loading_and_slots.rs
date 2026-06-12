@@ -540,6 +540,7 @@ impl PluginHost {
             &manifest.id,
             generation_id,
             raw_keymap_dels,
+            &self.diagnostics,
         );
 
         let plugin = LoadedPlugin {
@@ -727,6 +728,27 @@ impl PluginHost {
 
     pub fn extension_overlays(&self) -> Vec<crate::plugin::extensions::OverlayRecord> {
         self.extension_registry.overlays()
+    }
+
+    pub fn for_each_extension_overlay(
+        &self,
+        f: impl FnMut(&crate::plugin::extensions::OverlayRecord),
+    ) {
+        self.extension_registry.for_each_overlay_top_first(f);
+    }
+
+    pub fn with_top_extension_overlay<R>(
+        &self,
+        f: impl FnOnce(&crate::plugin::extensions::OverlayRecord) -> R,
+    ) -> Option<R> {
+        self.extension_registry.with_top_overlay(f)
+    }
+
+    pub fn with_top_dismissible_extension_overlay<R>(
+        &self,
+        f: impl FnOnce(&crate::plugin::extensions::OverlayRecord) -> R,
+    ) -> Option<R> {
+        self.extension_registry.with_top_dismissible_overlay(f)
     }
 
     pub fn extension_graph_decorations_for_commit(

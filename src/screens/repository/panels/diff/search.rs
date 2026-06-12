@@ -101,7 +101,7 @@ impl DiffPanel {
     /// to compute scroll targets. Returns `None` if the buffer isn't loaded
     /// or the requested canvas isn't part of the active view.
     fn build_canvas_data_for(&self, canvas_id: DiffCanvasId) -> Option<Arc<TextCanvasData>> {
-        use crate::widgets::diff::canvas as dc;
+        use crate::widgets::diff_canvas as dc;
         if canvas_id == dc::CANVAS_ID {
             self.dirty_file_diff
                 .as_ref()

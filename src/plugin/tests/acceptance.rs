@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::json;
 
@@ -88,20 +88,6 @@ fn collect_files(root: &Path, out: &mut Vec<PathBuf>) {
         } else {
             out.push(path);
         }
-    }
-}
-
-fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F, timeout_ms: u64) {
-    let start = Instant::now();
-    loop {
-        host.tick();
-        if cond(host) {
-            return;
-        }
-        if start.elapsed() > Duration::from_millis(timeout_ms) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(10));
     }
 }
 
@@ -275,8 +261,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         .async_jobs
         .iter()
         .any(|j| j.plugin_id == "commit_lens"));
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("commit_lens", "async_done") == Some(24),
         2000,
     );
@@ -297,8 +282,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
     );
 
     std::thread::sleep(Duration::from_millis(30));
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("commit_lens", "timer_fires").unwrap_or(0) >= 1,
         500,
     );
@@ -318,8 +302,7 @@ fn good_demo_plugins_exercise_dream_system_and_cleanly_unload() {
         writeln!(file, "acceptance").expect("write watched file");
         file.sync_all().ok();
     }
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("commit_lens", "watch_fires").unwrap_or(0) >= 1,
         3000,
     );

@@ -13,7 +13,7 @@ use crate::{
     core::Commit,
     message::Message,
     services::git::MergedCommitDiffResult,
-    services::text_measurement::{cached_measure_width, FontFamily},
+    services::text_measurement::{truncate_to_width, FontFamily},
     style, theme,
     utils::initials,
     widgets::shared::{h_divider, horizontal_space, scrollbar_style, v_divider},
@@ -245,39 +245,12 @@ fn merged_stats_and_files<'a>(
 }
 
 fn truncate_summary(message: &str, available_width: f32) -> String {
-    let font_size = theme::FONT_SM;
-    let full_width = cached_measure_width(message, FontFamily::Default, font_size);
-    if full_width <= available_width {
-        return message.to_string();
-    }
-    let ellipsis_width = cached_measure_width("…", FontFamily::Default, font_size);
-    let available_for_text = available_width - ellipsis_width;
-    if available_for_text <= 0.0 {
-        return "…".to_string();
-    }
-    let mut low = 0usize;
-    let mut high = message.len();
-    let mut best_byte = 0usize;
-    while low < high {
-        let mid = (low + high).div_ceil(2);
-        let mut boundary = mid.min(message.len());
-        while boundary > 0 && !message.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        let substr = &message[..boundary];
-        let w = cached_measure_width(substr, FontFamily::Default, font_size);
-        if w <= available_for_text {
-            best_byte = boundary;
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-    if best_byte == 0 {
-        "…".to_string()
-    } else {
-        format!("{}…", &message[..best_byte])
-    }
+    truncate_to_width(
+        message,
+        available_width,
+        FontFamily::Default,
+        theme::FONT_SM,
+    )
 }
 
 fn multi_commit_row<'a>(

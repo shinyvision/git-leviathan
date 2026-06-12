@@ -1,15 +1,11 @@
 use serde_json::json;
 
-use crate::core::TabId;
 use crate::plugin::audit::AuditOutcome;
 use crate::plugin::slots::Container;
-use crate::plugin::tab_snapshot::{TabSnapshotEntry, TabsSnapshot};
-use crate::plugin::tests::harness::MockHost;
-use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry, SlotCtx};
+use crate::plugin::tests::harness::{tab_snapshot, MockHost};
+use crate::widgets::chrome::main_bar::SlotCtx;
 use crate::widgets::chrome::repo_region as rr;
-use crate::widgets::chrome::tab_bar_slots::{
-    builtins as tab_bar_builtins, TabBarCtx, TabBarRegistry,
-};
+use crate::widgets::chrome::tab_bar_slots::TabBarCtx;
 
 const SLOT_CAPS: &str =
     r#"["ui:region:main_bar", "ui:region:tab_bar", "ui:region:repository", "ui:screen"]"#;
@@ -39,38 +35,6 @@ capabilities = {caps}
     )
 }
 
-fn main_bar_registry(host: &MockHost) -> MainBarRegistry {
-    let mut registry = MainBarRegistry::new();
-    main_bar_builtins::register_all(&mut registry);
-    host.host().apply_main_bar_slots(&mut registry);
-    registry
-}
-
-fn tab_bar_registry(host: &MockHost) -> TabBarRegistry {
-    let mut registry = TabBarRegistry::new();
-    tab_bar_builtins::register_all(&mut registry);
-    host.host().apply_tab_bar_slots(&mut registry);
-    registry
-}
-
-fn repo_registry(host: &MockHost) -> rr::RepoRegionRegistry {
-    let mut registry = rr::RepoRegionRegistry::new();
-    host.host().apply_repo_region_slots(&mut registry);
-    registry
-}
-
-fn tab_snapshot() -> TabsSnapshot {
-    TabsSnapshot {
-        tabs: vec![TabSnapshotEntry {
-            id: TabId(1),
-            path: "/tmp/repo".into(),
-            name: "repo".into(),
-        }],
-        active_id: Some(TabId(1)),
-        active_path: Some("/tmp/repo".into()),
-    }
-}
-
 #[test]
 fn v1_slots_replay_and_render_for_mounted_regions() {
     let mut host = MockHost::new();
@@ -95,7 +59,7 @@ fn v1_slots_replay_and_render_for_mounted_regions() {
     )
     .expect("load slots");
 
-    let main = main_bar_registry(&host);
+    let main = host.main_bar_registry();
     let main_slot = main
         .iter_container(Container::Section("right".into()))
         .find(|slot| slot.id == "plugin.slots.main")
@@ -103,7 +67,7 @@ fn v1_slots_replay_and_render_for_mounted_regions() {
     let main_ctx = SlotCtx::new("repo", "main", None, None, None, None);
     let _ = (main_slot.builder)(&main_ctx);
 
-    let tab = tab_bar_registry(&host);
+    let tab = host.tab_bar_registry();
     let tabs = tab_snapshot();
     let tab_ctx = TabBarCtx::with_tabs(&tabs);
     let tab_slot = tab
@@ -112,7 +76,7 @@ fn v1_slots_replay_and_render_for_mounted_regions() {
         .expect("tab slot");
     let _ = (tab_slot.builder)(&tab_ctx);
 
-    let repo = repo_registry(&host);
+    let repo = host.repo_region_registry();
     assert!(rr::render_top(&repo, rr::Pane::Sidebar).is_some());
     assert!(rr::render_bottom(&repo, rr::Pane::Sidebar).is_none());
 }
@@ -395,7 +359,7 @@ fn v1_remove_replace_replay_in_source_order() {
     )
     .expect("load ops");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let slot = registry
         .iter_container(Container::Section("left".into()))
         .find(|slot| slot.id == "plugin.ops.target")
@@ -413,7 +377,7 @@ fn v1_remove_replace_replay_in_source_order() {
     )
     .expect("reload remove");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(!registry.contains_display_id("plugin.ops.target"));
 }
 
@@ -705,7 +669,7 @@ fn repository_region_accepts_graph_and_details_panes() {
     )
     .expect("repository graph/details panes should register and render");
 
-    let registry = repo_registry(&host);
+    let registry = host.repo_region_registry();
     assert!(rr::render_top(&registry, rr::Pane::Graph).is_some());
     assert!(rr::render_bottom(&registry, rr::Pane::Details).is_some());
 }
@@ -729,7 +693,7 @@ fn contract_debt_same_slot_id_in_different_sections_should_render_both() {
     )
     .expect("load identity");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(registry
         .iter_container(Container::Section("left".into()))
         .any(|slot| slot.id == "same.id"));
@@ -963,7 +927,7 @@ fn documented_builtin_replacement_is_visible_without_native_special_case() {
     )
     .expect("replace builtin");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let slot = registry
         .iter_container(Container::Section("left".into()))
         .find(|slot| slot.id == "builtin.repo_info")
@@ -985,7 +949,7 @@ fn documented_builtin_replacement_is_visible_without_native_special_case() {
 #[test]
 fn default_builtin_registry_order_is_unchanged() {
     let host = MockHost::new();
-    let main = main_bar_registry(&host);
+    let main = host.main_bar_registry();
     let main_ids: Vec<(&str, Vec<&str>)> = ["left", "center", "right"]
         .into_iter()
         .map(|section| {
@@ -1023,7 +987,7 @@ fn default_builtin_registry_order_is_unchanged() {
         ]
     );
 
-    let tabs = tab_bar_registry(&host);
+    let tabs = host.tab_bar_registry();
     let tab_ids: Vec<(&str, Vec<&str>)> = ["left", "center", "right"]
         .into_iter()
         .map(|section| {
@@ -1078,7 +1042,7 @@ fn per_target_replace_and_remove_grants_work() {
     )
     .expect("editor can replace target");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let slot = registry
         .iter_container(Container::Section("left".into()))
         .find(|slot| slot.id == "plugin.owner.slot")
@@ -1099,7 +1063,7 @@ fn per_target_replace_and_remove_grants_work() {
     )
     .expect("remover can remove target");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(!registry.contains_display_id("plugin.owner.slot"));
 }
 
@@ -1118,7 +1082,9 @@ fn contribution_overrides_hide_reorder_survive_reload_and_reset() {
     )
     .expect("load");
 
-    assert!(main_bar_registry(&host).contains_display_id("plugin.layout.slot"));
+    assert!(host
+        .main_bar_registry()
+        .contains_display_id("plugin.layout.slot"));
     assert!(host
         .invoke_command(
             "plugin_ui.toggle_contribution",
@@ -1131,7 +1097,9 @@ fn contribution_overrides_hide_reorder_survive_reload_and_reset() {
             }),
         )
         .is_ok());
-    assert!(!main_bar_registry(&host).contains_display_id("plugin.layout.slot"));
+    assert!(!host
+        .main_bar_registry()
+        .contains_display_id("plugin.layout.slot"));
 
     let snap = host.introspect();
     let row = snap
@@ -1153,12 +1121,14 @@ fn contribution_overrides_hide_reorder_survive_reload_and_reset() {
         "#,
     )
     .expect("reload");
-    assert!(!main_bar_registry(&host).contains_display_id("plugin.layout.slot"));
+    assert!(!host
+        .main_bar_registry()
+        .contains_display_id("plugin.layout.slot"));
 
     assert!(host
         .invoke_command("plugin_ui.reset_layout", json!({}))
         .is_ok());
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let slot = registry
         .iter_container(Container::Section("left".into()))
         .find(|slot| slot.id == "plugin.layout.slot")
@@ -1199,7 +1169,7 @@ fn contribution_overrides_can_reorder_without_hiding() {
         )
         .is_ok());
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let ids: Vec<&str> = registry
         .iter_container(Container::Section("left".into()))
         .map(|slot| slot.id.as_str())
@@ -1218,7 +1188,9 @@ fn contribution_overrides_can_reorder_without_hiding() {
 #[test]
 fn contribution_overrides_can_hide_builtins() {
     let mut host = MockHost::new();
-    assert!(main_bar_registry(&host).contains_display_id("builtin.repo_info"));
+    assert!(host
+        .main_bar_registry()
+        .contains_display_id("builtin.repo_info"));
     assert!(host
         .invoke_command(
             "plugin_ui.toggle_contribution",
@@ -1230,7 +1202,9 @@ fn contribution_overrides_can_hide_builtins() {
             }),
         )
         .is_ok());
-    assert!(!main_bar_registry(&host).contains_display_id("builtin.repo_info"));
+    assert!(!host
+        .main_bar_registry()
+        .contains_display_id("builtin.repo_info"));
 }
 
 #[test]

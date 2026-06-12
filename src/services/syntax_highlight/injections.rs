@@ -30,7 +30,6 @@ impl InjectionPlanner {
         content: &str,
     ) -> Vec<Injection> {
         let Some(query) = syntax.injections_query() else {
-            let _ = syntax.locals_query();
             return Vec::new();
         };
 

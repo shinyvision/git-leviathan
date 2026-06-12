@@ -79,6 +79,24 @@ fn dirty_parent_hashes(service: &GitService) -> Vec<String> {
     parent_hashes
 }
 
+fn commit_parent_hashes(service: &GitService) -> Result<Vec<String>, GitError> {
+    let mut parent_hashes = Vec::new();
+    if let Some(head_oid) = service.repo.head().ok().and_then(|head| head.target()) {
+        parent_hashes.push(head_oid.to_string());
+    }
+
+    if service.repo.state() == RepositoryState::Merge {
+        for oid in merge_head_oids(service)? {
+            let hash = oid.to_string();
+            if !parent_hashes.iter().any(|existing| existing == &hash) {
+                parent_hashes.push(hash);
+            }
+        }
+    }
+
+    Ok(parent_hashes)
+}
+
 pub(super) fn commit_dirty_changes(
     service: &mut GitService,
     summary: &str,
@@ -117,7 +135,11 @@ pub(super) fn commit_dirty_changes(
         .repo
         .find_tree(tree_id)
         .map_err(|e| wrap_git2_error("find commit tree", e))?;
-    let parents = commit_parents(service)?;
+    // The snapshot builder reads MERGE_HEAD leniently for display; on the commit
+    // path a failed read must surface as an error rather than silently dropping a
+    // merge parent, so resolve the parent hashes fallibly here.
+    let parent_hashes = commit_parent_hashes(service)?;
+    let parents = commit_parents(service, &parent_hashes)?;
 
     if let Some(parent) = parents.first() {
         let parent_tree = parent
@@ -467,23 +489,17 @@ fn commit_message(summary: &str, description: &str) -> String {
     }
 }
 
-fn commit_parents(service: &GitService) -> Result<Vec<git2::Commit<'_>>, GitError> {
-    let mut parent_oids = Vec::new();
-    if let Some(head_oid) = service.repo.head().ok().and_then(|head| head.target()) {
-        parent_oids.push(head_oid);
-    }
-
-    if service.repo.state() == RepositoryState::Merge {
-        for oid in merge_head_oids(service)? {
-            if !parent_oids.iter().any(|existing| existing == &oid) {
-                parent_oids.push(oid);
-            }
-        }
-    }
-
-    parent_oids
-        .into_iter()
-        .map(|oid| find_commit_or(&service.repo, oid))
+fn commit_parents<'repo>(
+    service: &'repo GitService,
+    parent_hashes: &[String],
+) -> Result<Vec<git2::Commit<'repo>>, GitError> {
+    parent_hashes
+        .iter()
+        .map(|hash| {
+            let oid = Oid::from_str(hash)
+                .map_err(|e| GitError::Other(format!("invalid parent oid '{hash}': {e}")))?;
+            find_commit_or(&service.repo, oid)
+        })
         .collect()
 }
 

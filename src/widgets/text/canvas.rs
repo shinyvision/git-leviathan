@@ -115,7 +115,12 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
         let scroll_y = self.scroll_y;
         let view_top = scroll_y;
         let view_bot = scroll_y + bounds.height;
-        for (idx, row) in self.data.rows.iter().enumerate() {
+        let range = self
+            .data
+            .visible_row_range(scroll_y, bounds.height, 0)
+            .with_overscan;
+        for idx in range.clone() {
+            let row = &self.data.rows[idx];
             let y_top = offs[idx];
             let y_bot = offs[idx + 1];
             if y_bot < view_top || y_top > view_bot {
@@ -144,7 +149,12 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
         };
         let view_top = self.scroll_y;
         let view_bot = self.scroll_y + viewport_h;
-        for (idx, row) in self.data.rows.iter().enumerate() {
+        let range = self
+            .data
+            .visible_row_range(self.scroll_y, viewport_h, 0)
+            .with_overscan;
+        for idx in range.clone() {
+            let row = &self.data.rows[idx];
             let y_top = offs[idx];
             let y_bot = offs[idx + 1];
             if y_bot < view_top || y_top > view_bot {
@@ -156,10 +166,9 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
         if let Some(sel) = &self.selection {
             if !sel.is_empty() {
                 let (start, end) = sel.ordered();
-                for (idx, row) in self.data.rows.iter().enumerate() {
-                    if idx < start.row || idx > end.row {
-                        continue;
-                    }
+                let sel_range = range.start.max(start.row)..range.end.min(end.row + 1);
+                for idx in sel_range {
+                    let row = &self.data.rows[idx];
                     if !row.selectable() {
                         continue;
                     }

@@ -7,10 +7,10 @@ use iced::{
 };
 
 use crate::message::Message;
-use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::MouseAreaNode;
 
-use super::{BuildCtx, DispatchScope};
+use super::common::ScopeDispatch;
+use super::BuildCtx;
 
 pub(super) fn build(node: &MouseAreaNode, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
     let child: Element<'static, Message> = match &node.child {
@@ -19,36 +19,10 @@ pub(super) fn build(node: &MouseAreaNode, ctx: &BuildCtx<'_>) -> Element<'static
     };
     let event = node.on_click.clone().unwrap_or_default();
     let value = node.value.clone();
-    let plugin_id = ctx.plugin_id.to_string();
     let msg = if event.is_empty() {
         Message::noop()
     } else {
-        match ctx.scope {
-            DispatchScope::Screen { screen_id } => Message::Plugin(PluginMessage::Event {
-                plugin_id,
-                screen_id: screen_id.to_string(),
-                event,
-                value,
-            }),
-            DispatchScope::Slot {
-                region,
-                container,
-                slot_id,
-            } => Message::Plugin(PluginMessage::SlotClicked {
-                plugin_id,
-                region: region.to_string(),
-                container: container.to_string(),
-                slot_id: slot_id.to_string(),
-                event,
-                value,
-            }),
-            DispatchScope::Overlay { overlay_id } => Message::Plugin(PluginMessage::OverlayEvent {
-                plugin_id,
-                overlay_id: overlay_id.to_string(),
-                event,
-                value,
-            }),
-        }
+        ScopeDispatch::from_ctx(ctx).publish(event, value)
     };
     MouseArea::new(child)
         .on_press(msg)

@@ -6,8 +6,9 @@ use iced::{clipboard, Point, Task};
 use crate::{
     core::CommitKind,
     message::Message,
+    services::GitError,
     toast::ToastData,
-    work::{git_write_work, timer_work},
+    work::{git_read_work, git_write_work, timer_work},
 };
 
 use super::super::super::{
@@ -118,6 +119,20 @@ pub(in crate::screens::repository) fn update(
         DetailAction::DirtyFileOpened { path, is_staged } => {
             open_dirty_file(path, is_staged, ctx, repository_panel, diff_panel)
         }
+        DetailAction::DirtyConflictProbed {
+            path,
+            is_staged,
+            selected_idx,
+            result,
+        } => open_dirty_conflict_resolved(
+            path,
+            is_staged,
+            selected_idx,
+            result,
+            ctx,
+            repository_panel,
+            diff_panel,
+        ),
         DetailAction::DirtyFileRightClicked(path) => {
             if ctx.overlay_manager.is_conflict_checkout_dialog_open()
                 || ctx.overlay_manager.is_delete_branch_dialog_open()
@@ -780,28 +795,63 @@ fn open_dirty_file(
         .any(|file| file.path == path);
 
     if is_conflicted {
-        match ctx.repository.load_modify_delete_conflict(&path) {
-            Ok(Some(_)) => {
-                ctx.data.commit_search = None;
-                diff_panel.close();
-                ctx.overlay_manager
-                    .open_toolbar_dialog(modify_delete_conflict::dialog(
-                        modify_delete_conflict::State { path },
-                    ));
-                return repository_panel.restore_center_list_scroll();
-            }
-            Ok(None) => {}
-            Err(e) => {
-                eprintln!("git_leviathan: conflict inspection failed: {}", e);
-                return Task::done(Message::show_toast(ToastData::error(
-                    "Open Conflict Failed",
-                    e.to_string(),
-                )));
-            }
-        }
+        let repo = ctx.repository.clone();
+        let tab_id = ctx.tab_id;
+        let probe_path = path.clone();
+        return Task::perform(
+            git_read_work(move || {
+                repo.load_modify_delete_conflict(&probe_path)
+                    .map(|c| c.is_some())
+            }),
+            move |result| {
+                Message::tab(
+                    tab_id,
+                    RepositoryMessage::Detail(DetailAction::DirtyConflictProbed {
+                        path: path.clone(),
+                        is_staged,
+                        selected_idx,
+                        result,
+                    }),
+                )
+            },
+        );
     }
 
     ctx.data.commit_search = None;
     let follow_up = diff_panel.open_dirty_file_view(path, is_staged, selected_idx, is_conflicted);
     update_diff(diff_panel, follow_up, ctx)
+}
+
+fn open_dirty_conflict_resolved(
+    path: String,
+    is_staged: bool,
+    selected_idx: usize,
+    result: Result<bool, GitError>,
+    ctx: &mut ScreenCtx<'_>,
+    repository_panel: &mut CenterPanel,
+    diff_panel: &mut DiffPanel,
+) -> Task<Message> {
+    match result {
+        Ok(true) => {
+            ctx.data.commit_search = None;
+            diff_panel.close();
+            ctx.overlay_manager
+                .open_toolbar_dialog(modify_delete_conflict::dialog(
+                    modify_delete_conflict::State { path },
+                ));
+            repository_panel.restore_center_list_scroll()
+        }
+        Ok(false) => {
+            ctx.data.commit_search = None;
+            let follow_up = diff_panel.open_dirty_file_view(path, is_staged, selected_idx, true);
+            update_diff(diff_panel, follow_up, ctx)
+        }
+        Err(e) => {
+            eprintln!("git_leviathan: conflict inspection failed: {}", e);
+            Task::done(Message::show_toast(ToastData::error(
+                "Open Conflict Failed",
+                e.to_string(),
+            )))
+        }
+    }
 }

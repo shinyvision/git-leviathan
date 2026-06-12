@@ -135,8 +135,9 @@ pub(super) fn dirty_detail_panel_content<'a>(
     commit: &'a Commit,
 ) -> Element<'a, Message> {
     let width = screen.width;
-    let dirty_summary = dirty_summary_text(commit);
-    let has_any_dirty = dirty_change_count(commit) > 0;
+    let change_count = dirty_change_count(commit);
+    let dirty_summary = dirty_summary_text(change_count);
+    let has_any_dirty = change_count > 0;
     let busy = DirtyActionBusy {
         general: screen.dirty_actions_busy,
         fast: screen.dirty_fast_actions_busy,
@@ -207,8 +208,9 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
     screen: DetailViewModel<'a>,
     commit: &'a Commit,
 ) -> Element<'a, Message> {
-    let dirty_summary = dirty_summary_text(commit);
-    let has_any_dirty = dirty_change_count(commit) > 0;
+    let change_count = dirty_change_count(commit);
+    let dirty_summary = dirty_summary_text(change_count);
+    let has_any_dirty = change_count > 0;
     let busy = DirtyActionBusy {
         general: screen.dirty_actions_busy,
         fast: screen.dirty_fast_actions_busy,
@@ -271,8 +273,7 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
         .into()
 }
 
-fn dirty_summary_text(commit: &Commit) -> String {
-    let count = dirty_change_count(commit);
+fn dirty_summary_text(count: usize) -> String {
     if count == 1 {
         "1 file change".to_string()
     } else {

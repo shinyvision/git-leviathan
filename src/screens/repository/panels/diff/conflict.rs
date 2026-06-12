@@ -44,6 +44,47 @@ pub struct ConflictFileResolutionState {
     pub ours_viewport_height: Option<f32>,
     pub theirs_viewport_height: Option<f32>,
     pub output_viewport_height: Option<f32>,
+    pub ours_canvas: Option<Arc<crate::widgets::text::TextCanvasData>>,
+    pub theirs_canvas: Option<Arc<crate::widgets::text::TextCanvasData>>,
+    pub output_canvas: Option<Arc<crate::widgets::text::TextCanvasData>>,
+}
+
+impl ConflictFileResolutionState {
+    pub(in crate::screens::repository) fn rebuild_canvases(&mut self) {
+        use crate::widgets::conflict_canvas::{CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS};
+        let Some(result) = self.result.as_ref() else {
+            self.ours_canvas = None;
+            self.theirs_canvas = None;
+            self.output_canvas = None;
+            return;
+        };
+        let ours_hl = self.ours_highlighted.as_deref();
+        let theirs_hl = self.theirs_highlighted.as_deref();
+        let ours = super::view::build_conflict_rows_for_canvas(
+            CANVAS_ID_OURS,
+            result,
+            &self.selections,
+            ours_hl,
+            theirs_hl,
+        );
+        let theirs = super::view::build_conflict_rows_for_canvas(
+            CANVAS_ID_THEIRS,
+            result,
+            &self.selections,
+            ours_hl,
+            theirs_hl,
+        );
+        let output = super::view::build_conflict_rows_for_canvas(
+            CANVAS_ID_OUTPUT,
+            result,
+            &self.selections,
+            ours_hl,
+            theirs_hl,
+        );
+        self.ours_canvas = ours;
+        self.theirs_canvas = theirs;
+        self.output_canvas = output;
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,8 +117,12 @@ pub(in crate::screens::repository) struct ConflictResolverViewModel<'a> {
     pub(in crate::screens::repository) file_path: &'a str,
     pub(in crate::screens::repository) result: Option<&'a ConflictResolutionResult>,
     pub(in crate::screens::repository) selections: &'a [ConflictHunkSelection],
-    pub(in crate::screens::repository) ours_highlighted: Option<Arc<HighlightedFile>>,
-    pub(in crate::screens::repository) theirs_highlighted: Option<Arc<HighlightedFile>>,
+    pub(in crate::screens::repository) ours_canvas:
+        Option<Arc<crate::widgets::text::TextCanvasData>>,
+    pub(in crate::screens::repository) theirs_canvas:
+        Option<Arc<crate::widgets::text::TextCanvasData>>,
+    pub(in crate::screens::repository) output_canvas:
+        Option<Arc<crate::widgets::text::TextCanvasData>>,
     pub(in crate::screens::repository) ours_scroll_offset_y: f32,
     pub(in crate::screens::repository) theirs_scroll_offset_y: f32,
     pub(in crate::screens::repository) output_scroll_offset_y: f32,
@@ -127,6 +172,7 @@ impl DiffPanel {
                 if state.selections.len() != hunk_count {
                     state.selections = vec![ConflictHunkSelection::default(); hunk_count];
                 }
+                state.rebuild_canvases();
                 let file_path = state.file_path.clone();
                 let ours_content = state
                     .result
@@ -157,6 +203,7 @@ impl DiffPanel {
             if state.render_generation == generation {
                 state.ours_highlighted = ours;
                 state.theirs_highlighted = theirs;
+                state.rebuild_canvases();
             }
         }
     }
@@ -169,6 +216,7 @@ impl DiffPanel {
         if let Some(state) = self.conflict_file_resolution.as_mut() {
             if let Some(selection) = state.selections.get_mut(hunk_idx) {
                 selection.toggle(side);
+                state.rebuild_canvases();
             }
         }
     }
@@ -189,6 +237,7 @@ impl DiffPanel {
                 selection.picked.push(side);
             }
         }
+        state.rebuild_canvases();
     }
 
     pub(in crate::screens::repository) fn save_conflict_resolution(
@@ -292,8 +341,10 @@ impl DiffPanel {
             return Task::none();
         };
 
-        let ours_center = conflict_axis_to_side_line(result, ConflictSide::Ours, axis_center);
-        let theirs_center = conflict_axis_to_side_line(result, ConflictSide::Theirs, axis_center);
+        let segments = conflict_scroll_segments(result);
+        let ours_center = conflict_axis_to_side_line(&segments, ConflictSide::Ours, axis_center);
+        let theirs_center =
+            conflict_axis_to_side_line(&segments, ConflictSide::Theirs, axis_center);
         let output_center = first_conflict_output_center(result).unwrap_or(axis_center);
 
         Task::batch(vec![
@@ -334,8 +385,9 @@ impl DiffPanel {
         let viewport_height = viewport.bounds().height;
         let source_center_line =
             (offset.y + (viewport_height / 2.0)) / CONFLICT_RESOLUTION_LINE_HEIGHT;
-        let axis_line = conflict_side_line_to_axis(result, source_side, source_center_line);
-        let target_center_line = conflict_axis_to_side_line(result, target_side, axis_line);
+        let segments = conflict_scroll_segments(result);
+        let axis_line = conflict_side_line_to_axis(&segments, source_side, source_center_line);
+        let target_center_line = conflict_axis_to_side_line(&segments, target_side, axis_line);
 
         if let Some(state) = self.conflict_file_resolution.as_mut() {
             match target_side {
@@ -519,12 +571,11 @@ pub(in crate::screens::repository) fn displayed_conflict_hunk_len(lines: &[Strin
 }
 
 pub(in crate::screens::repository) fn conflict_side_line_to_axis(
-    result: &ConflictResolutionResult,
+    segments: &[ConflictScrollSegment],
     side: ConflictSide,
     line: f32,
 ) -> f32 {
-    let segments = conflict_scroll_segments(result);
-    for segment in &segments {
+    for segment in segments {
         let side_start = segment.side_start(side);
         let side_len = segment.side_len(side);
         if line <= side_start + side_len {
@@ -545,12 +596,11 @@ pub(in crate::screens::repository) fn conflict_side_line_to_axis(
 }
 
 pub(in crate::screens::repository) fn conflict_axis_to_side_line(
-    result: &ConflictResolutionResult,
+    segments: &[ConflictScrollSegment],
     side: ConflictSide,
     axis_line: f32,
 ) -> f32 {
-    let segments = conflict_scroll_segments(result);
-    for segment in &segments {
+    for segment in segments {
         if axis_line <= segment.axis_start + segment.axis_len {
             let within = (axis_line - segment.axis_start).clamp(0.0, segment.axis_len);
             let ratio = if segment.axis_len <= f32::EPSILON {

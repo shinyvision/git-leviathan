@@ -4,26 +4,7 @@
 use serde_json::json;
 
 use crate::plugin::commands::{InvokeOutcome, PaletteState, HOST_COMMAND_PLUGIN_ID};
-use crate::plugin::tests::harness::MockHost;
-
-fn manifest(id: &str) -> String {
-    format!(
-        r#"
-id = "{id}"
-name = "{id}"
-version = "0.1.0"
-api_version = "1.0"
-"#
-    )
-}
-
-fn diag_codes(host: &MockHost) -> Vec<String> {
-    host.diagnostics()
-        .tail(200)
-        .into_iter()
-        .map(|d| d.code)
-        .collect()
-}
+use crate::plugin::tests::harness::{simple_manifest as manifest, MockHost};
 
 #[test]
 fn host_owns_core_built_in_commands_at_startup() {
@@ -152,11 +133,7 @@ fn invalid_args_emit_diagnostic_and_skip_body() {
     assert!(matches!(out, InvokeOutcome::Ok));
     assert_eq!(host.read_global_i64("p", "ran"), Some(1));
 
-    let codes = diag_codes(&host);
-    assert!(
-        codes.iter().any(|c| c == "command.invalid_args"),
-        "expected command.invalid_args in {codes:?}"
-    );
+    host.assert_diag_code("command.invalid_args");
 }
 
 #[test]
@@ -466,8 +443,7 @@ fn unknown_command_emits_not_found_diagnostic() {
     let mut host = MockHost::new();
     let out = host.invoke_command("does.not.exist", serde_json::Value::Null);
     assert!(matches!(out, InvokeOutcome::NotFound));
-    let codes = diag_codes(&host);
-    assert!(codes.iter().any(|c| c == "command.not_found"));
+    host.assert_diag_code("command.not_found");
 }
 
 #[test]
@@ -654,26 +630,20 @@ fn git_push_command_starts_background_git_write() {
         "git.push should enqueue background work: {outcome:?}"
     );
 
-    let mut writes = Vec::new();
-    for _ in 0..20 {
-        writes = host.host().pending_git_writes();
-        if writes.iter().any(|entry| {
+    let finished_push = |host: &MockHost| {
+        host.host().pending_git_writes().iter().any(|entry| {
             entry.plugin_id == HOST_COMMAND_PLUGIN_ID
                 && entry.op == "push"
                 && entry.finished_at_unix_ms.is_some()
-        }) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+        })
+    };
+
+    host.drain_until(finished_push, 200);
 
     assert!(
-        writes.iter().any(|entry| {
-            entry.plugin_id == HOST_COMMAND_PLUGIN_ID
-                && entry.op == "push"
-                && entry.finished_at_unix_ms.is_some()
-        }),
-        "expected finished background push write, got {writes:?}"
+        finished_push(&host),
+        "expected finished background push write, got {:?}",
+        host.host().pending_git_writes()
     );
 }
 

@@ -1,4 +1,7 @@
-use super::helpers::{find_commit_or, spawn_git_command};
+use super::helpers::{
+    command_dir, find_commit_or, index_has_conflicts, output_mentions_conflict,
+    process_output_detail, spawn_git_command,
+};
 use super::squash::maybe_stash_workdir;
 use super::GitService;
 use crate::services::git_error::GitError;
@@ -28,7 +31,7 @@ pub(super) fn revert_commit(
             "cannot revert with a detached HEAD".to_string(),
         ));
     }
-    let repo_dir = repo_dir_str(service)?;
+    let repo_dir = command_dir(&service.repo)?;
     if immediate_commit {
         revert_and_commit(service, &repo_dir, commit_hash, &message)
     } else {
@@ -46,13 +49,13 @@ fn revert_and_commit(
 
     let revert = spawn_git_command(repo_dir, &["revert", "--no-commit", commit_hash], "revert")?;
     if !revert.status.success() {
-        if index_has_conflicts(service) {
+        if index_has_conflicts(&service.repo) {
             return Ok(RevertStatus::RevertConflicted);
         }
         restore_stash_after_failed_revert(service, repo_dir, created_stash);
         return Err(GitError::Other(format!(
             "revert failed: {}",
-            output_detail(&revert)
+            process_output_detail(&revert)
         )));
     }
 
@@ -61,7 +64,7 @@ fn revert_and_commit(
         restore_stash_after_failed_revert(service, repo_dir, created_stash);
         return Err(GitError::Other(format!(
             "commit revert failed: {}",
-            output_detail(&commit)
+            process_output_detail(&commit)
         )));
     }
 
@@ -88,7 +91,7 @@ fn revert_in_place(
         return Ok(RevertStatus::Applied);
     }
 
-    if index_has_conflicts(service) || output_mentions_conflict(&output) {
+    if index_has_conflicts(&service.repo) || output_mentions_conflict(&output) {
         return Ok(RevertStatus::RevertConflicted);
     }
 
@@ -102,7 +105,7 @@ fn revert_in_place(
     abort_revert(repo_dir);
     Err(GitError::Other(format!(
         "revert failed: {}",
-        output_detail(&output)
+        process_output_detail(&output)
     )))
 }
 
@@ -119,13 +122,13 @@ fn pop_created_stash(
     if output.status.success() {
         return Ok(false);
     }
-    if index_has_conflicts(service) || output_mentions_conflict(&output) {
+    if index_has_conflicts(&service.repo) || output_mentions_conflict(&output) {
         return Ok(true);
     }
 
     Err(GitError::StashFailed(format!(
         "revert commit was created, but restoring stashed changes failed: {}",
-        output_detail(&output)
+        process_output_detail(&output)
     )))
 }
 
@@ -133,7 +136,7 @@ fn restore_stash_after_failed_revert(service: &GitService, repo_dir: &str, creat
     if !created_stash {
         return;
     }
-    if index_has_conflicts(service) {
+    if index_has_conflicts(&service.repo) {
         return;
     }
     let _ = spawn_git_command(
@@ -148,30 +151,8 @@ fn abort_revert(repo_dir: &str) {
     let _ = spawn_git_command(repo_dir, &["revert", "--abort"], "revert --abort");
 }
 
-fn index_has_conflicts(service: &GitService) -> bool {
-    let Ok(mut index) = service.repo.index() else {
-        return false;
-    };
-    let _ = index.read(true);
-    index.has_conflicts()
-}
-
-fn repo_dir_str(service: &GitService) -> Result<String, GitError> {
-    service
-        .repo
-        .workdir()
-        .or_else(|| service.repo.path().parent())
-        .map(|p| p.to_string_lossy().into_owned())
-        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
-}
-
 fn revert_commit_message(summary: &str, full_sha: &str) -> String {
     format!("Revert \"{}\"\n\nThis reverts commit {}", summary, full_sha)
-}
-
-fn output_mentions_conflict(output: &std::process::Output) -> bool {
-    String::from_utf8_lossy(&output.stdout).contains("CONFLICT")
-        || String::from_utf8_lossy(&output.stderr).contains("CONFLICT")
 }
 
 fn revert_blocked_by_working_changes(output: &std::process::Output) -> bool {
@@ -181,18 +162,6 @@ fn revert_blocked_by_working_changes(output: &std::process::Output) -> bool {
         || stderr.contains("local changes would be overwritten")
         || stdout.contains("Your local changes")
         || stderr.contains("Your local changes")
-}
-
-fn output_detail(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !stderr.is_empty() {
-        return stderr;
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !stdout.is_empty() {
-        return stdout;
-    }
-    format!("git exited with status {}", output.status)
 }
 
 #[cfg(test)]

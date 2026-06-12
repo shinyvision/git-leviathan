@@ -1,4 +1,7 @@
-use super::helpers::{find_commit_or, find_reference_or, spawn_git_command, wrap_git2_error};
+use super::helpers::{
+    command_dir, find_commit_or, find_reference_or, spawn_git_command, spawn_git_command_with_env,
+    wrap_git2_error,
+};
 use super::squash::{maybe_stash_workdir, restore_stash};
 use super::GitService;
 use crate::services::git_error::GitError;
@@ -8,12 +11,7 @@ pub(super) fn reword_commit(
     target_hash: &str,
     new_message: &str,
 ) -> Result<(), GitError> {
-    let repo_dir = service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned();
+    let repo_dir = command_dir(&service.repo)?;
 
     let head_oid = service
         .repo
@@ -114,20 +112,16 @@ fn reword_commit_inner(
     // match git's own exactly, including merge driver behaviour.
     let new_oid_str = new_oid.to_string();
     let target_oid_str = target_oid.to_string();
-    let mut command = std::process::Command::new("git");
-    let output = crate::utils::configure_background_command(&mut command)
-        .arg("-C")
-        .arg(repo_dir)
-        .arg("rebase")
-        .arg("--onto")
-        .arg(&new_oid_str)
-        .arg(&target_oid_str)
-        .arg("HEAD")
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_EDITOR", "true")
-        .env("GIT_SEQUENCE_EDITOR", "true")
-        .output()
-        .map_err(|e| GitError::Other(format!("failed to invoke git rebase: {}", e)))?;
+    let output = spawn_git_command_with_env(
+        repo_dir,
+        &["rebase", "--onto", &new_oid_str, &target_oid_str, "HEAD"],
+        "rebase --onto",
+        &[
+            ("GIT_TERMINAL_PROMPT", "0"),
+            ("GIT_EDITOR", "true"),
+            ("GIT_SEQUENCE_EDITOR", "true"),
+        ],
+    )?;
 
     if !output.status.success() {
         let _ = spawn_git_command(

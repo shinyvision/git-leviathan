@@ -2,13 +2,6 @@ use crate::plugin::slots::Container;
 use crate::plugin::tests::harness::MockHost;
 use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry};
 
-fn replay_main_bar(host: &MockHost) -> MainBarRegistry {
-    let mut registry = MainBarRegistry::new();
-    main_bar_builtins::register_all(&mut registry);
-    host.host().apply_main_bar_slots(&mut registry);
-    registry
-}
-
 fn main_bar_slot_priority(registry: &MainBarRegistry, id: &str) -> Option<i32> {
     for section in ["left", "center", "right"] {
         if let Some(slot) = registry
@@ -291,7 +284,7 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
     )
     .expect("load replace_b");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
         Some(402)
@@ -303,7 +296,7 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
 
     assert!(host.host_mut().disable_plugin("replace_b"));
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
         Some(401)
@@ -315,7 +308,7 @@ fn replace_over_replace_restores_previous_replacement_then_builtin() {
 
     host.unload_plugin("replace_a").expect("unload replace_a");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
         Some(builtin_fetch_priority)
@@ -356,7 +349,7 @@ fn remove_other_plugin_add_is_denied() {
     )
     .expect("load remove_owner");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert!(replayed.contains_display_id("plugin.a.slot"));
     assert_eq!(
         slot_owner(&host, "main_bar", "left", "plugin.a.slot").as_deref(),
@@ -369,7 +362,7 @@ fn remove_other_plugin_add_is_denied() {
 
     assert!(host.host_mut().disable_plugin("remove_owner"));
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "plugin.a.slot"),
         Some(411)
@@ -381,7 +374,7 @@ fn remove_other_plugin_add_is_denied() {
 
     host.unload_plugin("add_owner").expect("unload add_owner");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert!(!replayed.contains_display_id("plugin.a.slot"));
     assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
 }
@@ -405,13 +398,13 @@ fn remove_builtin_reappears_after_remover_unloads() {
     )
     .expect("load builtin_remover");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert!(!replayed.contains_display_id("builtin.fetch_indicator"));
 
     host.unload_plugin("builtin_remover")
         .expect("unload builtin_remover");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "builtin.fetch_indicator"),
         Some(builtin_fetch_priority)
@@ -453,7 +446,7 @@ fn replace_other_plugin_add_is_denied() {
     )
     .expect("load plugin_replace");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "plugin.a.slot"),
         Some(421)
@@ -470,7 +463,7 @@ fn replace_other_plugin_add_is_denied() {
     host.unload_plugin("plugin_replace")
         .expect("unload plugin_replace");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert_eq!(
         main_bar_slot_priority(&replayed, "plugin.a.slot"),
         Some(421)
@@ -482,7 +475,7 @@ fn replace_other_plugin_add_is_denied() {
 
     host.unload_plugin("plugin_add").expect("unload plugin_add");
 
-    let replayed = replay_main_bar(&host);
+    let replayed = host.main_bar_registry();
     assert!(!replayed.contains_display_id("plugin.a.slot"));
     assert_eq!(slot_owner(&host, "main_bar", "left", "plugin.a.slot"), None);
 }

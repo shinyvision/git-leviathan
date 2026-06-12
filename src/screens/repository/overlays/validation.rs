@@ -4,9 +4,9 @@ pub fn can_confirm_branch_delete(current_branch: &str, branch_name: &str, is_rem
     is_remote || current_branch != branch_name
 }
 
-pub fn validate_branch_name(
+pub fn validate_branch_name<'a>(
     branch_name: &str,
-    existing_branches: &[String],
+    existing_branches: impl IntoIterator<Item = &'a str>,
 ) -> Result<(), GitError> {
     let name = branch_name.trim();
 
@@ -28,7 +28,7 @@ pub fn validate_branch_name(
         return Err(GitError::InvalidBranchName(name.to_string()));
     }
 
-    if existing_branches.iter().any(|b| b == name) {
+    if existing_branches.into_iter().any(|b| b == name) {
         return Err(GitError::BranchAlreadyExists(name.to_string()));
     }
 

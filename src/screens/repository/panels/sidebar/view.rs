@@ -26,8 +26,13 @@ fn matches_filter(needle: &str, hay: &str) -> bool {
     if needle.is_empty() {
         return true;
     }
-    hay.to_ascii_lowercase()
-        .contains(&needle.to_ascii_lowercase())
+    let needle = needle.as_bytes();
+    let hay = hay.as_bytes();
+    if needle.len() > hay.len() {
+        return false;
+    }
+    hay.windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
 }
 
 pub(super) fn view<'a>(
@@ -60,7 +65,6 @@ pub(super) fn view<'a>(
             sidebar_width,
             expanded,
             filter_query,
-            ctx,
         ));
     }
 
@@ -149,63 +153,15 @@ enum HeaderTrailing {
     HoverAddButton(OverlayPanelAction),
 }
 
-fn trailing_for(kind: SidebarSectionKind, ctx: &SidebarViewCtx<'_>) -> HeaderTrailing {
+fn trailing_for(kind: SidebarSectionKind) -> HeaderTrailing {
     match kind {
         SidebarSectionKind::Remote => {
             HeaderTrailing::HoverAddButton(OverlayPanelAction::AddRemoteOpen)
         }
         SidebarSectionKind::Worktrees => {
-            let (available_refs, default_dir_prefix) = build_create_worktree_inputs(ctx);
-            HeaderTrailing::HoverAddButton(OverlayPanelAction::CreateWorktreeOpen {
-                available_refs,
-                default_dir_prefix,
-            })
+            HeaderTrailing::HoverAddButton(OverlayPanelAction::CreateWorktreeOpen)
         }
         _ => HeaderTrailing::CountOnly,
-    }
-}
-
-fn build_create_worktree_inputs(
-    ctx: &SidebarViewCtx<'_>,
-) -> (
-    Vec<super::super::super::overlays::create_worktree::RefChoice>,
-    String,
-) {
-    use super::super::super::overlays::create_worktree::RefChoice;
-
-    let mut refs: Vec<RefChoice> = Vec::new();
-    for section in ctx.sections {
-        match section.kind {
-            SidebarSectionKind::Local => {
-                for b in &section.branches {
-                    refs.push(RefChoice::LocalBranch(b.name.clone()));
-                }
-            }
-            SidebarSectionKind::Remote => {
-                for remote_node in &section.branches {
-                    for branch in &remote_node.children {
-                        refs.push(RefChoice::RemoteBranch {
-                            remote: remote_node.name.clone(),
-                            branch: branch.name.clone(),
-                        });
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    let default_dir_prefix = derive_default_dir_prefix(ctx);
-    (refs, default_dir_prefix)
-}
-
-fn derive_default_dir_prefix(ctx: &SidebarViewCtx<'_>) -> String {
-    let active = ctx.active_worktree_path;
-    let parent = active.parent().map(|p| p.to_path_buf());
-    let name = active.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    match (parent, name) {
-        (Some(p), n) if !n.is_empty() => format!("{}/{}.worktrees", p.to_string_lossy(), n),
-        _ => String::new(),
     }
 }
 
@@ -281,7 +237,6 @@ fn sidebar_section_view<'a>(
     sidebar_width: f32,
     is_expanded: bool,
     filter_query: &str,
-    ctx: &SidebarViewCtx<'_>,
 ) -> Element<'a, Message> {
     let chevron_icon = if is_expanded {
         assets::CHEVRON_DOWN
@@ -305,7 +260,7 @@ fn sidebar_section_view<'a>(
         chevron_icon,
         section_icon,
         badge_count,
-        trailing_for(section.kind, ctx),
+        trailing_for(section.kind),
     );
     let header: Element<Message> = MouseArea::new(
         container(header_inner)
@@ -412,9 +367,7 @@ fn hover_add_button_header<'a>(
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center),
     )
-    .on_press(Message::repo(RepositoryMessage::OverlayPanel(
-        action.clone(),
-    )))
+    .on_press(Message::repo(RepositoryMessage::OverlayPanel(action)))
     .padding(Padding::from(0))
     .style(|_: &Theme, status: button::Status| button::Style {
         background: match status {
@@ -674,41 +627,4 @@ fn branch_tree_item<'a>(
     }
 
     column(items).spacing(0).into()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn derive_default_dir_prefix_composes_parent_name_dot_worktrees() {
-        let sections: Vec<crate::view_model::SidebarSection> = Vec::new();
-        let active = Path::new("/home/rachel/projects/git_leviathan");
-        let ctx = SidebarViewCtx {
-            sections: &sections,
-            commit_count: 0,
-            width: 240.0,
-            is_resizing: false,
-            active_worktree_path: active,
-        };
-        assert_eq!(
-            derive_default_dir_prefix(&ctx),
-            "/home/rachel/projects/git_leviathan.worktrees".to_string(),
-        );
-    }
-
-    #[test]
-    fn derive_default_dir_prefix_empty_when_no_parent() {
-        let sections: Vec<crate::view_model::SidebarSection> = Vec::new();
-        let active = Path::new("/");
-        let ctx = SidebarViewCtx {
-            sections: &sections,
-            commit_count: 0,
-            width: 240.0,
-            is_resizing: false,
-            active_worktree_path: active,
-        };
-        assert_eq!(derive_default_dir_prefix(&ctx), "".to_string());
-    }
 }

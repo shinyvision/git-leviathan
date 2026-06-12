@@ -1,10 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use git_leviathan_plugin_api::api_version::plugin_api_compatibility_error;
 use git_leviathan_plugin_api::capability::is_known_capability;
 use git_leviathan_plugin_api::descriptor::api;
+use git_leviathan_plugin_api::descriptor::decoration::decoration_descriptor;
 use git_leviathan_plugin_api::descriptor::extension_point::extension_point;
 use git_leviathan_plugin_api::descriptor::region::REGIONS;
 use git_leviathan_plugin_api::descriptor::widget::WIDGETS;
@@ -235,7 +237,7 @@ fn lint_lua_syntax(path: &Path, source: &str, report: &mut LintReport) {
 }
 
 fn lint_unknown_api_calls(path: &Path, source: &str, report: &mut LintReport) {
-    let known = known_function_paths();
+    let known = &*KNOWN_FUNCTION_PATHS;
     for call in detect_leviathan_calls(source) {
         if !known.contains(call.as_str()) {
             report.push(
@@ -463,11 +465,11 @@ fn lint_command_ids(
     declared: &BTreeSet<String>,
     report: &mut LintReport,
 ) {
-    let mut known = built_in_command_ids();
-    known.extend(detect_string_first_arg(source, "leviathan.command.create"));
+    let created = detect_string_first_arg(source, "leviathan.command.create");
+    let known = |id: &str| BUILT_IN_COMMAND_IDS.contains(id) || created.contains(id);
 
     for id in detect_string_first_arg(source, "leviathan.command.invoke") {
-        if !known.contains(&id) {
+        if !known(&id) {
             report.push(
                 Level::Error,
                 path.display().to_string(),
@@ -484,7 +486,7 @@ fn lint_command_ids(
         }
     }
     for id in detect_keymap_command_ids(source) {
-        if !known.contains(&id) {
+        if !known(&id) {
             report.push(
                 Level::Error,
                 path.display().to_string(),
@@ -494,7 +496,7 @@ fn lint_command_ids(
     }
     for table in find_call_tables(source, "leviathan.ui.context_menu") {
         if let Some(command) = top_level_string_field(&table.body, "command") {
-            if !known.contains(&command) {
+            if !known(&command) {
                 report.push(
                     Level::Error,
                     path.display().to_string(),
@@ -506,7 +508,7 @@ fn lint_command_ids(
 }
 
 fn lint_context_fields(path: &Path, source: &str, report: &mut LintReport) {
-    let allowed = context_field_map();
+    let allowed = &*CONTEXT_FIELD_MAP;
     for access in detect_context_field_accesses(source) {
         let Some(fields) = allowed.get(access.prefix.as_str()) else {
             continue;
@@ -559,42 +561,25 @@ fn lint_decoration_fields(path: &Path, family: &str, body: &str, report: &mut Li
         return;
     };
 
-    let (allowed, required): (&[&str], &[&str]) = match (family, kind.as_str()) {
-        ("graph", "badge") => (&["id", "kind", "text", "fg", "bg"], &["kind", "text"]),
-        ("graph", "icon") => (&["id", "kind", "glyph", "color"], &["kind", "glyph"]),
-        ("graph", "marker") => (
-            &["id", "kind", "shape", "color"],
-            &["kind", "shape", "color"],
-        ),
-        ("graph", "lane") => (
-            &["id", "kind", "index", "color"],
-            &["kind", "index", "color"],
-        ),
-        ("diff", "line_hint") => (
-            &["id", "kind", "severity", "text", "file", "line"],
-            &["kind", "severity", "text", "file", "line"],
-        ),
-        ("diff", "hunk_badge") => (
-            &["id", "kind", "hunk_id", "label", "color"],
-            &["kind", "hunk_id", "label"],
-        ),
-        ("diff", "line_gutter") => (
-            &["id", "kind", "file", "line", "glyph", "color"],
-            &["kind", "file", "line", "glyph"],
-        ),
-        _ => {
-            report.push(
-                Level::Error,
-                path.display().to_string(),
-                format!("unknown {family} decoration kind `{kind}`"),
-            );
-            return;
-        }
+    let Some(descriptor) = decoration_descriptor(family, &kind) else {
+        report.push(
+            Level::Error,
+            path.display().to_string(),
+            format!("unknown {family} decoration kind `{kind}`"),
+        );
+        return;
     };
+
+    let allowed: BTreeSet<&str> = descriptor
+        .fields
+        .iter()
+        .map(|field| field.name)
+        .chain(["id", "kind"])
+        .collect();
 
     let fields = top_level_fields(body).into_iter().collect::<BTreeSet<_>>();
     for field in &fields {
-        if !allowed.contains(&field.as_str()) {
+        if !allowed.contains(field.as_str()) {
             report.push(
                 Level::Error,
                 path.display().to_string(),
@@ -602,12 +587,22 @@ fn lint_decoration_fields(path: &Path, family: &str, body: &str, report: &mut Li
             );
         }
     }
-    for field in required {
-        if !fields.contains(*field) {
+    if !fields.contains("kind") {
+        report.push(
+            Level::Error,
+            path.display().to_string(),
+            format!("{family} decoration `{kind}` is missing field `kind`"),
+        );
+    }
+    for field in descriptor.fields.iter().filter(|field| field.required) {
+        if !fields.contains(field.name) {
             report.push(
                 Level::Error,
                 path.display().to_string(),
-                format!("{family} decoration `{kind}` is missing field `{field}`"),
+                format!(
+                    "{family} decoration `{kind}` is missing field `{}`",
+                    field.name
+                ),
             );
         }
     }
@@ -669,6 +664,19 @@ fn find_call_tables(source: &str, path: &str) -> Vec<LuaTable> {
     tables
 }
 
+fn skip_lua_string(bytes: &[u8], start: usize) -> usize {
+    let quote = bytes[start];
+    let mut i = start + 1;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b if b == quote => return i + 1,
+            _ => i += 1,
+        }
+    }
+    bytes.len()
+}
+
 fn find_call_argument_tables(source: &str, path: &str) -> Vec<LuaTable> {
     let mut tables = Vec::new();
     let mut offset = 0;
@@ -684,22 +692,12 @@ fn find_call_argument_tables(source: &str, path: &str) -> Vec<LuaTable> {
         } else {
             source.len()
         };
-        let mut quote = None;
         while i < call_end {
-            let b = bytes[i];
-            if let Some(q) = quote {
-                if b == b'\\' {
-                    i += 2;
+            match bytes[i] {
+                b'\'' | b'"' => {
+                    i = skip_lua_string(bytes, i);
                     continue;
                 }
-                if b == q {
-                    quote = None;
-                }
-                i += 1;
-                continue;
-            }
-            match b {
-                b'\'' | b'"' => quote = Some(b),
                 b'{' => {
                     if let Some(end) = matching_brace(source, i) {
                         tables.push(LuaTable {
@@ -721,22 +719,12 @@ fn matching_brace(source: &str, start: usize) -> Option<usize> {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut i = start;
-    let mut quote = None;
     while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(q) = quote {
-            if b == b'\\' {
-                i += 2;
+        match bytes[i] {
+            b'\'' | b'"' => {
+                i = skip_lua_string(bytes, i);
                 continue;
             }
-            if b == q {
-                quote = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\'' | b'"' => quote = Some(b),
             b'{' => depth += 1,
             b'}' => {
                 depth = depth.saturating_sub(1);
@@ -755,22 +743,12 @@ fn matching_paren(source: &str, start: usize) -> Option<usize> {
     let bytes = source.as_bytes();
     let mut depth = 0usize;
     let mut i = start;
-    let mut quote = None;
     while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(q) = quote {
-            if b == b'\\' {
-                i += 2;
+        match bytes[i] {
+            b'\'' | b'"' => {
+                i = skip_lua_string(bytes, i);
                 continue;
             }
-            if b == q {
-                quote = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\'' | b'"' => quote = Some(b),
             b'(' => depth += 1,
             b')' => {
                 depth = depth.saturating_sub(1);
@@ -790,22 +768,12 @@ fn top_level_fields(body: &str) -> Vec<String> {
     let bytes = body.as_bytes();
     let mut i = 0;
     let mut depth = 0usize;
-    let mut quote = None;
     while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(q) = quote {
-            if b == b'\\' {
-                i += 2;
+        match bytes[i] {
+            b'\'' | b'"' => {
+                i = skip_lua_string(bytes, i);
                 continue;
             }
-            if b == q {
-                quote = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\'' | b'"' => quote = Some(b),
             b'{' => depth += 1,
             b'}' => depth = depth.saturating_sub(1),
             b'_' | b'a'..=b'z' | b'A'..=b'Z' if depth == 0 => {
@@ -837,22 +805,12 @@ fn top_level_string_field(body: &str, field: &str) -> Option<String> {
     let bytes = body.as_bytes();
     let mut i = 0;
     let mut depth = 0usize;
-    let mut quote = None;
     while i < bytes.len() {
-        let b = bytes[i];
-        if let Some(q) = quote {
-            if b == b'\\' {
-                i += 2;
+        match bytes[i] {
+            b'\'' | b'"' => {
+                i = skip_lua_string(bytes, i);
                 continue;
             }
-            if b == q {
-                quote = None;
-            }
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\'' | b'"' => quote = Some(b),
             b'{' => depth += 1,
             b'}' => depth = depth.saturating_sub(1),
             b'_' | b'a'..=b'z' | b'A'..=b'Z' if depth == 0 => {
@@ -886,9 +844,8 @@ fn top_level_string_field(body: &str, field: &str) -> Option<String> {
     None
 }
 
-fn known_function_paths() -> BTreeSet<&'static str> {
-    api::all_functions().map(|function| function.path).collect()
-}
+static KNOWN_FUNCTION_PATHS: LazyLock<BTreeSet<&'static str>> =
+    LazyLock::new(|| api::all_functions().map(|function| function.path).collect());
 
 pub(super) fn detect_leviathan_calls(source: &str) -> BTreeSet<String> {
     let mut calls = BTreeSet::new();
@@ -1047,7 +1004,7 @@ fn detect_keymap_command_ids(source: &str) -> BTreeSet<String> {
     out
 }
 
-fn built_in_command_ids() -> BTreeSet<String> {
+static BUILT_IN_COMMAND_IDS: LazyLock<BTreeSet<&'static str>> = LazyLock::new(|| {
     [
         "repository.open",
         "repository.refresh",
@@ -1113,9 +1070,8 @@ fn built_in_command_ids() -> BTreeSet<String> {
         "command_palette.open",
     ]
     .into_iter()
-    .map(str::to_string)
     .collect()
-}
+});
 
 #[derive(Debug)]
 struct ContextAccess {
@@ -1164,189 +1120,83 @@ fn detect_context_field_accesses(source: &str) -> Vec<ContextAccess> {
     out
 }
 
+static CONTEXT_FIELD_MAP: LazyLock<BTreeMap<&'static str, BTreeSet<&'static str>>> =
+    LazyLock::new(context_field_map);
+
 fn context_field_map() -> BTreeMap<&'static str, BTreeSet<&'static str>> {
+    const ROOT_FIELDS: &[&str] = &[
+        "version",
+        "plugin_id",
+        "generation_id",
+        "type",
+        "surface",
+        "features",
+        "theme",
+        "repository",
+        "tab",
+        "selection",
+        "focus",
+        "viewport",
+        "payload",
+        "schema",
+        "values",
+        "dialog",
+    ];
+    const REPOSITORY_FIELDS: &[&str] = &[
+        "is_open",
+        "name",
+        "workdir_path",
+        "current_branch_name",
+        "head_hash",
+        "default_remote_name",
+        "has_remote",
+    ];
+    const TAB_FIELDS: &[&str] = &["is_open", "id", "path", "name", "index", "count"];
+    const SELECTION_FIELDS: &[&str] = &[
+        "available",
+        "kind",
+        "commit",
+        "selected_commit_id",
+        "selected_file_path",
+    ];
+    const DIALOG_FIELDS: &[&str] = &["active", "id", "controls", "buttons"];
+    const FOCUS_FIELDS: &[&str] = &[
+        "surface",
+        "kind",
+        "region",
+        "pane",
+        "section",
+        "plugin_id",
+        "screen_id",
+        "overlay_id",
+        "reason",
+        "matches_surface",
+        "matches_region",
+        "matches_pane",
+    ];
+    const VIEWPORT_FIELDS: &[&str] = &["known", "width", "height"];
+    const THEME_FIELDS: &[&str] = &["name", "colors", "dimensions", "fonts"];
+
+    const SUBKEYS: &[(&str, &str, &[&str])] = &[
+        ("ctx.repository", "context.repository", REPOSITORY_FIELDS),
+        ("ctx.tab", "context.tab", TAB_FIELDS),
+        ("ctx.selection", "context.selection", SELECTION_FIELDS),
+        ("ctx.dialog", "context.dialog", DIALOG_FIELDS),
+        ("ctx.focus", "context.focus", FOCUS_FIELDS),
+        ("ctx.viewport", "context.viewport", VIEWPORT_FIELDS),
+        ("ctx.theme", "context.theme", THEME_FIELDS),
+    ];
+
     let mut map = BTreeMap::new();
-    map.insert(
-        "ctx",
-        [
-            "version",
-            "plugin_id",
-            "generation_id",
-            "type",
-            "surface",
-            "features",
-            "theme",
-            "repository",
-            "tab",
-            "selection",
-            "focus",
-            "viewport",
-            "payload",
-            "schema",
-            "values",
-            "dialog",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "context",
-        [
-            "version",
-            "plugin_id",
-            "generation_id",
-            "type",
-            "surface",
-            "features",
-            "theme",
-            "repository",
-            "tab",
-            "selection",
-            "focus",
-            "viewport",
-            "payload",
-            "schema",
-            "values",
-            "dialog",
-            "current",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "ctx.repository",
-        [
-            "is_open",
-            "name",
-            "workdir_path",
-            "current_branch_name",
-            "head_hash",
-            "default_remote_name",
-            "has_remote",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "ctx.tab",
-        ["is_open", "id", "path", "name", "index", "count"]
-            .into_iter()
-            .collect(),
-    );
-    map.insert(
-        "ctx.selection",
-        [
-            "available",
-            "kind",
-            "commit",
-            "selected_commit_id",
-            "selected_file_path",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "ctx.dialog",
-        ["active", "id", "controls", "buttons"]
-            .into_iter()
-            .collect(),
-    );
-    map.insert(
-        "ctx.focus",
-        [
-            "surface",
-            "kind",
-            "region",
-            "pane",
-            "section",
-            "plugin_id",
-            "screen_id",
-            "overlay_id",
-            "reason",
-            "matches_surface",
-            "matches_region",
-            "matches_pane",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "ctx.viewport",
-        ["known", "width", "height"].into_iter().collect(),
-    );
-    map.insert(
-        "ctx.theme",
-        ["name", "colors", "dimensions", "fonts"]
-            .into_iter()
-            .collect(),
-    );
-    map.insert(
-        "context.repository",
-        [
-            "is_open",
-            "name",
-            "workdir_path",
-            "current_branch_name",
-            "head_hash",
-            "default_remote_name",
-            "has_remote",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "context.tab",
-        ["is_open", "id", "path", "name", "index", "count"]
-            .into_iter()
-            .collect(),
-    );
-    map.insert(
-        "context.selection",
-        [
-            "available",
-            "kind",
-            "commit",
-            "selected_commit_id",
-            "selected_file_path",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "context.dialog",
-        ["active", "id", "controls", "buttons"]
-            .into_iter()
-            .collect(),
-    );
-    map.insert(
-        "context.focus",
-        [
-            "surface",
-            "kind",
-            "region",
-            "pane",
-            "section",
-            "plugin_id",
-            "screen_id",
-            "overlay_id",
-            "reason",
-            "matches_surface",
-            "matches_region",
-            "matches_pane",
-        ]
-        .into_iter()
-        .collect(),
-    );
-    map.insert(
-        "context.viewport",
-        ["known", "width", "height"].into_iter().collect(),
-    );
-    map.insert(
-        "context.theme",
-        ["name", "colors", "dimensions", "fonts"]
-            .into_iter()
-            .collect(),
-    );
+    let mut root: BTreeSet<&'static str> = ROOT_FIELDS.iter().copied().collect();
+    map.insert("ctx", root.clone());
+    root.insert("current");
+    map.insert("context", root);
+    for (ctx_key, context_key, fields) in SUBKEYS {
+        let set: BTreeSet<&'static str> = fields.iter().copied().collect();
+        map.insert(*ctx_key, set.clone());
+        map.insert(*context_key, set);
+    }
     map
 }
 

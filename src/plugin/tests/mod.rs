@@ -8,7 +8,7 @@ mod certification;
 mod commands_palette;
 mod dependency_resolution;
 mod devtools;
-pub mod diagnostics;
+mod diagnostics;
 mod dock_panels;
 mod extension_points;
 mod hardening;

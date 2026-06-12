@@ -112,6 +112,15 @@ pub const ACCENT_RED: Color = Color {
     a: 1.0,
 };
 
+/// UI danger color (Iced palette `danger`, toast error strip). Intentionally a
+/// distinct red from `ACCENT_RED`, which marks diff deletions.
+pub const ACCENT_DANGER: Color = Color {
+    r: 0.858,
+    g: 0.243,
+    b: 0.243,
+    a: 1.0,
+};
+
 pub const ACCENT_ORANGE: Color = Color {
     r: 0.980,
     g: 0.639,

@@ -190,7 +190,9 @@ fn handle_enter(screen: &mut RepositoryScreen) -> Task<Message> {
     Task::none()
 }
 
-fn detail_navigation_action(action: &CenterAction) -> Option<DetailAction> {
+pub(in crate::screens::repository) fn detail_navigation_action(
+    action: &CenterAction,
+) -> Option<DetailAction> {
     match action {
         CenterAction::NavigateUp => Some(DetailAction::NavigateFileUp),
         CenterAction::NavigateDown => Some(DetailAction::NavigateFileDown),
@@ -200,7 +202,21 @@ fn detail_navigation_action(action: &CenterAction) -> Option<DetailAction> {
     }
 }
 
-fn diff_scroll_action(action: &CenterAction) -> Option<DiffPanelAction> {
+pub(in crate::screens::repository) fn extend_detail_navigation_action(
+    action: &CenterAction,
+) -> Option<DetailAction> {
+    match action {
+        CenterAction::NavigateUp => Some(DetailAction::ExtendFileSelectionUp),
+        CenterAction::NavigateDown => Some(DetailAction::ExtendFileSelectionDown),
+        CenterAction::NavigateFirst => Some(DetailAction::ExtendFileSelectionFirst),
+        CenterAction::NavigateLast => Some(DetailAction::ExtendFileSelectionLast),
+        _ => None,
+    }
+}
+
+pub(in crate::screens::repository) fn diff_scroll_action(
+    action: &CenterAction,
+) -> Option<DiffPanelAction> {
     match action {
         CenterAction::NavigateUp => Some(DiffPanelAction::ScrollUp),
         CenterAction::NavigateDown => Some(DiffPanelAction::ScrollDown),

@@ -202,6 +202,11 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
         doc: "Rebase HEAD.",
     },
     ApiCapability {
+        name: "command:invoke:<id>",
+        since: "1.0",
+        doc: "Invoke a specific registered command by id (e.g. `command:invoke:repository.open_search`).",
+    },
+    ApiCapability {
         name: "ui:region:<region>",
         since: "1.0",
         doc: "Add controls to a UI region such as the main toolbar (`ui:region:main_bar`) or repository panes (`ui:region:repository`).",
@@ -249,7 +254,32 @@ pub const API_CAPABILITIES: &[ApiCapability] = &[
     ApiCapability {
         name: "fs:watch",
         since: "1.0",
-        doc: "Watch plugin-scoped paths for filesystem events.",
+        doc: "Alias for fs:watch:plugin.",
+    },
+    ApiCapability {
+        name: "fs:watch:plugin",
+        since: "1.0",
+        doc: "Watch paths under the plugin directory for filesystem events.",
+    },
+    ApiCapability {
+        name: "fs:watch:state",
+        since: "1.0",
+        doc: "Watch paths under the plugin state directory for filesystem events.",
+    },
+    ApiCapability {
+        name: "fs:watch:config",
+        since: "1.0",
+        doc: "Watch paths under the plugin config directory for filesystem events.",
+    },
+    ApiCapability {
+        name: "fs:watch:workdir",
+        since: "1.0",
+        doc: "Watch paths under the active workdir when configured.",
+    },
+    ApiCapability {
+        name: "fs:watch:any",
+        since: "1.0",
+        doc: "Watch any host path for filesystem events.",
     },
     ApiCapability {
         name: "fs:watch:scope:<dir>",

@@ -14,7 +14,7 @@ use crate::widgets::list::{HoverableList, HoverableListItem, HoverableListStyle}
 use crate::widgets::palette;
 use crate::widgets::shared::horizontal_space;
 
-use super::cell::{branch_checkout_message, branch_context_menu_message};
+use super::cell::{branch_checkout_message, branch_context_menu_message, branch_row_icons};
 use super::layout::{
     display_name, BRANCH_POPOUT_ICON_SIZE, BRANCH_POPOUT_ROW_PADDING_X, BRANCH_STACK_BADGE_COVER_W,
 };
@@ -61,29 +61,13 @@ fn branch_popout_row_radius(index: usize, row_count: usize) -> border::Radius {
 // ─── Row content ──────────────────────────────────────────────────────────────
 
 fn branch_popout_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'static, Message>> {
-    let mut icons = Vec::new();
-
-    if row.is_tag {
-        icons.push(assets::icon(assets::TAG, BRANCH_POPOUT_ICON_SIZE, color));
-        return icons;
-    }
-
-    if row.has_local || row.is_current {
-        let icon_data = if row.worktree_path.is_some() {
-            assets::TREE
-        } else {
-            assets::LAPTOP
-        };
-        icons.push(assets::icon(icon_data, BRANCH_POPOUT_ICON_SIZE, color));
-    }
-    if row.has_remote {
-        icons.push(assets::icon(assets::CLOUD, BRANCH_POPOUT_ICON_SIZE, color));
-    }
-    if icons.is_empty() && !row.is_current {
-        icons.push(assets::icon(assets::BRANCH, BRANCH_POPOUT_ICON_SIZE, color));
-    }
-
-    icons
+    branch_row_icons(
+        row,
+        color,
+        BRANCH_POPOUT_ICON_SIZE,
+        BRANCH_POPOUT_ICON_SIZE,
+        BRANCH_POPOUT_ICON_SIZE,
+    )
 }
 
 fn branch_popout_row_content(

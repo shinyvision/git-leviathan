@@ -143,18 +143,6 @@ pub(crate) fn target(dialog: &Dialog) -> Option<Target> {
     }
 }
 
-pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CONFIRM_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
-}
-
 fn plural_files(count: usize) -> String {
     if count == 1 {
         "1 file".to_string()

@@ -211,7 +211,10 @@ pub fn backup_corrupt_file(path: &Path) -> Result<(), PersistError> {
     Ok(())
 }
 
-fn next_corrupt_backup_path(path: &Path) -> PathBuf {
+/// First unused `json.corrupt[.N]` sibling of `path`, so repeated
+/// corruptions never clobber a prior backup. Shared by the sibling
+/// JSON stores (secrets, settings).
+pub fn next_corrupt_backup_path(path: &Path) -> PathBuf {
     for idx in 0..1000 {
         let candidate = if idx == 0 {
             path.with_extension("json.corrupt")

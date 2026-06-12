@@ -57,6 +57,10 @@ pub(crate) struct State {
     pub submitting: bool,
     pub error: Option<String>,
     pub dropdown_open: bool,
+    /// Cached result of the filesystem checks in `can_submit` (ancestor exists,
+    /// target empty if present). Recomputed only when `working_dir` changes so
+    /// the per-frame view path never issues `stat`/`read_dir` syscalls.
+    working_dir_fs_valid: bool,
 }
 
 impl State {
@@ -75,6 +79,7 @@ impl State {
             submitting: false,
             error: None,
             dropdown_open: false,
+            working_dir_fs_valid: false,
         }
     }
 
@@ -101,11 +106,13 @@ impl State {
         if !self.working_dir_user_edited {
             self.working_dir = self.derived_default_dir();
         }
+        self.recompute_working_dir_fs_valid();
     }
 
     pub(crate) fn set_working_dir(&mut self, new_dir: String) {
         self.working_dir = new_dir;
         self.working_dir_user_edited = true;
+        self.recompute_working_dir_fs_valid();
     }
 
     /// Called when the ref dropdown selection changes. Auto-fills the branch
@@ -123,6 +130,7 @@ impl State {
                 self.working_dir = self.derived_default_dir();
             }
         }
+        self.recompute_working_dir_fs_valid();
     }
 
     pub(crate) fn can_submit(&self) -> bool {
@@ -133,29 +141,16 @@ impl State {
         {
             return false;
         }
-        let target = std::path::Path::new(self.working_dir.trim());
-        if !target.is_absolute() {
+        if !std::path::Path::new(self.working_dir.trim()).is_absolute() {
             return false;
         }
-        // Some ancestor must exist — we'll create the rest on submit. A path
-        // whose entire chain is missing (e.g. typo on the root component) is
-        // rejected. An absolute path will always hit `/` so this primarily
-        // rejects empty-parent edge cases.
-        let any_ancestor_exists = target.ancestors().skip(1).any(|a| a.exists());
-        if !any_ancestor_exists {
-            return false;
-        }
-        // Target, if it exists, must be empty.
-        if target.exists() {
-            let is_empty = target
-                .read_dir()
-                .map(|mut it| it.next().is_none())
-                .unwrap_or(false);
-            if !is_empty {
-                return false;
-            }
-        }
-        true
+        self.working_dir_fs_valid
+    }
+
+    /// Runs the blocking filesystem checks once and caches the result. Called
+    /// from the `working_dir` mutators so `can_submit` (per-frame) stays cheap.
+    fn recompute_working_dir_fs_valid(&mut self) {
+        self.working_dir_fs_valid = working_dir_fs_valid(self.working_dir.trim());
     }
 
     pub(crate) fn slide_offset(&self) -> f32 {
@@ -176,6 +171,34 @@ impl State {
         self.direction = Direction::Closing;
         self.animation_start = Instant::now();
     }
+}
+
+/// Filesystem portion of `can_submit`, factored out so it can be cached. An
+/// empty or relative `working_dir` returns `false`; the caller's cheap checks
+/// already reject those before the cached flag is consulted.
+fn working_dir_fs_valid(working_dir: &str) -> bool {
+    let target = std::path::Path::new(working_dir);
+    if working_dir.is_empty() || !target.is_absolute() {
+        return false;
+    }
+    // Some ancestor must exist — we'll create the rest on submit. A path
+    // whose entire chain is missing (e.g. typo on the root component) is
+    // rejected. An absolute path will always hit `/` so this primarily
+    // rejects empty-parent edge cases.
+    if !target.ancestors().skip(1).any(|a| a.exists()) {
+        return false;
+    }
+    // Target, if it exists, must be empty.
+    if target.exists() {
+        let is_empty = target
+            .read_dir()
+            .map(|mut it| it.next().is_none())
+            .unwrap_or(false);
+        if !is_empty {
+            return false;
+        }
+    }
+    true
 }
 
 #[cfg(test)]

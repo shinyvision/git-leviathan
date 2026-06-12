@@ -119,31 +119,5 @@ pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
         return;
     }
     let branch_name = new_branch_input(dialog).unwrap_or_default();
-    set_button_enabled(dialog, CREATE_BUTTON_ID, !branch_name.trim().is_empty());
-}
-
-fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
-    if let Some(button) = dialog
-        .buttons
-        .iter_mut()
-        .find(|button| button.id.0 == button_id)
-    {
-        button.enabled = enabled;
-    }
-}
-
-pub(crate) fn is_create_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CREATE_BUTTON_ID
-}
-
-pub(crate) fn is_reset_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == RESET_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_write_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && (is_create_button(button_id) || is_reset_button(button_id))
+    dialog.set_button_enabled(CREATE_BUTTON_ID, !branch_name.trim().is_empty());
 }

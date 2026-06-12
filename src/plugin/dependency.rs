@@ -33,7 +33,10 @@ pub struct DependencySummary {
     pub resolved_version: Option<String>,
     /// `"required"` or `"optional"`.
     pub kind: &'static str,
-    /// `"resolved"`, `"missing"`, `"conflict"`.
+    /// `"resolved"`, `"blocked"`, `"missing"`, `"conflict"`. `"blocked"`
+    /// means the dependency's version satisfies the requirement but the
+    /// dependency is itself blocked (its own dep missing, a conflict, or a
+    /// cycle), so this edge can't actually be wired.
     pub status: &'static str,
 }
 
@@ -404,14 +407,14 @@ fn build_graph(
         req_entries.sort_by(|a, b| a.0.cmp(b.0));
         for (dep_id, req) in req_entries {
             let (resolved_version, status) = match by_id.get(dep_id) {
-                Some(dep) if satisfies(req, &dep.version) => (
-                    Some(dep.version.to_string()),
-                    if blocked.contains_key(dep_id.as_str()) {
-                        "missing"
+                Some(dep) if satisfies(req, &dep.version) => {
+                    let status = if blocked.contains_key(dep_id.as_str()) {
+                        "blocked"
                     } else {
                         "resolved"
-                    },
-                ),
+                    };
+                    (Some(dep.version.to_string()), status)
+                }
                 Some(dep) => (Some(dep.version.to_string()), "conflict"),
                 None => (None, "missing"),
             };
@@ -543,5 +546,48 @@ mod tests {
         let report = resolve(&manifests);
         assert!(!report.blocked.contains_key("a"));
         assert_eq!(report.optional_misses.len(), 1);
+    }
+
+    fn graph_edge<'a>(
+        report: &'a ResolutionReport,
+        consumer: &str,
+        dependency: &str,
+    ) -> &'a DependencySummary {
+        report
+            .graph
+            .iter()
+            .find(|row| row.consumer_plugin_id == consumer && row.dependency_id == dependency)
+            .expect("graph edge present")
+    }
+
+    #[test]
+    fn graph_marks_version_satisfying_edge_resolved() {
+        let manifests = vec![
+            manifest("a", "1.0.0", &[("b", ">=1.0")], &[]),
+            manifest("b", "1.0.0", &[], &[]),
+        ];
+        let report = resolve(&manifests);
+        let edge = graph_edge(&report, "a", "b");
+        assert_eq!(edge.status, "resolved");
+        assert_eq!(edge.resolved_version.as_deref(), Some("1.0.0"));
+    }
+
+    #[test]
+    fn graph_marks_edge_to_blocked_dep_as_blocked() {
+        // `a` requires `b` (version satisfies), but `b` requires a
+        // missing plugin so `b` is itself blocked. The `a -> b` edge
+        // must read "blocked", not "resolved".
+        let manifests = vec![
+            manifest("a", "1.0.0", &[("b", ">=1.0")], &[]),
+            manifest("b", "1.0.0", &[("missing", ">=1.0")], &[]),
+        ];
+        let report = resolve(&manifests);
+        assert!(report.blocked.contains_key("b"));
+        assert!(report.blocked.contains_key("a"));
+        let edge = graph_edge(&report, "a", "b");
+        assert_eq!(edge.status, "blocked");
+        assert_eq!(edge.resolved_version.as_deref(), Some("1.0.0"));
+        // The directly-missing edge keeps its "missing" label.
+        assert_eq!(graph_edge(&report, "b", "missing").status, "missing");
     }
 }

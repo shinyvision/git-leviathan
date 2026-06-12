@@ -460,6 +460,41 @@ impl ExtensionRegistry {
         v
     }
 
+    /// Visit overlay records in render order (highest priority first;
+    /// ties broken by `(plugin_id, id)`) without cloning any widget AST.
+    /// `f` runs while the registry is borrowed, so it must not re-enter
+    /// the registry.
+    pub fn for_each_overlay_top_first(&self, mut f: impl FnMut(&OverlayRecord)) {
+        let inner = self.inner.borrow();
+        for idx in sorted_overlay_indices(&inner.overlays) {
+            f(&inner.overlays[idx]);
+        }
+    }
+
+    /// Run `f` against the top (highest priority) overlay, if any, without
+    /// cloning. `f` runs while the registry is borrowed.
+    pub fn with_top_overlay<R>(&self, f: impl FnOnce(&OverlayRecord) -> R) -> Option<R> {
+        let inner = self.inner.borrow();
+        let top = inner
+            .overlays
+            .iter()
+            .min_by(|a, b| overlay_render_order(a, b))?;
+        Some(f(top))
+    }
+
+    /// Run `f` against the topmost dismissible overlay in render order, if
+    /// any, without cloning. `f` runs while the registry is borrowed.
+    pub fn with_top_dismissible_overlay<R>(
+        &self,
+        f: impl FnOnce(&OverlayRecord) -> R,
+    ) -> Option<R> {
+        let inner = self.inner.borrow();
+        let idx = sorted_overlay_indices(&inner.overlays)
+            .into_iter()
+            .find(|&idx| inner.overlays[idx].dismissible)?;
+        Some(f(&inner.overlays[idx]))
+    }
+
     /// All context-menu items for `region`, sorted by priority
     /// ascending (lower priority renders first), ties broken by
     /// `(plugin_id, id)`.
@@ -651,6 +686,19 @@ impl ExtensionRegistry {
         });
         rows
     }
+}
+
+fn overlay_render_order(a: &OverlayRecord, b: &OverlayRecord) -> std::cmp::Ordering {
+    b.priority
+        .cmp(&a.priority)
+        .then(a.plugin_id.cmp(&b.plugin_id))
+        .then(a.id.cmp(&b.id))
+}
+
+fn sorted_overlay_indices(overlays: &[OverlayRecord]) -> Vec<usize> {
+    let mut indices: Vec<usize> = (0..overlays.len()).collect();
+    indices.sort_by(|&a, &b| overlay_render_order(&overlays[a], &overlays[b]));
+    indices
 }
 
 fn cap_vec<T>(values: &mut Vec<T>) {

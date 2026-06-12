@@ -1,13 +1,15 @@
 //! Repository screen state, split into focused sub-components.
 //!
-//! `RepositoryData` composes the five pieces that used to live as intermixed
+//! `RepositoryData` composes the pieces that used to live as intermixed
 //! fields on a single struct:
 //!
 //! - [`RepositorySnapshot`] — the latest projected view of the repo.
-//! - [`CommitIndex`]        — hash/branch → commit-idx lookups.
 //! - [`DiffCache`]          — per-commit diff states, plus cache-carry logic.
 //! - [`SelectionState`]     — anchor, multi-select, file view mode.
 //! - [`AnimationState`]     — push/pull timer state.
+//!
+//! Hash/branch → commit-idx lookups live in the stateless [`CommitIndex`]
+//! namespace, applied to `snapshot` slices on demand.
 //!
 //! The two cross-cutting update paths (`replace_loaded`, `apply_refs_update`)
 //! remain coordination methods on `RepositoryData` because they always need
@@ -153,7 +155,6 @@ impl CenterListState {
 /// `data.snapshot.commits()`, `data.cache.state(idx)`, `data.selection.anchor()`.
 pub(in crate::screens::repository) struct RepositoryData {
     pub(in crate::screens::repository) snapshot: RepositorySnapshot,
-    pub(in crate::screens::repository) index: CommitIndex,
     pub(in crate::screens::repository) cache: DiffCache,
     pub(in crate::screens::repository) selection: SelectionState,
     pub(in crate::screens::repository) animation: AnimationState,
@@ -173,7 +174,6 @@ impl RepositoryData {
     pub(in crate::screens::repository) fn loading_with_repo_name(repo_name: String) -> Self {
         Self {
             snapshot: RepositorySnapshot::loading_with_repo_name(repo_name),
-            index: CommitIndex::new(),
             cache: DiffCache::new(),
             selection: SelectionState::new(),
             animation: AnimationState::new(),
@@ -190,7 +190,6 @@ impl RepositoryData {
     /// correct repo + branch while the async rehydrate load is in flight.
     pub(in crate::screens::repository) fn hibernate(&mut self) {
         self.snapshot.hibernate();
-        self.index = CommitIndex::new();
         self.cache = DiffCache::new();
         self.selection = SelectionState::new();
         self.animation = AnimationState::new();
@@ -204,19 +203,30 @@ impl RepositoryData {
     /// Full-reload coordination. Preserves diff cache entries across the
     /// refresh, swaps the snapshot, then records the new cache.
     pub(in crate::screens::repository) fn replace_loaded(&mut self, loaded: LoadedRepo) {
-        let prev_commits: Vec<Commit> = self.snapshot.commits().to_vec();
+        let prev_keys = self.snapshot_commit_keys();
         let new_states = self.snapshot.replace_loaded(loaded);
         self.cache
-            .replace(&prev_commits, self.snapshot.commits(), new_states);
+            .replace(&prev_keys, self.snapshot.commits(), new_states);
     }
 
     /// Fetch-path coordination. Narrower update: preserves repo identity
     /// (name, current branch, sidebar expansion) so open overlays survive.
     pub(in crate::screens::repository) fn apply_refs_update(&mut self, refs: LoadedRefs) {
-        let prev_commits: Vec<Commit> = self.snapshot.commits().to_vec();
+        let prev_keys = self.snapshot_commit_keys();
         let new_states = self.snapshot.apply_refs_update(refs);
         self.cache
-            .replace(&prev_commits, self.snapshot.commits(), new_states);
+            .replace(&prev_keys, self.snapshot.commits(), new_states);
+    }
+
+    /// `(hash, kind)` for each currently-loaded commit. The diff cache carry
+    /// reads only these two fields, so capturing them avoids deep-cloning the
+    /// whole commit list before a snapshot swap.
+    fn snapshot_commit_keys(&self) -> Vec<(String, CommitKind)> {
+        self.snapshot
+            .commits()
+            .iter()
+            .map(|c| (c.hash.clone(), c.kind))
+            .collect()
     }
 
     pub(in crate::screens::repository) fn apply_dirty_index_update(
@@ -263,7 +273,7 @@ impl RepositoryData {
 
     /// Hash-at-idx lookup. Thin coordinator over `snapshot + index`.
     pub(in crate::screens::repository) fn commit_hash(&self, idx: usize) -> Option<String> {
-        self.index.commit_hash(self.snapshot.commits(), idx)
+        CommitIndex::commit_hash(self.snapshot.commits(), idx)
     }
 
     /// Hash → idx lookup. Thin coordinator over `snapshot + index`.
@@ -271,7 +281,7 @@ impl RepositoryData {
         &self,
         hash: &str,
     ) -> Option<usize> {
-        self.index.index_for_hash(self.snapshot.commits(), hash)
+        CommitIndex::index_for_hash(self.snapshot.commits(), hash)
     }
 
     /// Branch name → idx lookup. Thin coordinator over `snapshot + index`.
@@ -280,8 +290,7 @@ impl RepositoryData {
         branch_name: &str,
         is_remote: bool,
     ) -> Option<usize> {
-        self.index
-            .index_for_branch(self.snapshot.commit_presentations(), branch_name, is_remote)
+        CommitIndex::index_for_branch(self.snapshot.commit_presentations(), branch_name, is_remote)
     }
 
     /// Thin coordinator over `snapshot + cache`.

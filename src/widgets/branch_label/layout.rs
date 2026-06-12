@@ -160,7 +160,7 @@ pub fn any_name_truncated(rows: &[BranchDisplayRow]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{any_name_truncated, display_name};
-    use crate::view_model::{BranchLabel, BranchLabelKind};
+    use crate::view_model::{branch_display_rows, BranchLabel, BranchLabelKind};
 
     fn label(name: &str, kind: BranchLabelKind) -> BranchLabel {
         BranchLabel {
@@ -179,7 +179,7 @@ mod tests {
 
     #[test]
     fn any_name_truncated_detects_long_name() {
-        let rows = super::super::branch_display_rows(&[label(
+        let rows = branch_display_rows(&[label(
             "über/feature/some-very-long-branch",
             BranchLabelKind::CurrentLocal,
         )]);
@@ -188,8 +188,7 @@ mod tests {
 
     #[test]
     fn any_name_truncated_short_name_fits() {
-        let rows =
-            super::super::branch_display_rows(&[label("main", BranchLabelKind::CurrentLocal)]);
+        let rows = branch_display_rows(&[label("main", BranchLabelKind::CurrentLocal)]);
         assert!(!any_name_truncated(&rows));
     }
 }

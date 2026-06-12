@@ -13,7 +13,7 @@ use crate::plugin::capabilities::CapabilityGuard;
 mod file_ops;
 mod watch;
 
-use file_ops::{append_file, copy_file, list_dir, metadata, read_file, touch, write_file};
+use file_ops::{append_file, copy_file, list_dir, metadata, read_file, touch, write_file, Entry};
 #[cfg(test)]
 use file_ops::{
     APPEND_FILE_BYTE_LIMIT, COPY_BYTE_LIMIT, READ_FILE_BYTE_LIMIT, WRITE_FILE_BYTE_LIMIT,
@@ -24,23 +24,18 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     let fs_tbl = lua.create_table()?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "list_dir",
         lua.create_function(move |lua_inner, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match list_dir(&path) {
+            match list_dir(&resolved) {
                 Ok(entries) => {
                     let arr = lua_inner.create_table()?;
                     for (i, e) in entries.into_iter().enumerate() {
-                        let t = lua_inner.create_table()?;
-                        t.set("name", e.name)?;
-                        t.set("path", e.path)?;
-                        t.set("is_dir", e.is_dir)?;
-                        t.set("is_symlink", e.is_symlink)?;
-                        t.set("size", e.size)?;
-                        t.set("modified", e.modified)?;
-                        arr.set(i + 1, t)?;
+                        arr.set(i + 1, entry_to_table(lua_inner, e)?)?;
                     }
                     Ok((Some(arr), None::<String>))
                 }
@@ -50,10 +45,12 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "delete",
         lua.create_function(move |_, path: String| {
-            let p = Path::new(&path);
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            let p = Path::new(&resolved);
             g.check_fs_write(p).map_err(mlua::Error::external)?;
             let res = if p.is_dir() {
                 fs::remove_dir_all(p)
@@ -200,42 +197,50 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "exists",
         lua.create_function(move |_, path: String| -> mlua::Result<bool> {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            Ok(Path::new(&path).exists())
+            Ok(Path::new(&resolved).exists())
         })?,
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "is_dir",
         lua.create_function(move |_, path: String| -> mlua::Result<bool> {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            Ok(Path::new(&path).is_dir())
+            Ok(Path::new(&resolved).is_dir())
         })?,
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "is_file",
         lua.create_function(move |_, path: String| -> mlua::Result<bool> {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            Ok(Path::new(&path).is_file())
+            Ok(Path::new(&resolved).is_file())
         })?,
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "is_symlink",
         lua.create_function(move |_, path: String| -> mlua::Result<bool> {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            Ok(fs::symlink_metadata(&path)
+            Ok(fs::symlink_metadata(&resolved)
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false))
         })?,
@@ -249,12 +254,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "size",
         lua.create_function(move |_, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match fs::symlink_metadata(&path) {
+            match fs::symlink_metadata(&resolved) {
                 Ok(m) => Ok((Some(m.len()), None::<String>)),
                 Err(e) => Ok((None, Some(e.to_string()))),
             }
@@ -262,12 +269,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "modified",
         lua.create_function(move |_, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match fs::symlink_metadata(&path) {
+            match fs::symlink_metadata(&resolved) {
                 Ok(m) => match m.modified() {
                     Ok(t) => match t.duration_since(UNIX_EPOCH) {
                         Ok(d) => Ok((Some(d.as_secs() as i64), None::<String>)),
@@ -289,12 +298,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "read_link",
         lua.create_function(move |_, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match fs::read_link(&path) {
+            match fs::read_link(&resolved) {
                 Ok(p) => Ok((Some(p.to_string_lossy().into_owned()), None::<String>)),
                 Err(e) => Ok((None, Some(e.to_string()))),
             }
@@ -306,9 +317,9 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     fs_tbl.set(
         "read_file",
         lua.create_function(move |_, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            let resolved = resolve_for_read(&plugin_root, &path);
             match read_file(&resolved) {
                 Ok(s) => Ok((Some(s), None::<String>)),
                 Err(e) => Ok((None, Some(e))),
@@ -321,9 +332,9 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     fs_tbl.set(
         "read_lines",
         lua.create_function(move |lua_inner, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            let resolved = resolve_for_read(&plugin_root, &path);
             match read_file(&resolved) {
                 Ok(s) => {
                     let arr = lua_inner.create_table()?;
@@ -338,12 +349,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "mkdir",
         lua.create_function(move |_, path: String| {
-            g.check_fs_write(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_write(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match fs::create_dir_all(&path) {
+            match fs::create_dir_all(&resolved) {
                 Ok(()) => Ok((true, None::<String>)),
                 Err(e) => Ok((false, Some(e.to_string()))),
             }
@@ -351,12 +364,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "write_file",
         lua.create_function(move |_, (path, content): (String, String)| {
-            g.check_fs_write(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_write(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match write_file(&path, &content) {
+            match write_file(&resolved, &content) {
                 Ok(()) => Ok((true, None::<String>)),
                 Err(e) => Ok((false, Some(e))),
             }
@@ -364,9 +379,12 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "rename",
         lua.create_function(move |_, (src, dst): (String, String)| {
+            let src = resolve_against_plugin_root(&plugin_root, &src);
+            let dst = resolve_against_plugin_root(&plugin_root, &dst);
             g.check_fs_write(Path::new(&src))
                 .map_err(mlua::Error::external)?;
             g.check_fs_write(Path::new(&dst))
@@ -379,9 +397,12 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "copy",
         lua.create_function(move |_, (src, dst): (String, String)| {
+            let src = resolve_against_plugin_root(&plugin_root, &src);
+            let dst = resolve_against_plugin_root(&plugin_root, &dst);
             g.check_fs_read(Path::new(&src))
                 .map_err(mlua::Error::external)?;
             g.check_fs_write(Path::new(&dst))
@@ -394,34 +415,29 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "metadata",
         lua.create_function(move |lua_inner, path: String| {
-            g.check_fs_read(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match metadata(&path) {
-                Ok(e) => {
-                    let t = lua_inner.create_table()?;
-                    t.set("name", e.name)?;
-                    t.set("path", e.path)?;
-                    t.set("is_dir", e.is_dir)?;
-                    t.set("is_symlink", e.is_symlink)?;
-                    t.set("size", e.size)?;
-                    t.set("modified", e.modified)?;
-                    Ok((Some(t), None::<String>))
-                }
+            match metadata(&resolved) {
+                Ok(e) => Ok((Some(entry_to_table(lua_inner, e)?), None::<String>)),
                 Err(e) => Ok((None, Some(e))),
             }
         })?,
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "append_file",
         lua.create_function(move |_, (path, content): (String, String)| {
-            g.check_fs_write(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_write(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match append_file(&path, &content) {
+            match append_file(&resolved, &content) {
                 Ok(()) => Ok((true, None::<String>)),
                 Err(e) => Ok((false, Some(e))),
             }
@@ -429,12 +445,14 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
     )?;
 
     let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "touch",
         lua.create_function(move |_, path: String| {
-            g.check_fs_write(Path::new(&path))
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_write(Path::new(&resolved))
                 .map_err(mlua::Error::external)?;
-            match touch(&path) {
+            match touch(&resolved) {
                 Ok(()) => Ok((true, None::<String>)),
                 Err(e) => Ok((false, Some(e))),
             }
@@ -446,10 +464,10 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
 }
 
 /// Resolve a plugin-supplied path against the plugin's root when the path
-/// is relative. Absolute paths pass through unchanged. Used by `read_file`
-/// / `read_lines` so plugins can name their assets without
-/// recomputing the plugin root every call.
-fn resolve_for_read(plugin_root: &Path, path: &str) -> String {
+/// is relative. Absolute paths pass through unchanged. This mirrors the
+/// resolution `ScopeResolver::check_fs_scope` performs, so the capability
+/// gate and the actual syscall agree on which file is being touched.
+fn resolve_against_plugin_root(plugin_root: &Path, path: &str) -> String {
     let p = Path::new(path);
     if p.is_absolute() {
         path.to_string()
@@ -458,12 +476,108 @@ fn resolve_for_read(plugin_root: &Path, path: &str) -> String {
     }
 }
 
+fn entry_to_table(lua: &Lua, e: Entry) -> mlua::Result<Table> {
+    let t = lua.create_table()?;
+    t.set("name", e.name)?;
+    t.set("path", e.path)?;
+    t.set("is_dir", e.is_dir)?;
+    t.set("is_symlink", e.is_symlink)?;
+    t.set("size", e.size)?;
+    t.set("modified", e.modified)?;
+    Ok(t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs as stdfs;
     use std::io::Write;
     use std::time::SystemTime;
+
+    fn install_plugin_scoped(lua: &Lua, leviathan: &Table, plugin_root: std::path::PathBuf) {
+        use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};
+        use git_leviathan_plugin_api::capability::{Capability, FsScope};
+        let store = GrantStore::new_in_memory();
+        for code in ["fs:read:plugin", "fs:write:plugin"] {
+            store
+                .record_decision(
+                    "test",
+                    "0.1.0",
+                    code,
+                    Decision::Allow,
+                    DecidedBy::Default,
+                    None,
+                )
+                .unwrap();
+        }
+        let guard = Rc::new(CapabilityGuard::new(
+            "test",
+            "0.1.0",
+            vec![
+                Capability::FsRead {
+                    scope: FsScope::Plugin,
+                },
+                Capability::FsWrite {
+                    scope: FsScope::Plugin,
+                },
+            ],
+            crate::plugin::capabilities::CapabilityPaths {
+                plugin_root: plugin_root.clone(),
+                state_dir: plugin_root.clone(),
+                config_dir: plugin_root,
+                workdir: None,
+            },
+            store,
+        ));
+        install(lua, leviathan, guard).unwrap();
+    }
+
+    #[test]
+    fn relative_write_lands_under_plugin_root_not_cwd() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lua = Lua::new();
+        let leviathan = lua.create_table().unwrap();
+        install_plugin_scoped(&lua, &leviathan, tmp.path().to_path_buf());
+        lua.globals().set("leviathan", leviathan).unwrap();
+
+        let (ok, err): (bool, Option<String>) = lua
+            .load("return leviathan.fs.write_file('notes.txt', 'hello')")
+            .eval()
+            .unwrap();
+        assert!(ok, "write_file failed: {err:?}");
+        assert!(err.is_none());
+        assert_eq!(
+            stdfs::read_to_string(tmp.path().join("notes.txt")).unwrap(),
+            "hello"
+        );
+        let got: String = lua
+            .load("return (leviathan.fs.read_file('notes.txt'))")
+            .eval()
+            .unwrap();
+        assert_eq!(got, "hello");
+    }
+
+    #[test]
+    fn relative_mkdir_and_metadata_resolve_against_plugin_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let lua = Lua::new();
+        let leviathan = lua.create_table().unwrap();
+        install_plugin_scoped(&lua, &leviathan, tmp.path().to_path_buf());
+        lua.globals().set("leviathan", leviathan).unwrap();
+
+        let (ok, _): (bool, Option<String>) = lua
+            .load("return leviathan.fs.mkdir('sub/dir')")
+            .eval()
+            .unwrap();
+        assert!(ok);
+        assert!(tmp.path().join("sub").join("dir").is_dir());
+
+        let is_dir: bool = lua
+            .load("return leviathan.fs.is_dir('sub/dir')")
+            .eval()
+            .unwrap();
+        assert!(is_dir);
+    }
 
     fn install_unrestricted(lua: &Lua, leviathan: &Table) {
         use crate::plugin::capability_grants::{DecidedBy, Decision, GrantStore};

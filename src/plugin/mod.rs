@@ -50,6 +50,7 @@ pub mod tab_snapshot;
 pub mod terminal;
 pub mod timers;
 pub mod ui;
+pub mod util;
 pub mod watchers;
 
 pub use host::PluginHost;

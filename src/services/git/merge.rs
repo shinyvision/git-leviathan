@@ -1,6 +1,8 @@
 use git2::BranchType;
 
-use super::helpers::{find_branch_or, spawn_git_command};
+use super::helpers::{
+    command_dir, find_branch_or, index_has_conflicts, process_output_detail, spawn_git_command,
+};
 use super::{checkout, GitService};
 use crate::services::git_error::GitError;
 
@@ -44,7 +46,7 @@ pub(super) fn merge_branch_into(
 
     let message = merge_commit_message(source_branch, target_branch);
     let source_ref = format!("refs/heads/{}", source_branch);
-    let repo_dir = repo_command_dir_str(service)?;
+    let repo_dir = command_dir(&service.repo)?;
     let output = spawn_git_command(
         &repo_dir,
         &["merge", "--no-ff", "-m", &message, &source_ref],
@@ -55,7 +57,7 @@ pub(super) fn merge_branch_into(
         return Ok(BranchMergeStatus::Merged);
     }
 
-    if index_has_conflicts(service) {
+    if index_has_conflicts(&service.repo) {
         return Ok(BranchMergeStatus::Conflicted);
     }
 
@@ -63,7 +65,7 @@ pub(super) fn merge_branch_into(
         "merge of '{}' into '{}' failed: {}",
         source_branch,
         target_branch,
-        merge_output_detail(&output)
+        process_output_detail(&output)
     )))
 }
 
@@ -72,7 +74,7 @@ pub(super) fn abort_merge(service: &mut GitService) -> Result<(), GitError> {
         return Err(GitError::Other("there is no merge to abort".to_string()));
     }
 
-    let repo_dir = repo_command_dir_str(service)?;
+    let repo_dir = command_dir(&service.repo)?;
     let output = spawn_git_command(&repo_dir, &["merge", "--abort"], "merge --abort")?;
 
     if output.status.success() {
@@ -80,7 +82,7 @@ pub(super) fn abort_merge(service: &mut GitService) -> Result<(), GitError> {
     } else {
         Err(GitError::Other(format!(
             "failed to abort merge: {}",
-            merge_output_detail(&output)
+            process_output_detail(&output)
         )))
     }
 }
@@ -91,37 +93,6 @@ pub(super) fn merge_commit_message(source_branch: &str, target_branch: &str) -> 
 
 fn ensure_local_branch(service: &GitService, branch_name: &str) -> Result<(), GitError> {
     find_branch_or(&service.repo, branch_name, BranchType::Local).map(|_| ())
-}
-
-fn repo_command_dir_str(service: &GitService) -> Result<String, GitError> {
-    service
-        .repo
-        .workdir()
-        .or_else(|| service.repo.path().parent())
-        .map(|p| p.to_string_lossy().into_owned())
-        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
-}
-
-fn index_has_conflicts(service: &GitService) -> bool {
-    let Ok(mut index) = service.repo.index() else {
-        return false;
-    };
-    let _ = index.read(true);
-    index.has_conflicts()
-}
-
-fn merge_output_detail(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    if !stderr.is_empty() {
-        return stderr;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if !stdout.is_empty() {
-        return stdout;
-    }
-
-    format!("git exited with status {}", output.status)
 }
 
 #[cfg(test)]

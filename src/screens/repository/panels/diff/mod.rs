@@ -340,8 +340,9 @@ impl DiffPanel {
                         file_path: &conflict_state.file_path,
                         result: conflict_state.result.as_ref(),
                         selections: &conflict_state.selections,
-                        ours_highlighted: conflict_state.ours_highlighted.clone(),
-                        theirs_highlighted: conflict_state.theirs_highlighted.clone(),
+                        ours_canvas: conflict_state.ours_canvas.clone(),
+                        theirs_canvas: conflict_state.theirs_canvas.clone(),
+                        output_canvas: conflict_state.output_canvas.clone(),
                         ours_scroll_offset_y: conflict_state.ours_scroll_offset_y,
                         theirs_scroll_offset_y: conflict_state.theirs_scroll_offset_y,
                         output_scroll_offset_y: conflict_state.output_scroll_offset_y,
@@ -548,6 +549,7 @@ impl DiffPanel {
                 state.render_generation = generation;
                 state.ours_highlighted = None;
                 state.theirs_highlighted = None;
+                state.rebuild_canvases();
                 let result = state.result.as_ref()?;
                 let file_path = state.file_path.clone();
                 let ours_content =
@@ -842,7 +844,6 @@ pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     let lines = Arc::new(lines);
     state.set_lines(lines.clone());
     state.set_fallbacks(fallbacks.clone());
-    let extension = crate::services::file_extension_from_path(&file_path);
     let old_document = old_file_content
         .as_ref()
         .map(|content| HighlightDocument::from_path(content, file_path.as_str()));
@@ -855,14 +856,17 @@ pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     let presentation_generation = *next_generation;
     *next_generation = next_generation.wrapping_add(1).max(1);
     state.set_generation(presentation_generation);
-    span.field("extension", &extension)
-        .finish_with("applied", true);
+    span.field(
+        "extension",
+        crate::services::file_extension_from_path(&file_path),
+    )
+    .finish_with("applied", true);
     vec![DiffPanelAction::RunSingleFileRenderBuild {
         generation: presentation_generation,
         kind: state.render_kind(),
         file_path,
         lines,
-        fallbacks: fallbacks.clone(),
+        fallbacks,
         highlight_provider,
     }]
 }

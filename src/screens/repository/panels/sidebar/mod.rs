@@ -26,7 +26,6 @@ pub(in crate::screens::repository) struct SidebarViewCtx<'a> {
     pub commit_count: usize,
     pub width: f32,
     pub is_resizing: bool,
-    pub active_worktree_path: &'a std::path::Path,
 }
 
 impl SidebarPanel {

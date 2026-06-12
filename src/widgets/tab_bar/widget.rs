@@ -574,23 +574,35 @@ where
         .padding(Padding::from([0, 10]))
         .align_y(iced::alignment::Vertical::Center);
 
-    let visual: Element<'a, M> = Hoverable::new(inner, move |_: &Theme, status: HoverStatus| {
-        let bg = if active || status.is_hovered() {
-            theme::BG_HOVER
-        } else {
-            theme::BG_BASE
-        };
-        iced::widget::container::Style {
-            background: Some(bg.into()),
-            border: Border {
-                color: theme::BORDER,
-                width: 1.0,
-                radius: 0.0.into(),
-            },
-            ..Default::default()
-        }
-    })
-    .into();
+    let tab_border = Border {
+        color: theme::BORDER,
+        width: 1.0,
+        radius: 0.0.into(),
+    };
+
+    let visual: Element<'a, M> = if active {
+        inner
+            .style(move |_: &Theme| iced::widget::container::Style {
+                background: Some(theme::BG_HOVER.into()),
+                border: tab_border,
+                ..Default::default()
+            })
+            .into()
+    } else {
+        Hoverable::new(inner, move |_: &Theme, status: HoverStatus| {
+            let bg = if status.is_hovered() {
+                theme::BG_HOVER
+            } else {
+                theme::BG_BASE
+            };
+            iced::widget::container::Style {
+                background: Some(bg.into()),
+                border: tab_border,
+                ..Default::default()
+            }
+        })
+        .into()
+    };
 
     container(visual)
         .height(Length::Fixed(theme::TAB_HEIGHT as f32))

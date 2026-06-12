@@ -31,6 +31,16 @@ impl Dialog {
             .find(|item| item.id == id)
             .map(|item| item.value.as_str())
     }
+
+    pub(crate) fn set_button_enabled(&mut self, button_id: &str, enabled: bool) {
+        if let Some(button) = self
+            .buttons
+            .iter_mut()
+            .find(|button| button.id.0 == button_id)
+        {
+            button.enabled = enabled;
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

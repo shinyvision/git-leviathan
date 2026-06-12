@@ -106,38 +106,14 @@ pub(crate) fn refresh_enabled(dialog: &mut Dialog) {
         return;
     }
     let branch_name = branch_name_input(dialog).unwrap_or_default();
-    let existing = existing_branches(dialog);
-    let enabled = validate_branch_name(&branch_name, &existing).is_ok();
-    set_button_enabled(dialog, CONFIRM_BUTTON_ID, enabled);
+    let enabled = validate_branch_name(&branch_name, existing_branches(dialog)).is_ok();
+    dialog.set_button_enabled(CONFIRM_BUTTON_ID, enabled);
 }
 
-fn existing_branches(dialog: &Dialog) -> Vec<String> {
+fn existing_branches(dialog: &Dialog) -> impl Iterator<Item = &str> {
     dialog
         .data
         .iter()
         .filter(|item| item.id == DATA_EXISTING_BRANCH)
-        .map(|item| item.value.clone())
-        .collect()
-}
-
-fn set_button_enabled(dialog: &mut Dialog, button_id: &str, enabled: bool) {
-    if let Some(button) = dialog
-        .buttons
-        .iter_mut()
-        .find(|button| button.id.0 == button_id)
-    {
-        button.enabled = enabled;
-    }
-}
-
-pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CONFIRM_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
+        .map(|item| item.value.as_str())
 }

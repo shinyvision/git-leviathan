@@ -1820,6 +1820,52 @@ const HEALTH_METHODS: &[ApiTypeMethod] = &[
     },
 ];
 
+const JOB_HANDLE_METHODS: &[ApiTypeMethod] = &[
+    ApiTypeMethod {
+        name: "cancel",
+        doc: "Request cancellation of the worker thread.",
+        params: &[],
+        returns: &[],
+    },
+    ApiTypeMethod {
+        name: "id",
+        doc: "Return host job id.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "integer",
+            doc: "Job id.",
+        }],
+    },
+];
+
+const JOB_CONTEXT_METHODS: &[ApiTypeMethod] = &[ApiTypeMethod {
+    name: "cancelled",
+    doc: "Whether cancellation has been requested for this worker.",
+    params: &[],
+    returns: &[ApiReturn {
+        lua_type: "boolean",
+        doc: "True once the host requests cancellation.",
+    }],
+}];
+
+const TIMER_HANDLE_METHODS: &[ApiTypeMethod] = &[
+    ApiTypeMethod {
+        name: "cancel",
+        doc: "Cancel the timer if it has not already fired or been cancelled.",
+        params: &[],
+        returns: &[],
+    },
+    ApiTypeMethod {
+        name: "id",
+        doc: "Return host timer id.",
+        params: &[],
+        returns: &[ApiReturn {
+            lua_type: "integer",
+            doc: "Timer id.",
+        }],
+    },
+];
+
 pub const API_TYPES: &[ApiType] = &[
     ApiType {
         name: "leviathan",
@@ -1959,6 +2005,13 @@ pub const API_TYPES: &[ApiType] = &[
         since: "1.0",
         doc: "Active repository snapshot.",
         fields: TYPE_REPOSITORY_FIELDS,
+        methods: &[],
+    },
+    ApiType {
+        name: "leviathan.git",
+        since: "1.0",
+        doc: "Typed Git write namespace.",
+        fields: &[],
         methods: &[],
     },
     ApiType {
@@ -2534,6 +2587,41 @@ pub const API_TYPES: &[ApiType] = &[
         doc: "Health check context userdata.",
         fields: &[],
         methods: HEALTH_METHODS,
+    },
+    ApiType {
+        name: "leviathan.async",
+        since: "1.0",
+        doc: "Host-managed background worker namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanJobHandle",
+        since: "1.0",
+        doc: "Cancellable handle for a spawned async worker.",
+        fields: &[],
+        methods: JOB_HANDLE_METHODS,
+    },
+    ApiType {
+        name: "LeviathanJobContext",
+        since: "1.0",
+        doc: "Cancellation projection handed to an async worker body.",
+        fields: &[],
+        methods: JOB_CONTEXT_METHODS,
+    },
+    ApiType {
+        name: "leviathan.timer",
+        since: "1.0",
+        doc: "One-shot and repeating timer namespace.",
+        fields: &[],
+        methods: &[],
+    },
+    ApiType {
+        name: "LeviathanTimerHandle",
+        since: "1.0",
+        doc: "Cancellable timer handle.",
+        fields: &[],
+        methods: TIMER_HANDLE_METHODS,
     },
     ApiType {
         name: "leviathan.runtime",

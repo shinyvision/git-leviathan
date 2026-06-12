@@ -1,8 +1,10 @@
-use git2::{build::CheckoutBuilder, BranchType, StashFlags, StatusOptions};
+use git2::{build::CheckoutBuilder, BranchType, StatusOptions};
 
 use super::helpers::{
-    find_branch_or, find_commit_or, find_reference_or, spawn_git_command, wrap_git2_error,
+    command_dir, find_branch_or, find_commit_or, find_reference_or, spawn_git_command,
+    wrap_git2_error,
 };
+use super::squash::{maybe_stash_workdir, restore_stash};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -311,7 +313,11 @@ pub(super) fn checkout_branch(service: &mut GitService, branch_name: &str) -> Re
     let previous_head_ref = current_head_ref(service);
     ensure_local_checkout_branch(service, branch_name)?;
 
-    let created_stash = maybe_stash_workdir(service, previous_branch.is_some(), "before checkout")?;
+    let created_stash = if previous_branch.is_some() {
+        maybe_stash_workdir(service, "before checkout")?
+    } else {
+        false
+    };
 
     if let Err(err) = checkout_local_branch(service, branch_name, created_stash) {
         rollback_checkout(service, previous_head_ref.as_deref(), created_stash);
@@ -321,9 +327,7 @@ pub(super) fn checkout_branch(service: &mut GitService, branch_name: &str) -> Re
     restore_stash(
         service,
         created_stash,
-        previous_branch.as_deref(),
-        branch_name,
-        "checkout",
+        &format!("checkout to {branch_name}"),
     );
 
     Ok(())
@@ -360,37 +364,6 @@ fn current_head_ref(service: &GitService) -> Option<String> {
         .and_then(|head| head.name().map(|name| name.to_string()))
 }
 
-fn maybe_stash_workdir(
-    service: &mut GitService,
-    has_previous_branch: bool,
-    context: &str,
-) -> Result<bool, GitError> {
-    if !has_previous_branch || !workdir_has_changes(service)? {
-        return Ok(false);
-    }
-
-    let signature = service
-        .repo
-        .signature()
-        .or_else(|_| git2::Signature::now("Git Leviathan", "git-leviathan@example.invalid"))
-        .map_err(|e| GitError::StashFailed(format!("failed to create stash signature: {e}")))?;
-
-    match service
-        .repo
-        .stash_save2(&signature, None, Some(StashFlags::INCLUDE_UNTRACKED))
-    {
-        Ok(_) => Ok(true),
-        // libgit2 returns ENOTFOUND when its own diff sees no stashable content,
-        // even though `workdir_has_changes` flagged the tree (e.g. submodule
-        // state, mode-only differences). Treat as "no stash needed".
-        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
-        Err(e) => Err(GitError::StashFailed(format!(
-            "failed to stash local changes {}: {e}",
-            context
-        ))),
-    }
-}
-
 fn rollback_checkout(
     service: &mut GitService,
     previous_head_ref: Option<&str>,
@@ -402,74 +375,6 @@ fn rollback_checkout(
 
     if created_stash {
         let _ = service.repo.stash_pop(0, None);
-    }
-}
-
-fn wait_for_clean_workdir(service: &GitService) -> bool {
-    const POLL_INTERVAL_MS: u64 = 500;
-    const MAX_POLLS: u32 = 10; // up to 5 seconds
-
-    for attempt in 0..MAX_POLLS {
-        if attempt > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
-        }
-        if let Ok(false) = workdir_has_changes(service) {
-            return true;
-        }
-    }
-    false
-}
-
-fn restore_stash(
-    service: &mut GitService,
-    created_stash: bool,
-    previous_branch: Option<&str>,
-    branch_name: &str,
-    action: &str,
-) {
-    if !created_stash {
-        return;
-    }
-
-    // After checkout git's working tree is temporarily dirty while files settle.
-    // Poll on 500 ms intervals until clean before attempting the pop.
-    if !wait_for_clean_workdir(service) {
-        eprintln!(
-            "git_leviathan: skipping stash pop after {} to {}: working tree did not settle",
-            action, branch_name
-        );
-        return;
-    }
-
-    let repo_dir = service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned();
-
-    // Use git CLI for stash pop: git2's stash_pop skips conflicts silently when
-    // the working tree is clean (it fuzzy-applies rather than 3-way merging).
-    // The CLI performs a proper 3-way merge and exits non-zero on conflict while
-    // keeping the stash entry intact.
-    let popped = spawn_git_command(&repo_dir, &["stash", "pop"], "stash pop after checkout")
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-
-    if !popped {
-        let old_branch = previous_branch.unwrap_or("HEAD");
-        eprintln!(
-            "git_leviathan: stash for WIP on {} could not be applied after {} to {}: keeping stash",
-            old_branch, action, branch_name
-        );
-        // The stash entry is preserved automatically when pop fails.
-        // Reset the working tree and index back to HEAD to clear any partial
-        // conflict state left by the failed pop.
-        let _ = spawn_git_command(
-            &repo_dir,
-            &["reset", "--hard", "HEAD"],
-            "reset after stash pop failure",
-        );
     }
 }
 
@@ -732,12 +637,7 @@ fn push_delete_remote_branch(
     remote_name: &str,
     remote_branch_name: &str,
 ) -> Result<(), GitError> {
-    let repo_dir = service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned();
+    let repo_dir = command_dir(&service.repo)?;
     let refspec = format!(":refs/heads/{}", remote_branch_name);
     let op = format!("push delete {remote_name}/{remote_branch_name}");
     let output =
@@ -862,11 +762,11 @@ fn fast_forward_and_checkout(
     let previous_branch = current_branch_name(service);
     let previous_head_ref = current_head_ref(service);
 
-    let created_stash = maybe_stash_workdir(
-        service,
-        previous_branch.is_some(),
-        "before fast-forward checkout",
-    )?;
+    let created_stash = if previous_branch.is_some() {
+        maybe_stash_workdir(service, "before fast-forward checkout")?
+    } else {
+        false
+    };
 
     {
         let target_commit =
@@ -922,9 +822,7 @@ fn fast_forward_and_checkout(
     restore_stash(
         service,
         created_stash,
-        previous_branch.as_deref(),
-        branch_name,
-        "fast-forward checkout",
+        &format!("fast-forward checkout to {branch_name}"),
     );
 
     Ok(())
@@ -1059,38 +957,6 @@ pub(super) fn fast_forward_branch_to_branch(
     }
 
     Ok(())
-}
-
-pub(super) fn is_branch_ancestor_of_branch(
-    service: &GitService,
-    ancestor_branch: &str,
-    descendant_branch: &str,
-) -> Result<bool, GitError> {
-    if ancestor_branch == descendant_branch {
-        return Ok(false);
-    }
-    let Ok(a) = service.repo.find_branch(ancestor_branch, BranchType::Local) else {
-        return Ok(false);
-    };
-    let Ok(d) = service
-        .repo
-        .find_branch(descendant_branch, BranchType::Local)
-    else {
-        return Ok(false);
-    };
-    let Some(a_oid) = a.get().target() else {
-        return Ok(false);
-    };
-    let Some(d_oid) = d.get().target() else {
-        return Ok(false);
-    };
-    if a_oid == d_oid {
-        return Ok(false);
-    }
-    service
-        .repo
-        .graph_descendant_of(d_oid, a_oid)
-        .map_err(|e| wrap_git2_error("compare branch histories", e))
 }
 
 fn restore_head(service: &GitService, reference_name: &str) -> Result<(), GitError> {

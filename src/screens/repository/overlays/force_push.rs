@@ -52,20 +52,9 @@ pub(crate) fn dialog(state: State) -> Dialog {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
     dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
-}
-
-pub(crate) fn is_confirm_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CONFIRM_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_confirm_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && is_confirm_button(button_id)
 }
 
 #[cfg(test)]
@@ -84,8 +73,8 @@ mod tests {
             dialog.message.text,
             "Force push main to origin. This cannot be undone."
         );
-        assert!(is_confirm_button(&dialog.buttons[0].id));
-        assert!(is_cancel_button(&dialog.buttons[1].id));
+        assert_eq!(dialog.buttons[0].id.0, CONFIRM_BUTTON_ID);
+        assert_eq!(dialog.buttons[1].id.0, CANCEL_BUTTON_ID);
         assert!(dialog.controls.is_empty());
     }
 }

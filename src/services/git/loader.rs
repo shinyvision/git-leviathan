@@ -5,11 +5,28 @@ use git2::{BranchType, Sort};
 use crate::services::{CommitSnapshot, RefsSnapshot, RepoRefKind, RepoSnapshot};
 
 use super::{
-    checkout::is_branch_ancestor_of_branch, refs::load_refs, stashes::load_stashes,
-    working_tree::load_dirty_snapshot, GitService,
+    refs::load_refs, stashes::load_stashes, working_tree::load_dirty_snapshot, GitService,
 };
 
-pub(super) fn load_repo(service: &GitService, commit_limit: usize) -> RepoSnapshot {
+/// Fields shared by `RepoSnapshot` and `RefsSnapshot`, computed once so the two
+/// snapshot builders cannot drift. `current_branch` is computed here (it feeds
+/// `fast_forward_candidates`) even though only `RepoSnapshot` keeps it.
+struct CommonSnapshot {
+    commits: Vec<CommitSnapshot>,
+    refs: Vec<crate::services::RepoRef>,
+    dirty: Option<crate::services::DirtySnapshot>,
+    stashes: Vec<crate::services::StashSnapshot>,
+    current_branch: Option<String>,
+    head_hash: Option<String>,
+    has_more_commits: bool,
+    default_remote_name: Option<String>,
+    remote_names: Vec<String>,
+    fast_forward_candidates: HashSet<String>,
+    worktrees: Vec<crate::core::WorktreeInfo>,
+    active_worktree_path: std::path::PathBuf,
+}
+
+fn load_common(service: &GitService, commit_limit: usize) -> CommonSnapshot {
     let refs = load_refs(service);
     let (commits, has_more_commits) = load_commits(service, &refs, commit_limit);
     let current_branch = service.current_branch_name();
@@ -24,12 +41,11 @@ pub(super) fn load_repo(service: &GitService, commit_limit: usize) -> RepoSnapsh
         .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
         .unwrap_or_default();
 
-    RepoSnapshot {
+    CommonSnapshot {
         commits,
         refs,
         dirty: load_dirty_snapshot(service),
         stashes: load_stashes(service),
-        repo_name: repo_name(service),
         current_branch,
         head_hash: head_hash(service),
         has_more_commits,
@@ -41,37 +57,43 @@ pub(super) fn load_repo(service: &GitService, commit_limit: usize) -> RepoSnapsh
     }
 }
 
-/// Read-only local state needed to refresh the graph + sidebar refs tree after
-/// a fetch. Skips working-tree inspection, HEAD-branch lookup, and repo-name
-/// derivation — fetch cannot change any of those, and keeping them out of the
-/// payload is what lets the fetch-path state update be architecturally narrow.
-pub(super) fn load_refs_snapshot(service: &GitService, commit_limit: usize) -> RefsSnapshot {
-    let refs = load_refs(service);
-    let (commits, has_more_commits) = load_commits(service, &refs, commit_limit);
-    let current_branch = service.current_branch_name();
-    let remote_names = load_remote_names(service);
-    let default_remote_name = pick_default_remote(&remote_names);
-    let fast_forward_candidates =
-        load_fast_forward_candidates(service, current_branch.as_deref(), &refs);
-    let worktrees = super::worktrees::list_worktrees(service).unwrap_or_default();
-    let active_worktree_path = service
-        .repo
-        .workdir()
-        .map(|p| p.canonicalize().unwrap_or_else(|_| p.to_path_buf()))
-        .unwrap_or_default();
+pub(super) fn load_repo(service: &GitService, commit_limit: usize) -> RepoSnapshot {
+    let common = load_common(service, commit_limit);
+    RepoSnapshot {
+        commits: common.commits,
+        refs: common.refs,
+        dirty: common.dirty,
+        stashes: common.stashes,
+        repo_name: repo_name(service),
+        current_branch: common.current_branch,
+        head_hash: common.head_hash,
+        has_more_commits: common.has_more_commits,
+        default_remote_name: common.default_remote_name,
+        remote_names: common.remote_names,
+        fast_forward_candidates: common.fast_forward_candidates,
+        worktrees: common.worktrees,
+        active_worktree_path: common.active_worktree_path,
+    }
+}
 
+/// Read-only local state needed to refresh the graph + sidebar refs tree after
+/// a fetch. Still inspects the working tree (`dirty`) and the HEAD branch
+/// (needed to compute `fast_forward_candidates`); only the repo name is
+/// dropped, since a fetch cannot rename the repository.
+pub(super) fn load_refs_snapshot(service: &GitService, commit_limit: usize) -> RefsSnapshot {
+    let common = load_common(service, commit_limit);
     RefsSnapshot {
-        commits,
-        refs,
-        dirty: load_dirty_snapshot(service),
-        stashes: load_stashes(service),
-        head_hash: head_hash(service),
-        has_more_commits,
-        default_remote_name,
-        remote_names,
-        fast_forward_candidates,
-        worktrees,
-        active_worktree_path,
+        commits: common.commits,
+        refs: common.refs,
+        dirty: common.dirty,
+        stashes: common.stashes,
+        head_hash: common.head_hash,
+        has_more_commits: common.has_more_commits,
+        default_remote_name: common.default_remote_name,
+        remote_names: common.remote_names,
+        fast_forward_candidates: common.fast_forward_candidates,
+        worktrees: common.worktrees,
+        active_worktree_path: common.active_worktree_path,
     }
 }
 
@@ -93,8 +115,12 @@ fn pick_default_remote(remotes: &[String]) -> Option<String> {
 }
 
 /// Compute the set of local branches the current branch is a strict ancestor
-/// of. Mirrors `is_branch_ancestor_of_branch` but in bulk so right-click
-/// menus can answer the "can fast-forward?" question from cached data.
+/// of, so right-click menus can answer the "can fast-forward?" question from
+/// cached data.
+///
+/// Resolves the current tip once and reads each candidate tip from the already
+/// loaded `refs` so only branches whose tip differs from HEAD's pay a
+/// `graph_descendant_of` walk; identical tips short-circuit without one.
 fn load_fast_forward_candidates(
     service: &GitService,
     current_branch: Option<&str>,
@@ -103,23 +129,31 @@ fn load_fast_forward_candidates(
     let Some(current) = current_branch else {
         return HashSet::new();
     };
-    let current = current.to_string();
-    if service
+    let Ok(current_oid) = service
         .repo
-        .find_branch(&current, BranchType::Local)
-        .is_err()
-    {
+        .find_branch(current, BranchType::Local)
+        .and_then(|b| {
+            b.get()
+                .target()
+                .ok_or_else(|| git2::Error::from_str("current branch has no target"))
+        })
+    else {
         return HashSet::new();
-    }
+    };
 
     refs.iter()
         .filter(|r| r.kind == RepoRefKind::LocalBranch && r.name != current)
-        .filter_map(|r| {
-            is_branch_ancestor_of_branch(service, &current, &r.name)
-                .ok()
-                .filter(|&can_ff| can_ff)
-                .map(|_| r.name.clone())
+        .filter(|r| {
+            let Ok(oid) = git2::Oid::from_str(&r.target_hash) else {
+                return false;
+            };
+            oid != current_oid
+                && service
+                    .repo
+                    .graph_descendant_of(oid, current_oid)
+                    .unwrap_or(false)
         })
+        .map(|r| r.name.clone())
         .collect()
 }
 
@@ -192,7 +226,7 @@ fn repo_name(service: &GitService) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-fn head_hash(service: &GitService) -> Option<String> {
+pub(super) fn head_hash(service: &GitService) -> Option<String> {
     service
         .repo
         .head()

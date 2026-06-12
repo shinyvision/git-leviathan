@@ -12,11 +12,98 @@
 use std::path::Path;
 
 use iced::{widget::text, Alignment, Border, Color, Element, Length, Shadow, Theme, Vector};
+use serde_json::Value;
 
 use crate::message::Message;
+use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::{
-    AstAlignX, AstAlignY, AstBorder, AstColor, AstLength, AstShadow,
+    AstAlignX, AstAlignY, AstBorder, AstColor, AstLength, AstShadow, WidgetLimits,
 };
+
+use super::{BuildCtx, DispatchScope};
+
+/// Owned snapshot of `BuildCtx.scope` used inside `'static` event closures.
+/// Interactive widgets capture this and call [`ScopeDispatch::publish`] to
+/// route a `(event, value)` pair to the correct [`PluginMessage`] variant.
+#[derive(Clone)]
+pub(super) enum ScopeDispatch {
+    Screen {
+        plugin_id: String,
+        screen_id: String,
+    },
+    Slot {
+        plugin_id: String,
+        region: String,
+        container: String,
+        slot_id: String,
+    },
+    Overlay {
+        plugin_id: String,
+        overlay_id: String,
+    },
+}
+
+impl ScopeDispatch {
+    pub(super) fn from_ctx(ctx: &BuildCtx<'_>) -> Self {
+        let plugin_id = ctx.plugin_id.to_string();
+        match ctx.scope {
+            DispatchScope::Screen { screen_id } => Self::Screen {
+                plugin_id,
+                screen_id: screen_id.to_string(),
+            },
+            DispatchScope::Slot {
+                region,
+                container,
+                slot_id,
+            } => Self::Slot {
+                plugin_id,
+                region: region.to_string(),
+                container: container.to_string(),
+                slot_id: slot_id.to_string(),
+            },
+            DispatchScope::Overlay { overlay_id } => Self::Overlay {
+                plugin_id,
+                overlay_id: overlay_id.to_string(),
+            },
+        }
+    }
+
+    pub(super) fn publish(&self, event: String, value: Value) -> Message {
+        match self.clone() {
+            Self::Screen {
+                plugin_id,
+                screen_id,
+            } => Message::Plugin(PluginMessage::Event {
+                plugin_id,
+                screen_id,
+                event,
+                value,
+            }),
+            Self::Slot {
+                plugin_id,
+                region,
+                container,
+                slot_id,
+            } => Message::Plugin(PluginMessage::SlotClicked {
+                plugin_id,
+                region,
+                container,
+                slot_id,
+                event,
+                value,
+            }),
+            Self::Overlay {
+                plugin_id,
+                overlay_id,
+            } => Message::Plugin(PluginMessage::OverlayEvent {
+                plugin_id,
+                overlay_id,
+                event,
+                value,
+            }),
+        }
+    }
+}
 
 /// Convert an AST length to iced. `Auto` means "no opinion" — the caller
 /// picks its own per-widget default (rows want `Fill`, padding wants
@@ -117,7 +204,7 @@ pub(super) fn shadow_to_iced(s: &AstShadow) -> Shadow {
 /// `..`, `.`, absolute prefixes, drive letters, null bytes, or overlong
 /// strings. Shared by every widget that resolves a plugin asset.
 pub(super) fn is_safe_relative_path(s: &str) -> bool {
-    if s.is_empty() || s.len() > 256 || s.contains('\0') {
+    if s.is_empty() || s.len() > WidgetLimits::DEFAULT.max_asset_path_length || s.contains('\0') {
         return false;
     }
     let p = Path::new(s);

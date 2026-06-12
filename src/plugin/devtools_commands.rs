@@ -294,11 +294,32 @@ fn devtools_specs() -> Vec<DevtoolsCommandSpec> {
     ]
 }
 
+/// Stable list of every devtools command name, in the same order as
+/// [`devtools_specs`]. Kept as a `const` so the dispatch guard can
+/// check membership without rebuilding the full spec vector.
+const DEVTOOLS_COMMAND_NAMES: &[&str] = &[
+    "plugin.reload",
+    "plugin.disable",
+    "plugin.enable",
+    "plugin.open_log",
+    "plugin.inspect_ui_tree",
+    "plugin.inspect_ui_context",
+    "plugin.inspect_dock_layout",
+    "plugin.run_health_check",
+    "plugin.clear_state",
+    "plugin.export_diagnostic_bundle",
+    "plugin.show_capability_audit",
+    "plugin.show_runtime_path",
+    "plugin_ui.toggle_contribution",
+    "plugin_ui.reset_layout",
+    "plugin_ui.inspect_contribution",
+];
+
 /// Stable list of every devtools command name. Used by tests to
 /// confirm every command is reachable through the dispatcher and by
 /// the host to recognise devtools dispatches inside `invoke_command`.
 pub fn devtools_command_names() -> Vec<&'static str> {
-    devtools_specs().into_iter().map(|s| s.name).collect()
+    DEVTOOLS_COMMAND_NAMES.to_vec()
 }
 
 /// Register every devtools command into `registry`. Bodies capture
@@ -344,7 +365,7 @@ pub fn register(
 /// `devtools.command.unknown_plugin` diagnostics from the host
 /// action handler, since we don't have `&PluginHost` here.
 fn run_command(name: &str, args: &Value, actions: &DevtoolsActionQueue) -> Result<(), String> {
-    if !devtools_command_names().contains(&name) {
+    if !DEVTOOLS_COMMAND_NAMES.contains(&name) {
         return Err(format!("unknown devtools command `{name}`"));
     }
     let action = DevtoolsAction::new(name, args.clone());
@@ -401,6 +422,9 @@ mod tests {
             "plugin_ui.inspect_contribution",
         ];
         assert_eq!(names, expected);
+        // The const list must stay in lockstep with the specs.
+        let spec_names: Vec<&str> = devtools_specs().into_iter().map(|s| s.name).collect();
+        assert_eq!(DEVTOOLS_COMMAND_NAMES, spec_names.as_slice());
     }
 
     #[test]

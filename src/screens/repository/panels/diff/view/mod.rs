@@ -16,10 +16,13 @@ use crate::{
     message::{AppMessage, Message},
     style, theme,
     widgets::{
+        conflict_canvas,
         diff_canvas::{
-            self, diff_content_canvas, diff_gutter_canvas, DiffCanvasData, DiffSelection,
+            self, diff_char_width, diff_content_canvas, diff_gutter_canvas, DiffCanvasData,
+            DiffSelection,
         },
         shared::horizontal_space,
+        text::TextCanvasData,
     },
 };
 
@@ -298,6 +301,10 @@ pub(in crate::screens::repository) fn diff_center_view<'a>(
     .into()
 }
 
+fn empty_conflict_canvas() -> Arc<TextCanvasData> {
+    conflict_canvas::build_output_canvas_data(Vec::new(), diff_char_width())
+}
+
 pub(in crate::screens::repository) fn conflict_center_view<'a>(
     model: ConflictResolverViewModel<'a>,
 ) -> Element<'a, Message> {
@@ -305,8 +312,9 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
         file_path,
         result,
         selections,
-        ours_highlighted,
-        theirs_highlighted,
+        ours_canvas,
+        theirs_canvas,
+        output_canvas,
         ours_scroll_offset_y,
         theirs_scroll_offset_y,
         output_scroll_offset_y,
@@ -341,13 +349,25 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
     let body: Element<'a, Message> = match result {
         Some(result) => {
             use super::conflict::ConflictSide;
+            use crate::widgets::conflict_canvas::{
+                CANVAS_ID_OURS, CANVAS_ID_OUTPUT, CANVAS_ID_THEIRS,
+            };
+            let resolve = |cached: Option<Arc<TextCanvasData>>, canvas_id| {
+                cached.unwrap_or_else(|| {
+                    build_conflict_rows_for_canvas(canvas_id, result, selections, None, None)
+                        .unwrap_or_else(empty_conflict_canvas)
+                })
+            };
+            let ours_data = resolve(ours_canvas, CANVAS_ID_OURS);
+            let theirs_data = resolve(theirs_canvas, CANVAS_ID_THEIRS);
+            let output_data = resolve(output_canvas, CANVAS_ID_OUTPUT);
             let ours = conflict_buffer_panel(ConflictBufferPanelInput {
                 prefix: "A",
                 label: &result.ours_label,
-                side: Some(ConflictSide::Ours),
+                side: ConflictSide::Ours,
                 result,
                 selections,
-                highlighted: ours_highlighted.clone(),
+                data: ours_data,
                 scroll_offset_y: ours_scroll_offset_y,
                 selection: ours_selection,
                 shift_held,
@@ -355,10 +375,10 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
             let theirs = conflict_buffer_panel(ConflictBufferPanelInput {
                 prefix: "B",
                 label: &result.theirs_label,
-                side: Some(ConflictSide::Theirs),
+                side: ConflictSide::Theirs,
                 result,
                 selections,
-                highlighted: theirs_highlighted.clone(),
+                data: theirs_data,
                 scroll_offset_y: theirs_scroll_offset_y,
                 selection: theirs_selection,
                 shift_held,
@@ -378,8 +398,7 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
             .height(Length::FillPortion(2));
 
             let output = output_buffer_panel(
-                result,
-                selections,
+                output_data,
                 output_scroll_offset_y,
                 output_selection,
                 shift_held,

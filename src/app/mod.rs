@@ -77,6 +77,27 @@ pub struct App {
     pub(super) pending_focus_reason: Option<crate::plugin::ui::focus::FocusReason>,
     pub(super) settings: Option<SettingsService>,
     pub(super) last_persisted_tabs: Option<Vec<PersistedPluginTab>>,
+    /// `(active_tab_id, source_screen_revision, identity_fingerprint)` last
+    /// pushed into the plugin host's `leviathan.repository`. Lets the
+    /// per-message refs clone + sync skip work when neither the active tab,
+    /// its loaded snapshot, nor its repo/remote identity changed. The
+    /// fingerprint covers ref-less changes (e.g. `git remote add`) that the
+    /// graph revision does not hash.
+    pub(super) last_synced_repo: Option<(crate::core::TabId, crate::core::RepoVersion, u64)>,
+    /// `TabManager::revision()` value `process_tab_changes` last reflected.
+    /// `None` until the first reflection so startup always syncs the baseline.
+    pub(super) tab_changes_revision: Option<u64>,
+    /// Set whenever plugin screen state or the tab set may have changed, so
+    /// `persist_plugin_tabs` only re-serializes (which re-enters Lua) when
+    /// there is something new to persist.
+    pub(super) plugin_tabs_dirty: bool,
+    /// Last `PluginHost::lua_activity()` value observed by
+    /// `persist_plugin_tabs`. Plugin screen state lives in Lua and can
+    /// mutate from any callback (autocmd/event, command, timer, async
+    /// job) without touching `plugin_tabs_dirty`, so a change in this
+    /// counter also forces a re-serialize. The `last_persisted_tabs`
+    /// equality check still suppresses redundant disk writes.
+    pub(super) last_lua_activity: u64,
 }
 
 impl App {
@@ -84,18 +105,6 @@ impl App {
         let presenter: Arc<dyn Presenter> = Arc::new(DefaultPresenter::new());
         let mut plugin_host = PluginHost::new();
         plugin_host.load_from_default_dirs();
-        let _ = plugin_host.introspect();
-        let _ = plugin_host.extension_context_menu_items("");
-        let _ = plugin_host.extension_graph_decorations_for_commit("");
-        plugin_host.discard_extensions_for_plugin("");
-        // Prime the budget tracker query / reset / cleanup
-        // entry points so the dead-code analyser sees them as live.
-        // Sentinel ids match nothing — the calls exist for the side
-        // effect of resolving the breaker lookup, not its result.
-        let _ = plugin_host.is_breaker_tripped("", 0, "");
-        plugin_host.reset_breaker("", "");
-        plugin_host.drop_breaker_state_for_plugin("");
-        plugin_host.drop_breaker_state_for_generation("", 0);
 
         let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
             build_slot_registries(&plugin_host);
@@ -120,6 +129,10 @@ impl App {
             pending_focus_reason: None,
             settings: None,
             last_persisted_tabs: None,
+            last_synced_repo: None,
+            tab_changes_revision: None,
+            plugin_tabs_dirty: true,
+            last_lua_activity: 0,
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -265,6 +278,13 @@ impl App {
     }
 
     fn persist_plugin_tabs(&mut self) {
+        let lua_activity = self.plugin_host.lua_activity();
+        if !self.plugin_tabs_dirty && lua_activity == self.last_lua_activity {
+            return;
+        }
+        self.plugin_tabs_dirty = false;
+        self.last_lua_activity = lua_activity;
+
         let tabs = self.collect_plugin_tabs();
         if self.last_persisted_tabs.as_deref() == Some(tabs.as_slice()) {
             return;
@@ -419,14 +439,18 @@ impl App {
 
     /// Push the active tab's branch refs into every plugin's
     /// `leviathan.repository` and fire `BranchChanged` when they differ
-    /// from the last sync. Called at the end of `update` — the plugin
-    /// host short-circuits on unchanged state so the common path is a
-    /// cheap hash compare.
+    /// from the last sync.
     ///
-    /// The refs slice is cloned into a local `Vec` so we can drop the
-    /// borrow on `self.tabs` before re-borrowing `self.plugin_host`
-    /// mutably; the list is small (<= a few dozen entries on typical
-    /// repos) so the clone is cheap.
+    /// Called at the end of every `update`. The refs clone +
+    /// `RepositorySyncState` build + `host::sync_repository` are gated on
+    /// `(active_tab_id, source_screen_revision)` so idle ticks and keystrokes
+    /// that touched neither the active tab nor its loaded snapshot skip the
+    /// per-message allocation entirely. Tab switches and repo reloads bump
+    /// one of those, so correctness is preserved.
+    ///
+    /// The gateway and selection sync run every message: selection navigation
+    /// does not bump the repo revision and both already self-short-circuit on
+    /// unchanged state.
     fn sync_repository_to_plugins(&mut self) {
         let bound_repo_tab = self
             .tabs
@@ -441,51 +465,79 @@ impl App {
         let selection = source_screen
             .map(|screen| screen.selection_context_snapshot())
             .unwrap_or_else(crate::plugin::ui::context::SelectionContextSnapshot::none);
-        let (
-            repo_name,
-            workdir_path,
-            current_branch,
-            head_hash,
-            default_remote,
-            remote_names,
-            refs,
-        ) = source_screen
+        let identity_fingerprint = source_screen
             .map(|screen| {
-                (
-                    screen.repo_name().to_string(),
-                    screen.active_worktree_path().to_string_lossy().into_owned(),
-                    screen.current_branch().to_string(),
-                    screen.head_hash().unwrap_or("").to_string(),
-                    screen.default_remote_name().unwrap_or("").to_string(),
-                    screen.remote_names().to_vec(),
-                    screen.branch_refs().to_vec(),
-                )
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                screen.repo_name().hash(&mut hasher);
+                screen
+                    .active_worktree_path()
+                    .to_string_lossy()
+                    .hash(&mut hasher);
+                screen.current_branch().hash(&mut hasher);
+                screen.head_hash().unwrap_or("").hash(&mut hasher);
+                screen.default_remote_name().unwrap_or("").hash(&mut hasher);
+                screen.remote_names().hash(&mut hasher);
+                hasher.finish()
             })
-            .unwrap_or_else(|| {
-                (
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                    Vec::new(),
-                    Vec::new(),
-                )
-            });
+            .unwrap_or_default();
+        let repo_signature = (
+            self.tabs.active_tab_id(),
+            source_screen
+                .map(|screen| screen.graph_revision())
+                .unwrap_or_default(),
+            identity_fingerprint,
+        );
+
         // Keep the plugin host's view of the active gateway
         // in sync with the active tab. None when no repository is open;
         // plugin git reads/writes then surface "no repository open"
         // instead of silently routing to a stale gateway.
         self.plugin_host.set_repository_gateway(active_gateway);
-        self.plugin_host.sync_repository(RepositorySyncState {
-            repo_name: &repo_name,
-            workdir_path: &workdir_path,
-            current_branch_name: &current_branch,
-            head_hash: &head_hash,
-            default_remote_name: &default_remote,
-            remote_names: &remote_names,
-            refs: &refs,
-        });
+
+        if self.last_synced_repo != Some(repo_signature) {
+            self.last_synced_repo = Some(repo_signature);
+            let (
+                repo_name,
+                workdir_path,
+                current_branch,
+                head_hash,
+                default_remote,
+                remote_names,
+                refs,
+            ) = source_screen
+                .map(|screen| {
+                    (
+                        screen.repo_name().to_string(),
+                        screen.active_worktree_path().to_string_lossy().into_owned(),
+                        screen.current_branch().to_string(),
+                        screen.head_hash().unwrap_or("").to_string(),
+                        screen.default_remote_name().unwrap_or("").to_string(),
+                        screen.remote_names().to_vec(),
+                        screen.branch_refs().to_vec(),
+                    )
+                })
+                .unwrap_or_else(|| {
+                    (
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        String::new(),
+                        Vec::new(),
+                        Vec::new(),
+                    )
+                });
+            self.plugin_host.sync_repository(RepositorySyncState {
+                repo_name: &repo_name,
+                workdir_path: &workdir_path,
+                current_branch_name: &current_branch,
+                head_hash: &head_hash,
+                default_remote_name: &default_remote,
+                remote_names: &remote_names,
+                refs: &refs,
+            });
+        }
         self.plugin_host.sync_selection(selection);
     }
 
@@ -546,10 +598,17 @@ impl App {
     /// at most once. Sync runs first so autocmd handlers reading the
     /// global see the fresh state.
     pub(super) fn process_tab_changes(&mut self) {
+        let revision = self.tabs.revision();
+        if self.tab_changes_revision == Some(revision) {
+            return;
+        }
+        self.tab_changes_revision = Some(revision);
+
         let current = self.snapshot_tabs();
         let Some(change) = self.plugin_host.sync_tab_registry(&current) else {
             return;
         };
+        self.plugin_tabs_dirty = true;
         if let Some(entry) = change.added_entry.as_ref() {
             self.plugin_host
                 .fire_event_typed("TabAdded", Self::tab_payload(entry));
@@ -747,6 +806,10 @@ mod tests {
             pending_focus_reason: None,
             settings: None,
             last_persisted_tabs: None,
+            last_synced_repo: None,
+            tab_changes_revision: None,
+            plugin_tabs_dirty: true,
+            last_lua_activity: 0,
         }
     }
 
@@ -1059,6 +1122,10 @@ capabilities = ["ui:region:main_bar"]
             pending_focus_reason: None,
             settings: None,
             last_persisted_tabs: None,
+            last_synced_repo: None,
+            tab_changes_revision: None,
+            plugin_tabs_dirty: true,
+            last_lua_activity: 0,
         };
 
         app.rebuild_slot_registries();

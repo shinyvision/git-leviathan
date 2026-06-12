@@ -39,7 +39,10 @@ pub(super) fn on_repo_loaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: repo operation failed: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Reload Failed",
+                e.to_string(),
+            )))
         }
     }
 }
@@ -92,7 +95,10 @@ pub(super) fn on_refs_reloaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: refs reload failed: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Reload Failed",
+                e.to_string(),
+            )))
         }
     }
 }
@@ -134,7 +140,10 @@ pub(super) fn on_graph_and_refs_reloaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: refs reload after fetch failed: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Reload Failed",
+                e.to_string(),
+            )))
         }
     }
 }
@@ -170,7 +179,10 @@ pub(super) fn on_more_commits_loaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: failed to load older commits: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Could Not Load Commits",
+                e.to_string(),
+            )))
         }
     }
 }
@@ -186,7 +198,10 @@ pub(super) fn on_commit_diff_loaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: diff load failed: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Could Not Load Diff",
+                e.to_string(),
+            )))
         }
     }
 }
@@ -213,7 +228,10 @@ pub(super) fn on_merged_commit_diff_loaded(
         }
         Err(e) => {
             eprintln!("git_leviathan: merged diff load failed: {}", e);
-            Task::none()
+            Task::done(Message::show_toast(ToastData::error(
+                "Could Not Load Diff",
+                e.to_string(),
+            )))
         }
     }
 }

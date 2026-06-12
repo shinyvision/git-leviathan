@@ -5,7 +5,7 @@
 //! drives the host through `tick()` to observe completion / firing /
 //! cancellation. Sleeps stay short (< 100 ms) so the suite runs fast.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::plugin::resources::PluginResourceKind;
 use crate::plugin::tests::harness::MockHost;
@@ -32,20 +32,6 @@ name = "idlep"
 version = "0.1.0"
 api_version = "1.0"
 "#;
-
-fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F, timeout_ms: u64) {
-    let start = Instant::now();
-    loop {
-        host.tick();
-        if cond(host) {
-            return;
-        }
-        if start.elapsed() > Duration::from_millis(timeout_ms) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-}
 
 #[test]
 fn loaded_plugin_without_async_work_does_not_need_runtime_tick() {
@@ -110,11 +96,7 @@ fn async_spawn_runs_body_and_invokes_callback() {
     )
     .expect("load");
 
-    drain_until(
-        &mut host,
-        |h| h.read_global_i64("asyncp", "result").is_some(),
-        2000,
-    );
+    host.drain_until(|h| h.read_global_i64("asyncp", "result").is_some(), 2000);
 
     assert_eq!(host.read_global_i64("asyncp", "result"), Some(42));
     assert_eq!(
@@ -153,8 +135,7 @@ fn async_spawn_observes_cancellation_via_ctx() {
     )
     .expect("load");
 
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| {
             h.read_global_string("asyncp", "outcome")
                 .map(|s| s != "pending")
@@ -271,8 +252,7 @@ fn timer_after_fires_once_then_disappears() {
     )
     .expect("load");
 
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("timerp", "fires").unwrap_or(0) >= 1,
         500,
     );
@@ -301,8 +281,7 @@ fn timer_every_fires_repeatedly_and_cancels() {
     )
     .expect("load");
 
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("timerp", "ticks").unwrap_or(0) >= 3,
         1000,
     );
@@ -340,8 +319,7 @@ fn timer_callback_failure_is_contained() {
     )
     .expect("load");
 
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("timerp", "fires").unwrap_or(0) >= 2,
         1000,
     );
@@ -456,8 +434,7 @@ capabilities = ["fs:watch:scope:{}"]
         f.sync_all().ok();
     }
 
-    drain_until(
-        &mut host,
+    host.drain_until(
         |h| h.read_global_i64("watchp", "events").unwrap_or(0) >= 1,
         3000,
     );

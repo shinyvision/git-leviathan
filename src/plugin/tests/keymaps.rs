@@ -9,29 +9,10 @@ use crate::plugin::keymap::{
     keymap_prefix_changed_payload, parse_key_sequence, KeymapDispatchOutcome, Keystroke,
     MatchOutcome,
 };
-use crate::plugin::tests::harness::MockHost;
-
-fn manifest(id: &str) -> String {
-    format!(
-        r#"
-id = "{id}"
-name = "{id}"
-version = "0.1.0"
-api_version = "1.0"
-"#
-    )
-}
+use crate::plugin::tests::harness::{simple_manifest as manifest, MockHost};
 
 fn ks(s: &str) -> Vec<Keystroke> {
     parse_key_sequence(s, ",").unwrap()
-}
-
-fn diag_codes(host: &MockHost) -> Vec<String> {
-    host.diagnostics()
-        .tail(400)
-        .into_iter()
-        .map(|d| d.code)
-        .collect()
 }
 
 #[test]
@@ -272,11 +253,7 @@ fn plugin_vs_plugin_resolves_lex_by_plugin_id_loser_marked_conflict_lost() {
     assert_eq!(host.read_global_i64("zzz", "zzz_fired"), Some(0));
 
     // Diagnostic recorded.
-    let codes = diag_codes(&host);
-    assert!(
-        codes.iter().any(|c| c == "keymap.conflict_lost"),
-        "expected keymap.conflict_lost in {codes:?}"
-    );
+    host.assert_diag_code("keymap.conflict_lost");
 }
 
 #[test]
@@ -706,11 +683,7 @@ fn invalid_key_string_is_rejected_with_diagnostic_and_does_not_block_load() {
         "#,
     )
     .expect("plugin must still load even with a bad keymap");
-    let codes = diag_codes(&host);
-    assert!(
-        codes.iter().any(|c| c == "keymap.invalid_key"),
-        "expected keymap.invalid_key in {codes:?}"
-    );
+    host.assert_diag_code("keymap.invalid_key");
     let snap = host.introspect();
     assert!(snap.keymaps.iter().all(|k| k.plugin_id != "p"));
 }

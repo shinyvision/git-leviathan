@@ -241,6 +241,7 @@ impl PluginHost {
             core_command_actions: crate::plugin::core_commands::CoreCommandActions::new(),
             pending_navigation_effects: Vec::new(),
             last_focus_snapshot: crate::plugin::ui::focus::FocusSnapshot::default(),
+            lua_activity: std::cell::Cell::new(0),
         };
         host.dock_manager.set_persist_path(
             host.storage_roots
@@ -261,6 +262,21 @@ impl PluginHost {
         host.register_builtin_host_commands();
         host.register_builtin_devtools_commands();
         host
+    }
+
+    /// Bump the Lua-activity counter. Called at the chokepoints where the
+    /// host enters a plugin's Lua state outside the app's own dirty
+    /// tracking. Cheap (`Cell` increment); callers may invoke per
+    /// callback.
+    pub(crate) fn bump_lua_activity(&self) {
+        self.lua_activity
+            .set(self.lua_activity.get().wrapping_add(1));
+    }
+
+    /// Monotonic Lua-activity counter. `App` watches this to re-persist
+    /// plugin-tab state after any frame that entered plugin Lua.
+    pub fn lua_activity(&self) -> u64 {
+        self.lua_activity.get()
     }
 
     /// async runtime cheap-clone snapshot of the async-job registry.
@@ -507,13 +523,16 @@ impl PluginHost {
 
 mod event_helpers;
 use event_helpers::*;
-use runtime_introspection::widget_decode_diagnostic;
+use widget_refresh::widget_decode_diagnostic;
 
 mod commands_devtools;
 mod diagnostics_storage;
 mod discovery;
 mod dock;
 mod event_dispatch;
+mod health;
 mod loading_and_slots;
 mod runtime_introspection;
+mod runtime_tick;
 mod ui_lifecycle;
+mod widget_refresh;

@@ -7,9 +7,8 @@ use crate::plugin::bridge::widget_tree::{self, BuildCtx, DispatchScope};
 use crate::plugin::host::PluginHost;
 
 pub fn layers(host: &PluginHost) -> Vec<Element<'static, Message>> {
-    let overlays = host.extension_overlays();
-    let mut layers = Vec::with_capacity(overlays.len());
-    for overlay in overlays.into_iter().rev() {
+    let mut layers = Vec::new();
+    host.for_each_extension_overlay(|overlay| {
         let plugin_root = host
             .plugin_root(&overlay.plugin_id)
             .unwrap_or_else(|| std::path::Path::new(""));
@@ -28,6 +27,7 @@ pub fn layers(host: &PluginHost) -> Vec<Element<'static, Message>> {
                 .height(Length::Fill)
                 .into(),
         );
-    }
+    });
+    layers.reverse();
     layers
 }

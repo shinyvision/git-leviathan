@@ -1,10 +1,7 @@
-use crate::core::TabId;
 use crate::plugin::commit_data::{CommitActionAvailability, CommitActions, CommitData};
 use crate::plugin::host::RepositorySyncState;
 use crate::plugin::slots::Container;
-use crate::plugin::tab_snapshot::{TabSnapshotEntry, TabsSnapshot};
-use crate::plugin::tests::harness::MockHost;
-use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry};
+use crate::plugin::tests::harness::{tab_snapshot, MockHost};
 
 const SLOT_CAPS: &str = r#"["ui:region:main_bar", "ui:region:repository"]"#;
 const ALL_SLOT_CAPS: &str =
@@ -20,25 +17,6 @@ api_version = "1.0"
 capabilities = {caps}
 "#
     )
-}
-
-fn main_bar_registry(host: &MockHost) -> MainBarRegistry {
-    let mut registry = MainBarRegistry::new();
-    main_bar_builtins::register_all(&mut registry);
-    host.host().apply_main_bar_slots(&mut registry);
-    registry
-}
-
-fn tab_snapshot() -> TabsSnapshot {
-    TabsSnapshot {
-        tabs: vec![TabSnapshotEntry {
-            id: TabId(7),
-            path: "/tmp/repo".into(),
-            name: "repo".into(),
-        }],
-        active_id: Some(TabId(7)),
-        active_path: Some("/tmp/repo".into()),
-    }
 }
 
 #[test]
@@ -69,7 +47,7 @@ fn ui_slot_handle_add_replace_remove_flow() {
         host.read_global_i64("ui_handle", "invalid_after_remove"),
         Some(1)
     );
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     assert!(!registry.contains_display_id("plugin.ui.handle"));
 }
 
@@ -93,7 +71,7 @@ fn ui_direct_replace_renders_replacement() {
     )
     .expect("UI replace");
 
-    let registry = main_bar_registry(&host);
+    let registry = host.main_bar_registry();
     let slot = registry
         .iter_container(Container::Section("left".into()))
         .find(|slot| slot.id == "plugin.ui.replace")

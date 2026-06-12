@@ -15,6 +15,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use iced::Element;
 use mlua::RegistryKey;
@@ -78,7 +79,8 @@ pub enum PreparedSlotOp {
 
 impl PreparedSlot {
     fn render(&self) -> Element<'static, Message> {
-        let empty_splits: HashMap<String, Vec<f32>> = HashMap::new();
+        static EMPTY_SPLITS: OnceLock<HashMap<String, Vec<f32>>> = OnceLock::new();
+        let empty_splits = EMPTY_SPLITS.get_or_init(HashMap::new);
         let container_str = self.container.key();
         let bc = BuildCtx {
             plugin_id: &self.plugin_id,
@@ -88,7 +90,7 @@ impl PreparedSlot {
                 slot_id: &self.id,
             },
             plugin_root: self.plugin_root.as_path(),
-            split_states: &empty_splits,
+            split_states: empty_splits,
             active_drag: None,
         };
         match &self.widget {
@@ -158,12 +160,5 @@ impl PreparedSlot {
 }
 
 pub fn parse_container(raw: &str) -> Container {
-    if let Some((pane, section)) = raw.split_once('.') {
-        Container::Pane {
-            pane: pane.to_string(),
-            section: section.to_string(),
-        }
-    } else {
-        Container::Section(raw.to_string())
-    }
+    Container::parse(raw)
 }

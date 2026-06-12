@@ -255,14 +255,6 @@ impl DetailPanel {
         {
             return Some((path.to_string(), false));
         }
-        if commit
-            .conflicted_files
-            .iter()
-            .chain(commit.unstaged_files.iter())
-            .any(|file| file.path == path)
-        {
-            return Some((path.to_string(), false));
-        }
         if commit.staged_files.iter().any(|file| file.path == path) {
             return Some((path.to_string(), true));
         }
@@ -552,10 +544,15 @@ impl DetailPanel {
         data: &RepositoryData,
         selection: &SelectionState,
     ) -> Vec<DirtyFileKey> {
-        let keys = current_dirty_keys(data, selection);
+        if self.selected_dirty_files.is_empty() {
+            return Vec::new();
+        }
+        let Some(present) = current_dirty_key_set(data, selection) else {
+            return Vec::new();
+        };
         self.selected_dirty_files
             .iter()
-            .filter(|selected| keys.iter().any(|key| key == *selected))
+            .filter(|selected| present.contains(&(selected.path.as_str(), selected.status)))
             .cloned()
             .collect()
     }
@@ -812,7 +809,7 @@ pub(in crate::screens::repository) enum DirtyFileSelectionMode {
     Range,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(in crate::screens::repository) enum DirtyFileStatus {
     Conflicted,
     Unstaged,
@@ -974,6 +971,30 @@ fn current_dirty_keys(data: &RepositoryData, selection: &SelectionState) -> Vec<
             DetailFileSelection::Commit { .. } | DetailFileSelection::Merged { .. } => None,
         })
         .collect()
+}
+
+fn current_dirty_key_set<'a>(
+    data: &'a RepositoryData,
+    selection: &SelectionState,
+) -> Option<std::collections::HashSet<(&'a str, DirtyFileStatus)>> {
+    if selection.is_multi() {
+        return None;
+    }
+    let commit = data.selected_commit(selection.selected_commit())?;
+    if commit.kind != CommitKind::Dirty {
+        return None;
+    }
+    let mut set = std::collections::HashSet::new();
+    for (files, status) in [
+        (&commit.conflicted_files, DirtyFileStatus::Conflicted),
+        (&commit.unstaged_files, DirtyFileStatus::Unstaged),
+        (&commit.staged_files, DirtyFileStatus::Staged),
+    ] {
+        for file in files {
+            set.insert((file.path.as_str(), status));
+        }
+    }
+    Some(set)
 }
 
 fn dirty_keys_for_status(

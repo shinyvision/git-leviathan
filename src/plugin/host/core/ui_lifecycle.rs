@@ -255,6 +255,7 @@ impl PluginHost {
                 }
             };
             let cb_id = format!("overlay:{overlay_id}.on_event");
+            self.bump_lua_activity();
             match self
                 .budget_tracker
                 .track_call::<Option<Table>, mlua::Error>(
@@ -676,6 +677,7 @@ impl PluginHost {
         self.last_reload_errors.remove(plugin_id);
         self.runtime_path_registry.unregister(plugin_id);
         self.diagnostics.clear_plugin_debug(plugin_id);
+        crate::plugin::bridge::widget_tree::clear_image_cache_for_root(&plugin.root);
         drop(plugin);
         Ok(())
     }
@@ -705,6 +707,7 @@ impl PluginHost {
         })?;
         let plugin_id_owned = plugin_id.to_string();
         let dir = plugin.root.clone();
+        let plugin_root = plugin.root.clone();
         let previous_generation_id = plugin.generation.generation_id;
         let previous_capabilities: Vec<String> = plugin
             .manifest
@@ -763,6 +766,7 @@ impl PluginHost {
             Ok(artifacts) => {
                 let duration_ms = artifacts.started_at.elapsed().as_millis();
                 self.commit_staging(artifacts);
+                crate::plugin::bridge::widget_tree::clear_image_cache_for_root(&plugin_root);
                 self.diagnostics.record(
                     PluginDiagnostic::new(
                         plugin_id_typed.clone(),
@@ -1052,6 +1056,7 @@ impl PluginHost {
             &plugin_id_str,
             generation_id,
             staged_keymap_dels,
+            &self.diagnostics,
         );
 
         // Now expose the new plugin's root in the runtime-path

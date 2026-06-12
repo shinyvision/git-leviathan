@@ -610,7 +610,6 @@ impl KeymapRegistry {
         // Snapshot every entry's pre-resolve status so we can detect
         // transitions caused by the new rows.
         let pre_status = self.snapshot_status();
-        let mut newly_added_keys: Vec<(String, Vec<Keystroke>)> = Vec::new();
         for raw in raws {
             let chord = match parse_key_sequence(&raw.key, &self.leader) {
                 Ok(c) => c,
@@ -640,7 +639,6 @@ impl KeymapRegistry {
                     continue;
                 }
             };
-            newly_added_keys.push((raw.context.clone(), chord.clone()));
             self.upsert(KeymapEntry {
                 source: KeymapSource::Plugin,
                 plugin_id: plugin_id.to_string(),
@@ -667,7 +665,6 @@ impl KeymapRegistry {
             log_registered(diagnostics, entry);
         }
         self.emit_loser_transitions(diagnostics, &pre_status);
-        let _ = newly_added_keys;
     }
 
     fn snapshot_status(
@@ -718,6 +715,7 @@ impl KeymapRegistry {
         plugin_id: &str,
         generation_id: GenerationId,
         dels: Vec<RawKeymapDel>,
+        diagnostics: &DiagnosticStore,
     ) {
         if dels.is_empty() {
             return;
@@ -725,7 +723,28 @@ impl KeymapRegistry {
         for del in dels {
             let chord = match parse_key_sequence(&del.key, &self.leader) {
                 Ok(c) => c,
-                Err(_) => continue,
+                Err(e) => {
+                    diagnostics.record(
+                        PluginDiagnostic::new(
+                            PluginId::from(plugin_id),
+                            DiagnosticSeverity::Warning,
+                            "keymap.invalid_key",
+                            format!(
+                                "keymap.del `{}` for context `{}` rejected: {e}",
+                                del.key, del.context
+                            ),
+                        )
+                        .with_generation(generation_id)
+                        .with_source(PluginSourceSpan::ApiFunction {
+                            name: format!("keymap.del:{}:{}", del.context, del.key),
+                        })
+                        .with_context(serde_json::json!({
+                            "context": del.context,
+                            "key": del.key,
+                        })),
+                    );
+                    continue;
+                }
             };
             self.entries.retain(|e| {
                 !(e.source == KeymapSource::Plugin

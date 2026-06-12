@@ -17,6 +17,19 @@ impl Container {
             Container::Pane { pane, section } => format!("{pane}.{section}"),
         }
     }
+
+    /// Parse a container address: `pane.section` becomes a [`Container::Pane`],
+    /// anything without a `.` is a bare [`Container::Section`].
+    pub fn parse(raw: &str) -> Self {
+        if let Some((pane, section)) = raw.split_once('.') {
+            Container::Pane {
+                pane: pane.to_string(),
+                section: section.to_string(),
+            }
+        } else {
+            Container::Section(raw.to_string())
+        }
+    }
 }
 
 impl fmt::Display for Container {
@@ -177,6 +190,20 @@ mod tests {
             .key(),
             "sidebar.top"
         );
+    }
+
+    #[test]
+    fn container_parse_roundtrips_section_and_pane() {
+        assert_eq!(Container::parse("left"), Container::Section("left".into()));
+        assert_eq!(
+            Container::parse("sidebar.top"),
+            Container::Pane {
+                pane: "sidebar".into(),
+                section: "top".into()
+            }
+        );
+        assert_eq!(Container::parse("left").key(), "left");
+        assert_eq!(Container::parse("sidebar.top").key(), "sidebar.top");
     }
 
     #[test]

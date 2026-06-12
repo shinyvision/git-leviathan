@@ -296,19 +296,25 @@ fn read_chrome_dependencies(spec: &Table) -> Result<Vec<UiDependency>, String> {
     Ok(deps)
 }
 
-fn add_overlay_contribution(
+#[allow(clippy::too_many_arguments)]
+fn register_overlay(
     lua: &Lua,
-    state: &ContributionApiState,
-    spec: Table,
-) -> Result<Table, String> {
+    plugin_id: &str,
+    ledger: &ResourceLedger,
+    guard: &CapabilityGuard,
+    registry: &ExtensionRegistry,
+    ui_effects: &crate::plugin::ui::effects::PendingUiEffects,
+    overlay_callbacks: &Rc<RefCell<OverlayCallbacks>>,
+    api_name: &str,
+    spec: &Table,
+) -> Result<(), String> {
     let id: String = spec.get("id").map_err(|e| e.to_string())?;
     let source = ResourceLedger::source_location(lua);
-    state
-        .guard
+    guard
         .check_named_for_target(
             "ui:overlay",
             &format!("overlay:{id}"),
-            "leviathan.ui.contribute",
+            api_name,
             source.as_deref(),
             "Declare and grant `ui:overlay`.",
         )
@@ -321,7 +327,7 @@ fn add_overlay_contribution(
         .get::<Option<i32>>("priority")
         .map_err(|e| e.to_string())?
         .unwrap_or(0);
-    let key_events = read_overlay_key_events(&spec).map_err(|e| e.to_string())?;
+    let key_events = read_overlay_key_events(spec).map_err(|e| e.to_string())?;
     let widget_value: LuaValue = spec.get("widget").map_err(|e| e.to_string())?;
     let widget_json: serde_json::Value = lua
         .from_value(widget_value)
@@ -329,13 +335,9 @@ fn add_overlay_contribution(
     let widget =
         widget_ast::decode(&widget_json).map_err(|e| format!("invalid overlay widget: {e}"))?;
     let handle = format!("overlay:{id}");
-    state
-        .ledger
-        .remove_by_kind_handle(PluginResourceKind::Overlay, &handle);
-    state
-        .ledger
-        .record(PluginResourceKind::Overlay, handle.clone(), source.clone());
-    state.overlay_callbacks.borrow_mut().remove(&id);
+    ledger.remove_by_kind_handle(PluginResourceKind::Overlay, &handle);
+    ledger.record(PluginResourceKind::Overlay, handle, source.clone());
+    overlay_callbacks.borrow_mut().remove(&id);
     let callback: Option<Function> = match spec
         .get::<Option<Function>>("on_event")
         .map_err(|e| e.to_string())?
@@ -349,27 +351,44 @@ fn add_overlay_contribution(
         let key = lua
             .create_registry_value(callback)
             .map_err(|e| e.to_string())?;
-        state.ledger.record(
+        ledger.record(
             PluginResourceKind::LuaRegistryKey,
             format!("overlay:{id}:on_event"),
             source.clone(),
         );
-        state.overlay_callbacks.borrow_mut().insert(id.clone(), key);
+        overlay_callbacks.borrow_mut().insert(id.clone(), key);
     }
-    state.ui_effects.queue_widget_scroll_positions(
-        &state.plugin_id,
-        &format!("overlay:{id}"),
-        &widget,
-    );
-    state.registry.add_overlay(OverlayRecord {
-        plugin_id: state.plugin_id.clone(),
-        id: id.clone(),
+    ui_effects.queue_widget_scroll_positions(plugin_id, &format!("overlay:{id}"), &widget);
+    registry.add_overlay(OverlayRecord {
+        plugin_id: plugin_id.to_string(),
+        id,
         priority,
         dismissible,
         key_events,
         widget,
         source_location: source,
     });
+    Ok(())
+}
+
+fn add_overlay_contribution(
+    lua: &Lua,
+    state: &ContributionApiState,
+    spec: Table,
+) -> Result<Table, String> {
+    let id: String = spec.get("id").map_err(|e| e.to_string())?;
+    let handle = format!("overlay:{id}");
+    register_overlay(
+        lua,
+        &state.plugin_id,
+        &state.ledger,
+        state.guard.as_ref(),
+        &state.registry,
+        &state.ui_effects,
+        &state.overlay_callbacks,
+        "leviathan.ui.contribute",
+        &spec,
+    )?;
     make_contribution_handle(
         lua,
         state.clone(),
@@ -797,54 +816,18 @@ fn install_overlay(
     ui.set(
         "overlay",
         lua.create_function(move |lua_inner, spec: Table| {
-            let id: String = spec.get("id")?;
-            let source = ResourceLedger::source_location(lua_inner);
-            guard
-                .check_named_for_target(
-                    "ui:overlay",
-                    &format!("overlay:{id}"),
-                    "leviathan.ui.overlay",
-                    source.as_deref(),
-                    "Declare and grant `ui:overlay`.",
-                )
-                .map_err(mlua::Error::external)?;
-            let dismissible: bool = spec.get::<Option<bool>>("dismissible")?.unwrap_or(true);
-            let priority: i32 = spec.get::<Option<i32>>("priority")?.unwrap_or(0);
-            let key_events = read_overlay_key_events(&spec)?;
-            let widget_value: LuaValue = spec.get("widget")?;
-            let widget_json: serde_json::Value = lua_inner
-                .from_value(widget_value)
-                .map_err(|e| mlua::Error::external(format!("invalid overlay widget: {e}")))?;
-            let widget = widget_ast::decode(&widget_json)
-                .map_err(|e| mlua::Error::external(format!("invalid overlay widget: {e}")))?;
-            let handle = format!("overlay:{id}");
-            ledger.remove_by_kind_handle(PluginResourceKind::Overlay, &handle);
-            ledger.record(PluginResourceKind::Overlay, handle, source.clone());
-            overlay_callbacks.borrow_mut().remove(&id);
-            let callback: Option<Function> = match spec.get::<Option<Function>>("on_event")? {
-                Some(callback) => Some(callback),
-                None => spec.get::<Option<Function>>("update")?,
-            };
-            if let Some(callback) = callback {
-                let key = lua_inner.create_registry_value(callback)?;
-                ledger.record(
-                    PluginResourceKind::LuaRegistryKey,
-                    format!("overlay:{id}:on_event"),
-                    source.clone(),
-                );
-                overlay_callbacks.borrow_mut().insert(id.clone(), key);
-            }
-            ui_effects.queue_widget_scroll_positions(&plugin_id, &format!("overlay:{id}"), &widget);
-            registry.add_overlay(OverlayRecord {
-                plugin_id: plugin_id.clone(),
-                id,
-                priority,
-                dismissible,
-                key_events,
-                widget,
-                source_location: source,
-            });
-            Ok(())
+            register_overlay(
+                lua_inner,
+                &plugin_id,
+                &ledger,
+                guard.as_ref(),
+                &registry,
+                &ui_effects,
+                &overlay_callbacks,
+                "leviathan.ui.overlay",
+                &spec,
+            )
+            .map_err(mlua::Error::external)
         })?,
     )?;
     Ok(())

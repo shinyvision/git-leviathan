@@ -16,7 +16,7 @@ use crate::{message::Message, work::git_read_work};
 use super::RepositoryMessage;
 use super::RepositoryScreen;
 
-mod branch_ops;
+pub(in crate::screens::repository) mod branch_ops;
 mod commit_ops;
 pub(in crate::screens::repository) mod helpers;
 mod loaders;

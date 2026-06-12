@@ -465,10 +465,10 @@ pub fn install_read_functions(
                         Ok(snap) => {
                             let rewordable =
                                 rewordable_commit_hashes(snap.head_hash.as_deref(), &snap.commits);
+                            // load_repo already truncates to the requested limit.
                             let commits: Vec<_> = snap
                                 .commits
                                 .iter()
-                                .take(limit)
                                 .enumerate()
                                 .map(|(index, commit)| {
                                     let reword = if rewordable.contains(&commit.hash) {

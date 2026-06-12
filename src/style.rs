@@ -1,6 +1,6 @@
 use iced::{
     widget::{container, text},
-    Border, Color, Theme,
+    Border, Theme,
 };
 
 use crate::theme;
@@ -13,12 +13,7 @@ pub fn iced_theme() -> iced::Theme {
             text: theme::TEXT_PRIMARY,
             primary: theme::ACCENT_BLUE,
             success: theme::ACCENT_GREEN,
-            danger: Color {
-                r: 0.858,
-                g: 0.243,
-                b: 0.243,
-                a: 1.0,
-            },
+            danger: theme::ACCENT_DANGER,
             warning: theme::ACCENT_ORANGE,
         },
     )

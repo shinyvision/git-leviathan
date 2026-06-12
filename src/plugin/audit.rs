@@ -2,7 +2,10 @@
 //! `AuditLog` to record allow/deny events. Used by the devtools panel
 //! (reload transactions) and tests.
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+
+const AUDIT_CAPACITY: usize = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AuditOutcome {
@@ -21,7 +24,7 @@ pub struct AuditEntry {
 
 #[derive(Debug, Clone, Default)]
 pub struct AuditLog {
-    inner: Arc<Mutex<Vec<AuditEntry>>>,
+    inner: Arc<Mutex<VecDeque<AuditEntry>>>,
 }
 
 impl AuditLog {
@@ -44,12 +47,18 @@ impl AuditLog {
             timestamp: std::time::SystemTime::now(),
         };
         if let Ok(mut g) = self.inner.lock() {
-            g.push(entry);
+            if g.len() == AUDIT_CAPACITY {
+                g.pop_front();
+            }
+            g.push_back(entry);
         }
     }
 
     pub fn entries(&self) -> Vec<AuditEntry> {
-        self.inner.lock().map(|g| g.clone()).unwrap_or_default()
+        self.inner
+            .lock()
+            .map(|g| g.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn clear(&self) {

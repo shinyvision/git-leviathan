@@ -23,6 +23,19 @@ use super::panels::{self};
 use super::state::EffectiveLayout;
 use super::{RepositoryMessage, RepositoryScreen};
 
+/// Padding added to every context-menu / backdrop so the menu's top-left sits
+/// just inside the click point rather than flush against it.
+const MENU_POSITION_INSET: f32 = 4.0;
+
+/// Per-row vertical advance used to drop the reset submenu down to its parent
+/// row in the commit context menu.
+const CONTEXT_MENU_ROW_STRIDE: f32 = 21.0;
+
+/// Index of the "Reset … to this commit" row inside the commit context menu
+/// for a single-selection menu; `+1` when a multi-select "Squash" row is also
+/// present. Tracks the row order built by `center_view::commit_context_menu`.
+const RESET_ROW_BASE_INDEX: usize = 3;
+
 pub(in crate::screens::repository) fn view_with_repo_region<'a>(
     screen: &'a RepositoryScreen,
     registry: &'a crate::widgets::chrome::repo_region::RepoRegionRegistry,
@@ -97,7 +110,6 @@ fn build_body_with_region<'a>(
             commit_count: screen.data.snapshot.commits().len(),
             width: sidebar_width,
             is_resizing: screen.data.resize.sidebar_resizing,
-            active_worktree_path: screen.fleet.active_path(),
         },
         rr::render_top(registry, rr::Pane::Sidebar),
         rr::render_bottom(registry, rr::Pane::Sidebar),
@@ -309,8 +321,8 @@ pub(in crate::screens::repository) fn overlay_layers(
             screen.data.snapshot.current_branch(),
         ))
         .padding(Padding {
-            top: (menu_state.position.y + 4.0).max(0.0),
-            left: (menu_state.position.x + 4.0).max(0.0),
+            top: (menu_state.position.y + MENU_POSITION_INSET).max(0.0),
+            left: (menu_state.position.x + MENU_POSITION_INSET).max(0.0),
             ..Default::default()
         })
         .into();
@@ -337,8 +349,8 @@ pub(in crate::screens::repository) fn overlay_layers(
             screen.data.snapshot.head_hash(),
         ))
         .padding(Padding {
-            top: (commit_menu_state.position.y + 4.0).max(0.0),
-            left: (commit_menu_state.position.x + 4.0).max(0.0),
+            top: (commit_menu_state.position.y + MENU_POSITION_INSET).max(0.0),
+            left: (commit_menu_state.position.x + MENU_POSITION_INSET).max(0.0),
             ..Default::default()
         })
         .into();
@@ -353,13 +365,12 @@ pub(in crate::screens::repository) fn overlay_layers(
                 screen.data.snapshot.head_hash(),
             );
             let reset_row_idx = {
-                let mut i = 3usize;
+                let mut i = RESET_ROW_BASE_INDEX;
                 if commit_menu_state.selected_indices.len() > 1 {
                     i += 1;
                 }
                 i
             };
-            let row_stride: f32 = 21.0;
             let submenu_inner = MouseArea::new(center_view::reset_submenu(submenu_state))
                 .on_enter(Message::repo(RepositoryMessage::Center(
                     CenterAction::ResetSubmenuHoverChanged(true),
@@ -369,9 +380,11 @@ pub(in crate::screens::repository) fn overlay_layers(
                 )));
             let submenu = container(submenu_inner)
                 .padding(Padding {
-                    top: (submenu_state.position.y + 4.0 + reset_row_idx as f32 * row_stride)
+                    top: (submenu_state.position.y
+                        + MENU_POSITION_INSET
+                        + reset_row_idx as f32 * CONTEXT_MENU_ROW_STRIDE)
                         .max(0.0),
-                    left: (submenu_state.position.x + 4.0 + parent_width).max(0.0),
+                    left: (submenu_state.position.x + MENU_POSITION_INSET + parent_width).max(0.0),
                     ..Default::default()
                 })
                 .into();
@@ -406,8 +419,8 @@ pub(in crate::screens::repository) fn overlay_layers(
             )];
         let menu = container(crate::widgets::context_menu::ContextMenu::new(items))
             .padding(Padding {
-                top: (worktree_menu_state.position.y + 4.0).max(0.0),
-                left: (worktree_menu_state.position.x + 4.0).max(0.0),
+                top: (worktree_menu_state.position.y + MENU_POSITION_INSET).max(0.0),
+                left: (worktree_menu_state.position.x + MENU_POSITION_INSET).max(0.0),
                 ..Default::default()
             })
             .into();
@@ -432,8 +445,8 @@ pub(in crate::screens::repository) fn overlay_layers(
 
         let menu = container(detail_view::dirty_file_context_menu(dirty_menu_state))
             .padding(Padding {
-                top: (dirty_menu_state.position.y + 4.0).max(0.0),
-                left: (dirty_menu_state.position.x + 4.0).max(0.0),
+                top: (dirty_menu_state.position.y + MENU_POSITION_INSET).max(0.0),
+                left: (dirty_menu_state.position.x + MENU_POSITION_INSET).max(0.0),
                 ..Default::default()
             })
             .into();

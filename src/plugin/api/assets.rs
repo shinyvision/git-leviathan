@@ -4,6 +4,8 @@ use mlua::{Lua, Table};
 
 use crate::plugin::resources::{PluginResourceKind, ResourceLedger};
 
+const MAX_ASSET_PATH_LEN: usize = 256;
+
 pub fn install(lua: &Lua, leviathan: &Table, ledger: ResourceLedger) -> mlua::Result<()> {
     let assets = lua.create_table()?;
     let load_svg_ledger = ledger.clone();
@@ -46,7 +48,7 @@ fn asset_handle(
 }
 
 fn safe_asset_path(path: &str) -> bool {
-    if path.is_empty() || path.len() > 256 || path.contains('\0') {
+    if path.is_empty() || path.len() > MAX_ASSET_PATH_LEN || path.contains('\0') {
         return false;
     }
     Path::new(path)

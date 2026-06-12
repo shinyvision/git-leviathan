@@ -7,12 +7,11 @@ use iced::{
 };
 
 use crate::message::Message;
-use crate::plugin::message::PluginMessage;
 use crate::plugin::ui::widget_ast::ButtonNode;
 use crate::theme;
 
-use super::common::{border_to_iced, length_explicit, opt_color_to_iced};
-use super::{BuildCtx, DispatchScope};
+use super::common::{border_to_iced, length_explicit, opt_color_to_iced, ScopeDispatch};
+use super::BuildCtx;
 
 pub(super) fn build(node: &ButtonNode, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
     let content: Element<'static, Message> = if let Some(child_ast) = &node.child {
@@ -25,36 +24,10 @@ pub(super) fn build(node: &ButtonNode, ctx: &BuildCtx<'_>) -> Element<'static, M
 
     let event = node.on_click.clone().unwrap_or_default();
     let value = node.value.clone();
-    let plugin_id = ctx.plugin_id.to_string();
     let on_press: Option<Message> = if event.is_empty() {
         None
     } else {
-        Some(match ctx.scope {
-            DispatchScope::Screen { screen_id } => Message::Plugin(PluginMessage::Event {
-                plugin_id,
-                screen_id: screen_id.to_string(),
-                event,
-                value,
-            }),
-            DispatchScope::Slot {
-                region,
-                container,
-                slot_id,
-            } => Message::Plugin(PluginMessage::SlotClicked {
-                plugin_id,
-                region: region.to_string(),
-                container: container.to_string(),
-                slot_id: slot_id.to_string(),
-                event,
-                value,
-            }),
-            DispatchScope::Overlay { overlay_id } => Message::Plugin(PluginMessage::OverlayEvent {
-                plugin_id,
-                overlay_id: overlay_id.to_string(),
-                event,
-                value,
-            }),
-        })
+        Some(ScopeDispatch::from_ctx(ctx).publish(event, value))
     };
 
     let width = length_explicit(node.width);

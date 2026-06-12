@@ -54,565 +54,9 @@ impl PluginHost {
         crate::plugin::ui::widget_ast::decode(&json).ok()
     }
 
-    /// Drain every plugin's deferred-call queue. Order per plugin:
-    ///
-    /// 1. Immediate (`leviathan.api.schedule(fn)`) callbacks, in FIFO order.
-    /// 2. Delayed (`defer_fn(ms, fn)`) callbacks whose deadline is now in
-    ///    the past.
-    /// 3. Resumable coroutines parked from a previous
-    ///    `invoke_user_command` or earlier tick. Coroutines that yield
-    ///    again are re-parked for the next tick.
-    ///
-    /// Errors from any callback / resume are logged; other queue entries
-    /// keep processing so one buggy callback can't stall a plugin.
-    pub fn tick(&mut self) {
-        // Drain any `CommandExecuted` events queued by Lua-
-        // initiated dispatch since the last tick. The Rust entry
-        // (`invoke_command`) flushes synchronously; this catches
-        // anything the Lua API queued in between.
-        self.flush_pending_command_events();
-        // Drain any typed events the git Lua API queued so
-        // `HeadChanged` / `RefsChanged` / etc. fire on the next tick
-        // even if the plugin invoked the op via `tick`-deferred Lua.
-        self.flush_pending_git_events();
-        let terminal_changed = crate::plugin::terminal::registry().drain();
-        if !terminal_changed.is_empty() {
-            let only = terminal_changed.into_iter().collect::<HashSet<_>>();
-            self.invalidate_dynamic_widgets(
-                &[crate::plugin::ui::invalidation::UiInvalidationCause::PluginStateChanged],
-                Some(&only),
-            );
-        }
-        let now = Instant::now();
-        let ids: Vec<String> = self.plugins.keys().cloned().collect();
-        let mut pending: Vec<PluginDiagnostic> = Vec::new();
-        let mut deferred_state_changed: HashSet<String> = HashSet::new();
-        for id in ids {
-            let Some(plugin) = self.plugins.get(&id) else {
-                continue;
-            };
-            let lua = plugin.lua_rc();
-            let queue = Rc::clone(&plugin.deferred);
-            let ledger = plugin.ledger();
-            let generation_id = plugin.generation.generation_id;
-            let chunk_name = format!("plugins/{id}/init.lua");
-
-            let immediate = queue.borrow_mut().drain_immediate();
-            for callback in immediate {
-                match lua.registry_value::<Function>(&callback.key) {
-                    Ok(f) => {
-                        deferred_state_changed.insert(id.clone());
-                        if let Err(e) = f.call::<()>(()) {
-                            pending.push(
-                                PluginDiagnostic::new(
-                                    PluginId::from(id.clone()),
-                                    DiagnosticSeverity::Error,
-                                    "lua.callback_error",
-                                    "scheduled fn error".to_string(),
-                                )
-                                .with_generation(generation_id)
-                                .with_mlua_error(&chunk_name, &e),
-                            );
-                        }
-                    }
-                    Err(e) => pending.push(
-                        PluginDiagnostic::new(
-                            PluginId::from(id.clone()),
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("scheduled fn lookup failed: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.api.schedule".into(),
-                        }),
-                    ),
-                }
-                ledger.remove_resource(callback.resource_id);
-            }
-
-            let due = queue.borrow_mut().drain_due(now);
-            for callback in due {
-                match lua.registry_value::<Function>(&callback.key) {
-                    Ok(f) => {
-                        deferred_state_changed.insert(id.clone());
-                        if let Err(e) = f.call::<()>(()) {
-                            pending.push(
-                                PluginDiagnostic::new(
-                                    PluginId::from(id.clone()),
-                                    DiagnosticSeverity::Error,
-                                    "lua.callback_error",
-                                    "defer_fn error".to_string(),
-                                )
-                                .with_generation(generation_id)
-                                .with_mlua_error(&chunk_name, &e),
-                            );
-                        }
-                    }
-                    Err(e) => pending.push(
-                        PluginDiagnostic::new(
-                            PluginId::from(id.clone()),
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("defer_fn lookup failed: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.api.defer_fn".into(),
-                        }),
-                    ),
-                }
-                ledger.remove_resource(callback.resource_id);
-            }
-
-            let drained: Vec<DeferredCallback> = std::mem::take(&mut queue.borrow_mut().coroutines);
-            for callback in drained {
-                let thread: Thread = match lua.registry_value(&callback.key) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        pending.push(
-                            PluginDiagnostic::new(
-                                PluginId::from(id.clone()),
-                                DiagnosticSeverity::Error,
-                                "lua.handler_lookup_failed",
-                                format!("coroutine lookup failed: {e}"),
-                            )
-                            .with_generation(generation_id)
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.api.coroutine".into(),
-                                },
-                            ),
-                        );
-                        ledger.remove_resource(callback.resource_id);
-                        continue;
-                    }
-                };
-                deferred_state_changed.insert(id.clone());
-                if let Err(e) = thread.resume::<()>(()) {
-                    pending.push(
-                        PluginDiagnostic::new(
-                            PluginId::from(id.clone()),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            "coroutine resume error".to_string(),
-                        )
-                        .with_generation(generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                    ledger.remove_resource(callback.resource_id);
-                    continue;
-                }
-                ledger.remove_resource(callback.resource_id);
-                if thread.status() == ThreadStatus::Resumable {
-                    match lua.create_registry_value(thread) {
-                        Ok(new_key) => {
-                            let resource_id =
-                                ledger.record(PluginResourceKind::AsyncJob, "coroutine", None);
-                            ledger.record(
-                                PluginResourceKind::LuaRegistryKey,
-                                format!("coroutine:{resource_id}"),
-                                None,
-                            );
-                            queue.borrow_mut().coroutines.push(DeferredCallback {
-                                key: new_key,
-                                resource_id,
-                            });
-                        }
-                        Err(e) => pending.push(
-                            PluginDiagnostic::new(
-                                PluginId::from(id.clone()),
-                                DiagnosticSeverity::Error,
-                                "host.coroutine_repark_failed",
-                                format!("re-parking coroutine failed: {e}"),
-                            )
-                            .with_generation(generation_id)
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.api.coroutine".into(),
-                                },
-                            ),
-                        ),
-                    }
-                }
-            }
-        }
-        for diag in pending {
-            self.diagnostics.record(diag);
-        }
-        if !deferred_state_changed.is_empty() {
-            self.invalidate_dynamic_widgets(
-                &[UiInvalidationCause::PluginStateChanged],
-                Some(&deferred_state_changed),
-            );
-        }
-
-        // async runtime: drain finished async jobs, due timers, and queued
-        // file-watcher events. Each fires a Lua callback on the
-        // matching plugin's main state.
-        self.drive_async_runtime(now);
-    }
-
-    /// async runtime: invoke plugin Lua callbacks for finished async jobs,
-    /// due timers, and buffered file-watcher events. Errors are
-    /// recorded as diagnostics; one buggy callback can't stall the
-    /// next.
-    pub(super) fn drive_async_runtime(&mut self, now: Instant) {
-        let mut pending: Vec<PluginDiagnostic> = Vec::new();
-        let mut state_causes: HashMap<String, Vec<UiInvalidationCause>> = HashMap::new();
-
-        // Async jobs.
-        for job in self.async_jobs.drain_finished() {
-            let Some(plugin) = self.plugins.get(job.plugin_id.as_str()) else {
-                continue;
-            };
-            if plugin.generation.generation_id != job.generation_id {
-                // Stale generation — skip, the new gen owns its own
-                // jobs.
-                continue;
-            }
-            plugin.ledger().remove_resource(job.resource_id);
-            let key_opt = plugin.job_callbacks.borrow_mut().remove(job.job_id);
-            let Some(key) = key_opt else { continue };
-            let lua = plugin.lua_rc();
-            let func: Function = match lua.registry_value(&key) {
-                Ok(f) => f,
-                Err(e) => {
-                    pending.push(
-                        PluginDiagnostic::new(
-                            job.plugin_id.clone(),
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("async on_complete lookup failed: {e}"),
-                        )
-                        .with_generation(job.generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.async.spawn".into(),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            let chunk_name = format!("plugins/{}/init.lua", job.plugin_id.as_str());
-            // Budget the async on-complete callback against
-            // the `AsyncJob` budget. The async body itself runs off
-            // the main thread, but on_complete is the only Lua-side
-            // step the host invokes synchronously, so it's the
-            // user-observable cost.
-            let callback_id = format!("async:on_complete:{}", job.job_id.get());
-            let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
-                CallbackKind::AsyncJob,
-                &job.plugin_id,
-                job.generation_id,
-                &callback_id,
-                || match job.outcome {
-                    JobOutcome::Ok(value) => {
-                        let lua_value = lua.to_value(&value).unwrap_or(mlua::Value::Nil);
-                        func.call::<()>((true, lua_value))
-                    }
-                    JobOutcome::Cancelled => func.call::<()>((false, "cancelled")),
-                    JobOutcome::Failed(msg) => func.call::<()>((false, msg)),
-                },
-            );
-            match perf_outcome {
-                PerfOutcome::Ok(()) => push_ui_cause(
-                    &mut state_causes,
-                    job.plugin_id.as_str(),
-                    UiInvalidationCause::JobCallbackChangedPluginState,
-                ),
-                PerfOutcome::Err(e) => {
-                    push_ui_cause(
-                        &mut state_causes,
-                        job.plugin_id.as_str(),
-                        UiInvalidationCause::JobCallbackChangedPluginState,
-                    );
-                    pending.push(
-                        PluginDiagnostic::new(
-                            job.plugin_id.clone(),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            "async on_complete error".to_string(),
-                        )
-                        .with_generation(job.generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                }
-                PerfOutcome::Skipped => {}
-            }
-        }
-
-        // Timers.
-        let due_timers = self.timers.drain_due(now);
-        for due in due_timers {
-            let Some(plugin) = self.plugins.get(due.plugin_id.as_str()) else {
-                continue;
-            };
-            if plugin.generation.generation_id != due.generation_id {
-                continue;
-            }
-            let lua = plugin.lua_rc();
-            let chunk_name = format!("plugins/{}/init.lua", due.plugin_id.as_str());
-            let func_opt: Option<Function> = match due.kind {
-                crate::plugin::timers::TimerKind::After => {
-                    let key_opt = plugin.timer_callbacks.borrow_mut().remove(due.timer_id);
-                    plugin.ledger().remove_resource(due.resource_id);
-                    key_opt.and_then(|k| lua.registry_value::<Function>(&k).ok())
-                }
-                crate::plugin::timers::TimerKind::Every => plugin
-                    .timer_callbacks
-                    .borrow()
-                    .get(due.timer_id)
-                    .and_then(|k| lua.registry_value::<Function>(k).ok()),
-            };
-            let Some(func) = func_opt else { continue };
-            // Time the timer callback against the `Timer`
-            // budget. The callback id is the timer kind + id so each
-            // timer's stats roll up independently.
-            let callback_id = format!("timer:{}:{}", due.kind.as_str(), due.timer_id.get());
-            let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
-                CallbackKind::Timer,
-                &due.plugin_id,
-                due.generation_id,
-                &callback_id,
-                || func.call::<()>(()),
-            );
-            match perf_outcome {
-                PerfOutcome::Ok(()) => push_ui_cause(
-                    &mut state_causes,
-                    due.plugin_id.as_str(),
-                    UiInvalidationCause::TimerCallbackChangedPluginState,
-                ),
-                PerfOutcome::Err(e) => {
-                    push_ui_cause(
-                        &mut state_causes,
-                        due.plugin_id.as_str(),
-                        UiInvalidationCause::TimerCallbackChangedPluginState,
-                    );
-                    pending.push(
-                        PluginDiagnostic::new(
-                            due.plugin_id.clone(),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            format!("timer.{} callback error", due.kind.as_str()),
-                        )
-                        .with_generation(due.generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                }
-                PerfOutcome::Skipped => {}
-            }
-        }
-
-        // File watchers.
-        let events = self.watchers.drain_events();
-        for ev in events {
-            let Some(plugin) = self.plugins.get(ev.plugin_id.as_str()) else {
-                continue;
-            };
-            if plugin.generation.generation_id != ev.generation_id {
-                continue;
-            }
-            let lua = plugin.lua_rc();
-            let func: Option<Function> = {
-                let callbacks = plugin.watcher_callbacks.borrow();
-                callbacks
-                    .get(ev.watch_id)
-                    .and_then(|k| lua.registry_value::<Function>(k).ok())
-            };
-            let Some(func) = func else { continue };
-            let event_table = match build_watch_event_table(&lua, &ev.event) {
-                Ok(t) => t,
-                Err(e) => {
-                    pending.push(
-                        PluginDiagnostic::new(
-                            ev.plugin_id.clone(),
-                            DiagnosticSeverity::Error,
-                            "lua.watch_event_build_failed",
-                            format!("watch event table build failed: {e}"),
-                        )
-                        .with_generation(ev.generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: "leviathan.fs.watch".into(),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            let chunk_name = format!("plugins/{}/init.lua", ev.plugin_id.as_str());
-            let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
-                CallbackKind::EventCallback,
-                &ev.plugin_id,
-                ev.generation_id,
-                &format!("fs.watch:{}", ev.watch_id.get()),
-                || func.call::<()>(event_table),
-            );
-            match perf_outcome {
-                PerfOutcome::Ok(()) => push_ui_cause(
-                    &mut state_causes,
-                    ev.plugin_id.as_str(),
-                    UiInvalidationCause::WatchCallbackChangedPluginState,
-                ),
-                PerfOutcome::Err(e) => {
-                    push_ui_cause(
-                        &mut state_causes,
-                        ev.plugin_id.as_str(),
-                        UiInvalidationCause::WatchCallbackChangedPluginState,
-                    );
-                    pending.push(
-                        PluginDiagnostic::new(
-                            ev.plugin_id.clone(),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            "fs.watch callback error".to_string(),
-                        )
-                        .with_generation(ev.generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                }
-                PerfOutcome::Skipped => {}
-            }
-        }
-
-        for diag in pending {
-            self.diagnostics.record(diag);
-        }
-        for (plugin_id, causes) in state_causes {
-            let mut only = HashSet::new();
-            only.insert(plugin_id);
-            self.invalidate_dynamic_widgets(&causes, Some(&only));
-        }
-    }
-
-    /// Invoke a plugin's named user command. The function is wrapped in
-    /// a Lua coroutine so cooperative yields are honoured: if the command
-    /// yields, it's parked in the plugin's `coroutines` bucket and
-    /// resumed on subsequent `tick` calls. Returns once the first resume
-    /// finishes (either completed or yielded).
-    pub fn invoke_user_command(&mut self, plugin_id: &str, name: &str) -> mlua::Result<()> {
-        let plugin = self
-            .plugins
-            .get(plugin_id)
-            .ok_or_else(|| mlua::Error::external(format!("plugin '{plugin_id}' not loaded")))?;
-        let f: Function = {
-            let cmds = plugin.user_commands.borrow();
-            let key = cmds.commands.get(name).ok_or_else(|| {
-                mlua::Error::external(format!("user command '{name}' not registered"))
-            })?;
-            plugin.lua().registry_value(key)?
-        };
-        let thread = plugin.lua().create_thread(f)?;
-        thread.resume::<()>(())?;
-        if thread.status() == ThreadStatus::Resumable {
-            let key = plugin.lua().create_registry_value(thread)?;
-            let ledger = plugin.ledger();
-            let resource_id = ledger.record(PluginResourceKind::AsyncJob, "user_command", None);
-            ledger.record(
-                PluginResourceKind::LuaRegistryKey,
-                format!("user_command:{resource_id}"),
-                None,
-            );
-            plugin
-                .deferred
-                .borrow_mut()
-                .coroutines
-                .push(DeferredCallback { key, resource_id });
-        }
-        Ok(())
-    }
-
-    /// Run every plugin's registered health checks and return an aggregated
-    /// report. Plugins that didn't register a check (or whose checks
-    /// produced no items) are absent from the report. Errors from
-    /// individual callbacks are logged; partial item lists are kept.
-    pub fn run_health_checks(&self) -> HealthReport {
-        let mut report = HealthReport::default();
-        for (plugin_id, plugin) in &self.plugins {
-            let generation_id = plugin.generation.generation_id;
-            let chunk_name = format!("plugins/{plugin_id}/init.lua");
-            let mut items: Vec<HealthItem> = Vec::new();
-            for check in &plugin.health_checks {
-                let func: Function = match plugin.lua().registry_value(&check.callback) {
-                    Ok(f) => f,
-                    Err(e) => {
-                        self.diagnostics.record(
-                            PluginDiagnostic::new(
-                                PluginId::from(plugin_id.clone()),
-                                DiagnosticSeverity::Error,
-                                "lua.handler_lookup_failed",
-                                format!("health callback lookup failed: {e}"),
-                            )
-                            .with_generation(generation_id)
-                            .with_source(
-                                PluginSourceSpan::ApiFunction {
-                                    name: "leviathan.health.register".into(),
-                                },
-                            ),
-                        );
-                        continue;
-                    }
-                };
-                let bucket: Rc<RefCell<Vec<HealthItem>>> = Rc::new(RefCell::new(Vec::new()));
-                let ctx = HealthContext {
-                    items: Rc::clone(&bucket),
-                };
-                if let Err(e) = func.call::<()>(ctx) {
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id.clone()),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            "health callback error".to_string(),
-                        )
-                        .with_generation(generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                }
-                items.extend(bucket.borrow().iter().cloned());
-            }
-            if !items.is_empty() {
-                report.plugins.push(PluginHealth {
-                    plugin_id: plugin_id.clone(),
-                    items,
-                });
-            }
-        }
-        report
-    }
-
-    /// Point-in-time devtools snapshot: loaded plugins, currently-owned
-    /// slots, registered services, and the tail of the capability audit
-    /// log. Cheap to call (clones strings; ~O(plugins + slot_ops +
-    /// services + audit)). Consumed by the in-app inspector and tests.
-    pub fn introspect(&self) -> crate::plugin::devtools::InspectorSnapshot {
-        use crate::plugin::devtools::{
-            AutocmdSummary, CommandSummaryRow, ContributionOverrideSummary,
-            DecorationInvalidationSummary, DependencySummaryRow, DiagnosticSummary,
-            DockPanelSummary, ExtensionContributionSummary, ExtensionPointSummary,
-            InspectorSnapshot, KeymapConflictRef, KeymapSummaryRow, LoadedModuleSummary,
-            PluginSummary, ResourceSummary, RuntimePathSummary, SecretSummary,
-            ServiceCallTraceSummary, ServiceGraphEdge, ServiceSummary, SettingsSummary,
-            SlotSummary, StorageSurfaceSummary, UiRenderDiagnosticSummary,
-        };
-        let extension_points =
-            git_leviathan_plugin_api::descriptor::extension_point::EXTENSION_POINTS
-                .iter()
-                .map(|point| ExtensionPointSummary {
-                    id: point.id.to_string(),
-                    kind: format!("{:?}", point.kind),
-                    context_schema: point.context_schema.to_string(),
-                    contribution_schema: point.contribution_schema.to_string(),
-                    ordering_model: point.ordering_model.to_string(),
-                    ownership_rules: point.ownership_rules.to_string(),
-                    capabilities: point
-                        .capabilities
-                        .iter()
-                        .map(|cap| cap.to_string())
-                        .collect(),
-                    render_mount_handler: point.render_mount_handler.to_string(),
-                })
-                .collect();
-        let dock_panels = self
-            .dock_panels()
+    fn collect_dock_panel_summaries(&self) -> Vec<crate::plugin::devtools::DockPanelSummary> {
+        use crate::plugin::devtools::DockPanelSummary;
+        self.dock_panels()
             .into_iter()
             .map(|panel| DockPanelSummary {
                 plugin_id: panel.plugin_id,
@@ -627,11 +71,118 @@ impl PluginHost {
                 state: panel.state,
                 source_location: panel.source_location,
             })
-            .collect();
+            .collect()
+    }
+
+    fn collect_slot_summaries(&self) -> Vec<crate::plugin::devtools::SlotSummary> {
+        use crate::plugin::devtools::SlotSummary;
+        let mut slot_map: std::collections::BTreeMap<
+            crate::plugin::slots::SlotAddress,
+            SlotSummary,
+        > = std::collections::BTreeMap::new();
+        for builtin in crate::plugin::slots::builtins::BUILTIN_SLOTS {
+            let address = builtin.address();
+            slot_map.insert(
+                address.clone(),
+                SlotSummary {
+                    region: builtin.region.to_string(),
+                    container: builtin.container.to_string(),
+                    id: builtin.id.to_string(),
+                    priority: builtin.priority,
+                    hidden: self.contribution_overrides.is_hidden(&address),
+                    effective_priority: self
+                        .contribution_overrides
+                        .priority(&address)
+                        .unwrap_or(builtin.priority),
+                    owner_plugin_id: crate::plugin::slots::BUILTIN_PLUGIN_ID.to_string(),
+                    replace_capability: Some(builtin.replace_capability.to_string()),
+                    remove_capability: Some(builtin.remove_capability.to_string()),
+                },
+            );
+        }
+        for op in &self.slot_ops {
+            match op {
+                PreparedSlotOp::Add(p) => {
+                    let builtin = crate::plugin::slots::builtins::get(
+                        p.region.as_str(),
+                        p.container.key().as_str(),
+                        p.id.as_str(),
+                    );
+                    slot_map.insert(
+                        p.mount_address.clone(),
+                        SlotSummary {
+                            region: p.region.clone(),
+                            container: p.container.key(),
+                            id: p.id.clone(),
+                            priority: p.priority,
+                            hidden: self.contribution_overrides.is_hidden(&p.mount_address),
+                            effective_priority: self
+                                .contribution_overrides
+                                .priority(&p.mount_address)
+                                .unwrap_or(p.priority),
+                            owner_plugin_id: p.plugin_id.clone(),
+                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
+                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
+                        },
+                    );
+                }
+                PreparedSlotOp::Replace { target, spec, .. } => {
+                    let builtin = crate::plugin::slots::builtins::get(
+                        target.region().as_str(),
+                        target.container().key().as_str(),
+                        target.slot_id().as_str(),
+                    );
+                    slot_map.insert(
+                        target.clone(),
+                        SlotSummary {
+                            region: target.region().as_str().to_string(),
+                            container: target.container().key(),
+                            id: target.slot_id().as_str().to_string(),
+                            priority: spec.priority,
+                            hidden: self.contribution_overrides.is_hidden(target),
+                            effective_priority: self
+                                .contribution_overrides
+                                .priority(target)
+                                .unwrap_or(spec.priority),
+                            owner_plugin_id: spec.plugin_id.clone(),
+                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
+                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
+                        },
+                    );
+                }
+                PreparedSlotOp::Remove { target, .. } => {
+                    slot_map.remove(target);
+                }
+            }
+        }
+        let mut slots: Vec<SlotSummary> = slot_map.into_values().collect();
+        slots.sort_by(|a, b| {
+            a.region
+                .cmp(&b.region)
+                .then(a.container.cmp(&b.container))
+                .then(a.id.cmp(&b.id))
+                .then(a.owner_plugin_id.cmp(&b.owner_plugin_id))
+        });
+        slots
+    }
+
+    /// Point-in-time devtools snapshot: loaded plugins, currently-owned
+    /// slots, registered services, and the tail of the capability audit
+    /// log. Cheap to call (clones strings; ~O(plugins + slot_ops +
+    /// services + audit)). Consumed by the in-app inspector and tests.
+    pub fn introspect(&self) -> crate::plugin::devtools::InspectorSnapshot {
+        use crate::plugin::devtools::{
+            AutocmdSummary, CommandSummaryRow, ContributionOverrideSummary,
+            DecorationInvalidationSummary, DependencySummaryRow, DiagnosticSummary,
+            ExtensionContributionSummary, InspectorSnapshot, KeymapConflictRef, KeymapSummaryRow,
+            LoadedModuleSummary, PluginSummary, ResourceSummary, RuntimePathSummary, SecretSummary,
+            ServiceCallTraceSummary, ServiceGraphEdge, ServiceSummary, SettingsSummary,
+            StorageSurfaceSummary, UiRenderDiagnosticSummary,
+        };
         let dock_layout = self.dock_layout_json();
         let mut snap = InspectorSnapshot {
-            extension_points,
-            dock_panels,
+            extension_points: collect_extension_points(),
+            dock_panels: self.collect_dock_panel_summaries(),
             dock_layout,
             ..Default::default()
         };
@@ -793,93 +344,7 @@ impl PluginHost {
                 .then(a.slot_id.cmp(&b.slot_id))
         });
 
-        let mut slot_map: std::collections::BTreeMap<
-            crate::plugin::slots::SlotAddress,
-            SlotSummary,
-        > = std::collections::BTreeMap::new();
-        for builtin in crate::plugin::slots::builtins::BUILTIN_SLOTS {
-            let address = builtin.address();
-            slot_map.insert(
-                address.clone(),
-                SlotSummary {
-                    region: builtin.region.to_string(),
-                    container: builtin.container.to_string(),
-                    id: builtin.id.to_string(),
-                    priority: builtin.priority,
-                    hidden: self.contribution_overrides.is_hidden(&address),
-                    effective_priority: self
-                        .contribution_overrides
-                        .priority(&address)
-                        .unwrap_or(builtin.priority),
-                    owner_plugin_id: crate::plugin::slots::BUILTIN_PLUGIN_ID.to_string(),
-                    replace_capability: Some(builtin.replace_capability.to_string()),
-                    remove_capability: Some(builtin.remove_capability.to_string()),
-                },
-            );
-        }
-        for op in &self.slot_ops {
-            match op {
-                PreparedSlotOp::Add(p) => {
-                    let builtin = crate::plugin::slots::builtins::get(
-                        p.region.as_str(),
-                        p.container.key().as_str(),
-                        p.id.as_str(),
-                    );
-                    slot_map.insert(
-                        p.mount_address.clone(),
-                        SlotSummary {
-                            region: p.region.clone(),
-                            container: p.container.key(),
-                            id: p.id.clone(),
-                            priority: p.priority,
-                            hidden: self.contribution_overrides.is_hidden(&p.mount_address),
-                            effective_priority: self
-                                .contribution_overrides
-                                .priority(&p.mount_address)
-                                .unwrap_or(p.priority),
-                            owner_plugin_id: p.plugin_id.clone(),
-                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
-                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
-                        },
-                    );
-                }
-                PreparedSlotOp::Replace { target, spec, .. } => {
-                    let builtin = crate::plugin::slots::builtins::get(
-                        target.region().as_str(),
-                        target.container().key().as_str(),
-                        target.slot_id().as_str(),
-                    );
-                    slot_map.insert(
-                        target.clone(),
-                        SlotSummary {
-                            region: target.region().as_str().to_string(),
-                            container: target.container().key(),
-                            id: target.slot_id().as_str().to_string(),
-                            priority: spec.priority,
-                            hidden: self.contribution_overrides.is_hidden(target),
-                            effective_priority: self
-                                .contribution_overrides
-                                .priority(target)
-                                .unwrap_or(spec.priority),
-                            owner_plugin_id: spec.plugin_id.clone(),
-                            replace_capability: builtin.map(|b| b.replace_capability.to_string()),
-                            remove_capability: builtin.map(|b| b.remove_capability.to_string()),
-                        },
-                    );
-                }
-                PreparedSlotOp::Remove { target, .. } => {
-                    slot_map.remove(target);
-                }
-            }
-        }
-        snap.slots = slot_map.into_values().collect();
-        snap.slots.sort_by(|a, b| {
-            a.region
-                .cmp(&b.region)
-                .then(a.container.cmp(&b.container))
-                .then(a.id.cmp(&b.id))
-                .then(a.owner_plugin_id.cmp(&b.owner_plugin_id))
-        });
+        snap.slots = self.collect_slot_summaries();
         snap.contribution_overrides = self
             .contribution_overrides
             .summaries()
@@ -1500,376 +965,27 @@ impl PluginHost {
             options,
         );
     }
-
-    pub(super) fn refresh_dynamic_widgets_for_plugin(&self, plugin_id: &str) {
-        self.budget_tracker.begin_render_frame();
-        self.refresh_dynamic_widgets_for_plugin_caused(
-            plugin_id,
-            &[UiInvalidationCause::InitialLoad],
-        );
-    }
-
-    pub(super) fn invalidate_dynamic_widgets(
-        &self,
-        causes: &[UiInvalidationCause],
-        only_plugins: Option<&HashSet<String>>,
-    ) {
-        if causes.is_empty() {
-            return;
-        }
-        self.budget_tracker.begin_render_frame();
-        let mut ids: Vec<String> = self.plugins.keys().cloned().collect();
-        ids.sort();
-        for plugin_id in ids {
-            if only_plugins
-                .map(|set| !set.contains(&plugin_id))
-                .unwrap_or(false)
-            {
-                continue;
-            }
-            self.refresh_dynamic_widgets_for_plugin_caused(&plugin_id, causes);
-        }
-    }
-
-    pub(super) fn refresh_dynamic_widgets_for_plugin_caused(
-        &self,
-        plugin_id: &str,
-        causes: &[UiInvalidationCause],
-    ) {
-        self.refresh_chrome_widgets_for_plugin_caused(plugin_id, causes);
-        let Some(plugin) = self.plugins.get(plugin_id) else {
-            return;
-        };
-        let generation_id = plugin.generation.generation_id;
-        let chunk_name = format!("plugins/{plugin_id}/init.lua");
-        let repository = self.repository_context_snapshot();
-        for (address, dynamic) in &plugin.dynamic_widgets {
-            if !crate::plugin::ui::invalidation::dependencies_match(&dynamic.dependencies, causes) {
-                continue;
-            }
-            let cause_labels = crate::plugin::ui::invalidation::cause_labels(causes);
-            let region = address.region().as_str();
-            let pid = PluginId::from(plugin_id);
-            let cb_id = format!("dynamic_widget:{address}");
-            if let Some(skip) = self
-                .budget_tracker
-                .render_budget_skip(&pid, generation_id, region)
-            {
-                let reason = skip.reason();
-                {
-                    let mut telemetry = dynamic.telemetry.borrow_mut();
-                    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
-                    telemetry.last_causes = cause_labels;
-                    telemetry.last_status = "skipped".to_string();
-                    telemetry.last_error = Some(reason.clone());
-                    telemetry.diagnostic_badge = true;
-                }
-                self.diagnostics.record(
-                    PluginDiagnostic::new(
-                        pid,
-                        DiagnosticSeverity::Warning,
-                        "performance.render_budget_skipped",
-                        reason,
-                    )
-                    .with_generation(generation_id)
-                    .with_source(PluginSourceSpan::Widget {
-                        path: format!("slot:{address}"),
-                    }),
-                );
-                continue;
-            }
-            let func: Function = match plugin.lua().registry_value(&dynamic.key) {
-                Ok(f) => f,
-                Err(e) => {
-                    record_dynamic_error(
-                        dynamic,
-                        &cause_labels,
-                        format!("handler lookup failed: {e}"),
-                    );
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id),
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("dynamic widget fn lookup failed for {address}: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: format!("dynamic_widget:{address}"),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            let ctx = crate::plugin::ui::context::context_for_slot_with_selection(
-                plugin_id,
-                generation_id,
-                address,
-                repository.as_ref(),
-                Some(&self.last_selection_snapshot),
-                &self.last_tab_snapshot,
-                Some(&self.last_focus_snapshot),
-            );
-            plugin.ui_context.set(ctx.clone());
-            let started = std::time::Instant::now();
-            let perf_outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
-                CallbackKind::UiCallback,
-                &pid,
-                generation_id,
-                &cb_id,
-                || {
-                    let arg = plugin.lua().to_value(&ctx)?;
-                    func.call(arg)
-                },
-            );
-            let duration_ms = started.elapsed().as_millis();
-            self.budget_tracker
-                .record_render_frame_cost(&pid, generation_id, region, duration_ms);
-            let lua_val: LuaValue = match perf_outcome {
-                PerfOutcome::Ok(v) => v,
-                PerfOutcome::Skipped => {
-                    record_dynamic_skip(dynamic, &cause_labels, "callback circuit breaker tripped");
-                    continue;
-                }
-                PerfOutcome::Err(e) => {
-                    record_dynamic_error(dynamic, &cause_labels, e.to_string());
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            format!("dynamic widget fn error for {address}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                    continue;
-                }
-            };
-            let json: serde_json::Value = match plugin.lua().from_value(lua_val) {
-                Ok(v) => v,
-                Err(e) => {
-                    record_dynamic_error(dynamic, &cause_labels, e.to_string());
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id),
-                            DiagnosticSeverity::Error,
-                            "widget.invalid_tree",
-                            format!("dynamic widget returned non-serialisable value: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::Widget {
-                            path: format!("slot:{address}"),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            match widget_ast::decode(&json) {
-                Ok(ast) => {
-                    *dynamic.cache.borrow_mut() = Some(ast);
-                    let mut telemetry = dynamic.telemetry.borrow_mut();
-                    telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
-                    telemetry.last_duration_ms = duration_ms;
-                    telemetry.last_causes = cause_labels;
-                    telemetry.last_status = "ok".to_string();
-                    telemetry.last_error = None;
-                    telemetry.diagnostic_badge = false;
-                }
-                Err(decode_err) => {
-                    record_dynamic_error(dynamic, &cause_labels, decode_err.message.clone());
-                    self.diagnostics.record(widget_decode_diagnostic(
-                        plugin_id,
-                        generation_id,
-                        &format!("slot:{address}"),
-                        &decode_err,
-                    ));
-                }
-            }
-        }
-    }
-
-    pub(super) fn refresh_chrome_widgets_for_plugin_caused(
-        &self,
-        plugin_id: &str,
-        causes: &[UiInvalidationCause],
-    ) {
-        let Some(plugin) = self.plugins.get(plugin_id) else {
-            return;
-        };
-        let generation_id = plugin.generation.generation_id;
-        let chunk_name = format!("plugins/{plugin_id}/init.lua");
-        let repository = self.repository_context_snapshot();
-        let chrome_widgets = Rc::clone(&plugin.chrome_widgets);
-        let chrome_widgets = chrome_widgets.borrow();
-        for (handle, chrome) in chrome_widgets.iter() {
-            if !crate::plugin::ui::invalidation::dependencies_match(&chrome.dependencies, causes) {
-                continue;
-            }
-            let cause_labels = crate::plugin::ui::invalidation::cause_labels(causes);
-            let pid = PluginId::from(plugin_id);
-            let cb_id = format!("chrome:{handle}");
-            let func: Function = match plugin.lua().registry_value(&chrome.key) {
-                Ok(f) => f,
-                Err(e) => {
-                    record_chrome_error(
-                        chrome,
-                        &cause_labels,
-                        format!("handler lookup failed: {e}"),
-                    );
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            pid,
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("chrome widget fn lookup failed for {handle}: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: format!("chrome:{handle}"),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            let surface = chrome_pane_surface(chrome.pane);
-            let ctx = crate::plugin::ui::context::context_for_surface_with_selection(
-                plugin_id,
-                generation_id,
-                surface,
-                repository.as_ref(),
-                Some(&self.last_selection_snapshot),
-                &self.last_tab_snapshot,
-                Some(&self.last_focus_snapshot),
-            );
-            plugin.ui_context.set(ctx.clone());
-            let started = std::time::Instant::now();
-            let perf_outcome = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
-                CallbackKind::UiCallback,
-                &pid,
-                generation_id,
-                &cb_id,
-                || {
-                    let arg = plugin.lua().to_value(&ctx)?;
-                    func.call(arg)
-                },
-            );
-            let duration_ms = started.elapsed().as_millis();
-            let lua_val: LuaValue = match perf_outcome {
-                PerfOutcome::Ok(v) => v,
-                PerfOutcome::Skipped => {
-                    let mut telemetry = chrome.telemetry.borrow_mut();
-                    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
-                    telemetry.last_causes = cause_labels.clone();
-                    telemetry.last_status = "skipped".to_string();
-                    telemetry.last_error = Some("callback circuit breaker tripped".to_string());
-                    telemetry.diagnostic_badge = true;
-                    continue;
-                }
-                PerfOutcome::Err(e) => {
-                    record_chrome_error(chrome, &cause_labels, e.to_string());
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id),
-                            DiagnosticSeverity::Error,
-                            "lua.callback_error",
-                            format!("chrome widget fn error for {handle}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_mlua_error(&chunk_name, &e),
-                    );
-                    continue;
-                }
-            };
-            if matches!(lua_val, LuaValue::Nil | LuaValue::Boolean(false)) {
-                *chrome.cache.borrow_mut() = None;
-                let mut telemetry = chrome.telemetry.borrow_mut();
-                telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
-                telemetry.last_duration_ms = duration_ms;
-                telemetry.last_causes = cause_labels;
-                telemetry.last_status = "ok".to_string();
-                telemetry.last_error = None;
-                telemetry.diagnostic_badge = false;
-                continue;
-            }
-            let json: serde_json::Value = match plugin.lua().from_value(lua_val) {
-                Ok(v) => v,
-                Err(e) => {
-                    record_chrome_error(chrome, &cause_labels, e.to_string());
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            PluginId::from(plugin_id),
-                            DiagnosticSeverity::Error,
-                            "widget.invalid_tree",
-                            format!("chrome widget returned non-serialisable value: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::Widget {
-                            path: format!("chrome:{handle}"),
-                        }),
-                    );
-                    continue;
-                }
-            };
-            match widget_ast::decode(&json) {
-                Ok(ast) => {
-                    *chrome.cache.borrow_mut() = Some(ast);
-                    let mut telemetry = chrome.telemetry.borrow_mut();
-                    telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
-                    telemetry.last_duration_ms = duration_ms;
-                    telemetry.last_causes = cause_labels;
-                    telemetry.last_status = "ok".to_string();
-                    telemetry.last_error = None;
-                    telemetry.diagnostic_badge = false;
-                }
-                Err(decode_err) => {
-                    record_chrome_error(chrome, &cause_labels, decode_err.message.clone());
-                    self.diagnostics.record(widget_decode_diagnostic(
-                        plugin_id,
-                        generation_id,
-                        &format!("chrome:{handle}"),
-                        &decode_err,
-                    ));
-                }
-            }
-        }
-    }
 }
 
-fn chrome_pane_surface(
-    pane: crate::widgets::chrome::repo_region::ChromePane,
-) -> crate::plugin::ui::context::UiContextSurface {
-    use crate::plugin::ui::context::UiContextSurface;
-    use crate::widgets::chrome::repo_region::ChromePane;
-    match pane {
-        ChromePane::Sidebar => UiContextSurface::RepositorySidebar {
-            section: "chrome".into(),
-        },
-        ChromePane::Graph => UiContextSurface::RepositoryGraph {
-            section: "chrome".into(),
-        },
-        ChromePane::Details => UiContextSurface::RepositoryDetails {
-            section: "chrome".into(),
-        },
-        ChromePane::Diff => UiContextSurface::RepositoryDiff,
-    }
-}
-
-fn record_dynamic_error(
-    dynamic: &crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration,
-    causes: &[String],
-    error: String,
-) {
-    let mut telemetry = dynamic.telemetry.borrow_mut();
-    telemetry.last_causes = causes.to_vec();
-    telemetry.last_status = if dynamic.cache.borrow().is_some() {
-        telemetry.stale_count = telemetry.stale_count.saturating_add(1);
-        "stale".to_string()
-    } else {
-        "error".to_string()
-    };
-    telemetry.last_error = Some(error);
-    telemetry.diagnostic_badge = true;
+fn collect_extension_points() -> Vec<crate::plugin::devtools::ExtensionPointSummary> {
+    use crate::plugin::devtools::ExtensionPointSummary;
+    git_leviathan_plugin_api::descriptor::extension_point::EXTENSION_POINTS
+        .iter()
+        .map(|point| ExtensionPointSummary {
+            id: point.id.to_string(),
+            kind: format!("{:?}", point.kind),
+            context_schema: point.context_schema.to_string(),
+            contribution_schema: point.contribution_schema.to_string(),
+            ordering_model: point.ordering_model.to_string(),
+            ownership_rules: point.ownership_rules.to_string(),
+            capabilities: point
+                .capabilities
+                .iter()
+                .map(|cap| cap.to_string())
+                .collect(),
+            render_mount_handler: point.render_mount_handler.to_string(),
+        })
+        .collect()
 }
 
 fn populate_authoring_trees(snap: &mut crate::plugin::devtools::InspectorSnapshot) {
@@ -2039,74 +1155,4 @@ fn populate_authoring_trees(snap: &mut crate::plugin::devtools::InspectorSnapsho
             }
         })
         .collect();
-}
-
-fn record_dynamic_skip(
-    dynamic: &crate::plugin::ui::main_bar_slots::DynamicWidgetRegistration,
-    causes: &[String],
-    reason: &str,
-) {
-    let mut telemetry = dynamic.telemetry.borrow_mut();
-    telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
-    telemetry.last_causes = causes.to_vec();
-    telemetry.last_status = "skipped".to_string();
-    telemetry.last_error = Some(reason.to_string());
-    telemetry.diagnostic_badge = true;
-}
-
-fn record_chrome_error(
-    chrome: &crate::plugin::ui::chrome::ChromeRegistration,
-    causes: &[String],
-    error: String,
-) {
-    let mut telemetry = chrome.telemetry.borrow_mut();
-    telemetry.last_causes = causes.to_vec();
-    telemetry.last_status = if chrome.cache.borrow().is_some() {
-        telemetry.stale_count = telemetry.stale_count.saturating_add(1);
-        "stale".to_string()
-    } else {
-        "error".to_string()
-    };
-    telemetry.last_error = Some(error);
-    telemetry.diagnostic_badge = true;
-}
-
-fn push_ui_cause(
-    map: &mut HashMap<String, Vec<UiInvalidationCause>>,
-    plugin_id: &str,
-    cause: UiInvalidationCause,
-) {
-    let entry = map.entry(plugin_id.to_string()).or_default();
-    if !entry.contains(&cause) {
-        entry.push(cause);
-    }
-}
-
-/// Convert a `widget_ast::WidgetDecodeError` into a structured
-/// diagnostic. The error path is rooted at `path_root` so screen errors
-/// read `screen.<id>.view.children[2].child.label` and slot errors read
-/// `slot:<slot_id>.children[…]`.
-pub(super) fn widget_decode_diagnostic(
-    plugin_id: &str,
-    generation_id: GenerationId,
-    path_root: &str,
-    err: &widget_ast::WidgetDecodeError,
-) -> PluginDiagnostic {
-    // The decoder paths are rooted at "root"; strip that and re-root
-    // under the host-side path so the diagnostic carries an absolute
-    // location.
-    let suffix = err.path.strip_prefix("root").unwrap_or(err.path.as_str());
-    let full_path = if suffix.is_empty() {
-        path_root.to_string()
-    } else {
-        format!("{path_root}{suffix}")
-    };
-    PluginDiagnostic::new(
-        PluginId::from(plugin_id),
-        DiagnosticSeverity::Error,
-        err.code,
-        err.message.clone(),
-    )
-    .with_generation(generation_id)
-    .with_source(PluginSourceSpan::Widget { path: full_path })
 }

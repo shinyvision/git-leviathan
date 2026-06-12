@@ -38,5 +38,5 @@ pub use syntax_highlight::{
     update_runtime_grammar, HighlightDocument, HighlightedFile, SyntaxHighlightedSpan, SyntaxStyle,
 };
 pub use text_measurement::{
-    cached_measure_width, cached_truncate_name, release_text_caches, FontFamily,
+    cached_measure_width, cached_truncate_name, release_text_caches, truncate_to_width, FontFamily,
 };

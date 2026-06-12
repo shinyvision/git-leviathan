@@ -67,11 +67,17 @@ fn branch_stack_text_color(row: &BranchDisplayRow) -> Color {
 
 // ─── Icon composition ─────────────────────────────────────────────────────────
 
-fn branch_stack_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'static, Message>> {
+pub(super) fn branch_row_icons(
+    row: &BranchDisplayRow,
+    color: Color,
+    tag_or_fallback_size: f32,
+    laptop_size: f32,
+    cloud_size: f32,
+) -> Vec<Element<'static, Message>> {
     let mut icons = Vec::new();
 
     if row.is_tag {
-        icons.push(assets::icon(assets::TAG, BRANCH_LABEL_ICON_SIZE, color));
+        icons.push(assets::icon(assets::TAG, tag_or_fallback_size, color));
         return icons;
     }
 
@@ -81,24 +87,26 @@ fn branch_stack_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'stat
         } else {
             assets::LAPTOP
         };
-        icons.push(assets::icon(
-            icon_data,
-            BRANCH_LABEL_LAPTOP_ICON_SIZE,
-            color,
-        ));
+        icons.push(assets::icon(icon_data, laptop_size, color));
     }
     if row.has_remote {
-        icons.push(assets::icon(
-            assets::CLOUD,
-            BRANCH_LABEL_CLOUD_ICON_SIZE,
-            color,
-        ));
+        icons.push(assets::icon(assets::CLOUD, cloud_size, color));
     }
     if icons.is_empty() && !row.is_current {
-        icons.push(assets::icon(assets::BRANCH, BRANCH_LABEL_ICON_SIZE, color));
+        icons.push(assets::icon(assets::BRANCH, tag_or_fallback_size, color));
     }
 
     icons
+}
+
+fn branch_stack_icons(row: &BranchDisplayRow, color: Color) -> Vec<Element<'static, Message>> {
+    branch_row_icons(
+        row,
+        color,
+        BRANCH_LABEL_ICON_SIZE,
+        BRANCH_LABEL_LAPTOP_ICON_SIZE,
+        BRANCH_LABEL_CLOUD_ICON_SIZE,
+    )
 }
 
 // ─── Row content (text + icons) ───────────────────────────────────────────────

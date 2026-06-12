@@ -315,7 +315,6 @@ pub fn install_all(lua: &Lua, ctx: InstallAllContext) -> mlua::Result<()> {
             ledger: ledger.clone(),
             registry: async_ctx.jobs.clone(),
             job_callbacks: Rc::clone(&async_ctx.job_callbacks),
-            deferred: Rc::clone(&deferred),
             plugin_id: plugin_id.clone(),
             generation_id,
         },

@@ -2,6 +2,23 @@ pub(super) fn short_hash(hash: &str) -> String {
     hash.chars().take(7).collect()
 }
 
+pub(super) fn message_summary_and_combined(message: &str) -> (String, String) {
+    let summary = message.lines().next().unwrap_or("").to_string();
+    let rest = message
+        .lines()
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_string();
+    let combined = if rest.is_empty() {
+        summary.clone()
+    } else {
+        format!("{} {}", summary, rest)
+    };
+    (summary, combined)
+}
+
 pub(super) fn relative_time(commit_secs: i64) -> Option<String> {
     use std::time::{SystemTime, UNIX_EPOCH};
 

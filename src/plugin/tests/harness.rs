@@ -8,8 +8,13 @@ use std::sync::Arc;
 
 use tempfile::TempDir;
 
+use crate::core::TabId;
 use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
 use crate::plugin::host::PluginHost;
+use crate::plugin::tab_snapshot::{TabSnapshotEntry, TabsSnapshot};
+use crate::widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry};
+use crate::widgets::chrome::repo_region::RepoRegionRegistry;
+use crate::widgets::chrome::tab_bar_slots::{builtins as tab_bar_builtins, TabBarRegistry};
 
 pub struct MockHost {
     host: PluginHost,
@@ -318,6 +323,73 @@ impl MockHost {
         self.host.introspect()
     }
 
+    /// Replay the host's `main_bar` slot ops onto a fresh registry seeded
+    /// with the builtins, exactly as the chrome renderer does each frame.
+    pub fn main_bar_registry(&self) -> MainBarRegistry {
+        let mut registry = MainBarRegistry::new();
+        main_bar_builtins::register_all(&mut registry);
+        self.host.apply_main_bar_slots(&mut registry);
+        registry
+    }
+
+    /// Replay the host's `tab_bar` slot ops onto a fresh builtin-seeded
+    /// registry.
+    pub fn tab_bar_registry(&self) -> TabBarRegistry {
+        let mut registry = TabBarRegistry::new();
+        tab_bar_builtins::register_all(&mut registry);
+        self.host.apply_tab_bar_slots(&mut registry);
+        registry
+    }
+
+    /// Replay the host's `repository` slot ops onto a fresh registry. The
+    /// repository region has no builtins to seed.
+    pub fn repo_region_registry(&self) -> RepoRegionRegistry {
+        let mut registry = RepoRegionRegistry::new();
+        self.host.apply_repo_region_slots(&mut registry);
+        registry
+    }
+
+    /// Collect every retained diagnostic code in emission order. Drains
+    /// the whole bounded store rather than an arbitrary tail.
+    pub fn diag_codes(&self) -> Vec<String> {
+        self.diagnostics()
+            .entries()
+            .into_iter()
+            .map(|d| d.code)
+            .collect()
+    }
+
+    /// Assert at least one retained diagnostic carries `code`.
+    pub fn assert_diag_code(&self, code: &str) {
+        let store = self.diagnostics();
+        assert!(
+            !store.by_code(code).is_empty(),
+            "expected diagnostic code {code}, got {:?}",
+            self.diag_codes()
+        );
+    }
+
+    /// Tick-and-poll until `cond` holds or `timeout_ms` elapses, returning
+    /// whether the condition was met. Lets callers either panic on timeout
+    /// or best-effort drain.
+    pub fn drain_until(
+        &mut self,
+        mut cond: impl FnMut(&MockHost) -> bool,
+        timeout_ms: u64,
+    ) -> bool {
+        let start = std::time::Instant::now();
+        loop {
+            self.tick();
+            if cond(self) {
+                return true;
+            }
+            if start.elapsed() > std::time::Duration::from_millis(timeout_ms) {
+                return false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
+
     pub fn reset_plugin_storage(&mut self, plugin_id: &str, surface: &str) -> Result<(), String> {
         self.host.reset_plugin_storage(plugin_id, surface)
     }
@@ -369,6 +441,31 @@ fn inject_runtime_section(manifest: &str) -> String {
         manifest.to_string()
     } else {
         format!("{manifest}\n[runtime]\nstrict_globals = false\n")
+    }
+}
+
+/// Standard no-capabilities manifest body: id/name/version/api_version.
+pub fn simple_manifest(id: &str) -> String {
+    format!(
+        r#"
+id = "{id}"
+name = "{id}"
+version = "0.1.0"
+api_version = "1.0"
+"#
+    )
+}
+
+/// Single-tab `/tmp/repo` snapshot fixture used by the UI contract tests.
+pub fn tab_snapshot() -> TabsSnapshot {
+    TabsSnapshot {
+        tabs: vec![TabSnapshotEntry {
+            id: TabId(1),
+            path: "/tmp/repo".into(),
+            name: "repo".into(),
+        }],
+        active_id: Some(TabId(1)),
+        active_path: Some("/tmp/repo".into()),
     }
 }
 
@@ -1025,7 +1122,11 @@ api_version = "1.0"
             Some(0),
             "before 50ms: still 0"
         );
-        std::thread::sleep(std::time::Duration::from_millis(80));
+        // `defer_fn` keys off real `Instant::now()` in the production tick
+        // path (unlike debounce/budgets, which take an injectable clock),
+        // so this is the one self-test that must wait real wall-clock time.
+        // Margin stays just over the 50ms threshold.
+        std::thread::sleep(std::time::Duration::from_millis(60));
         host.tick();
         assert_eq!(
             host.read_global_i64("deferred", "x"),

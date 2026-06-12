@@ -65,7 +65,7 @@ pub trait CanvasRow: std::fmt::Debug + Send + Sync + Any {
 #[derive(Debug)]
 pub struct TextCanvasData {
     pub(in crate::widgets::text) rows: Vec<Arc<dyn CanvasRow>>,
-    pub(in crate::widgets::text) row_offsets: Vec<f32>,
+    pub(in crate::widgets::text) row_offsets: Arc<[f32]>,
     pub(in crate::widgets::text) total_height: f32,
     pub(in crate::widgets::text) content_width: f32,
     pub(in crate::widgets::text) char_width: f32,
@@ -94,7 +94,7 @@ impl TextCanvasData {
         row_offsets.push(acc);
         Self {
             rows,
-            row_offsets,
+            row_offsets: Arc::from(row_offsets),
             total_height: acc,
             content_width,
             char_width,
@@ -104,9 +104,8 @@ impl TextCanvasData {
 
     pub fn first_row_at_or_below(&self, scroll_y: f32) -> usize {
         self.row_offsets
-            .iter()
-            .position(|&y| y >= scroll_y)
-            .unwrap_or(0)
+            .partition_point(|&y| y < scroll_y)
+            .min(self.rows.len())
     }
 
     pub fn visible_row_range(

@@ -14,6 +14,7 @@ use super::{commands::open_url, App};
 
 impl App {
     pub(super) fn update_plugin(&mut self, msg: PluginMessage) -> Task<Message> {
+        self.plugin_tabs_dirty = true;
         match msg {
             PluginMessage::SlotClicked {
                 plugin_id,

@@ -35,6 +35,7 @@ const MIN_MESSAGE_COL_WIDTH: f32 = 80.0;
 const TABLE_DIVIDER_WIDTH: f32 = 1.0;
 const GRAPH_RESIZE_HIT_WIDTH: f32 = 5.0;
 const GRAPH_RESIZE_VISUAL_WIDTH: f32 = 2.0;
+const TABLE_HEADER_HEIGHT: f32 = 22.0;
 
 pub(crate) fn center_panel_view(screen: CenterViewModel<'_>) -> Element<'_, Message> {
     let commit_search_ref = screen.commit_search;
@@ -109,7 +110,7 @@ fn header_row(
         .padding(Padding::from([4, 8])),
         horizontal_space(),
     ]
-    .height(Length::Fixed(22.0))
+    .height(Length::Fixed(TABLE_HEADER_HEIGHT))
     .into()
 }
 
@@ -504,14 +505,9 @@ fn message_cell<'a>(data: MessageCellData<'a>) -> Element<'a, Message> {
     let inner_row = if commit.kind == CommitKind::Dirty {
         dirty_message_row(commit, diff_state, dirty_commit_message)
     } else {
-        let summary = commit.message.lines().next().unwrap_or("").to_string();
-        let rest: String = commit.message.lines().skip(1).collect::<Vec<_>>().join(" ");
-        let rest = rest.trim().to_string();
-        let combined = if rest.is_empty() {
-            summary.clone()
-        } else {
-            format!("{} {}", summary, rest)
-        };
+        let summary = presentation.summary.as_str();
+        let combined = presentation.combined_message.as_str();
+        let has_body = combined != summary;
         use crate::services::{cached_measure_width, FontFamily};
 
         // Fixed overhead: button padding (8 + 8) + row spacing between 3 children (8 + 8).
@@ -523,17 +519,16 @@ fn message_cell<'a>(data: MessageCellData<'a>) -> Element<'a, Message> {
             .unwrap_or(0.0);
         let msg_avail = (available_width - ROW_OVERHEAD - time_width).max(0.0);
 
-        let truncated = truncate_message_for_width(&combined, msg_avail);
+        let truncated = truncate_message_for_width(combined, msg_avail);
         let summary_prefix = format!("{} ", summary);
-        let (summary_part, rest_part) =
-            if !rest.is_empty() && truncated.starts_with(&summary_prefix) {
-                (
-                    summary.clone(),
-                    truncated[summary_prefix.len()..].to_string(),
-                )
-            } else {
-                (truncated, String::new())
-            };
+        let (summary_part, rest_part) = if has_body && truncated.starts_with(&summary_prefix) {
+            (
+                summary.to_string(),
+                truncated[summary_prefix.len()..].to_string(),
+            )
+        } else {
+            (truncated, String::new())
+        };
         let mut message_row_items: Vec<Element<Message>> = vec![text(summary_part)
             .size(theme::FONT_MD)
             .style(move |_: &Theme| text::Style {
@@ -600,54 +595,14 @@ fn message_cell<'a>(data: MessageCellData<'a>) -> Element<'a, Message> {
 }
 
 fn truncate_message_for_width(message: &str, available_width: f32) -> String {
-    use crate::services::{cached_measure_width, FontFamily};
+    use crate::services::{truncate_to_width, FontFamily};
 
-    let full_width = cached_measure_width(message, FontFamily::Default, theme::FONT_MD);
-
-    if full_width <= available_width {
-        return message.to_string();
-    }
-
-    let ellipsis_width = cached_measure_width("…", FontFamily::Default, theme::FONT_MD);
-    let available_for_text = available_width - ellipsis_width;
-
-    if available_for_text <= 0.0 {
-        return "…".to_string();
-    }
-
-    let mut low = 0usize;
-    let mut high = message.len();
-    let mut best_byte = 0usize;
-
-    while low < high {
-        let mid = (low + high).div_ceil(2);
-        let boundary = floor_char_boundary(message, mid.min(message.len()));
-        let substr = &message[..boundary];
-        let w = cached_measure_width(substr, FontFamily::Default, theme::FONT_MD);
-        if w <= available_for_text {
-            best_byte = substr.len();
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-
-    if best_byte == 0 {
-        "…".to_string()
-    } else {
-        let boundary = floor_char_boundary(message, best_byte.min(message.len()));
-        format!("{}…", &message[..boundary])
-    }
-}
-
-fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
-    if idx >= s.len() {
-        return s.len();
-    }
-    while !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    idx
+    truncate_to_width(
+        message,
+        available_width,
+        FontFamily::Default,
+        theme::FONT_MD,
+    )
 }
 
 pub fn commit_context_menu(

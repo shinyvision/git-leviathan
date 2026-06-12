@@ -1,18 +1,17 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, LazyLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use semver::{Version, VersionReq};
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tree_sitter::{Language, LANGUAGE_VERSION, MIN_COMPATIBLE_LANGUAGE_VERSION};
 
 use super::parser_loading;
 use super::queries;
+use super::util::{current_unix_seconds, normalize_language_key, sha256_hex};
 
 pub const REGISTRY_SCHEMA_VERSION: u32 = 1;
 pub const REGISTRY_CACHE_TTL_SECONDS: u64 = 24 * 60 * 60;
@@ -1454,13 +1453,6 @@ fn registry_cache_fresh_at(cache: Option<&RegistryCacheMetadata>, now_unix_secon
     cache.unwrap_or(&fallback).is_fresh_at(now_unix_seconds)
 }
 
-fn current_unix_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs())
-        .unwrap_or(0)
-}
-
 fn env_flag(name: &str) -> bool {
     std::env::var(name).is_ok_and(|value| {
         matches!(
@@ -1503,10 +1495,6 @@ fn missing_grammars(
             entry: entry.clone(),
         })
         .collect()
-}
-
-fn normalize_language_key(language: &str) -> String {
-    language.trim().to_ascii_lowercase()
 }
 
 fn normalize_injection_language(language: &str) -> Option<String> {
@@ -1555,8 +1543,19 @@ fn ensure_cpp_query_has_c_base(source: &str) -> String {
     }
 }
 
+static STATIC_STR_INTERNER: LazyLock<Mutex<HashSet<&'static str>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
 fn leak_static_str(value: String) -> &'static str {
-    Box::leak(value.into_boxed_str())
+    let mut interner = STATIC_STR_INTERNER
+        .lock()
+        .expect("static string interner poisoned");
+    if let Some(existing) = interner.get(value.as_str()) {
+        return existing;
+    }
+    let leaked: &'static str = Box::leak(value.into_boxed_str());
+    interner.insert(leaked);
+    leaked
 }
 
 fn leak_patterns<'a, I>(patterns: I) -> &'static [&'static str]
@@ -1980,10 +1979,6 @@ impl TreeSitterSyntax {
         self.queries.injections()
     }
 
-    pub(super) fn locals_query(&self) -> Option<&tree_sitter::Query> {
-        self.queries.locals()
-    }
-
     pub(super) fn parser_runtime(&self) -> ParserRuntime {
         self.parser_runtime
     }
@@ -2030,15 +2025,6 @@ fn matches_compound_extension(filename: &str, compound: &str) -> bool {
         || filename
             .strip_suffix(compound)
             .is_some_and(|prefix| prefix.ends_with('.'))
-}
-
-fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        out.push_str(&format!("{byte:02x}"));
-    }
-    out
 }
 
 #[cfg(test)]

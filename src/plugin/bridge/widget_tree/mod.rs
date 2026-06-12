@@ -50,6 +50,7 @@ mod text;
 mod text_input;
 
 pub use common::build_error_widget;
+pub(crate) use image::clear_for_root as clear_image_cache_for_root;
 pub(crate) use text_input::plugin_text_input_id;
 // Container size limits read by `plugin::ui::split` for per-pane clamps.
 pub use container::container_size_limits;

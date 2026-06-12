@@ -118,6 +118,13 @@ impl RepositoryScreen {
         self.data.snapshot.branch_refs()
     }
 
+    /// Monotonic snapshot revision. Bumps whenever the loaded graph/refs
+    /// change. `App::sync_repository_to_plugins` uses it as a cheap gate so
+    /// the per-message refs clone + host sync only runs after a real reload.
+    pub(crate) fn graph_revision(&self) -> crate::core::RepoVersion {
+        self.data.snapshot.graph_revision()
+    }
+
     pub(crate) fn repo_name(&self) -> &str {
         self.data.snapshot.repo_name()
     }
@@ -388,69 +395,6 @@ impl RepositoryScreen {
         })
     }
 
-    pub(crate) fn delete_branch_direct(
-        &mut self,
-        branch_name: String,
-        is_remote: bool,
-        remote_ref: Option<String>,
-    ) -> Task<Message> {
-        let branch_ref = if is_remote {
-            remote_ref.unwrap_or_else(|| branch_name.clone())
-        } else {
-            branch_name.clone()
-        };
-        let Some(operation_id) = self.begin_git_write() else {
-            return Task::none();
-        };
-        let repo = self.fleet.active().clone();
-        let presenter = self.presenter.clone();
-        let tab_id = self.tab_id;
-        Task::perform(
-            git_write_work(move || {
-                repo.delete_branch(&branch_ref, is_remote)
-                    .map(|s| presenter.project_loaded(s))
-            }),
-            move |result| {
-                Message::tab(
-                    tab_id,
-                    RepositoryMessage::BranchDeleted {
-                        operation_id: Some(operation_id),
-                        branch_name: branch_name.clone(),
-                        is_remote,
-                        result,
-                    },
-                )
-            },
-        )
-    }
-
-    pub(crate) fn delete_branch_local_and_remote(&mut self, branch_name: String) -> Task<Message> {
-        let Some(operation_id) = self.begin_git_write() else {
-            return Task::none();
-        };
-        let repo = self.fleet.active().clone();
-        let presenter = self.presenter.clone();
-        let tab_id = self.tab_id;
-        let delete_branch_name = branch_name.clone();
-        Task::perform(
-            git_write_work(move || {
-                repo.delete_branch_all(&delete_branch_name)
-                    .map(|s| presenter.project_loaded(s))
-            }),
-            move |result| {
-                Message::tab(
-                    tab_id,
-                    RepositoryMessage::BranchDeleted {
-                        operation_id: Some(operation_id),
-                        branch_name: branch_name.clone(),
-                        is_remote: false,
-                        result,
-                    },
-                )
-            },
-        )
-    }
-
     pub(crate) fn copy_commit_hash(&mut self, hash: Option<String>) -> Task<Message> {
         let hash = hash.or_else(|| self.selected_commit_hash().map(|(_, hash)| hash));
         match hash {
@@ -664,20 +608,9 @@ impl RepositoryScreen {
         }
 
         if self.input.focused_panel == FocusedPanel::Detail {
-            return match action {
-                CenterAction::NavigateFirst => {
-                    self.handle_detail_action(DetailAction::ExtendFileSelectionFirst)
-                }
-                CenterAction::NavigateLast => {
-                    self.handle_detail_action(DetailAction::ExtendFileSelectionLast)
-                }
-                CenterAction::NavigateUp => {
-                    self.handle_detail_action(DetailAction::ExtendFileSelectionUp)
-                }
-                CenterAction::NavigateDown => {
-                    self.handle_detail_action(DetailAction::ExtendFileSelectionDown)
-                }
-                _ => Task::none(),
+            return match input::extend_detail_navigation_action(&action) {
+                Some(detail) => self.handle_detail_action(detail),
+                None => Task::none(),
             };
         }
 
@@ -903,9 +836,11 @@ impl RepositoryScreen {
                 branch_name,
                 is_remote,
                 remote_ref,
-            } => self.delete_branch_direct(branch_name, is_remote, remote_ref),
+            } => {
+                commands::branch_ops::delete_branch_direct(self, branch_name, is_remote, remote_ref)
+            }
             RepositoryMessage::DeleteBranchLocalAndRemote { branch_name } => {
-                self.delete_branch_local_and_remote(branch_name)
+                commands::branch_ops::delete_branch_local_and_remote(self, branch_name)
             }
             other => commands::dispatch_result(self, other),
         }
@@ -913,37 +848,13 @@ impl RepositoryScreen {
 
     fn handle_center_action(&mut self, action: CenterAction) -> Task<Message> {
         if self.input.focused_panel == FocusedPanel::Detail {
-            match &action {
-                CenterAction::NavigateFirst => {
-                    return self.handle_detail_action(DetailAction::NavigateFileFirst);
-                }
-                CenterAction::NavigateLast => {
-                    return self.handle_detail_action(DetailAction::NavigateFileLast);
-                }
-                CenterAction::NavigateUp => {
-                    return self.handle_detail_action(DetailAction::NavigateFileUp);
-                }
-                CenterAction::NavigateDown => {
-                    return self.handle_detail_action(DetailAction::NavigateFileDown);
-                }
-                _ => {}
+            if let Some(detail) = input::detail_navigation_action(&action) {
+                return self.handle_detail_action(detail);
             }
         }
         if self.input.focused_panel == FocusedPanel::Center && self.panels.diff.is_active() {
-            match &action {
-                CenterAction::NavigateFirst => {
-                    return self.handle_diff_panel_action(DiffPanelAction::ScrollTop);
-                }
-                CenterAction::NavigateLast => {
-                    return self.handle_diff_panel_action(DiffPanelAction::ScrollBottom);
-                }
-                CenterAction::NavigateUp => {
-                    return self.handle_diff_panel_action(DiffPanelAction::ScrollUp);
-                }
-                CenterAction::NavigateDown => {
-                    return self.handle_diff_panel_action(DiffPanelAction::ScrollDown);
-                }
-                _ => {}
+            if let Some(scroll) = input::diff_scroll_action(&action) {
+                return self.handle_diff_panel_action(scroll);
             }
         }
         let (mut ctx, panels) = self.ctx_and_panels();
@@ -980,6 +891,7 @@ impl RepositoryScreen {
             presenter: self.presenter.clone(),
             tab_id: self.tab_id,
             active_path: self.fleet.active_path().to_path_buf(),
+            sidebar_sections: self.data.snapshot.sidebar_sections(),
             operations: &mut self.data.operations,
         };
         match self.overlay_manager.dispatch(action, ctx) {

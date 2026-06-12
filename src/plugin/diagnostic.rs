@@ -12,12 +12,13 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime};
 
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::plugin::resources::{GenerationId, PluginId};
+use crate::plugin::util::system_time_unix_ms;
 
 /// Diagnostic severity. `Trace` is intentionally omitted — anything
 /// worth recording is at least informational.
@@ -162,10 +163,7 @@ impl PluginDiagnostic {
     }
 
     pub fn timestamp_unix_ms(&self) -> u128 {
-        self.timestamp
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
+        system_time_unix_ms(self.timestamp)
     }
 
     /// Stringified source span (`Display` impl on
@@ -409,6 +407,18 @@ impl DiagnosticStore {
             .unwrap_or_default()
     }
 
+    /// Clone only the retained diagnostics matching `pred`, filtering
+    /// under the lock so non-matching entries are never cloned.
+    fn filtered<F>(&self, pred: F) -> Vec<PluginDiagnostic>
+    where
+        F: Fn(&PluginDiagnostic) -> bool,
+    {
+        self.inner
+            .lock()
+            .map(|g| g.buffer.iter().filter(|d| pred(d)).cloned().collect())
+            .unwrap_or_default()
+    }
+
     pub fn len(&self) -> usize {
         self.inner.lock().map(|g| g.buffer.len()).unwrap_or(0)
     }
@@ -425,43 +435,34 @@ impl DiagnosticStore {
 
     /// Return diagnostics for `plugin_id`, oldest first.
     pub fn for_plugin(&self, plugin_id: &PluginId) -> Vec<PluginDiagnostic> {
-        self.entries()
-            .into_iter()
-            .filter(|d| &d.plugin_id == plugin_id)
-            .collect()
+        self.filtered(|d| &d.plugin_id == plugin_id)
     }
 
     /// Return diagnostics whose severity is at least `min`.
     pub fn at_least(&self, min: DiagnosticSeverity) -> Vec<PluginDiagnostic> {
-        self.entries()
-            .into_iter()
-            .filter(|d| d.severity >= min)
-            .collect()
+        self.filtered(|d| d.severity >= min)
     }
 
     /// Return diagnostics whose code matches `code` exactly.
     pub fn by_code(&self, code: &str) -> Vec<PluginDiagnostic> {
-        self.entries()
-            .into_iter()
-            .filter(|d| d.code == code)
-            .collect()
+        self.filtered(|d| d.code == code)
     }
 
     /// Return diagnostics emitted at or after `since`. Uses monotonic
     /// `Instant` so a wall-clock jump can't lose a recent diagnostic.
     pub fn since(&self, since: Instant) -> Vec<PluginDiagnostic> {
-        self.entries()
-            .into_iter()
-            .filter(|d| d.instant >= since)
-            .collect()
+        self.filtered(|d| d.instant >= since)
     }
 
     /// Tail of the most recent `n` diagnostics, oldest first.
     pub fn tail(&self, n: usize) -> Vec<PluginDiagnostic> {
-        let entries = self.entries();
-        let len = entries.len();
-        let start = len.saturating_sub(n);
-        entries[start..].to_vec()
+        self.inner
+            .lock()
+            .map(|g| {
+                let start = g.buffer.len().saturating_sub(n);
+                g.buffer.iter().skip(start).cloned().collect()
+            })
+            .unwrap_or_default()
     }
 }
 

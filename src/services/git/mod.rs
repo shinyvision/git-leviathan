@@ -185,6 +185,10 @@ impl GitService {
         loader::load_refs_snapshot(self, commit_limit)
     }
 
+    pub(crate) fn head_hash(&self) -> Option<String> {
+        loader::head_hash(self)
+    }
+
     pub fn checkout_branch(&mut self, branch_name: &str) -> Result<(), GitError> {
         checkout::checkout_branch(self, branch_name)
     }

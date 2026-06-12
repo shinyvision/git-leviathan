@@ -10,7 +10,9 @@ pub mod graph_view;
 pub mod loaded;
 pub mod sidebar_view;
 
-pub use commit_presentation::{BranchDisplayRow, BranchLabel, BranchLabelKind, CommitPresentation};
+pub use commit_presentation::{
+    branch_display_rows, BranchDisplayRow, BranchLabel, BranchLabelKind, CommitPresentation,
+};
 pub use diff_view::CommitDiffState;
 pub use graph_view::{GraphRow, GraphSegment, ProjectionSignature, RepositoryProjection};
 pub use loaded::{

@@ -12,6 +12,8 @@ use crate::services::{
 pub trait RepoRead: Send + Sync {
     fn load_repo(&self, commit_limit: usize) -> Result<RepoSnapshot, GitError>;
     fn load_refs_snapshot(&self, commit_limit: usize) -> Result<RefsSnapshot, GitError>;
+    fn head_hash(&self) -> Result<Option<String>, GitError>;
+    fn current_branch_name(&self) -> Result<Option<String>, GitError>;
     fn load_commit_diff(&self, commit_idx: usize, hash: &str)
         -> Result<CommitDiffResult, GitError>;
     fn load_merged_commit_diff(

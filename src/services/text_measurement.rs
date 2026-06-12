@@ -1,3 +1,4 @@
+use std::hash::{Hash, Hasher};
 use std::num::NonZeroUsize;
 use std::sync::{LazyLock, RwLock};
 
@@ -156,11 +157,12 @@ impl Default for TextMeasurementService {
 }
 
 // Global measurement cache. Avoids acquiring the font system write lock on
-// every frame for the same (text, font_family, font_size) key. Floats are
-// stored as `f32::to_bits()` so they can be used as HashMap keys.
+// every frame for the same inputs. Keys are a single `u64` hash of the
+// borrowed inputs so cache hits never allocate the lookup string; collisions
+// are vanishingly unlikely for text measurement.
 
-type WidthKey = (String, u8, u32); // (text, font_family_discriminant, font_size_bits)
-type TruncKey = (String, u32, u8, u32); // (text, max_width_bits, font_family_discriminant, font_size_bits)
+type WidthKey = u64; // hash of (text, font_family_discriminant, font_size_bits)
+type TruncKey = u64; // hash of (text, max_width_bits, font_family_discriminant, font_size_bits)
 
 const WIDTH_CACHE_CAPACITY: usize = 4096;
 const TRUNC_CACHE_CAPACITY: usize = 2048;
@@ -193,14 +195,27 @@ fn font_family_key(f: FontFamily) -> u8 {
     }
 }
 
+fn width_key(text: &str, font_family: FontFamily, font_size: f32) -> WidthKey {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut h);
+    font_family_key(font_family).hash(&mut h);
+    font_size.to_bits().hash(&mut h);
+    h.finish()
+}
+
+fn trunc_key(name: &str, max_width: f32, font_size: f32) -> TruncKey {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    name.hash(&mut h);
+    max_width.to_bits().hash(&mut h);
+    font_family_key(FontFamily::Default).hash(&mut h);
+    font_size.to_bits().hash(&mut h);
+    h.finish()
+}
+
 /// Measure a single line of text, using a global cache to avoid repeated
 /// font-system write-lock acquisitions for the same inputs.
 pub fn cached_measure_width(text: &str, font_family: FontFamily, font_size: f32) -> f32 {
-    let key = (
-        text.to_string(),
-        font_family_key(font_family),
-        font_size.to_bits(),
-    );
+    let key = width_key(text, font_family, font_size);
     if let Ok(mut cache) = WIDTH_CACHE.write() {
         if let Some(w) = cache.get(&key) {
             return *w;
@@ -219,12 +234,7 @@ pub fn cached_measure_width(text: &str, font_family: FontFamily, font_size: f32)
 /// caching the result so we never recompute the same truncation.
 pub fn cached_truncate_name(name: &str, max_width: f32) -> String {
     let font_size = crate::theme::FONT_SM;
-    let key = (
-        name.to_string(),
-        max_width.to_bits(),
-        font_family_key(FontFamily::Default),
-        font_size.to_bits(),
-    );
+    let key = trunc_key(name, max_width, font_size);
     if let Ok(mut cache) = TRUNC_CACHE.write() {
         if let Some(truncated) = cache.get(&key) {
             return truncated.clone();
@@ -239,35 +249,58 @@ pub fn cached_truncate_name(name: &str, max_width: f32) -> String {
 
 /// Uncached truncation logic (binary search with font measurement).
 fn truncate_name_uncached(name: &str, max_width: f32) -> String {
+    truncate_to_width(name, max_width, FontFamily::Default, crate::theme::FONT_SM)
+}
+
+/// Truncate `text` to fit within `max_width` pixels, appending "…" when it
+/// doesn't fit. Binary-searches a byte boundary using cached pixel
+/// measurements; returns the full string unchanged when it already fits.
+pub fn truncate_to_width(
+    text: &str,
+    max_width: f32,
+    font_family: FontFamily,
+    font_size: f32,
+) -> String {
     if max_width <= 0.0 {
         return String::new();
     }
-    let font_size = crate::theme::FONT_SM;
 
-    let full_width = cached_measure_width(name, FontFamily::Default, font_size);
+    let full_width = cached_measure_width(text, font_family, font_size);
     if full_width <= max_width {
-        return name.to_string();
+        return text.to_string();
     }
 
-    let ellipsis_width = cached_measure_width("…", FontFamily::Default, font_size);
+    match truncated_prefix(text, max_width, font_family, font_size) {
+        Some(prefix) if !prefix.is_empty() => format!("{prefix}…"),
+        _ => "…".to_string(),
+    }
+}
+
+/// Binary-search the longest byte-boundary prefix of `text` whose pixel width
+/// plus the ellipsis fits within `max_width`. Returns `None` only when not
+/// even a single character fits alongside the ellipsis.
+fn truncated_prefix(
+    text: &str,
+    max_width: f32,
+    font_family: FontFamily,
+    font_size: f32,
+) -> Option<&str> {
+    let ellipsis_width = cached_measure_width("…", font_family, font_size);
     let available = max_width - ellipsis_width;
     if available <= 0.0 {
-        return "…".to_string();
+        return None;
     }
 
     let mut low = 0usize;
-    let mut high = name.len();
+    let mut high = text.len();
     let mut best_byte = 0usize;
 
     while low < high {
         let mid = (low + high).div_ceil(2);
-        let substr = match name[..mid.min(name.len())].char_indices().last() {
-            Some((idx, _)) => &name[..=idx],
-            None => "",
-        };
-        let w = cached_measure_width(substr, FontFamily::Default, font_size);
+        let boundary = floor_char_boundary(text, mid);
+        let w = cached_measure_width(&text[..boundary], font_family, font_size);
         if w <= available {
-            best_byte = substr.len();
+            best_byte = boundary;
             low = mid;
         } else {
             high = mid - 1;
@@ -275,14 +308,18 @@ fn truncate_name_uncached(name: &str, max_width: f32) -> String {
     }
 
     if best_byte == 0 {
-        "…".to_string()
+        None
     } else {
-        let substr = match name[..best_byte.min(name.len())].char_indices().last() {
-            Some((idx, _)) => &name[..=idx],
-            None => "",
-        };
-        format!("{}…", substr)
+        Some(&text[..best_byte])
     }
+}
+
+pub fn floor_char_boundary(s: &str, index: usize) -> usize {
+    let mut boundary = index.min(s.len());
+    while boundary > 0 && !s.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
 }
 
 #[cfg(test)]

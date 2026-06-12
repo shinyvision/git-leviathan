@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 /// Assert at least one diagnostic exists with the given `(plugin_id,
 /// code, severity)` tuple. Returns the matched diagnostic for
 /// further-grained inspection by callers.
-pub fn expect_diagnostic(
+fn expect_diagnostic(
     store: &DiagnosticStore,
     plugin_id: &str,
     code: &str,
@@ -37,7 +37,7 @@ pub fn expect_diagnostic(
 
 /// Assert no diagnostic at or above `min` severity is present. Used to
 /// prove a happy-path test didn't silently emit warnings/errors.
-pub fn expect_no_diagnostics_at_least(store: &DiagnosticStore, min: DiagnosticSeverity) {
+fn expect_no_diagnostics_at_least(store: &DiagnosticStore, min: DiagnosticSeverity) {
     let bad = store.at_least(min);
     assert!(
         bad.is_empty(),
@@ -49,7 +49,7 @@ pub fn expect_no_diagnostics_at_least(store: &DiagnosticStore, min: DiagnosticSe
 }
 
 /// Number of diagnostics currently retained.
-pub fn diagnostic_count(store: &DiagnosticStore) -> usize {
+fn diagnostic_count(store: &DiagnosticStore) -> usize {
     store.len()
 }
 

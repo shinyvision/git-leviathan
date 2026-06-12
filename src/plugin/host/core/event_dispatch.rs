@@ -160,6 +160,7 @@ impl PluginHost {
                 let entry = &entries[index];
                 EntrySnapshot {
                     id: entry.id.get(),
+                    index,
                     plugin_id: entry.plugin_id.clone(),
                     generation_id: entry.generation_id,
                     once: entry.options.once,
@@ -183,18 +184,11 @@ impl PluginHost {
                     }
                 }
             }
-            let outcome = self.invoke_one_callback(
-                &snapshot.plugin_id,
-                snapshot.generation_id,
-                snapshot.id,
-                canonical,
-                alias_name,
-                payload,
-            );
+            let outcome = self.invoke_one_callback(&snapshot, canonical, alias_name, payload);
             // Bookkeeping (counters, last_fire, once removal,
             // disable on threshold). Done after the callback returns
             // so the snapshot reflects post-call state.
-            self.update_runtime(snapshot.id, &outcome, now_ms);
+            self.update_runtime(snapshot.id, snapshot.index, &outcome, now_ms);
             if matches!(outcome, DispatchOutcome::Ok | DispatchOutcome::Error) {
                 affected.insert(snapshot.plugin_id);
                 if snapshot.once {
@@ -211,23 +205,30 @@ impl PluginHost {
 
     pub(super) fn invoke_one_callback(
         &self,
-        plugin_id: &str,
-        generation_id: GenerationId,
-        autocmd_id: u64,
+        snapshot: &EntrySnapshot,
         canonical: &'static event_descriptor::ApiEvent,
         alias_used: Option<&'static str>,
         payload: &EventPayload,
     ) -> DispatchOutcome {
+        let plugin_id = snapshot.plugin_id.as_str();
+        let generation_id = snapshot.generation_id;
+        let autocmd_id = snapshot.id;
         let Some(plugin) = self.plugins.get(plugin_id) else {
             return DispatchOutcome::Skipped;
         };
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
         // Resolve the callback through the entry's RegistryKey via the
         // entries vector — the snapshot only carries ids, so dive
-        // back in here.
+        // back in here. The captured iteration index is a hint that
+        // stays valid unless an earlier callback recursively mutated
+        // the entries (the only case the id-scan fallback covers).
         let key_ptr: *const RegistryKey = {
             let entries = self.event_bus.entries();
-            match entries.iter().find(|e| e.id.get() == autocmd_id) {
+            let resolved = match entries.get(snapshot.index) {
+                Some(entry) if entry.id.get() == autocmd_id => Some(entry),
+                _ => entries.iter().find(|e| e.id.get() == autocmd_id),
+            };
+            match resolved {
                 Some(entry) => &entry.callback as *const RegistryKey,
                 None => return DispatchOutcome::Skipped,
             }
@@ -277,6 +278,7 @@ impl PluginHost {
         };
         let pid = PluginId::from(plugin_id);
         let callback_id = format!("autocmd:{}", canonical.name);
+        self.bump_lua_activity();
         let perf_outcome = self.budget_tracker.track_call::<(), mlua::Error>(
             CallbackKind::EventCallback,
             &pid,
@@ -311,12 +313,21 @@ impl PluginHost {
     pub(super) fn update_runtime(
         &mut self,
         autocmd_id: u64,
+        index_hint: usize,
         outcome: &DispatchOutcome,
         now_ms: u64,
     ) {
         let entries = self.event_bus.entries_mut();
-        let Some(entry) = entries.iter_mut().find(|e| e.id.get() == autocmd_id) else {
-            return;
+        let hit_hint = entries
+            .get(index_hint)
+            .is_some_and(|e| e.id.get() == autocmd_id);
+        let entry = if hit_hint {
+            &mut entries[index_hint]
+        } else {
+            let Some(entry) = entries.iter_mut().find(|e| e.id.get() == autocmd_id) else {
+                return;
+            };
+            entry
         };
         match outcome {
             DispatchOutcome::Ok => {

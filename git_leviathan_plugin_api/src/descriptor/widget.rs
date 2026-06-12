@@ -85,10 +85,46 @@ const SEMANTIC_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
         doc: "Plugin event emitted when value changes.",
     },
     WidgetFieldDescriptor {
+        name: "value",
+        lua_type: "LeviathanJson",
+        required: false,
+        doc: "Current value or click payload.",
+    },
+    WidgetFieldDescriptor {
+        name: "disabled",
+        lua_type: "boolean",
+        required: false,
+        doc: "Whether the control is disabled.",
+    },
+    WidgetFieldDescriptor {
         name: "disabled_reason",
         lua_type: "string",
         required: false,
         doc: "Reason shown when disabled.",
+    },
+    WidgetFieldDescriptor {
+        name: "checked",
+        lua_type: "boolean",
+        required: false,
+        doc: "Checkbox or toggle checked state.",
+    },
+    WidgetFieldDescriptor {
+        name: "selected",
+        lua_type: "LeviathanJson",
+        required: false,
+        doc: "Selected option value.",
+    },
+    WidgetFieldDescriptor {
+        name: "progress",
+        lua_type: "number",
+        required: false,
+        doc: "Progress fraction between 0 and 1.",
+    },
+    WidgetFieldDescriptor {
+        name: "language",
+        lua_type: "string",
+        required: false,
+        doc: "Syntax-highlighting language for code or diff content.",
     },
     WidgetFieldDescriptor {
         name: "shortcut",
@@ -115,6 +151,18 @@ const SEMANTIC_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
         doc: "List, tree, or menu items.",
     },
     WidgetFieldDescriptor {
+        name: "columns",
+        lua_type: "table[]",
+        required: false,
+        doc: "Table column descriptors.",
+    },
+    WidgetFieldDescriptor {
+        name: "rows",
+        lua_type: "table[]",
+        required: false,
+        doc: "Table row descriptors.",
+    },
+    WidgetFieldDescriptor {
         name: "options",
         lua_type: "table[]",
         required: false,
@@ -126,9 +174,21 @@ const SEMANTIC_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
         required: false,
         doc: "Theme token or raw color where allowed.",
     },
+    WidgetFieldDescriptor {
+        name: "spacing",
+        lua_type: "number|{token:string}",
+        required: false,
+        doc: "Theme spacing token or pixels.",
+    },
 ];
 
 const LAYOUT_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
+    WidgetFieldDescriptor {
+        name: "child",
+        lua_type: "LeviathanWidget",
+        required: false,
+        doc: "Single nested widget.",
+    },
     WidgetFieldDescriptor {
         name: "children",
         lua_type: "LeviathanWidget[]",
@@ -140,6 +200,12 @@ const LAYOUT_WIDGET_FIELDS: &[WidgetFieldDescriptor] = &[
         lua_type: "table[]",
         required: false,
         doc: "Tab descriptors with child widgets.",
+    },
+    WidgetFieldDescriptor {
+        name: "active",
+        lua_type: "LeviathanJson",
+        required: false,
+        doc: "Active tab id.",
     },
     WidgetFieldDescriptor {
         name: "direction",
@@ -208,6 +274,12 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 lua_type: "string",
                 required: false,
                 doc: "CSS-style color string.",
+            },
+            WidgetFieldDescriptor {
+                name: "font",
+                lua_type: "string",
+                required: false,
+                doc: "Font family name.",
             },
         ],
     },
@@ -444,6 +516,18 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 doc: "Background color.",
             },
             WidgetFieldDescriptor {
+                name: "border",
+                lua_type: "table",
+                required: false,
+                doc: "Border width, radius, and color.",
+            },
+            WidgetFieldDescriptor {
+                name: "shadow",
+                lua_type: "table",
+                required: false,
+                doc: "Drop shadow color, offset, and blur.",
+            },
+            WidgetFieldDescriptor {
                 name: "width",
                 lua_type: "number|string",
                 required: false,
@@ -559,18 +643,6 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 required: false,
                 doc: "Fixed pixels, fill, or shrink.",
             },
-            WidgetFieldDescriptor {
-                name: "id",
-                lua_type: "string",
-                required: false,
-                doc: "Stable scrollable id, scoped to the plugin surface.",
-            },
-            WidgetFieldDescriptor {
-                name: "scroll_y",
-                lua_type: "number",
-                required: false,
-                doc: "Absolute vertical scroll offset in pixels.",
-            },
         ],
     },
     WidgetDescriptor {
@@ -583,6 +655,12 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 lua_type: "string",
                 required: false,
                 doc: "Asset path.",
+            },
+            WidgetFieldDescriptor {
+                name: "asset",
+                lua_type: "table",
+                required: false,
+                doc: "Asset handle returned by leviathan.assets APIs.",
             },
             WidgetFieldDescriptor {
                 name: "size",
@@ -608,6 +686,12 @@ pub static WIDGETS: WidgetDescriptorTable = WidgetDescriptorTable(&[
                 lua_type: "string",
                 required: false,
                 doc: "Asset path.",
+            },
+            WidgetFieldDescriptor {
+                name: "asset",
+                lua_type: "table",
+                required: false,
+                doc: "Asset handle returned by leviathan.assets APIs.",
             },
             WidgetFieldDescriptor {
                 name: "size",
@@ -1390,6 +1474,69 @@ mod tests {
         descriptor_kinds.sort_unstable();
 
         assert_eq!(descriptor_kinds, schema_kinds);
+    }
+
+    #[test]
+    fn widget_descriptor_fields_match_struct_fields() {
+        const META_FIELDS: &[&str] = &[
+            "label",
+            "role",
+            "focus_order",
+            "shortcut",
+            "disabled_reason",
+        ];
+
+        let schema = schemars::schema_for!(WidgetKind);
+        let value = serde_json::to_value(schema).unwrap();
+        let variants_by_kind: std::collections::HashMap<
+            String,
+            std::collections::BTreeSet<String>,
+        > = value["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|variant| {
+                let kind = variant["properties"]["kind"]["enum"][0]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+                let mut props: std::collections::BTreeSet<String> = variant["properties"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect();
+                props.remove("kind");
+                (kind, props)
+            })
+            .collect();
+
+        for descriptor in WIDGETS.iter() {
+            let props = variants_by_kind.get(descriptor.kind).unwrap_or_else(|| {
+                panic!("no schema variant for widget kind `{}`", descriptor.kind)
+            });
+            let descriptor_fields: std::collections::BTreeSet<&str> =
+                descriptor.fields.iter().map(|field| field.name).collect();
+
+            for field in &descriptor_fields {
+                assert!(
+                    props.contains(*field),
+                    "widget `{}` descriptor lists field `{field}` not accepted by its struct",
+                    descriptor.kind
+                );
+            }
+
+            for prop in props {
+                if META_FIELDS.contains(&prop.as_str()) {
+                    continue;
+                }
+                assert!(
+                    descriptor_fields.contains(prop.as_str()),
+                    "widget `{}` struct accepts field `{prop}` the descriptor omits",
+                    descriptor.kind
+                );
+            }
+        }
     }
 
     #[test]

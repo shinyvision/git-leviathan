@@ -6,7 +6,7 @@
 //! is replaced wholesale on `replace_loaded`, or narrowly on `apply_refs_update`
 //! which is the fetch-path variant.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use std::path::Path;
 
@@ -36,6 +36,11 @@ pub(in crate::screens::repository) struct RepositorySnapshot {
     /// Refs read by `App::sync_repository_to_plugins` to populate the
     /// plugin-host `leviathan.repository` tables.
     branch_refs: Vec<RepoRef>,
+    /// hash → first-parent distance from HEAD, precomputed once per snapshot
+    /// mutation. `first_parent_distance_from_head` is consulted on every
+    /// pointer move (via the plugin selection sync), so the per-call
+    /// first-parent walk it replaces was O(distance × commits).
+    first_parent_chain: HashMap<String, usize>,
     tracker: SignatureTracker,
 }
 
@@ -55,6 +60,7 @@ impl RepositorySnapshot {
             fast_forward_candidates: HashSet::new(),
             worktrees: Vec::new(),
             branch_refs: Vec::new(),
+            first_parent_chain: HashMap::new(),
             tracker: SignatureTracker::new(),
         }
     }
@@ -73,6 +79,7 @@ impl RepositorySnapshot {
         self.fast_forward_candidates.clear();
         self.worktrees.clear();
         self.branch_refs.clear();
+        self.first_parent_chain.clear();
         self.tracker = SignatureTracker::new();
     }
 
@@ -127,6 +134,8 @@ impl RepositorySnapshot {
         self.remote_names = remote_names;
         self.fast_forward_candidates = fast_forward_candidates;
         self.branch_refs = branch_refs;
+
+        self.rebuild_first_parent_chain();
 
         commit_diff_states
     }
@@ -191,6 +200,8 @@ impl RepositorySnapshot {
         self.worktrees = worktrees;
         self.branch_refs = branch_refs;
 
+        self.rebuild_first_parent_chain();
+
         commit_diff_states
     }
 
@@ -206,7 +217,7 @@ impl RepositorySnapshot {
         &self.graph_rows
     }
 
-    pub(in crate::screens::repository) fn graph_revision(&self) -> RepoVersion {
+    pub(crate) fn graph_revision(&self) -> RepoVersion {
         self.tracker.revision()
     }
 
@@ -267,24 +278,43 @@ impl RepositorySnapshot {
 
     /// Count of commits between HEAD (inclusive) and `target_hash` (exclusive)
     /// reachable via first-parent. Returns None if target not on chain.
+    ///
+    /// O(1) lookup into the chain map built by `rebuild_first_parent_chain`.
     pub(in crate::screens::repository) fn first_parent_distance_from_head(
         &self,
         target_hash: &str,
     ) -> Option<usize> {
-        let head = self.head_hash.as_deref()?;
+        self.first_parent_chain.get(target_hash).copied()
+    }
+
+    /// Single O(commits) pass that records each first-parent-chain commit's
+    /// distance from HEAD. Run on every snapshot mutation so the per-call walk
+    /// (previously O(distance × commits)) collapses to a map lookup.
+    fn rebuild_first_parent_chain(&mut self) {
+        self.first_parent_chain.clear();
+        let Some(head) = self.head_hash.as_deref() else {
+            return;
+        };
+        let by_hash: HashMap<&str, &Commit> =
+            self.commits.iter().map(|c| (c.hash.as_str(), c)).collect();
+        let mut current = head;
         let mut count = 0usize;
-        let mut current = head.to_string();
         loop {
-            if current == target_hash {
-                return Some(count);
+            if self
+                .first_parent_chain
+                .insert(current.to_string(), count)
+                .is_some()
+            {
+                return;
             }
-            let commit = self.commits.iter().find(|c| c.hash == current)?;
-            let parent = commit.parent_hashes.first().cloned()?;
-            current = parent;
+            let Some(commit) = by_hash.get(current) else {
+                return;
+            };
+            let Some(parent) = commit.parent_hashes.first() else {
+                return;
+            };
+            current = parent.as_str();
             count += 1;
-            if count > self.commits.len() + 1 {
-                return None;
-            }
         }
     }
 }

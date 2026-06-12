@@ -192,6 +192,15 @@ pub enum DetailAction {
         path: String,
         is_staged: bool,
     },
+    /// Result of the off-thread modify/delete probe for a conflicted file.
+    /// `Ok(true)` opens the modify/delete dialog; `Ok(false)` falls through to
+    /// the normal dirty diff; `Err` surfaces a toast.
+    DirtyConflictProbed {
+        path: String,
+        is_staged: bool,
+        selected_idx: usize,
+        result: Result<bool, crate::services::GitError>,
+    },
     DirtyFileRightClicked(String),
     StageFile(String),
     StageAll,
@@ -400,10 +409,7 @@ pub enum OverlayPanelAction {
     AddRemotePullUrlChanged(String),
     AddRemotePushUrlChanged(String),
     AddRemoteConfirmed,
-    CreateWorktreeOpen {
-        available_refs: Vec<super::overlays::create_worktree::RefChoice>,
-        default_dir_prefix: String,
-    },
+    CreateWorktreeOpen,
     CreateWorktreeClose,
     CreateWorktreeReferenceChanged(super::overlays::create_worktree::RefChoice),
     CreateWorktreeDropdownToggled,

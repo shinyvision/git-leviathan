@@ -35,13 +35,12 @@ fn gen_stubs() -> Result<(), Box<dyn std::error::Error>> {
     let generated_dir = Path::new("docs/generated/lua");
     std::fs::create_dir_all(generated_dir)?;
     let generated_path = generated_dir.join("leviathan-v1.lua");
-    std::fs::write(&generated_path, content)?;
+    std::fs::write(&generated_path, &content)?;
     println!("wrote {}", generated_path.display());
 
     let docs_dir = Path::new("docs/lua");
     std::fs::create_dir_all(docs_dir)?;
     let docs_path = docs_dir.join("leviathan-v1.lua");
-    let content = std::fs::read_to_string(&generated_path)?;
     std::fs::write(&docs_path, content)?;
     println!("wrote {}", docs_path.display());
     Ok(())

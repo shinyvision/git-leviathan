@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use super::helpers::{spawn_git_command, spawn_git_command_with_timeout, wrap_git2_error};
+use super::helpers::{
+    command_dir, spawn_git_command, spawn_git_command_with_timeout, wrap_git2_error,
+};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -35,21 +37,12 @@ pub(super) fn delete_tag(service: &GitService, tag_name: &str) -> Result<(), Git
         .map_err(|e| wrap_git2_error(&format!("delete tag '{tag_name}'"), e))
 }
 
-fn repo_dir_str(service: &GitService) -> String {
-    service
-        .repo
-        .workdir()
-        .unwrap_or_else(|| service.repo.path())
-        .to_string_lossy()
-        .into_owned()
-}
-
 pub(super) fn push_tag(
     service: &GitService,
     remote_name: &str,
     tag_name: &str,
 ) -> Result<(), GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
     let refspec = format!("refs/tags/{0}:refs/tags/{0}", tag_name);
     let output = spawn_git_command(&repo_dir, &["push", remote_name, &refspec], "push tag")?;
     if !output.status.success() {
@@ -68,7 +61,7 @@ pub(super) fn delete_remote_tag(
     remote_name: &str,
     tag_name: &str,
 ) -> Result<(), GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
     let refspec = format!(":refs/tags/{}", tag_name);
     let output = spawn_git_command(
         &repo_dir,
@@ -92,7 +85,7 @@ pub(super) fn list_remote_tags(
     service: &GitService,
     remote_name: &str,
 ) -> Result<Vec<String>, GitError> {
-    let repo_dir = repo_dir_str(service);
+    let repo_dir = command_dir(&service.repo)?;
     let output = spawn_git_command_with_timeout(
         &repo_dir,
         &["ls-remote", "--tags", remote_name],

@@ -9,6 +9,8 @@ use std::sync::{
 
 use tree_sitter::{Language, Query};
 
+use super::util::normalize_language_key;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum QueryType {
     Highlights,
@@ -63,7 +65,6 @@ impl QuerySources {
 pub(super) struct CompiledQueries {
     highlights: Option<Arc<Query>>,
     injections: Option<Arc<Query>>,
-    locals: Option<Arc<Query>>,
     identity: QuerySetIdentity,
 }
 
@@ -78,10 +79,6 @@ impl CompiledQueries {
 
     pub(super) fn injections(&self) -> Option<&Query> {
         self.injections.as_deref()
-    }
-
-    pub(super) fn locals(&self) -> Option<&Query> {
-        self.locals.as_deref()
     }
 
     pub(super) fn identity(&self) -> QuerySetIdentity {
@@ -182,7 +179,6 @@ pub(super) fn compile_query_bundle(
     Ok(CompiledQueries {
         highlights: highlights.query,
         injections: injections.query,
-        locals: locals.query,
         identity: QuerySetIdentity {
             version: QUERY_IDENTITY_VERSION,
             highlights: highlights.source_hash,
@@ -438,10 +434,6 @@ fn hash_query_source(source: &str) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     source.hash(&mut hasher);
     hasher.finish()
-}
-
-fn normalize_language_key(language: &str) -> String {
-    language.trim().to_ascii_lowercase()
 }
 
 #[cfg(test)]

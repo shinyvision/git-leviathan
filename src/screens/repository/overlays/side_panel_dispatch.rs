@@ -1,8 +1,11 @@
+use std::path::Path;
+
 use iced::Task;
 
 use crate::{
     message::Message,
     screens::repository::{panel_messages::OverlayPanelAction, RepositoryMessage},
+    view_model::{SidebarSection, SidebarSectionKind},
     work::git_write_work,
 };
 
@@ -83,10 +86,9 @@ pub(super) fn dispatch(
             );
             DialogDispatch::Task(task)
         }
-        OverlayPanelAction::CreateWorktreeOpen {
-            available_refs,
-            default_dir_prefix,
-        } => {
+        OverlayPanelAction::CreateWorktreeOpen => {
+            let available_refs = build_worktree_refs(ctx.sidebar_sections);
+            let default_dir_prefix = derive_default_dir_prefix(&ctx.active_path);
             manager.open_side_panel(SidePanelOverlay::CreateWorktree(
                 create_worktree::State::new(available_refs, default_dir_prefix),
             ));
@@ -203,5 +205,61 @@ pub(super) fn dispatch(
             DialogDispatch::RestoreCenterListScroll
         }
         _ => unreachable!("non-side-panel action routed to side-panel dispatch"),
+    }
+}
+
+fn build_worktree_refs(sections: &[SidebarSection]) -> Vec<create_worktree::RefChoice> {
+    use create_worktree::RefChoice;
+
+    let mut refs: Vec<RefChoice> = Vec::new();
+    for section in sections {
+        match section.kind {
+            SidebarSectionKind::Local => {
+                for b in &section.branches {
+                    refs.push(RefChoice::LocalBranch(b.name.clone()));
+                }
+            }
+            SidebarSectionKind::Remote => {
+                for remote_node in &section.branches {
+                    for branch in &remote_node.children {
+                        refs.push(RefChoice::RemoteBranch {
+                            remote: remote_node.name.clone(),
+                            branch: branch.name.clone(),
+                        });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    refs
+}
+
+fn derive_default_dir_prefix(active: &Path) -> String {
+    let parent = active.parent().map(|p| p.to_path_buf());
+    let name = active.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    match (parent, name) {
+        (Some(p), n) if !n.is_empty() => format!("{}/{}.worktrees", p.to_string_lossy(), n),
+        _ => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn derive_default_dir_prefix_composes_parent_name_dot_worktrees() {
+        let active = Path::new("/home/rachel/projects/git_leviathan");
+        assert_eq!(
+            derive_default_dir_prefix(active),
+            "/home/rachel/projects/git_leviathan.worktrees".to_string(),
+        );
+    }
+
+    #[test]
+    fn derive_default_dir_prefix_empty_when_no_parent() {
+        let active = Path::new("/");
+        assert_eq!(derive_default_dir_prefix(active), String::new());
     }
 }

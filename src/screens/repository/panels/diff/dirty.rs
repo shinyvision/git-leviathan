@@ -145,6 +145,9 @@ impl DiffPanel {
                 ours_viewport_height: None,
                 theirs_viewport_height: None,
                 output_viewport_height: None,
+                ours_canvas: None,
+                theirs_canvas: None,
+                output_canvas: None,
             });
             return DiffPanelAction::LoadConflictResolution { generation, path };
         }

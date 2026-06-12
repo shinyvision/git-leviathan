@@ -1,5 +1,4 @@
 use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
 
 use super::harness::MockHost;
 use crate::plugin::terminal::{registry, TerminalId};
@@ -22,18 +21,6 @@ api_version = "1.0"
 fn shell_api_test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
-}
-
-fn drain_until<F: FnMut(&MockHost) -> bool>(host: &mut MockHost, mut cond: F) {
-    let started = Instant::now();
-    while started.elapsed() < Duration::from_secs(10) {
-        host.tick();
-        if cond(host) {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    panic!("condition did not become true");
 }
 
 fn terminal_text(id: u64) -> String {
@@ -119,9 +106,13 @@ fn shell_run_completes_on_runtime_tick() {
         host.read_global_string("shellp", "start_err").as_deref(),
         Some("")
     );
-    drain_until(&mut host, |h| {
-        h.read_global_i64("shellp", "done") == Some(1)
-    });
+    assert!(
+        host.drain_until(
+            |h| { h.read_global_i64("shellp", "done") == Some(1) },
+            10_000
+        ),
+        "condition did not become true"
+    );
     assert_eq!(
         host.read_global_string("shellp", "output").as_deref(),
         Some("shell-ok")
@@ -170,9 +161,13 @@ fn shell_run_timeout_completes_without_blocking_runtime() {
     );
     host.tick();
     assert_eq!(host.read_global_i64("shellp", "done"), Some(0));
-    drain_until(&mut host, |h| {
-        h.read_global_i64("shellp", "done") == Some(1)
-    });
+    assert!(
+        host.drain_until(
+            |h| { h.read_global_i64("shellp", "done") == Some(1) },
+            10_000
+        ),
+        "condition did not become true"
+    );
     assert_eq!(
         host.read_global_string("shellp", "status").as_deref(),
         Some("timed_out")
@@ -223,9 +218,13 @@ fn shell_open_starts_pty_and_accepts_input() {
         Some("")
     );
 
-    drain_until(&mut host, |_| {
-        terminal_text(session as u64).contains("pty-ok")
-    });
+    assert!(
+        host.drain_until(
+            |_| { terminal_text(session as u64).contains("pty-ok") },
+            10_000
+        ),
+        "condition did not become true"
+    );
     assert!(registry().close(TerminalId::from(session as u64)));
 }
 
@@ -264,9 +263,13 @@ fn shell_open_reports_not_running_after_exit() {
         host.read_global_string("shellp", "err")
     );
     assert_eq!(host.read_global_i64("shellp", "running_initial"), Some(1));
-    drain_until(&mut host, |h| {
-        h.read_global_i64("shellp", "running_later") == Some(0)
-    });
+    assert!(
+        host.drain_until(
+            |h| { h.read_global_i64("shellp", "running_later") == Some(0) },
+            10_000
+        ),
+        "condition did not become true"
+    );
     assert!(!registry().is_running(TerminalId::from(session as u64)));
 }
 

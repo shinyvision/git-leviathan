@@ -59,6 +59,10 @@ pub struct TabManager {
     /// so the next fetch for that tab persists it; kept true otherwise to
     /// avoid redundant DB writes on every fetch tick.
     active_tab_persisted_as_recent: bool,
+    /// Monotonic counter bumped on any structural tab change (open, close,
+    /// select, reorder). Lets `App` skip rebuilding the tab snapshot and the
+    /// persisted-tab list on messages that left the tab set untouched.
+    revision: u64,
     presenter: Arc<dyn Presenter>,
 }
 
@@ -76,12 +80,22 @@ impl TabManager {
             active_tab_id: TabId(0),
             next_tab_id: TabId(0),
             active_tab_persisted_as_recent: false,
+            revision: 0,
             presenter,
         }
     }
 
     pub fn is_empty(&self) -> bool {
         self.tabs.is_empty()
+    }
+
+    /// Monotonic structural-change counter (see field doc).
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn bump_revision(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 
     pub fn active_tab_id(&self) -> TabId {
@@ -192,6 +206,7 @@ impl TabManager {
             kind: TabKind::Repository { path: repo_path },
         });
         self.screens.insert(tab_id, screen);
+        self.bump_revision();
         (tab_id, task)
     }
 
@@ -209,6 +224,7 @@ impl TabManager {
             if self.active_tab_id != existing_tab.id {
                 self.active_tab_id = existing_tab.id;
                 self.active_tab_persisted_as_recent = false;
+                self.bump_revision();
             }
             return Ok(Task::none());
         }
@@ -244,6 +260,7 @@ impl TabManager {
             kind: TabKind::Plugin { key },
         });
         self.plugin_screens.insert(tab_id, screen);
+        self.bump_revision();
         let _ = self.activate_tab(tab_id);
         tab_id
     }
@@ -268,9 +285,13 @@ impl TabManager {
     }
 
     fn remove_tab_inner(&mut self, tab_id: TabId, tab_idx: Option<usize>) {
+        if !self.tabs.iter().any(|t| t.id == tab_id) {
+            return;
+        }
         self.tabs.retain(|t| t.id != tab_id);
         self.screens.remove(&tab_id);
         self.plugin_screens.remove(&tab_id);
+        self.bump_revision();
         if self.active_tab_id == tab_id {
             let new_idx = tab_idx
                 .map(|i| if i > 0 { i - 1 } else { 0 })
@@ -333,6 +354,7 @@ impl TabManager {
             reordered.push(entry);
         }
         self.tabs = reordered;
+        self.bump_revision();
         self.persist_tab_order();
     }
 
@@ -366,6 +388,7 @@ impl TabManager {
         }
         self.active_tab_id = new_tab_id;
         self.active_tab_persisted_as_recent = false;
+        self.bump_revision();
         if let Some(screen) = self.screens.get_mut(&new_tab_id) {
             // Clear stale modifier state — the newly-active screen only
             // receives ModifiersChanged events from now on, so any keys the

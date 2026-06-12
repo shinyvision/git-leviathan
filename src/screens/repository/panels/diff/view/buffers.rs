@@ -12,14 +12,14 @@ use iced::{
 
 use crate::{
     message::Message,
-    services::{ConflictBlock, ConflictResolutionResult, HighlightedFile},
+    services::{ConflictBlock, ConflictResolutionResult},
     style, theme,
     widgets::{
         conflict_canvas::{
-            self, canvas_id_for_side, conflict_content_canvas, conflict_gutter_canvas, side_color,
+            canvas_id_for_side, conflict_content_canvas, conflict_gutter_canvas, side_color,
             CANVAS_ID_OUTPUT,
         },
-        diff_canvas::{diff_char_width, DiffCanvasId, DiffSelection},
+        diff_canvas::{DiffCanvasId, DiffSelection},
         shared::horizontal_space,
         text::TextCanvasData,
     },
@@ -32,7 +32,6 @@ use crate::screens::repository::{
 };
 
 use super::super::conflict::{ConflictHunkSelection, ConflictScrollTarget, ConflictSide};
-use super::rows::{build_conflict_output_rows, build_conflict_side_rows};
 use super::styles::{
     both_scrollbars, conflict_checkbox_style, conflict_scrollbar_style, CONFLICT_SCROLLBAR_WIDTH,
 };
@@ -70,10 +69,10 @@ fn side_all_checkbox<'a>(
 pub(super) struct ConflictBufferPanelInput<'a> {
     pub(super) prefix: &'a str,
     pub(super) label: &'a str,
-    pub(super) side: Option<ConflictSide>,
+    pub(super) side: ConflictSide,
     pub(super) result: &'a ConflictResolutionResult,
     pub(super) selections: &'a [ConflictHunkSelection],
-    pub(super) highlighted: Option<Arc<HighlightedFile>>,
+    pub(super) data: Arc<TextCanvasData>,
     pub(super) scroll_offset_y: f32,
     pub(super) selection: Option<DiffSelection>,
     pub(super) shift_held: bool,
@@ -88,15 +87,11 @@ pub(super) fn conflict_buffer_panel<'a>(
         side,
         result,
         selections,
-        highlighted,
+        data,
         scroll_offset_y,
         selection,
         shift_held,
     } = input;
-
-    let Some(side) = side else {
-        return output_buffer_panel(result, selections, scroll_offset_y, selection, shift_held);
-    };
 
     let label_color = side_color(side);
     let pick_all = container(side_all_checkbox(result, selections, side))
@@ -128,9 +123,6 @@ pub(super) fn conflict_buffer_panel<'a>(
     .height(Length::Fixed(CONFLICT_HEADER_HEIGHT))
     .width(Length::Fill);
 
-    let rows = build_conflict_side_rows(result, selections, side, highlighted.as_deref());
-    let char_w = diff_char_width();
-    let data = conflict_canvas::build_side_canvas_data(rows, char_w);
     let data_for_min = data.clone();
     let canvas_id = canvas_id_for_side(side);
 
@@ -166,8 +158,7 @@ pub(super) fn conflict_buffer_panel<'a>(
 }
 
 pub(super) fn output_buffer_panel<'a>(
-    result: &ConflictResolutionResult,
-    selections: &[ConflictHunkSelection],
+    data: Arc<TextCanvasData>,
     scroll_offset_y: f32,
     selection: Option<DiffSelection>,
     shift_held: bool,
@@ -187,9 +178,6 @@ pub(super) fn output_buffer_panel<'a>(
     .padding(Padding::from([0, 8]))
     .height(Length::Fixed(CONFLICT_HEADER_HEIGHT));
 
-    let rows = build_conflict_output_rows(result, selections);
-    let char_w = diff_char_width();
-    let data = conflict_canvas::build_output_canvas_data(rows, char_w);
     let data_for_min = data.clone();
 
     let body = conflict_scrolled_canvas(ConflictScrolledCanvasInput {

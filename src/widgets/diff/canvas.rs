@@ -5,7 +5,7 @@
 //! +/- sign). Everything about selection, virtualization, scroll, and hit
 //! testing lives in `text_canvas` — this module just populates rows.
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::BTreeMap,
     sync::{Arc, Mutex, RwLock},
 };
 
@@ -204,9 +204,16 @@ impl Default for CachedDiffHighlightProvider {
 }
 
 #[derive(Debug)]
+struct CacheEntry {
+    spans: Arc<[SyntaxHighlightedSpan]>,
+    tick: u64,
+}
+
+#[derive(Debug)]
 struct BoundedDiffHighlightCache {
-    entries: BTreeMap<DiffHighlightReference, Arc<[SyntaxHighlightedSpan]>>,
-    order: VecDeque<DiffHighlightReference>,
+    entries: BTreeMap<DiffHighlightReference, CacheEntry>,
+    order: BTreeMap<u64, DiffHighlightReference>,
+    next_tick: u64,
     capacity: usize,
 }
 
@@ -214,17 +221,26 @@ impl BoundedDiffHighlightCache {
     fn new(capacity: usize) -> Self {
         Self {
             entries: BTreeMap::new(),
-            order: VecDeque::new(),
+            order: BTreeMap::new(),
+            next_tick: 0,
             capacity,
         }
     }
 
+    fn bump_tick(&mut self) -> u64 {
+        let tick = self.next_tick;
+        self.next_tick += 1;
+        tick
+    }
+
     fn get(&mut self, reference: DiffHighlightReference) -> Option<Arc<[SyntaxHighlightedSpan]>> {
-        let spans = self.entries.get(&reference).cloned();
-        if spans.is_some() {
-            self.touch(reference);
-        }
-        spans
+        let tick = self.bump_tick();
+        let entry = self.entries.get_mut(&reference)?;
+        self.order.remove(&entry.tick);
+        entry.tick = tick;
+        let spans = entry.spans.clone();
+        self.order.insert(tick, reference);
+        Some(spans)
     }
 
     fn insert(&mut self, reference: DiffHighlightReference, spans: Arc<[SyntaxHighlightedSpan]>) {
@@ -232,40 +248,33 @@ impl BoundedDiffHighlightCache {
             return;
         }
 
-        if let Some(cached) = self.entries.get_mut(&reference) {
-            *cached = spans;
-            self.touch(reference);
+        let tick = self.bump_tick();
+        if let Some(entry) = self.entries.get_mut(&reference) {
+            self.order.remove(&entry.tick);
+            entry.spans = spans;
+            entry.tick = tick;
+            self.order.insert(tick, reference);
             return;
         }
 
         while self.entries.len() >= self.capacity {
-            let Some(evicted) = self.order.pop_front() else {
+            let Some((&evicted_tick, &evicted)) = self.order.iter().next() else {
                 self.entries.clear();
                 break;
             };
+            self.order.remove(&evicted_tick);
             self.entries.remove(&evicted);
         }
 
         if self.entries.len() < self.capacity {
-            self.order.push_back(reference);
-            self.entries.insert(reference, spans);
+            self.order.insert(tick, reference);
+            self.entries.insert(reference, CacheEntry { spans, tick });
         }
     }
 
     #[cfg(test)]
     fn len(&self) -> usize {
         self.entries.len()
-    }
-
-    fn touch(&mut self, reference: DiffHighlightReference) {
-        if let Some(pos) = self
-            .order
-            .iter()
-            .position(|cached_reference| *cached_reference == reference)
-        {
-            self.order.remove(pos);
-            self.order.push_back(reference);
-        }
     }
 }
 
@@ -589,42 +598,44 @@ fn compute_content_width(rows: &[DiffRow], char_w: f32) -> f32 {
 /// between all `DiffPanel`-hosted canvases (diff view + conflict buffers);
 /// `canvas_id` disambiguates them at the message layer.
 pub fn diff_panel_callbacks() -> CanvasCallbacks<Message> {
-    CanvasCallbacks {
-        on_selection_begin: Arc::new(|canvas_id, pos, viewport_rect, data| {
-            Message::repo(RepositoryMessage::DiffPanel(
-                DiffPanelAction::DiffSelectionBegin {
-                    canvas_id,
-                    row: pos.row,
-                    col: pos.col,
-                    viewport_rect,
-                    data,
-                },
-            ))
-        }),
-        on_selection_extend: Arc::new(|canvas_id, pos| {
-            Message::repo(RepositoryMessage::DiffPanel(
-                DiffPanelAction::DiffSelectionExtend {
-                    canvas_id,
-                    row: pos.row,
-                    col: pos.col,
-                },
-            ))
-        }),
-        on_selection_end: Arc::new(|canvas_id| {
-            Message::repo(RepositoryMessage::DiffPanel(
-                DiffPanelAction::DiffSelectionEnd { canvas_id },
-            ))
-        }),
-        on_gutter_click: Arc::new(|canvas_id, row, meta| {
-            Message::repo(RepositoryMessage::DiffPanel(
-                DiffPanelAction::DiffGutterClicked {
-                    canvas_id,
-                    row,
-                    meta,
-                },
-            ))
-        }),
-    }
+    static CALLBACKS: std::sync::LazyLock<CanvasCallbacks<Message>> =
+        std::sync::LazyLock::new(|| CanvasCallbacks {
+            on_selection_begin: Arc::new(|canvas_id, pos, viewport_rect, data| {
+                Message::repo(RepositoryMessage::DiffPanel(
+                    DiffPanelAction::DiffSelectionBegin {
+                        canvas_id,
+                        row: pos.row,
+                        col: pos.col,
+                        viewport_rect,
+                        data,
+                    },
+                ))
+            }),
+            on_selection_extend: Arc::new(|canvas_id, pos| {
+                Message::repo(RepositoryMessage::DiffPanel(
+                    DiffPanelAction::DiffSelectionExtend {
+                        canvas_id,
+                        row: pos.row,
+                        col: pos.col,
+                    },
+                ))
+            }),
+            on_selection_end: Arc::new(|canvas_id| {
+                Message::repo(RepositoryMessage::DiffPanel(
+                    DiffPanelAction::DiffSelectionEnd { canvas_id },
+                ))
+            }),
+            on_gutter_click: Arc::new(|canvas_id, row, meta| {
+                Message::repo(RepositoryMessage::DiffPanel(
+                    DiffPanelAction::DiffGutterClicked {
+                        canvas_id,
+                        row,
+                        meta,
+                    },
+                ))
+            }),
+        });
+    CALLBACKS.clone()
 }
 
 /// Convenience wrapper around the generic content canvas using diff

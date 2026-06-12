@@ -283,43 +283,60 @@ fn plugin_package(args: &[String]) -> DynResult<()> {
     Ok(())
 }
 
-fn plugin_inspect(args: &[String]) -> DynResult<()> {
-    let mut path = None;
-    let mut trust_roots = None;
-    let mut registry = None;
-    let mut require_signature = false;
+#[derive(Default)]
+struct VerifyFlags {
+    trust_roots: Option<PathBuf>,
+    registry: Option<PathBuf>,
+    require_signature: bool,
+}
+
+fn take_verify_flags(
+    args: &[String],
+    accept_require_signature: bool,
+) -> DynResult<(VerifyFlags, Vec<String>)> {
+    let mut flags = VerifyFlags::default();
+    let mut rest = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
             "--trust-roots" => {
                 i += 1;
-                trust_roots = Some(PathBuf::from(
+                flags.trust_roots = Some(PathBuf::from(
                     args.get(i).ok_or("missing value after --trust-roots")?,
                 ));
             }
             "--registry" => {
                 i += 1;
-                registry = Some(PathBuf::from(
+                flags.registry = Some(PathBuf::from(
                     args.get(i).ok_or("missing value after --registry")?,
                 ));
             }
-            "--require-signature" => require_signature = true,
-            value if value.starts_with("--") => return Err(format!("unknown flag: {value}").into()),
-            value => {
-                if path.replace(PathBuf::from(value)).is_some() {
-                    return Err("plugin inspect accepts exactly one <package-or-dir>".into());
-                }
-            }
+            "--require-signature" if accept_require_signature => flags.require_signature = true,
+            other => rest.push(other.to_string()),
         }
         i += 1;
+    }
+    Ok((flags, rest))
+}
+
+fn plugin_inspect(args: &[String]) -> DynResult<()> {
+    let (flags, rest) = take_verify_flags(args, true)?;
+    let mut path = None;
+    for value in &rest {
+        if value.starts_with("--") {
+            return Err(format!("unknown flag: {value}").into());
+        }
+        if path.replace(PathBuf::from(value)).is_some() {
+            return Err("plugin inspect accepts exactly one <package-or-dir>".into());
+        }
     }
     let path = path.ok_or(
         "usage: cargo xtask plugin inspect <package-or-dir> [--trust-roots <file>] [--registry <dir>] [--require-signature]",
     )?;
     let verify = VerifyContext::from_paths(
-        trust_roots.as_deref(),
-        registry.as_deref(),
-        require_signature,
+        flags.trust_roots.as_deref(),
+        flags.registry.as_deref(),
+        flags.require_signature,
     )?;
     if path.is_dir() {
         let package = build_package(&path)?;
@@ -335,40 +352,25 @@ fn plugin_inspect(args: &[String]) -> DynResult<()> {
 }
 
 fn plugin_install(args: &[String]) -> DynResult<()> {
+    let (flags, rest) = take_verify_flags(args, true)?;
     let mut package_path = None;
     let mut plugins_dir = PathBuf::from("plugins");
     let mut lockfile = None;
-    let mut trust_roots = None;
-    let mut registry = None;
-    let mut require_signature = false;
     let mut force = false;
     let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
+    while i < rest.len() {
+        match rest[i].as_str() {
             "--plugins-dir" => {
                 i += 1;
                 plugins_dir =
-                    PathBuf::from(args.get(i).ok_or("missing value after --plugins-dir")?);
+                    PathBuf::from(rest.get(i).ok_or("missing value after --plugins-dir")?);
             }
             "--lockfile" => {
                 i += 1;
                 lockfile = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --lockfile")?,
+                    rest.get(i).ok_or("missing value after --lockfile")?,
                 ));
             }
-            "--trust-roots" => {
-                i += 1;
-                trust_roots = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --trust-roots")?,
-                ));
-            }
-            "--registry" => {
-                i += 1;
-                registry = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --registry")?,
-                ));
-            }
-            "--require-signature" => require_signature = true,
             "--force" => force = true,
             value if value.starts_with("--") => return Err(format!("unknown flag: {value}").into()),
             value => {
@@ -384,15 +386,20 @@ fn plugin_install(args: &[String]) -> DynResult<()> {
         .ok_or("usage: cargo xtask plugin install <package> [--plugins-dir <dir>] [--lockfile <file>] [--trust-roots <file>] [--registry <dir>] [--require-signature] [--force]")?;
     let package = read_package(&package_path)?;
     let verify = VerifyContext::from_paths(
-        trust_roots.as_deref(),
-        registry.as_deref(),
-        require_signature,
+        flags.trust_roots.as_deref(),
+        flags.registry.as_deref(),
+        flags.require_signature,
     )?;
     verify_package_with_context(&package, &verify)?;
     verify_package_file_against_registry(&package_path, &package, &verify)?;
     install_package(&package, &plugins_dir, force)?;
     let lockfile = lockfile.unwrap_or_else(|| plugins_dir.join("plugins.lock"));
-    update_install_lock(&lockfile, &package, &package_path, registry.as_deref())?;
+    update_install_lock(
+        &lockfile,
+        &package,
+        &package_path,
+        flags.registry.as_deref(),
+    )?;
     println!(
         "installed {} {} to {}",
         package.plugin.id,
@@ -403,28 +410,15 @@ fn plugin_install(args: &[String]) -> DynResult<()> {
 }
 
 fn plugin_publish(args: &[String]) -> DynResult<()> {
+    let (flags, rest) = take_verify_flags(args, false)?;
     let mut package_path = None;
-    let mut registry = None;
-    let mut trust_roots = None;
     let mut revoke = None;
     let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--registry" => {
-                i += 1;
-                registry = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --registry")?,
-                ));
-            }
-            "--trust-roots" => {
-                i += 1;
-                trust_roots = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --trust-roots")?,
-                ));
-            }
+    while i < rest.len() {
+        match rest[i].as_str() {
             "--revoke" => {
                 i += 1;
-                revoke = Some(args.get(i).ok_or("missing value after --revoke")?.clone());
+                revoke = Some(rest.get(i).ok_or("missing value after --revoke")?.clone());
             }
             value if value.starts_with("--") => return Err(format!("unknown flag: {value}").into()),
             value => {
@@ -436,7 +430,10 @@ fn plugin_publish(args: &[String]) -> DynResult<()> {
         i += 1;
     }
 
-    let registry = registry.ok_or("plugin publish requires --registry <dir>")?;
+    let trust_roots = flags.trust_roots;
+    let registry = flags
+        .registry
+        .ok_or("plugin publish requires --registry <dir>")?;
     if let Some(spec) = revoke {
         revoke_registry_version(&registry, &spec, "revoked by local registry tooling")?;
         println!("revoked {spec} in {}", registry.display());
@@ -469,38 +466,21 @@ fn plugin_publish(args: &[String]) -> DynResult<()> {
 }
 
 fn plugin_upgrade_plan(args: &[String]) -> DynResult<()> {
+    let (flags, rest) = take_verify_flags(args, true)?;
     let mut paths = Vec::new();
-    let mut trust_roots = None;
-    let mut registry = None;
-    let mut require_signature = false;
-    let mut i = 0;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--trust-roots" => {
-                i += 1;
-                trust_roots = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --trust-roots")?,
-                ));
-            }
-            "--registry" => {
-                i += 1;
-                registry = Some(PathBuf::from(
-                    args.get(i).ok_or("missing value after --registry")?,
-                ));
-            }
-            "--require-signature" => require_signature = true,
-            value if value.starts_with("--") => return Err(format!("unknown flag: {value}").into()),
-            value => paths.push(PathBuf::from(value)),
+    for value in &rest {
+        if value.starts_with("--") {
+            return Err(format!("unknown flag: {value}").into());
         }
-        i += 1;
+        paths.push(PathBuf::from(value));
     }
     if paths.len() != 2 {
         return Err("usage: cargo xtask plugin upgrade-plan <installed-package-or-dir> <candidate-package-or-dir> [--trust-roots <file>] [--registry <dir>] [--require-signature]".into());
     }
     let verify = VerifyContext::from_paths(
-        trust_roots.as_deref(),
-        registry.as_deref(),
-        require_signature,
+        flags.trust_roots.as_deref(),
+        flags.registry.as_deref(),
+        flags.require_signature,
     )?;
     let installed = package_from_path(&paths[0], &VerifyContext::default())?;
     let candidate = package_from_path(&paths[1], &verify)?;
@@ -1422,7 +1402,7 @@ fn signature_list(package: &PluginPackage) -> String {
 
 fn package_files(root: &Path) -> DynResult<Vec<PathBuf>> {
     let mut files = Vec::new();
-    collect_files(root, root, &mut files)?;
+    collect_files(root, &mut files)?;
     files.retain(|path| {
         let rel = normalize_relative(root, path).unwrap_or_default();
         !rel.starts_with("target/")
@@ -1435,7 +1415,7 @@ fn package_files(root: &Path) -> DynResult<Vec<PathBuf>> {
 
 fn lua_source_files(root: &Path, include_tests: bool) -> DynResult<Vec<PathBuf>> {
     let mut files = Vec::new();
-    collect_files(root, root, &mut files)?;
+    collect_files(root, &mut files)?;
     files.retain(|path| {
         path.extension() == Some(OsStr::new("lua"))
             && (include_tests
@@ -1456,7 +1436,7 @@ fn lua_files_for_test(root: &Path) -> DynResult<Vec<PathBuf>> {
     let tests = root.join("tests");
     if tests.is_dir() {
         let mut test_files = Vec::new();
-        collect_files(&tests, &tests, &mut test_files)?;
+        collect_files(&tests, &mut test_files)?;
         test_files.retain(|path| path.extension() == Some(OsStr::new("lua")));
         test_files.sort();
         files.extend(test_files);
@@ -1464,7 +1444,7 @@ fn lua_files_for_test(root: &Path) -> DynResult<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn collect_files(_root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> DynResult<()> {
+fn collect_files(dir: &Path, out: &mut Vec<PathBuf>) -> DynResult<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -1473,7 +1453,7 @@ fn collect_files(_root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> DynResult<
             continue;
         }
         if path.is_dir() {
-            collect_files(_root, &path, out)?;
+            collect_files(&path, out)?;
         } else if path.is_file() {
             out.push(path);
         }

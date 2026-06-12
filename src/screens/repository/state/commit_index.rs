@@ -13,12 +13,7 @@ use crate::{
 pub(in crate::screens::repository) struct CommitIndex;
 
 impl CommitIndex {
-    pub(in crate::screens::repository) fn new() -> Self {
-        Self
-    }
-
     pub(in crate::screens::repository) fn index_for_hash(
-        &self,
         commits: &[Commit],
         hash: &str,
     ) -> Option<usize> {
@@ -26,7 +21,6 @@ impl CommitIndex {
     }
 
     pub(in crate::screens::repository) fn index_for_branch(
-        &self,
         presentations: &[CommitPresentation],
         branch_name: &str,
         is_remote: bool,
@@ -57,7 +51,6 @@ impl CommitIndex {
     }
 
     pub(in crate::screens::repository) fn commit_hash(
-        &self,
         commits: &[Commit],
         idx: usize,
     ) -> Option<String> {

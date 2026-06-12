@@ -100,6 +100,82 @@ impl DiffDecoration {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecorationFieldDescriptor {
+    pub name: &'static str,
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecorationDescriptor {
+    pub family: &'static str,
+    pub kind: &'static str,
+    pub fields: &'static [DecorationFieldDescriptor],
+}
+
+const fn req(name: &'static str) -> DecorationFieldDescriptor {
+    DecorationFieldDescriptor {
+        name,
+        required: true,
+    }
+}
+
+const fn opt(name: &'static str) -> DecorationFieldDescriptor {
+    DecorationFieldDescriptor {
+        name,
+        required: false,
+    }
+}
+
+/// Authoritative field schema for every graph/diff decoration kind,
+/// mirroring [`GraphDecoration`] / [`DiffDecoration`]. Devtools (the
+/// plugin linter) consume this instead of hand-maintaining the same
+/// field lists. A `#[cfg(test)]` assertion below keeps it in sync with
+/// the enum variants.
+pub const DECORATIONS: &[DecorationDescriptor] = &[
+    DecorationDescriptor {
+        family: "graph",
+        kind: "badge",
+        fields: &[req("text"), opt("fg"), opt("bg")],
+    },
+    DecorationDescriptor {
+        family: "graph",
+        kind: "icon",
+        fields: &[req("glyph"), opt("color")],
+    },
+    DecorationDescriptor {
+        family: "graph",
+        kind: "marker",
+        fields: &[req("shape"), req("color")],
+    },
+    DecorationDescriptor {
+        family: "graph",
+        kind: "lane",
+        fields: &[req("index"), req("color")],
+    },
+    DecorationDescriptor {
+        family: "diff",
+        kind: "line_hint",
+        fields: &[req("severity"), req("text"), req("file"), req("line")],
+    },
+    DecorationDescriptor {
+        family: "diff",
+        kind: "hunk_badge",
+        fields: &[req("hunk_id"), req("label"), opt("color")],
+    },
+    DecorationDescriptor {
+        family: "diff",
+        kind: "line_gutter",
+        fields: &[req("file"), req("line"), req("glyph"), opt("color")],
+    },
+];
+
+pub fn decoration_descriptor(family: &str, kind: &str) -> Option<&'static DecorationDescriptor> {
+    DECORATIONS
+        .iter()
+        .find(|d| d.family == family && d.kind == kind)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +191,121 @@ mod tests {
         let back: GraphDecoration = serde_json::from_str(&s).unwrap();
         assert_eq!(back, v);
         assert_eq!(v.kind(), "badge");
+    }
+
+    fn json_field_names(value: &serde_json::Value) -> std::collections::BTreeSet<String> {
+        value
+            .as_object()
+            .unwrap()
+            .keys()
+            .filter(|k| *k != "kind")
+            .cloned()
+            .collect()
+    }
+
+    fn descriptor_field_names(family: &str, kind: &str) -> std::collections::BTreeSet<String> {
+        decoration_descriptor(family, kind)
+            .unwrap()
+            .fields
+            .iter()
+            .map(|f| f.name.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn decoration_descriptors_match_graph_variants() {
+        let all = [
+            GraphDecoration::Badge {
+                text: "t".into(),
+                fg: Some("#fff".into()),
+                bg: Some("#000".into()),
+            },
+            GraphDecoration::Icon {
+                glyph: "g".into(),
+                color: Some("#fff".into()),
+            },
+            GraphDecoration::Marker {
+                shape: MarkerShape::Dot,
+                color: "#fff".into(),
+            },
+            GraphDecoration::Lane {
+                index: 0,
+                color: "#fff".into(),
+            },
+        ];
+        for value in &all {
+            let json = serde_json::to_value(value).unwrap();
+            assert_eq!(
+                json_field_names(&json),
+                descriptor_field_names("graph", value.kind()),
+                "graph decoration `{}` fields drifted from descriptor",
+                value.kind()
+            );
+        }
+        let required: std::collections::BTreeSet<&str> = DECORATIONS
+            .iter()
+            .filter(|d| d.family == "graph" && d.kind == "badge")
+            .flat_map(|d| d.fields.iter())
+            .filter(|f| f.required)
+            .map(|f| f.name)
+            .collect();
+        let minimal = serde_json::to_value(GraphDecoration::Badge {
+            text: "t".into(),
+            fg: None,
+            bg: None,
+        })
+        .unwrap();
+        assert_eq!(
+            json_field_names(&minimal),
+            required.iter().map(|s| s.to_string()).collect()
+        );
+    }
+
+    #[test]
+    fn decoration_descriptors_match_diff_variants() {
+        let all = [
+            DiffDecoration::LineHint {
+                severity: HintSeverity::Warn,
+                text: "t".into(),
+                file: "f".into(),
+                line: 1,
+            },
+            DiffDecoration::HunkBadge {
+                hunk_id: "h".into(),
+                label: "l".into(),
+                color: Some("#fff".into()),
+            },
+            DiffDecoration::LineGutter {
+                file: "f".into(),
+                line: 1,
+                glyph: "g".into(),
+                color: Some("#fff".into()),
+            },
+        ];
+        for value in &all {
+            let json = serde_json::to_value(value).unwrap();
+            assert_eq!(
+                json_field_names(&json),
+                descriptor_field_names("diff", value.kind()),
+                "diff decoration `{}` fields drifted from descriptor",
+                value.kind()
+            );
+        }
+        let minimal = serde_json::to_value(DiffDecoration::HunkBadge {
+            hunk_id: "h".into(),
+            label: "l".into(),
+            color: None,
+        })
+        .unwrap();
+        let required: std::collections::BTreeSet<String> =
+            decoration_descriptor("diff", "hunk_badge")
+                .unwrap()
+                .fields
+                .iter()
+                .filter(|f| f.required)
+                .map(|f| f.name.to_string())
+                .collect();
+        assert_eq!(json_field_names(&minimal), required);
     }
 
     #[test]

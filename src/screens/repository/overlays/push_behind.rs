@@ -89,19 +89,3 @@ pub(crate) fn remote_name(dialog: &Dialog) -> Option<String> {
     }
     Some(dialog.data_value(DATA_REMOTE_NAME)?.to_string())
 }
-
-pub(crate) fn is_pull_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == PULL_BUTTON_ID
-}
-
-pub(crate) fn is_force_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == FORCE_BUTTON_ID
-}
-
-pub(crate) fn is_cancel_button(button_id: &DialogButtonId) -> bool {
-    button_id.0 == CANCEL_BUTTON_ID
-}
-
-pub(crate) fn is_write_button_action(dialog_id: &DialogId, button_id: &DialogButtonId) -> bool {
-    dialog_id.0 == DIALOG_ID && is_pull_button(button_id)
-}

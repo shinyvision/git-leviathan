@@ -21,8 +21,6 @@ use iced::{
     Border, Element, Length, Padding, Theme,
 };
 
-use std::collections::HashMap;
-
 use crate::{
     assets,
     core::TabId,
@@ -56,8 +54,6 @@ fn tab_list_slot() -> TabBarSlot {
                 return iced::widget::Space::new().into();
             };
             let active = snap.active_id.unwrap_or(TabId(u64::MAX));
-            let path_for: HashMap<TabId, String> =
-                snap.tabs.iter().map(|t| (t.id, t.path.clone())).collect();
             let items: Vec<TabItem<'_, TabId, Message>> = snap
                 .tabs
                 .iter()
@@ -72,11 +68,16 @@ fn tab_list_slot() -> TabBarSlot {
                         })))
                 })
                 .collect();
-            let select_paths = path_for.clone();
-            let reorder_paths = path_for;
+            let select_paths: Vec<(TabId, String)> =
+                snap.tabs.iter().map(|t| (t.id, t.path.clone())).collect();
+            let reorder_paths = select_paths.clone();
             TabBar::new(items, active)
                 .on_select(move |id| {
-                    let path = select_paths.get(&id).cloned().unwrap_or_default();
+                    let path = select_paths
+                        .iter()
+                        .find(|(tab_id, _)| *tab_id == id)
+                        .map(|(_, path)| path.clone())
+                        .unwrap_or_default();
                     Message::App(AppMessage::InvokeCommand {
                         id: "tab.select".to_string(),
                         args: serde_json::json!({ "path": path }),
@@ -85,7 +86,12 @@ fn tab_list_slot() -> TabBarSlot {
                 .on_reorder(move |order| {
                     let paths: Vec<String> = order
                         .into_iter()
-                        .filter_map(|id| reorder_paths.get(&id).cloned())
+                        .filter_map(|id| {
+                            reorder_paths
+                                .iter()
+                                .find(|(tab_id, _)| *tab_id == id)
+                                .map(|(_, path)| path.clone())
+                        })
                         .collect();
                     Message::App(AppMessage::InvokeCommand {
                         id: "tab.reorder".to_string(),

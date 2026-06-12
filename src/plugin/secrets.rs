@@ -98,7 +98,7 @@ fn read_secret_file(path: &Path) -> Result<SecretFile, String> {
     match serde_json::from_str::<SecretFile>(&raw) {
         Ok(file) => Ok(file),
         Err(_) => {
-            let backup = path.with_extension("json.corrupt");
+            let backup = crate::plugin::persist::next_corrupt_backup_path(path);
             fs::rename(path, backup).map_err(|e| e.to_string())?;
             Ok(SecretFile::default())
         }
