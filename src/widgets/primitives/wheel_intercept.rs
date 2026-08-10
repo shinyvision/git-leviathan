@@ -16,7 +16,7 @@ where
     Renderer: renderer::Renderer,
 {
     content: Element<'a, Message, Theme, Renderer>,
-    on_scroll: Option<Box<dyn Fn(mouse::ScrollDelta) -> Message + 'a>>,
+    on_scroll: Option<Box<dyn Fn(mouse::ScrollDelta) -> Option<Message> + 'a>>,
     enabled: bool,
 }
 
@@ -32,7 +32,14 @@ where
         }
     }
 
-    pub fn on_scroll(mut self, on_scroll: impl Fn(mouse::ScrollDelta) -> Message + 'a) -> Self {
+    /// The handler returns `Some(msg)` to consume the wheel event (published +
+    /// captured so the child scrollable never sees it) or `None` to let it
+    /// fall through — e.g. a horizontal-only trackpad pan the intercept
+    /// shouldn't swallow.
+    pub fn on_scroll(
+        mut self,
+        on_scroll: impl Fn(mouse::ScrollDelta) -> Option<Message> + 'a,
+    ) -> Self {
         self.on_scroll = Some(Box::new(on_scroll));
         self
     }
@@ -102,9 +109,11 @@ where
                 (event, self.on_scroll.as_ref())
             {
                 if cursor.is_over(layout.bounds()) {
-                    shell.publish(handler(*delta));
-                    shell.capture_event();
-                    return;
+                    if let Some(message) = handler(*delta) {
+                        shell.publish(message);
+                        shell.capture_event();
+                        return;
+                    }
                 }
             }
         }

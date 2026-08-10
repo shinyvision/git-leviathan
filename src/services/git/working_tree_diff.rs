@@ -121,7 +121,7 @@ pub(super) fn load_working_tree_diff(
 ) -> Result<WorkingTreeDiffResult, GitError> {
     let repo = &service.repo;
     let mut opts = git2::DiffOptions::new();
-    opts.pathspec(file_path);
+    opts.pathspec(file_path).disable_pathspec_match(true);
 
     let diff = if is_staged {
         let head_tree = repo
@@ -233,7 +233,7 @@ fn load_commit_file_diff_from_repo(
     file_path: &str,
 ) -> Result<WorkingTreeDiffResult, GitError> {
     let mut opts = git2::DiffOptions::new();
-    opts.pathspec(file_path);
+    opts.pathspec(file_path).disable_pathspec_match(true);
 
     let commit_oid = git2::Oid::from_str(commit_hash)
         .map_err(|e| GitError::Other(format!("invalid commit hash: {e}")))?;
@@ -249,7 +249,9 @@ fn load_commit_file_diff_from_repo(
     if diff.deltas().len() == 0 {
         if let Some(untracked_tree) = stash_untracked_tree_for_path(repo, &commit, file_path) {
             let mut untracked_opts = git2::DiffOptions::new();
-            untracked_opts.pathspec(file_path);
+            untracked_opts
+                .pathspec(file_path)
+                .disable_pathspec_match(true);
             let untracked_diff = repo
                 .diff_tree_to_tree(None, Some(&untracked_tree), Some(&mut untracked_opts))
                 .map_err(|e| wrap_git2_error("create stash untracked file diff", e))?;
@@ -1170,7 +1172,7 @@ mod tests {
         write_file(&temp_repo.path, "untracked.txt", "new\ncontent\n");
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
-        service.create_stash().expect("failed to create stash");
+        service.create_stash(None).expect("failed to create stash");
         let stash = service
             .load_repo(super::super::COMMIT_LOAD_LIMIT)
             .stashes

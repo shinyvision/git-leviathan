@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use super::helpers::{spawn_git_command_with_timeout, wrap_git2_error};
+use super::helpers::{fetch_cancel_generation, spawn_git_command_with_timeout, wrap_git2_error};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -20,8 +20,14 @@ pub(super) fn fetch_all_refs(service: &GitService) -> Result<(), GitError> {
         return Ok(());
     }
 
+    let cancel_generation = fetch_cancel_generation();
     let mut first_error = None;
     for remote_name in remotes {
+        // A cancelled fetch kills the running subprocess; without this check
+        // the loop would spawn the next remote's fetch anyway and keep going.
+        if fetch_cancel_generation() != cancel_generation {
+            break;
+        }
         if let Err(err) = fetch_remote_refs(service, &remote_name) {
             eprintln!("git_leviathan: fetch error for '{remote_name}': {err}");
             if first_error.is_none() {
@@ -65,9 +71,11 @@ fn fetch_configured_remote(service: &GitService, remote_name: &str) -> Result<()
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if !stderr.is_empty() {
-            eprintln!("git_leviathan: fetch warning for '{remote_name}': {stderr}");
-        }
+        return Err(GitError::Other(if stderr.is_empty() {
+            format!("fetch '{remote_name}' failed")
+        } else {
+            format!("fetch '{remote_name}' failed: {stderr}")
+        }));
     }
 
     Ok(())
@@ -169,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn fetch_all_refs_continues_after_non_fatal_remote_warning() {
+    fn fetch_all_refs_continues_past_failing_remote_and_reports_error() {
         let (temp_repo, repo) = init_test_repo("fetch_all_warning_continues");
         let (good_temp, _good_repo) = init_bare_test_repo("fetch_all_warning_good");
 
@@ -189,9 +197,8 @@ mod tests {
         remove_remote_branch(&repo, "zzz_good/good-only");
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
-        service
-            .fetch_all_refs()
-            .expect("fetch all should keep going");
+        let result = service.fetch_all_refs();
+        assert!(result.is_err(), "failing remote should surface an error");
 
         let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
         assert!(has_remote_branch(&repo, "zzz_good/good-only"));

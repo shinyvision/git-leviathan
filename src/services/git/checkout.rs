@@ -1,7 +1,7 @@
 use git2::{build::CheckoutBuilder, BranchType, StatusOptions};
 
 use super::helpers::{
-    command_dir, find_branch_or, find_commit_or, find_reference_or, spawn_git_command,
+    command_dir, find_branch_or, find_commit_or, find_reference_or, spawn_git_command_with_timeout,
     wrap_git2_error,
 };
 use super::squash::{maybe_stash_workdir, restore_stash};
@@ -169,6 +169,7 @@ pub(super) fn delete_branch(
     service: &mut GitService,
     branch_name: &str,
     is_remote: bool,
+    force: bool,
 ) -> Result<(), GitError> {
     let branch_name = branch_name.trim();
     if branch_name.is_empty() {
@@ -185,10 +186,47 @@ pub(super) fn delete_branch(
         delete_remote_branch_ref(service, &remote_ref)
     } else {
         let mut branch = find_branch_or(&service.repo, branch_name, BranchType::Local)?;
+        // git2's `branch.delete()` is unconditional (unlike `git branch -d`),
+        // so a non-force delete must first confirm the branch is fully merged
+        // — otherwise unmerged commits silently become unreachable.
+        if !force && !local_branch_is_merged(service, &branch)? {
+            return Err(GitError::Other(format!(
+                "branch '{branch_name}' is not fully merged; delete with force to discard its commits",
+            )));
+        }
         branch
             .delete()
             .map_err(|e| wrap_git2_error(&format!("delete branch '{branch_name}'"), e))
     }
+}
+
+/// A local branch is safe to delete when its tip is already reachable from
+/// HEAD or from its configured upstream (mirrors `git branch -d`).
+fn local_branch_is_merged(
+    service: &GitService,
+    branch: &git2::Branch<'_>,
+) -> Result<bool, GitError> {
+    let Some(tip) = branch.get().target() else {
+        return Ok(true);
+    };
+    let mut bases: Vec<git2::Oid> = Vec::new();
+    if let Some(head) = service.repo.head().ok().and_then(|h| h.target()) {
+        bases.push(head);
+    }
+    if let Some(upstream) = branch
+        .upstream()
+        .ok()
+        .and_then(|u| u.get().target())
+    {
+        bases.push(upstream);
+    }
+    Ok(bases.into_iter().any(|base| {
+        base == tip
+            || service
+                .repo
+                .graph_descendant_of(base, tip)
+                .unwrap_or(false)
+    }))
 }
 
 pub(super) fn rename_branch(
@@ -374,7 +412,7 @@ fn rollback_checkout(
     }
 
     if created_stash {
-        let _ = service.repo.stash_pop(0, None);
+        super::squash::restore_stash(service, true, "checkout rollback");
     }
 }
 
@@ -640,14 +678,17 @@ fn push_delete_remote_branch(
     let repo_dir = command_dir(&service.repo)?;
     let refspec = format!(":refs/heads/{}", remote_branch_name);
     let op = format!("push delete {remote_name}/{remote_branch_name}");
-    let output =
-        spawn_git_command(&repo_dir, &["push", remote_name, &refspec], &op).map_err(|e| {
-            GitError::RemoteDeleteFailed {
-                remote: remote_name.to_string(),
-                branch: remote_branch_name.to_string(),
-                reason: e.to_string(),
-            }
-        })?;
+    let output = spawn_git_command_with_timeout(
+        &repo_dir,
+        &["push", remote_name, &refspec],
+        &op,
+        std::time::Duration::from_secs(300),
+    )
+    .map_err(|e| GitError::RemoteDeleteFailed {
+        remote: remote_name.to_string(),
+        branch: remote_branch_name.to_string(),
+        reason: e.to_string(),
+    })?;
 
     if output.status.success() {
         return Ok(());

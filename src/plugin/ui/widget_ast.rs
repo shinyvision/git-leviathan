@@ -992,6 +992,16 @@ fn decode_semantic_items(
     depth: usize,
     ctx: &mut DecodeCtx,
 ) -> Result<Vec<SemanticItem>, WidgetDecodeError> {
+    // Nested `children` recurse through here; without a depth guard and node
+    // count a deeply nested `items` chain overflows the stack (the enclosing
+    // decode_node limits don't apply to this side channel).
+    if depth > ctx.limits.max_tree_depth {
+        return Err(WidgetDecodeError::new(
+            codes::DEPTH_EXCEEDED,
+            format!("{path}.{key}"),
+            format!("tree depth exceeds max ({})", ctx.limits.max_tree_depth),
+        ));
+    }
     let arr = match obj.get(key) {
         None | Some(Value::Null) => return Ok(Vec::new()),
         Some(Value::Object(map)) if map.is_empty() => return Ok(Vec::new()),
@@ -1007,6 +1017,7 @@ fn decode_semantic_items(
     let mut out = Vec::with_capacity(arr.len());
     for (i, item) in arr.iter().enumerate() {
         let item_path = format!("{path}.{key}[{i}]");
+        ctx.count_node(&item_path)?;
         let tbl = item.as_object().ok_or_else(|| {
             WidgetDecodeError::new(
                 codes::FIELD_TYPE_MISMATCH,
@@ -1022,7 +1033,7 @@ fn decode_semantic_items(
             text: opt_string(tbl, "text", &item_path, ctx)?,
             value: tbl.get("value").cloned().unwrap_or(Value::Null),
             child: opt_child(tbl, "child", &item_path, depth, ctx)?,
-            children: decode_semantic_items(tbl, "children", &item_path, depth, ctx)?,
+            children: decode_semantic_items(tbl, "children", &item_path, depth + 1, ctx)?,
         });
     }
     Ok(out)

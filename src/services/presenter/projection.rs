@@ -59,18 +59,37 @@ pub fn compute_signature(snapshot: &RepoSnapshot) -> ProjectionSignature {
         d.conflicted_files.len().hash(&mut h);
         d.staged_files.len().hash(&mut h);
         d.unstaged_files.len().hash(&mut h);
+        // Hash the ChangeKind too: a file flipping e.g. Modified->Deleted
+        // keeps the same path/list/counts, so path-only hashing would miss
+        // the change and leave the graph/tile cache stale.
         for f in &d.conflicted_files {
             f.path.hash(&mut h);
+            f.kind.hash(&mut h);
         }
         for f in &d.staged_files {
             f.path.hash(&mut h);
+            f.kind.hash(&mut h);
         }
         for f in &d.unstaged_files {
             f.path.hash(&mut h);
+            f.kind.hash(&mut h);
         }
         for p in &d.parent_hashes {
             p.hash(&mut h);
         }
+    }
+
+    // Worktree add/remove/branch changes flow into branch_display_rows
+    // (worktree badges), so they must move the signature or the badge stays
+    // stale.
+    snapshot.worktrees.len().hash(&mut h);
+    for wt in &snapshot.worktrees {
+        wt.path.hash(&mut h);
+        wt.branch_name.hash(&mut h);
+        wt.head_hash.hash(&mut h);
+        wt.is_primary.hash(&mut h);
+        wt.is_locked.hash(&mut h);
+        wt.is_prunable.hash(&mut h);
     }
 
     ProjectionSignature(h.finish())

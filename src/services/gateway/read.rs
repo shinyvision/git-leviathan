@@ -44,4 +44,8 @@ pub trait RepoRead: Send + Sync {
         file_path: &str,
     ) -> Result<Option<ModifyDeleteConflict>, GitError>;
     fn compute_dirty_file_signature(&self, file_path: &str, is_staged: bool) -> DirtyDiffSignature;
+    /// Whether the current branch can strictly fast-forward to `target_branch`.
+    /// Computed on demand (one ancestry walk) when a branch's context menu
+    /// opens, rather than eagerly for every branch during `load_repo`.
+    fn can_fast_forward_to(&self, target_branch: &str) -> bool;
 }

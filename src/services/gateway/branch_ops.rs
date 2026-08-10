@@ -17,7 +17,12 @@ pub trait BranchOps: RepoRead {
         branch_name: &str,
         remote_ref: &str,
     ) -> Result<RepoSnapshot, GitError>;
-    fn delete_branch(&self, branch_name: &str, is_remote: bool) -> Result<RepoSnapshot, GitError>;
+    fn delete_branch(
+        &self,
+        branch_name: &str,
+        is_remote: bool,
+        force: bool,
+    ) -> Result<RepoSnapshot, GitError>;
     fn delete_branch_all(&self, branch_name: &str) -> Result<RepoSnapshot, GitError>;
     fn rename_branch(
         &self,

@@ -100,6 +100,11 @@ pub struct SyntaxHighlightService {
     query_override_dir: Option<PathBuf>,
     installation: Option<GrammarInstallationService>,
     runtime_policy: RuntimeGrammarSecurityPolicy,
+    /// Syntax keys we've already run missing-grammar detection for. Gates the
+    /// per-line disk scan (`scan_installed_packages` SHA-256s every installed
+    /// package) so a file whose grammar isn't installed doesn't re-scan on
+    /// every line of every scroll. Reset with the service on asset change.
+    detection_attempted: Mutex<BTreeSet<String>>,
 }
 
 pub enum HighlightLineResult {
@@ -164,6 +169,7 @@ impl SyntaxHighlightService {
                 .clone()
                 .map(|dir| GrammarInstallationService::with_policy(dir, runtime_policy.clone())),
             runtime_policy,
+            detection_attempted: Mutex::new(BTreeSet::new()),
         };
 
         service.reload_runtime_inventory();
@@ -192,9 +198,6 @@ impl SyntaxHighlightService {
         };
         let detection = self.detect_language(document);
         let syntax = self.syntax_for_detection(&detection);
-        if syntax.is_none() {
-            self.queue_missing_grammar_for_detection(&detection);
-        }
         let span_key = self.highlight_span_cache_key(document, &detection, syntax, line_number);
 
         {
@@ -216,6 +219,14 @@ impl SyntaxHighlightService {
                 state.insert_line(span_key, spans.clone());
                 return HighlightLineResult::Ready(HighlightedLine { line_number, spans });
             }
+        }
+
+        // Only after a genuine cache miss is it worth kicking off grammar
+        // detection/install — doing it before the cache lookups meant every
+        // already-highlighted line re-scanned and re-hashed every installed
+        // package on disk.
+        if syntax.is_none() {
+            self.queue_missing_grammar_for_detection(&detection);
         }
 
         let spans = match syntax {
@@ -522,6 +533,14 @@ impl SyntaxHighlightService {
         let syntax_key = detection.syntax_key()?;
         if self.registry.get(syntax_key).is_some() {
             return None;
+        }
+        // Skip the disk scan for a syntax we've already tried; the status
+        // only changes via a runtime asset change, which rebuilds the service
+        // (and this set).
+        if let Ok(mut attempted) = self.detection_attempted.lock() {
+            if !attempted.insert(syntax_key.to_string()) {
+                return None;
+            }
         }
         let status = self
             .installation
@@ -935,8 +954,16 @@ fn runtime_grammar_installation_service() -> Result<GrammarInstallationService, 
 
 fn reset_syntax_service_after_runtime_asset_change() {
     release_syntax_caches();
+    // Rebuild the service HERE rather than setting the slot to `None`. These
+    // asset-change callers (grammar install/update/uninstall/refresh) run on
+    // background `spawn_blocking` tasks, whereas the next `get_syntax_service`
+    // is typically the UI thread's `view()` — so a lazy rebuild would freeze
+    // the UI (it scans+SHA-256s every package, compiles wasm grammars, and
+    // recompiles queries). Build off-thread and swap the Arc atomically; the
+    // old service keeps serving until the replacement is ready.
+    let rebuilt = Arc::new(SyntaxHighlightService::new());
     if let Ok(mut guard) = SYNTAX_SERVICE.write() {
-        *guard = None;
+        *guard = Some(rebuilt);
     }
 }
 

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use git2::{BranchType, Sort};
 
-use crate::services::{CommitSnapshot, RefsSnapshot, RepoRefKind, RepoSnapshot};
+use crate::services::{CommitSnapshot, RefsSnapshot, RepoSnapshot};
 
 use super::{
     refs::load_refs, stashes::load_stashes, working_tree::load_dirty_snapshot, GitService,
@@ -32,8 +32,12 @@ fn load_common(service: &GitService, commit_limit: usize) -> CommonSnapshot {
     let current_branch = service.current_branch_name();
     let remote_names = load_remote_names(service);
     let default_remote_name = pick_default_remote(&remote_names);
-    let fast_forward_candidates =
-        load_fast_forward_candidates(service, current_branch.as_deref(), &refs);
+    // Fast-forward candidates are computed lazily (per branch, on right-click)
+    // rather than eagerly here: the eager form ran one `graph_descendant_of`
+    // ancestry walk per local branch on EVERY load, dominating `load_repo`
+    // (hundreds of ms on a repo with dozens of branches) and re-paying it on
+    // every scroll-driven "load more commits". See `can_fast_forward_current_to`.
+    let fast_forward_candidates = HashSet::new();
     let worktrees = super::worktrees::list_worktrees(service).unwrap_or_default();
     let active_worktree_path = service
         .repo
@@ -114,47 +118,32 @@ fn pick_default_remote(remotes: &[String]) -> Option<String> {
         .or_else(|| remotes.first().cloned())
 }
 
-/// Compute the set of local branches the current branch is a strict ancestor
-/// of, so right-click menus can answer the "can fast-forward?" question from
-/// cached data.
-///
-/// Resolves the current tip once and reads each candidate tip from the already
-/// loaded `refs` so only branches whose tip differs from HEAD's pay a
-/// `graph_descendant_of` walk; identical tips short-circuit without one.
-fn load_fast_forward_candidates(
-    service: &GitService,
-    current_branch: Option<&str>,
-    refs: &[crate::services::RepoRef],
-) -> HashSet<String> {
-    let Some(current) = current_branch else {
-        return HashSet::new();
+/// Whether the current branch can strictly fast-forward to `target_branch`
+/// (i.e. the current tip is a proper ancestor of the target's tip). Computed
+/// on demand for a single branch when its right-click menu opens — one
+/// `graph_descendant_of` walk — instead of eagerly for every branch on load.
+pub(super) fn can_fast_forward_current_to(service: &GitService, target_branch: &str) -> bool {
+    let Some(current) = service.current_branch_name() else {
+        return false;
     };
-    let Ok(current_oid) = service
-        .repo
-        .find_branch(current, BranchType::Local)
-        .and_then(|b| {
-            b.get()
-                .target()
-                .ok_or_else(|| git2::Error::from_str("current branch has no target"))
-        })
-    else {
-        return HashSet::new();
+    if current == target_branch {
+        return false;
+    }
+    let tip = |name: &str| {
+        service
+            .repo
+            .find_branch(name, BranchType::Local)
+            .ok()
+            .and_then(|b| b.get().target())
     };
-
-    refs.iter()
-        .filter(|r| r.kind == RepoRefKind::LocalBranch && r.name != current)
-        .filter(|r| {
-            let Ok(oid) = git2::Oid::from_str(&r.target_hash) else {
-                return false;
-            };
-            oid != current_oid
-                && service
-                    .repo
-                    .graph_descendant_of(oid, current_oid)
-                    .unwrap_or(false)
-        })
-        .map(|r| r.name.clone())
-        .collect()
+    let (Some(current_oid), Some(target_oid)) = (tip(&current), tip(target_branch)) else {
+        return false;
+    };
+    current_oid != target_oid
+        && service
+            .repo
+            .graph_descendant_of(target_oid, current_oid)
+            .unwrap_or(false)
 }
 
 fn load_commits(

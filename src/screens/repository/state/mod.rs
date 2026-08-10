@@ -197,7 +197,11 @@ impl RepositoryData {
         self.pending_focus = None;
         self.branch_popout = BranchPopoutController::default();
         self.commit_search = None;
-        self.operations = OperationCoordinator::new();
+        // Deliberately NOT resetting `operations`: a git write may still be in
+        // flight when the user switches tabs. Recreating the coordinator would
+        // reset `next_id` (so a fresh op could collide with the running one's
+        // OperationId) and flip `repository_write_in_flight()` false, letting
+        // new writes race the old one and apply stale snapshots.
     }
 
     /// Full-reload coordination. Preserves diff cache entries across the
@@ -323,6 +327,24 @@ impl RepositoryData {
         selected_commit: usize,
     ) -> Option<&Commit> {
         self.snapshot.commits().get(selected_commit)
+    }
+
+    /// The commit hash of the stash at reflog index `stash_index` in the
+    /// current snapshot. Stash operations resolve to this stable hash so a
+    /// shifted index (auto-stash pushed/popped in between) can't drop the
+    /// wrong stash.
+    pub(in crate::screens::repository) fn stash_hash_for_index(
+        &self,
+        stash_index: usize,
+    ) -> Option<String> {
+        for section in self.snapshot.sidebar_sections() {
+            for stash in &section.stashes {
+                if stash.stash_index == stash_index {
+                    return Some(stash.hash.clone());
+                }
+            }
+        }
+        None
     }
 }
 

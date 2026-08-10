@@ -154,7 +154,15 @@ impl App {
         }
 
         let task = app.load_initial_repos();
+        // `load_initial_repos` selected the persisted most-recent repo; each
+        // restored plugin tab activates itself, so remember the intended repo
+        // tab and re-select it afterward instead of landing on the last
+        // plugin tab.
+        let intended_active = app.tabs.active_tab_id();
         app.restore_plugin_tabs();
+        if app.tabs.active_tab_id() != intended_active {
+            let _ = app.tabs.select(intended_active);
+        }
         app.sync_repository_to_plugins();
         app.process_tab_changes();
         app.rebuild_slot_registries();
@@ -315,12 +323,24 @@ impl App {
         let drain = self.drain_pending_tab_ops();
         let git_drain = self.drain_git_operation_queue();
         let ui_effects = self.drain_plugin_ui_effects();
+        // Navigation effects can be queued by keymap bindings, InvokeCommand,
+        // autocmds, and plugin timers — not just Message::Plugin — so drain
+        // them here rather than only in update_plugin, or a plugin-bound
+        // "open screen" key appears to do nothing until the next plugin event.
+        let navigation = self.drain_pending_navigation_effects();
         self.persist_plugin_tabs();
         let snapshot = self.compute_focus_snapshot();
         let _ = self.plugin_host.sync_focus(snapshot);
         self.rebuild_slot_registries();
         self.reset_animation_clock_if_idle();
-        Task::batch(vec![task, command_actions, drain, git_drain, ui_effects])
+        Task::batch(vec![
+            task,
+            command_actions,
+            drain,
+            git_drain,
+            ui_effects,
+            navigation,
+        ])
     }
 
     fn sync_toolbar_dialog_to_plugins(&mut self) {
@@ -669,7 +689,7 @@ impl App {
                             return None;
                         }
                     }
-                    self.tabs.close_tab(id);
+                    return Some(self.tabs.close_tab(id));
                 }
                 None
             }
@@ -691,6 +711,12 @@ impl App {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        if std::env::var("GLV_VIEW_MS").is_ok() {
+            let t = std::time::Instant::now();
+            let el = view::render(self);
+            eprintln!("view_ms={:.2}", t.elapsed().as_secs_f64() * 1000.0);
+            return el;
+        }
         view::render(self)
     }
 

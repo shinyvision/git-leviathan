@@ -186,7 +186,7 @@ pub(super) fn stage_file(service: &mut GitService, path: &str) -> Result<(), Git
     let exists_in_workdir = service
         .repo
         .workdir()
-        .map(|workdir| workdir.join(relative_path).exists())
+        .map(|workdir| workdir.join(relative_path).symlink_metadata().is_ok())
         .unwrap_or(false);
     if exists_in_workdir {
         index
@@ -220,7 +220,7 @@ pub(super) fn stage_files(service: &mut GitService, paths: &[String]) -> Result<
         let relative_path = Path::new(path);
         let exists_in_workdir = workdir
             .as_ref()
-            .map(|workdir| workdir.join(relative_path).exists())
+            .map(|workdir| workdir.join(relative_path).symlink_metadata().is_ok())
             .unwrap_or(false);
         if exists_in_workdir {
             index
@@ -260,10 +260,11 @@ pub(super) fn unstage_file(service: &mut GitService, path: &str) -> Result<(), G
         return Err(GitError::Other("file path cannot be empty".to_string()));
     }
 
+    let paths = expand_rename_sources(service, vec![path.to_string()]);
     let head = head_object(service)?;
     service
         .repo
-        .reset_default(head.as_ref(), [path])
+        .reset_default(head.as_ref(), paths.iter().map(String::as_str))
         .map_err(|e| wrap_git2_error(&format!("unstage file '{path}'"), e))?;
     Ok(())
 }
@@ -276,6 +277,7 @@ pub(super) fn unstage_files(service: &mut GitService, paths: &[String]) -> Resul
         return Err(GitError::Other("file path cannot be empty".to_string()));
     }
 
+    let paths = expand_rename_sources(service, paths.to_vec());
     let head = head_object(service)?;
     service
         .repo
@@ -297,6 +299,7 @@ pub(super) fn unstage_all_dirty_changes(service: &mut GitService) -> Result<(), 
         return Ok(());
     }
 
+    let paths = expand_rename_sources(service, paths);
     let head = head_object(service)?;
     service
         .repo
@@ -310,32 +313,35 @@ pub(super) fn discard_file(service: &mut GitService, path: &str) -> Result<(), G
         return Err(GitError::Other("file path cannot be empty".to_string()));
     }
 
+    let paths = expand_rename_sources(service, vec![path.to_string()]);
     let head = head_object(service)?;
     if head.is_some() {
         service
             .repo
-            .reset_default(head.as_ref(), [path])
+            .reset_default(head.as_ref(), paths.iter().map(String::as_str))
             .map_err(|e| wrap_git2_error(&format!("reset index for '{path}'"), e))?;
     }
 
-    let in_head = head
-        .as_ref()
-        .and_then(|object| object.peel_to_tree().ok())
-        .and_then(|tree| tree.get_path(Path::new(path)).ok())
-        .is_some();
+    let head_tree = head.as_ref().and_then(|object| object.peel_to_tree().ok());
+    for path in &paths {
+        let in_head = head_tree
+            .as_ref()
+            .and_then(|tree| tree.get_path(Path::new(path)).ok())
+            .is_some();
 
-    if in_head {
-        let mut checkout = git2::build::CheckoutBuilder::new();
-        checkout.force().path(path);
-        service
-            .repo
-            .checkout_head(Some(&mut checkout))
-            .map_err(|e| wrap_git2_error(&format!("restore '{path}'"), e))?;
-    } else if let Some(workdir) = service.repo.workdir() {
-        let full = workdir.join(Path::new(path));
-        if full.exists() {
-            std::fs::remove_file(&full)
-                .map_err(|e| GitError::Other(format!("failed to delete '{}': {e}", path)))?;
+        if in_head {
+            let mut checkout = git2::build::CheckoutBuilder::new();
+            checkout.force().path(path);
+            service
+                .repo
+                .checkout_head(Some(&mut checkout))
+                .map_err(|e| wrap_git2_error(&format!("restore '{path}'"), e))?;
+        } else if let Some(workdir) = service.repo.workdir() {
+            let full = workdir.join(Path::new(path));
+            if full.symlink_metadata().is_ok() {
+                std::fs::remove_file(&full)
+                    .map_err(|e| GitError::Other(format!("failed to delete '{}': {e}", path)))?;
+            }
         }
     }
 
@@ -417,6 +423,35 @@ fn conflict_paths(service: &GitService) -> Result<Vec<String>, GitError> {
 
     paths.sort();
     Ok(paths)
+}
+
+fn expand_rename_sources(service: &GitService, paths: Vec<String>) -> Vec<String> {
+    let mut options = StatusOptions::new();
+    options
+        .show(StatusShow::Index)
+        .renames_head_to_index(true);
+    let Ok(statuses) = service.repo.statuses(Some(&mut options)) else {
+        return paths;
+    };
+
+    let mut expanded = paths;
+    for entry in statuses.iter() {
+        let Some(delta) = entry.head_to_index() else {
+            continue;
+        };
+        let (Some(old), Some(new)) = (delta.old_file().path(), delta.new_file().path()) else {
+            continue;
+        };
+        if old == new {
+            continue;
+        }
+        let old = old.to_string_lossy().into_owned();
+        let new = new.to_string_lossy().into_owned();
+        if expanded.contains(&new) && !expanded.contains(&old) {
+            expanded.push(old);
+        }
+    }
+    expanded
 }
 
 fn head_object(service: &GitService) -> Result<Option<git2::Object<'_>>, GitError> {
@@ -516,4 +551,49 @@ fn merge_head_oids(service: &GitService) -> Result<Vec<Oid>, GitError> {
                 .map_err(|e| GitError::Other(format!("invalid MERGE_HEAD oid '{line}': {e}")))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::test_support::{commit_all, init_test_repo, write_file};
+
+    /// Unstaging a staged rename must clear both the new path (the delta's
+    /// visible path) and the old path's staged deletion; otherwise "unstage
+    /// all" leaves the original file staged-deleted.
+    #[test]
+    fn unstage_all_clears_both_sides_of_a_staged_rename() {
+        let (temp, repo) = init_test_repo("unstage_rename");
+        write_file(&temp.path, "old_name.txt", "some content here\n");
+        commit_all(&repo, "add old_name.txt");
+
+        // Rename old_name.txt -> new_name.txt and stage both the deletion and
+        // the addition so git records it as a rename.
+        std::fs::rename(
+            temp.path.join("old_name.txt"),
+            temp.path.join("new_name.txt"),
+        )
+        .expect("rename file");
+
+        let mut service = GitService::open(temp.path_str()).expect("open service");
+        stage_all_dirty_changes(&mut service).expect("stage rename");
+
+        // Sanity: the index now has a staged deletion of old_name.txt.
+        let before = load_dirty_snapshot(&service).expect("dirty after staging");
+        assert!(
+            !before.staged_files.is_empty(),
+            "rename should produce staged changes"
+        );
+
+        unstage_all_dirty_changes(&mut service).expect("unstage all");
+
+        // Nothing should remain staged: both old and new paths are back to
+        // the working tree.
+        let after = load_dirty_snapshot(&service).expect("dirty after unstage");
+        assert!(
+            after.staged_files.is_empty(),
+            "no staged changes should remain after unstage all, got: {:?}",
+            after.staged_files
+        );
+    }
 }

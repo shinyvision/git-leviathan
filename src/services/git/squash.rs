@@ -21,10 +21,12 @@ pub(super) fn maybe_stash_workdir(
         .or_else(|_| git2::Signature::now("Git Leviathan", "git-leviathan@example.invalid"))
         .map_err(|e| GitError::StashFailed(format!("failed to create stash signature: {e}")))?;
 
-    match service
-        .repo
-        .stash_save2(&signature, None, Some(StashFlags::INCLUDE_UNTRACKED))
-    {
+    let message = format!("Git Leviathan auto-stash {context}");
+    match service.repo.stash_save2(
+        &signature,
+        Some(&message),
+        Some(StashFlags::INCLUDE_UNTRACKED),
+    ) {
         Ok(_) => Ok(true),
         // libgit2 returns ENOTFOUND when its own diff sees no stashable content,
         // even though `workdir_has_changes` flagged the tree (e.g. submodule

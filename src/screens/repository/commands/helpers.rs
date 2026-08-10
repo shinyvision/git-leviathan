@@ -103,12 +103,17 @@ pub(in crate::screens::repository) fn handle_repo_loaded(
     loaded: LoadedRepo,
 ) -> Task<Message> {
     let has_more_commits = loaded.has_more_commits;
+    let (prior_anchor_hash, prior_selected_hashes) = capture_selection_hashes(&screen.data);
     screen.data.replace_loaded(loaded);
     screen.panels.center.on_repo_loaded(
         screen.data.snapshot.commits(),
         has_more_commits,
         &mut screen.data.branch_popout,
     );
+    // Re-anchor the selection by hash: checkout/reset/pull can shrink or
+    // rewrite history, leaving the old index out of range or pointing at an
+    // unrelated commit.
+    restore_selection_by_hash(&mut screen.data, prior_anchor_hash, prior_selected_hashes);
     commit_search::refresh_matches(screen);
 
     let reload_dirty_diff = sync_dirty_diff_after_reload(screen);
@@ -122,6 +127,15 @@ pub(in crate::screens::repository) fn pending_reload_task_after_write(
     screen: &mut RepositoryScreen,
     task: Task<Message>,
 ) -> Task<Message> {
+    // Clear the suppressed-watcher flag without chaining a reload. Every write
+    // that touches `.git` (notably staging/unstaging, which writes
+    // `.git/index`) trips the file watcher itself, so unconditionally replaying
+    // a full `load_repo` here turned the cheap dirty-only stage path into a
+    // full repository reload on every click — flooding the gateway lock and
+    // making staging (and tab rehydrates queued behind it) crawl. The rare
+    // case this guarded — an *external* change during an in-flight write whose
+    // arm doesn't reload — is not worth that cost; a genuine external change
+    // still surfaces on the next file-watcher event or user action.
     screen.data.operations.take_pending_watcher_reload();
     task
 }

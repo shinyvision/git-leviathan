@@ -146,8 +146,9 @@ impl GitRepositoryGateway {
 
     /// Opens a `GitService` without acquiring the operation lock.
     ///
-    /// Read-only callers (diff loading) must not block on long-running writers
-    /// like `fetch_and_reload`. git2 handles concurrent reads safely.
+    /// Used by read-only callers (diff loading), which git2 serves safely
+    /// concurrently, and by the network fetch, which is serialized by git's
+    /// own locks and must never make local writes wait on a remote.
     pub(super) fn with_service_unlocked<T>(
         &self,
         f: impl FnOnce(&mut GitService) -> Result<T, GitError>,
@@ -272,6 +273,11 @@ impl RepoRead for GitRepositoryGateway {
         })
         .unwrap_or_default()
     }
+
+    fn can_fast_forward_to(&self, target_branch: &str) -> bool {
+        self.with_service_unlocked(|service| Ok(service.can_fast_forward_to(target_branch)))
+            .unwrap_or(false)
+    }
 }
 
 impl BranchOps for GitRepositoryGateway {
@@ -308,9 +314,14 @@ impl BranchOps for GitRepositoryGateway {
         })
     }
 
-    fn delete_branch(&self, branch_name: &str, is_remote: bool) -> Result<RepoSnapshot, GitError> {
+    fn delete_branch(
+        &self,
+        branch_name: &str,
+        is_remote: bool,
+        force: bool,
+    ) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.delete_branch(branch_name, is_remote)?;
+            service.delete_branch(branch_name, is_remote, force)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }
@@ -583,24 +594,24 @@ impl CommitOps for GitRepositoryGateway {
 
 impl RemoteOps for GitRepositoryGateway {
     fn fetch_remotes(&self) -> Result<(), GitError> {
-        // resource lifecycle (write-lock): network fetch only.
-        // screen routing (no write-lock): `git ls-remote --tags` per remote to refresh
-        // the tag→remotes cache. Held under the writer lock in the past, this
-        // stretched lock-hold time by (num_remotes × round-trip) and caused
-        // file-watcher reload_refs tasks to pile up during the fetch; keep it
-        // strictly outside the writer lock so readers aren't starved.
-        self.with_service(|service| service.fetch_all_refs())?;
+        // The whole fetch pipeline (network fetch + `git ls-remote --tags`
+        // cache refresh) runs outside the writer lock: `git fetch` is a
+        // subprocess serialized by git's own ref locks and touches state
+        // disjoint from local writes (`refs/remotes/*` vs `.git/index`).
+        // Held under the lock in the past, an unreachable remote made every
+        // local operation wait out FETCH_TIMEOUT.
         self.with_service_unlocked(|service| {
+            service.fetch_all_refs()?;
             self.refresh_tag_remotes_cache(service);
             Ok(())
         })
     }
 
     fn fetch_remote(&self, remote_name: &str) -> Result<(), GitError> {
-        // Keep the write-lock scoped to the requested fetch. The tag cache is
-        // refreshed for only that remote after the fetch completes.
-        self.with_service(|service| service.fetch_remote_refs(remote_name))?;
+        // No writer lock, same as `fetch_remotes`. The tag cache is refreshed
+        // for only the requested remote after the fetch completes.
         self.with_service_unlocked(|service| {
+            service.fetch_remote_refs(remote_name)?;
             self.refresh_tag_remote_cache(service, remote_name);
             Ok(())
         })
@@ -642,8 +653,14 @@ impl RemoteOps for GitRepositoryGateway {
     fn force_push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| {
             let outcome = service.force_push_current_branch()?;
-            if let PushOutcome::BehindRemote { .. } = outcome {
-                unreachable!("force push should not return BehindRemote")
+            if let PushOutcome::BehindRemote {
+                branch_name,
+                remote_name,
+            } = outcome
+            {
+                return Err(GitError::Other(format!(
+                    "force push of '{branch_name}' was rejected by '{remote_name}'",
+                )));
             }
             Self::map_push_outcome(service, outcome)
         })
@@ -670,24 +687,24 @@ impl RemoteOps for GitRepositoryGateway {
 }
 
 impl StashOps for GitRepositoryGateway {
-    fn create_stash(&self) -> Result<RepoSnapshot, GitError> {
+    fn create_stash(&self, message: Option<&str>) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.create_stash()?;
+            service.create_stash(message)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }
 
-    fn apply_stash(&self, index: usize) -> Result<StashApplyOutcome, GitError> {
-        self.with_service(|service| service.apply_stash(index))
+    fn apply_stash(&self, hash: &str) -> Result<StashApplyOutcome, GitError> {
+        self.with_service(|service| service.apply_stash(hash))
     }
 
-    fn pop_stash(&self, index: usize) -> Result<StashApplyOutcome, GitError> {
-        self.with_service(|service| service.pop_stash(index))
+    fn pop_stash(&self, hash: &str) -> Result<StashApplyOutcome, GitError> {
+        self.with_service(|service| service.pop_stash(hash))
     }
 
-    fn drop_stash(&self, index: usize) -> Result<RepoSnapshot, GitError> {
+    fn drop_stash(&self, hash: &str) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.drop_stash(index)?;
+            service.drop_stash(hash)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }
@@ -839,6 +856,45 @@ mod tests {
             service.load_repo(10).current_branch.as_deref(),
             Some("feature")
         );
+    }
+
+    #[test]
+    fn gateway_fetch_does_not_take_the_operation_lock() {
+        let (temp_repo, repo) = init_test_repo("fetch_unlocked");
+        let (origin_temp, _origin_repo) = init_bare_test_repo("fetch_unlocked_origin");
+        add_remote(
+            &repo,
+            "origin",
+            &format!("file://{}", origin_temp.path_str()),
+        );
+
+        let gateway = GitRepositoryGateway::from_repo_path(temp_repo.path_str());
+        let guard = gateway
+            .operation_lock
+            .lock()
+            .expect("operation lock should be acquirable");
+
+        let finished = Arc::new(AtomicBool::new(false));
+        let worker_gateway = gateway.clone();
+        let worker_finished = finished.clone();
+        let handle = thread::spawn(move || {
+            worker_gateway
+                .fetch_remotes()
+                .expect("fetch should succeed without the operation lock");
+            worker_finished.store(true, Ordering::SeqCst);
+        });
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !finished.load(Ordering::SeqCst) && std::time::Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            finished.load(Ordering::SeqCst),
+            "fetch must complete while another operation holds the write lock"
+        );
+
+        drop(guard);
+        handle.join().expect("worker thread should finish");
     }
 
     #[test]

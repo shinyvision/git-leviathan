@@ -175,6 +175,40 @@ impl TextCanvasData {
     }
 }
 
+/// Display cell width of a single character in the monospace grid. Wide
+/// glyphs (CJK, fullwidth forms, most emoji) occupy two cells under
+/// `Shaping::Advanced`; everything else — including ASCII and zero-width
+/// combining marks — is treated as one. Deliberately only *widens* genuinely
+/// double-width chars so ASCII/narrow text keeps `cells == char index`
+/// (a no-op for the overwhelmingly common case).
+pub fn char_cells(ch: char) -> usize {
+    use unicode_width::UnicodeWidthChar;
+    if ch.width().unwrap_or(1) >= 2 {
+        2
+    } else {
+        1
+    }
+}
+
+/// Sum of display cells of the first `col` characters of `text` (i.e. the
+/// cell offset of the char at index `col`). For pure-ASCII text this equals
+/// `col` — checked up front so the common case skips the per-char width walk.
+pub fn cells_before(text: &str, col: usize) -> usize {
+    if text.is_ascii() {
+        return col.min(text.len());
+    }
+    text.chars().take(col).map(char_cells).sum()
+}
+
+/// Total display cells of `text`. ASCII text (1 byte == 1 char == 1 cell) is
+/// short-circuited so hot draw paths don't pay a per-char unicode-width lookup.
+pub fn text_cells(text: &str) -> usize {
+    if text.is_ascii() {
+        return text.len();
+    }
+    text.chars().map(char_cells).sum()
+}
+
 /// One-glyph width for the mono content font, cached after first measurement.
 pub fn mono_char_width() -> f32 {
     use iced::advanced::graphics::text::{self as graphics_text, cosmic_text};

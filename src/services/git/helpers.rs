@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -42,10 +43,21 @@ pub fn kill_running_git_processes() {
     kill_running_git_processes_matching(|_| true);
 }
 
+/// Bumped by `kill_running_fetch_processes`. `fetch_all_refs` snapshots it on
+/// entry and stops between remotes once it changes — killing only the
+/// currently running subprocess would let the per-remote loop spawn the next
+/// fetch (and sit out its full timeout) after the fetch was cancelled.
+static FETCH_CANCEL_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+pub(super) fn fetch_cancel_generation() -> u64 {
+    FETCH_CANCEL_GENERATION.load(Ordering::SeqCst)
+}
+
 /// Force-kill network fetch subprocesses owned by the auto-fetch pipeline.
 /// This covers both `git fetch` and the follow-up `git ls-remote --tags`
 /// cache refresh, without interrupting unrelated local git subprocesses.
 pub fn kill_running_fetch_processes() {
+    FETCH_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst);
     kill_running_git_processes_matching(|op| op.starts_with("fetch '") || op == "ls-remote --tags");
 }
 
@@ -105,7 +117,7 @@ pub(super) fn wrap_git2_error(op: &str, err: git2::Error) -> GitError {
             op: op.to_string(),
             reason,
         },
-        (ErrorClass::Odb, _) | (_, ErrorCode::Invalid) => GitError::CorruptObject {
+        (ErrorClass::Odb, _) => GitError::CorruptObject {
             op: op.to_string(),
             reason,
         },
@@ -238,7 +250,8 @@ fn spawn_git_command_inner(
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .env("GIT_TERMINAL_PROMPT", "0");
     for (key, value) in envs {
         configured.env(key, value);
     }

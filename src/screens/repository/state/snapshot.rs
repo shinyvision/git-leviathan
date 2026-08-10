@@ -256,10 +256,6 @@ impl RepositorySnapshot {
         &self.remote_names
     }
 
-    pub(in crate::screens::repository) fn can_fast_forward_to(&self, branch_name: &str) -> bool {
-        self.fast_forward_candidates.contains(branch_name)
-    }
-
     /// Path of whichever worktree (primary or secondary) currently has
     /// `branch_name` checked out. Used to route branch-checkout gestures into
     /// a focus-swap when the target branch already lives in another worktree:

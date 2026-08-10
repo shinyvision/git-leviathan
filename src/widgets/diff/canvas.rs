@@ -22,8 +22,8 @@ use crate::{
     services::{HighlightedFile, SegmentKind, SyntaxHighlightedSpan},
     theme,
     widgets::text::{
-        self, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData, TextSelection, CONTENT_PAD_X,
-        DEFAULT_CONTENT_LINE_HEIGHT,
+        self, text_cells, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData,
+        TextSelection, CONTENT_PAD_X, DEFAULT_CONTENT_LINE_HEIGHT,
     },
 };
 
@@ -189,6 +189,12 @@ impl CachedDiffHighlightProvider {
             *eager =
                 EagerDiffHighlightProvider::new_with_capacity(old, new, self.materialized_capacity);
         }
+        // The span cache is keyed only by (side, line_number); swapping in new
+        // file contents would otherwise serve the previous file's spans (and
+        // their text) for the same line numbers.
+        if let Ok(mut cache) = self.cache.lock() {
+            cache.clear();
+        }
     }
 
     #[cfg(test)]
@@ -270,6 +276,10 @@ impl BoundedDiffHighlightCache {
             self.order.insert(tick, reference);
             self.entries.insert(reference, CacheEntry { spans, tick });
         }
+    }
+
+    fn clear(&mut self) {
+        self.entries.clear();
     }
 
     #[cfg(test)]
@@ -409,7 +419,10 @@ impl CanvasRow for DiffRow {
                 );
                 draw_single_span(
                     frame,
-                    50.0 - GUTTER_WIDTH + CONTENT_PAD_X,
+                    // The content canvas clips to its own bounds, so the text
+                    // must start at a non-negative x or the leading `@@ -` of
+                    // every hunk header gets sliced off.
+                    CONTENT_PAD_X,
                     top_y + top_pad + (h - top_pad) / 2.0,
                     content,
                     Color::WHITE,
@@ -431,13 +444,30 @@ impl CanvasRow for DiffRow {
             } => {
                 let line_bg = line_bg_color(*kind);
                 frame.fill_rectangle(Point::new(0.0, top_y), Size::new(width, h), line_bg);
+                let line_text = text.fallback();
+                // Map char columns to display cells for wide-glyph alignment.
+                // ASCII lines (the overwhelmingly common case) need no mapping
+                // — cell == char index — so we skip building anything. For
+                // non-ASCII lines build the prefix ONCE here rather than
+                // rescanning from the start per segment, which was quadratic on
+                // the hot draw path.
+                let cell_prefix = (!line_text.is_ascii()).then(|| cell_offset_prefix(line_text));
+                let col_to_cells = |col: usize| -> usize {
+                    match &cell_prefix {
+                        None => col,
+                        Some(prefix) => prefix
+                            .get(col)
+                            .copied()
+                            .unwrap_or_else(|| prefix.last().copied().unwrap_or(0)),
+                    }
+                };
                 for seg in segment_bgs {
                     let bg = segment_bg_color(seg.kind, *kind);
                     if bg == line_bg {
                         continue;
                     }
-                    let sx = CONTENT_PAD_X + seg.start_col as f32 * char_width;
-                    let ex = CONTENT_PAD_X + seg.end_col as f32 * char_width;
+                    let sx = CONTENT_PAD_X + col_to_cells(seg.start_col) as f32 * char_width;
+                    let ex = CONTENT_PAD_X + col_to_cells(seg.end_col) as f32 * char_width;
                     frame.fill_rectangle(
                         Point::new(sx, top_y),
                         Size::new((ex - sx).max(0.0), h),
@@ -478,7 +508,6 @@ fn draw_highlighted_spans(
             continue;
         }
         let color = span.style.color.unwrap_or(theme::TEXT_PRIMARY);
-        let char_count = span.text.chars().count();
         frame.fill_text(Text {
             content: span.text.clone(),
             position: Point::new(x, baseline_y),
@@ -491,8 +520,25 @@ fn draw_highlighted_spans(
             shaping: Shaping::Advanced,
             max_width: f32::INFINITY,
         });
-        x += char_count as f32 * char_width;
+        // Advance by display cells so glyphs after a wide (CJK/emoji) char in
+        // the span aren't overlapped (`text_cells` fast-paths ASCII).
+        x += text_cells(&span.text) as f32 * char_width;
     }
+}
+
+/// Cumulative display-cell offset for each character boundary of `text`:
+/// entry `i` is the number of cells occupied by the first `i` characters, so
+/// `prefix[col]` is the cell offset of column `col`. Length is
+/// `char_count + 1`.
+fn cell_offset_prefix(text: &str) -> Vec<usize> {
+    let mut prefix = Vec::with_capacity(text.len() + 1);
+    let mut acc = 0usize;
+    prefix.push(0);
+    for ch in text.chars() {
+        acc += crate::widgets::text::char_cells(ch);
+        prefix.push(acc);
+    }
+    prefix
 }
 
 fn draw_single_span(frame: &mut Frame, x: f32, y: f32, content: &str, color: Color) {
@@ -585,13 +631,15 @@ pub fn build_canvas_data(rows: Vec<DiffRow>, char_width: f32) -> Arc<TextCanvasD
 }
 
 fn compute_content_width(rows: &[DiffRow], char_w: f32) -> f32 {
-    let mut max_chars = 0usize;
+    let mut max_cells = 0usize;
     for r in rows {
-        if let DiffRow::Content { char_count, .. } = r {
-            max_chars = max_chars.max(*char_count);
+        if let DiffRow::Content { text, .. } = r {
+            // Use display cells so lines with wide (CJK/emoji) glyphs get a
+            // horizontal scroll extent that actually reaches their end.
+            max_cells = max_cells.max(text_cells(text.fallback()));
         }
     }
-    CONTENT_PAD_X * 2.0 + max_chars as f32 * char_w + 40.0
+    CONTENT_PAD_X * 2.0 + max_cells as f32 * char_w + 40.0
 }
 
 /// Callbacks wired into the repository message enum. Same set is shared

@@ -232,7 +232,14 @@ pub(super) fn error_text(msg: String) -> Element<'static, Message> {
 /// can drill in.
 pub fn build_error_widget(code: &str, message: &str) -> Element<'static, Message> {
     let truncated = if message.len() > 256 {
-        let mut t = message[..256].to_string();
+        // Slice on a char boundary — a byte index landing mid-codepoint (e.g.
+        // an oversized-image error carrying a multibyte plugin path) would
+        // otherwise panic.
+        let end = (0..=256)
+            .rev()
+            .find(|&i| message.is_char_boundary(i))
+            .unwrap_or(0);
+        let mut t = message[..end].to_string();
         t.push_str("...");
         t
     } else {

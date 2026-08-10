@@ -26,6 +26,11 @@ pub struct ConflictFileResolutionState {
     pub file_path: String,
     pub result: Option<ConflictResolutionResult>,
     pub selections: Vec<ConflictHunkSelection>,
+    /// Fingerprint of the hunk contents the current `selections` were made
+    /// against. When a reload changes hunk content but not the count, this
+    /// differs and the selections are reset (a stale selection would apply an
+    /// ours/theirs choice to a different hunk).
+    pub hunk_fingerprint: u64,
     pub selected_file_idx: usize,
     pub initial_scroll_done: bool,
     pub ignore_initial_ours_top_scroll: bool,
@@ -160,6 +165,7 @@ impl DiffPanel {
             if state.file_path == conflict_result.file_path && state.render_generation == generation
             {
                 let hunk_count = conflict_hunk_count(&conflict_result);
+                let fingerprint = conflict_hunk_fingerprint(&conflict_result);
                 let first_load = state.result.is_none();
                 state.result = Some(conflict_result);
                 if first_load {
@@ -169,9 +175,15 @@ impl DiffPanel {
                     state.ignore_next_ours_scroll = false;
                     state.ignore_next_theirs_scroll = false;
                 }
-                if state.selections.len() != hunk_count {
+                // Reset selections when the hunk count OR the hunk content
+                // changed — a same-count reload after an external edit would
+                // otherwise apply prior picks to different hunks.
+                if state.selections.len() != hunk_count
+                    || state.hunk_fingerprint != fingerprint
+                {
                     state.selections = vec![ConflictHunkSelection::default(); hunk_count];
                 }
+                state.hunk_fingerprint = fingerprint;
                 state.rebuild_canvases();
                 let file_path = state.file_path.clone();
                 let ours_content = state
@@ -490,6 +502,24 @@ pub(in crate::screens::repository) fn conflict_hunk_count(
         .iter()
         .filter(|block| matches!(block, ConflictBlock::Conflict(_)))
         .count()
+}
+
+/// Content fingerprint of a conflict's hunks. Two results with the same hunk
+/// count but different hunk content (e.g. the file was edited externally
+/// between loads) hash differently, so per-hunk selections aren't silently
+/// reused against the wrong hunk.
+pub(in crate::screens::repository) fn conflict_hunk_fingerprint(
+    result: &ConflictResolutionResult,
+) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for block in &result.blocks {
+        if let ConflictBlock::Conflict(hunk) = block {
+            hunk.ours_lines.hash(&mut hasher);
+            hunk.theirs_lines.hash(&mut hasher);
+        }
+    }
+    hasher.finish()
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -156,8 +156,13 @@ impl ServiceRegistry {
         self.traces.borrow().iter().cloned().collect()
     }
 
-    pub fn invoke(
-        &self,
+    /// Invoke a provider method WITHOUT holding a `RefCell` borrow across the
+    /// provider's Lua execution. The provider may call back into the host
+    /// (e.g. `services.register`), which needs a mutable borrow of the same
+    /// registry — holding a borrow across the call would panic. Resolution and
+    /// trace recording take short scoped borrows; the Lua call runs with none.
+    pub fn invoke_reentrant(
+        registry: &Rc<RefCell<Self>>,
         caller_plugin_id: &str,
         caller_generation_id: GenerationId,
         caller_guard: Rc<CapabilityGuard>,
@@ -167,20 +172,33 @@ impl ServiceRegistry {
     ) -> Result<serde_json::Value, String> {
         let started = Instant::now();
         let timestamp_unix_ms = now_unix_ms();
-        let provider_plugin_id = self
-            .provider_plugin_id(service_key)
-            .unwrap_or("<missing>")
-            .to_string();
 
-        // Route through the budget tracker keyed against
-        // the caller (callers are how plugins reach into a provider;
-        // tripping per caller-method keeps a single misbehaving
-        // consumer from disabling a healthy provider). The tracker
-        // skip path returns a synthetic error string that surfaces in
-        // the trace — same shape as a real failure so devtools rows
-        // stay homogeneous.
-        let tracker_opt = self.budget_tracker.borrow().clone();
+        // Phase 1 — resolve everything needed under a short borrow.
+        let (lua, function, provider_plugin_id, tracker_opt) = {
+            let reg = registry.borrow();
+            let provider_plugin_id = reg
+                .provider_plugin_id(service_key)
+                .unwrap_or("<missing>")
+                .to_string();
+            let handle = reg
+                .handles
+                .get(service_key)
+                .ok_or_else(|| format!("service '{service_key}' not registered"))?;
+            let key = handle
+                .methods
+                .get(method)
+                .ok_or_else(|| format!("service '{service_key}' has no method '{method}'"))?;
+            let function: Function = handle
+                .lua
+                .registry_value(key)
+                .map_err(|e| format!("registry: {e}"))?;
+            let tracker_opt = reg.budget_tracker.borrow().clone();
+            (Rc::clone(&handle.lua), function, provider_plugin_id, tracker_opt)
+        };
+
+        // Phase 2 — run the provider's Lua with NO registry borrow held.
         let callback_id = format!("service:{service_key}:{method}");
+        let call = || Self::call_resolved(&lua, &function, caller_guard, &args);
         let result = if let Some(tracker) = tracker_opt {
             let pid = PluginId::from(caller_plugin_id);
             match tracker.track_call::<serde_json::Value, String>(
@@ -188,18 +206,19 @@ impl ServiceRegistry {
                 &pid,
                 caller_generation_id,
                 &callback_id,
-                || self.invoke_inner(caller_guard, service_key, method, args),
+                call,
             ) {
                 PerfOutcome::Ok(v) => Ok(v),
                 PerfOutcome::Err(e) => Err(e),
                 PerfOutcome::Skipped => Err("service call skipped: circuit breaker tripped".into()),
             }
         } else {
-            self.invoke_inner(caller_guard, service_key, method, args)
+            call()
         };
 
+        // Phase 3 — record the trace under a short borrow.
         let error = result.as_ref().err().cloned();
-        self.record_trace(ServiceCallTrace {
+        registry.borrow().record_trace(ServiceCallTrace {
             caller_plugin_id: caller_plugin_id.to_string(),
             provider_plugin_id,
             service_key: service_key.to_string(),
@@ -212,38 +231,27 @@ impl ServiceRegistry {
         result
     }
 
-    fn invoke_inner(
-        &self,
+    /// Call an already-resolved provider Lua function. Independent of any
+    /// registry borrow so it can run reentrantly.
+    fn call_resolved(
+        lua: &Lua,
+        function: &Function,
         caller_guard: Rc<CapabilityGuard>,
-        service_key: &str,
-        method: &str,
-        args: serde_json::Value,
+        args: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let h = self
-            .handles
-            .get(service_key)
-            .ok_or_else(|| format!("service '{service_key}' not registered"))?;
-        let key = h
-            .methods
-            .get(method)
-            .ok_or_else(|| format!("service '{service_key}' has no method '{method}'"))?;
-        let lua: &Lua = &h.lua;
-        let f: Function = lua
-            .registry_value(key)
-            .map_err(|e| format!("registry: {e}"))?;
         let _caller_scope = CapabilityGuard::push_service_caller(caller_guard);
-        let result_lua: LuaValue = match &args {
+        let result_lua: LuaValue = match args {
             serde_json::Value::Array(arr) => {
                 let mut vargs = mlua::MultiValue::new();
                 for v in arr {
                     let lv: LuaValue = lua.to_value(v).map_err(|e| format!("arg ser: {e}"))?;
                     vargs.push_back(lv);
                 }
-                f.call(vargs).map_err(|e| format!("call: {e}"))?
+                function.call(vargs).map_err(|e| format!("call: {e}"))?
             }
             _ => {
-                let lua_arg: LuaValue = lua.to_value(&args).map_err(|e| format!("arg ser: {e}"))?;
-                f.call(lua_arg).map_err(|e| format!("call: {e}"))?
+                let lua_arg: LuaValue = lua.to_value(args).map_err(|e| format!("arg ser: {e}"))?;
+                function.call(lua_arg).map_err(|e| format!("call: {e}"))?
             }
         };
         lua.from_value(result_lua)

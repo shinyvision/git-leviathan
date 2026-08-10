@@ -448,15 +448,16 @@ pub(in crate::screens::repository) fn update(
                         .finish_with("span_count", ours_spans + theirs_spans);
                     (ours, theirs)
                 }),
-                move |(ours, theirs)| {
-                    Message::tab(
+                move |result| match result {
+                    Some((ours, theirs)) => Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::ConflictHighlightReady {
                             generation,
                             ours,
                             theirs,
                         }),
-                    )
+                    ),
+                    None => Message::App(AppMessage::NoOp),
                 },
             )
         }
@@ -536,8 +537,8 @@ pub(in crate::screens::repository) fn update(
                     );
                     diff_canvas::build_canvas_data(rows, diff_canvas::diff_char_width())
                 }),
-                move |data| {
-                    Message::tab(
+                move |data| match data {
+                    Some(data) => Message::tab(
                         tab_id,
                         RepositoryMessage::DiffPanel(DiffPanelAction::SingleFileRenderReady {
                             generation,
@@ -545,7 +546,8 @@ pub(in crate::screens::repository) fn update(
                             file_path: cb_path.clone(),
                             data,
                         }),
-                    )
+                    ),
+                    None => Message::App(AppMessage::NoOp),
                 },
             )
         }
@@ -796,13 +798,14 @@ fn run_visible_highlight_task(
                 .finish_with("highlighted", materialized.highlighted);
             materialized.highlighted
         }),
-        move |highlighted| {
-            Message::tab(
+        move |highlighted| match highlighted {
+            Some(highlighted) => Message::tab(
                 tab_id,
                 RepositoryMessage::DiffPanel(DiffPanelAction::VisibleHighlightReady {
                     highlighted,
                 }),
-            )
+            ),
+            None => Message::App(AppMessage::NoOp),
         },
     )
 }

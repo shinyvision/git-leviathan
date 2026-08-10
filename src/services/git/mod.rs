@@ -164,6 +164,10 @@ impl GitService {
         working_tree::load_dirty_snapshot(self)
     }
 
+    pub fn can_fast_forward_to(&self, target_branch: &str) -> bool {
+        loader::can_fast_forward_current_to(self, target_branch)
+    }
+
     pub fn list_worktrees(&self) -> Result<Vec<crate::core::WorktreeInfo>, GitError> {
         worktrees::list_worktrees(self)
     }
@@ -227,8 +231,13 @@ impl GitService {
         checkout::reset_branch_to_remote_and_checkout(self, branch_name, remote_ref)
     }
 
-    pub fn delete_branch(&mut self, branch_name: &str, is_remote: bool) -> Result<(), GitError> {
-        checkout::delete_branch(self, branch_name, is_remote)
+    pub fn delete_branch(
+        &mut self,
+        branch_name: &str,
+        is_remote: bool,
+        force: bool,
+    ) -> Result<(), GitError> {
+        checkout::delete_branch(self, branch_name, is_remote, force)
     }
 
     pub fn delete_branch_all(&mut self, branch_name: &str) -> Result<(), GitError> {
@@ -415,12 +424,12 @@ impl GitService {
         remotes::add_remote(self, name, pull_url, push_url)
     }
 
-    pub fn create_stash(&mut self) -> Result<(), GitError> {
-        stashes::create_stash(self)
+    pub fn create_stash(&mut self, message: Option<&str>) -> Result<(), GitError> {
+        stashes::create_stash(self, message)
     }
 
-    pub fn apply_stash(&mut self, index: usize) -> Result<StashApplyOutcome, GitError> {
-        let status = stashes::apply_stash(self, index)?;
+    pub fn apply_stash(&mut self, hash: &str) -> Result<StashApplyOutcome, GitError> {
+        let status = stashes::apply_stash(self, hash)?;
         let snapshot = self.load_repo(COMMIT_LOAD_LIMIT);
         Ok(match status {
             stashes::StashApplyStatus::Applied => StashApplyOutcome::Applied(snapshot),
@@ -428,8 +437,8 @@ impl GitService {
         })
     }
 
-    pub fn pop_stash(&mut self, index: usize) -> Result<StashApplyOutcome, GitError> {
-        let status = stashes::pop_stash(self, index)?;
+    pub fn pop_stash(&mut self, hash: &str) -> Result<StashApplyOutcome, GitError> {
+        let status = stashes::pop_stash(self, hash)?;
         let snapshot = self.load_repo(COMMIT_LOAD_LIMIT);
         Ok(match status {
             stashes::StashApplyStatus::Applied => StashApplyOutcome::Applied(snapshot),
@@ -437,8 +446,8 @@ impl GitService {
         })
     }
 
-    pub fn drop_stash(&mut self, index: usize) -> Result<(), GitError> {
-        stashes::drop_stash(self, index)
+    pub fn drop_stash(&mut self, hash: &str) -> Result<(), GitError> {
+        stashes::drop_stash(self, hash)
     }
 
     pub(crate) fn current_branch_name(&self) -> Option<String> {
@@ -630,11 +639,52 @@ mod tests {
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
         service
-            .delete_branch("feature/delete-me", false)
+            .delete_branch("feature/delete-me", false, true)
             .expect("delete should succeed");
 
         assert!(repo
             .find_branch("feature/delete-me", git2::BranchType::Local)
+            .is_err());
+    }
+
+    #[test]
+    fn delete_branch_without_force_refuses_unmerged_local_branch() {
+        use crate::services::test_support::{commit_all, write_file};
+        let (temp_repo, repo) = init_test_repo("delete_unmerged_branch");
+        let default_branch = repo
+            .head()
+            .expect("repo should have head")
+            .shorthand()
+            .expect("head should be utf-8")
+            .to_string();
+        // Create a branch with a commit that is NOT reachable from HEAD.
+        create_branch(&repo, "feature/unmerged");
+        checkout_branch_for_setup(&repo, "feature/unmerged");
+        write_file(&temp_repo.path, "unmerged.txt", "unmerged work\n");
+        commit_all(&repo, "unmerged commit");
+        // Switch back off the branch so it isn't HEAD.
+        checkout_branch_for_setup(&repo, &default_branch);
+
+        let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        let err = service
+            .delete_branch("feature/unmerged", false, false)
+            .expect_err("non-force delete of an unmerged branch should fail");
+        assert!(
+            err.to_string().contains("not fully merged"),
+            "error should explain the branch is unmerged: {err}"
+        );
+        assert!(
+            repo.find_branch("feature/unmerged", git2::BranchType::Local)
+                .is_ok(),
+            "branch must survive a refused non-force delete"
+        );
+
+        // Force delete removes it.
+        service
+            .delete_branch("feature/unmerged", false, true)
+            .expect("force delete should succeed");
+        assert!(repo
+            .find_branch("feature/unmerged", git2::BranchType::Local)
             .is_err());
     }
 
@@ -646,7 +696,7 @@ mod tests {
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
         let err = service
-            .delete_branch("feature/current", false)
+            .delete_branch("feature/current", false, true)
             .expect_err("current branch delete should fail");
 
         assert!(err.is_cant_delete_head());
@@ -662,7 +712,7 @@ mod tests {
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
         service
-            .delete_branch("feature/remote-only", true)
+            .delete_branch("feature/remote-only", true, true)
             .expect("delete should succeed");
 
         assert!(repo
@@ -677,7 +727,7 @@ mod tests {
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
         service
-            .delete_branch("fork/main", true)
+            .delete_branch("fork/main", true, true)
             .expect("delete should target exact fork ref");
 
         let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
@@ -725,7 +775,7 @@ mod tests {
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
         service
-            .delete_branch("feature/remote-only", true)
+            .delete_branch("feature/remote-only", true, true)
             .expect("remote delete should succeed");
 
         let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
@@ -832,7 +882,11 @@ mod tests {
         let mut repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
         let stash_names = stash_names(&mut repo);
         assert_eq!(stash_names.len(), 1);
-        assert!(stash_names[0].starts_with(&format!("WIP on {}:", old_branch)));
+        assert!(
+            stash_names[0].starts_with(&format!("On {}: Git Leviathan auto-stash", old_branch)),
+            "auto-stash should carry a descriptive message, got: {}",
+            stash_names[0]
+        );
 
         // After a failed stash pop the working tree must be clean — no conflict
         // markers or A/B diff mixed in. restore_stash force-checks out HEAD after

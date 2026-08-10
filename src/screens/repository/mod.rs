@@ -10,6 +10,7 @@ pub(crate) mod state;
 mod view;
 
 pub use messages::{RepositoryFocusTarget, RepositoryMessage};
+pub(crate) use messages::GitWriteIntent;
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;
@@ -696,8 +697,8 @@ impl RepositoryScreen {
         self.data.operations.is_writing()
     }
 
-    pub(crate) fn is_blocking_git_write_in_flight(&self) -> bool {
-        self.data.operations.is_blocking_write()
+    pub(crate) fn is_git_fetch_in_flight(&self) -> bool {
+        self.data.operations.is_fetching()
     }
 
     pub(crate) fn mark_watcher_reload_pending(&mut self, path: impl Into<std::path::PathBuf>) {

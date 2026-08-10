@@ -21,6 +21,10 @@ struct TerminalState {
     focused: bool,
     blink_epoch: Instant,
     last_redraw: Instant,
+    /// Last bounds we pushed to the registry. Compared before locking so a
+    /// mouse-move/keypress that doesn't change the size skips the registry
+    /// mutex entirely (this runs at the top of every `update`).
+    last_bounds: Option<(u16, u16, u16, u16)>,
 }
 
 impl Default for TerminalState {
@@ -30,6 +34,7 @@ impl Default for TerminalState {
             focused: false,
             blink_epoch: now,
             last_redraw: now,
+            last_bounds: None,
         }
     }
 }
@@ -104,7 +109,13 @@ impl<Message> Widget<Message, Theme, Renderer> for TerminalView {
     ) {
         let state = tree.state.downcast_mut::<TerminalState>();
         let bounds = layout.bounds();
-        resize_to_bounds(&self.registry, self.id, bounds, self.font_size);
+        if let Some(dims) = terminal_dims(bounds, self.font_size) {
+            if state.last_bounds != Some(dims) {
+                state.last_bounds = Some(dims);
+                let (rows, cols, px_w, px_h) = dims;
+                let _ = self.registry.resize(self.id, rows, cols, px_w, px_h);
+            }
+        }
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
@@ -166,14 +177,20 @@ impl<Message> Widget<Message, Theme, Renderer> for TerminalView {
             return;
         }
 
-        draw_terminal(renderer, bounds, viewport, &snapshot, self.font_size);
+        // Clip to bounds so a cell straddling the right/bottom edge (common
+        // mid-resize, before the PTY re-wraps) can't bleed its background or
+        // glyph — and the cursor quad — over adjacent panels.
+        let clip = bounds.intersection(viewport).unwrap_or(bounds);
         let state = tree.state.downcast_ref::<TerminalState>();
-        if state.focused
+        let draw_cursor_now = state.focused
             && snapshot.cursor_visible
-            && cursor_visible(state.blink_epoch, state.last_redraw)
-        {
-            draw_cursor(renderer, bounds, &snapshot, self.font_size);
-        }
+            && cursor_visible(state.blink_epoch, state.last_redraw);
+        renderer.with_layer(clip, |renderer| {
+            draw_terminal(renderer, bounds, &clip, &snapshot, self.font_size);
+            if draw_cursor_now {
+                draw_cursor(renderer, bounds, &snapshot, self.font_size);
+            }
+        });
     }
 
     fn mouse_interaction(
@@ -301,24 +318,17 @@ fn draw_message(
     );
 }
 
-fn resize_to_bounds(
-    registry: &TerminalRegistry,
-    id: TerminalId,
-    bounds: Rectangle,
-    font_size: f32,
-) {
+/// `(rows, cols, pixel_width, pixel_height)` for the given bounds, or `None`
+/// when the widget is too small to host a terminal.
+fn terminal_dims(bounds: Rectangle, font_size: f32) -> Option<(u16, u16, u16, u16)> {
     if bounds.width < 1.0 || bounds.height < 1.0 {
-        return;
+        return None;
     }
     let cols = (bounds.width / cell_width(font_size)).floor().max(2.0) as u16;
     let rows = (bounds.height / cell_height(font_size)).floor().max(2.0) as u16;
-    let _ = registry.resize(
-        id,
-        rows,
-        cols,
-        bounds.width.round().clamp(0.0, f32::from(u16::MAX)) as u16,
-        bounds.height.round().clamp(0.0, f32::from(u16::MAX)) as u16,
-    );
+    let px_w = bounds.width.round().clamp(0.0, f32::from(u16::MAX)) as u16;
+    let px_h = bounds.height.round().clamp(0.0, f32::from(u16::MAX)) as u16;
+    Some((rows, cols, px_w, px_h))
 }
 
 fn key_event_bytes(event: &keyboard::Event, application_cursor: bool) -> Option<Vec<u8>> {

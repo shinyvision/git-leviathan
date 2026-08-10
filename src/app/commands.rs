@@ -43,8 +43,11 @@ impl App {
                     "git_leviathan: failed to open repo in tab {}: {}",
                     tab_id, e
                 );
-                self.tabs.drop_failed_tab(tab_id);
-                self.show_toast(ToastData::error("Failed to Open Repository", e.to_string()))
+                let rehydrate = self.tabs.drop_failed_tab(tab_id);
+                Task::batch(vec![
+                    rehydrate,
+                    self.show_toast(ToastData::error("Failed to Open Repository", e.to_string())),
+                ])
             }
         }
     }
@@ -104,7 +107,12 @@ impl App {
             CoreCommandAction::CloseTab { path } => {
                 let path = path.or_else(|| self.active_tab_path());
                 if let Some(path) = path {
-                    let _ = self.apply_tab_registry_op(TabRegistryOp::Remove(path));
+                    // Consume the task: closing the active tab lands on a
+                    // (possibly hibernated) neighbor whose rehydrate task must
+                    // run, or it stays stuck on "Loading repository…".
+                    if let Some(task) = self.apply_tab_registry_op(TabRegistryOp::Remove(path)) {
+                        return task;
+                    }
                 }
                 Task::none()
             }
@@ -241,6 +249,8 @@ fn syntax_grammar_command_task(
     run: impl FnOnce() -> Result<String, String> + Send + 'static,
 ) -> Task<Message> {
     Task::perform(presentation_work(run), move |result| {
+        let result =
+            result.unwrap_or_else(|| Err("grammar command task failed unexpectedly".to_string()));
         Message::App(AppMessage::SyntaxGrammarCommandFinished(
             SyntaxGrammarCommandOutcome {
                 success_title: success_title.to_string(),

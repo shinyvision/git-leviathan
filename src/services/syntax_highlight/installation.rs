@@ -446,7 +446,15 @@ impl GrammarInstallationService {
             .unwrap_or_else(|| {
                 GrammarLanguageInstallStatus::missing(language_key, available_version)
             });
-        if cached.status == GrammarInstallStatus::Installed {
+        // A cached `Installed` with no package on disk, or a cached
+        // `Installing` (an install runs synchronously, so a persisted one is a
+        // crash remnant — no in-process install survives a restart), are both
+        // stale: report Missing so the language can be re-queued/retried
+        // instead of stranding in a state with no install action.
+        if matches!(
+            cached.status,
+            GrammarInstallStatus::Installed | GrammarInstallStatus::Installing
+        ) {
             GrammarLanguageInstallStatus::missing(cached.language, cached.available_version)
         } else {
             cached

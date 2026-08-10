@@ -1081,6 +1081,7 @@ impl PluginHost {
                 }
             };
             let cb_id = format!("slot:{handler_key}");
+            self.bump_lua_activity();
             match self
                 .budget_tracker
                 .track_call::<Option<Table>, mlua::Error>(

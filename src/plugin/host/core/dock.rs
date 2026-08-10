@@ -194,6 +194,7 @@ impl PluginHost {
         let pid = PluginId::from(plugin_id);
         let generation_id = plugin.generation.generation_id;
         let callback_id = format!("dock:{id}:update");
+        self.bump_lua_activity();
         let result = self.budget_tracker.track_call::<LuaValue, mlua::Error>(
             CallbackKind::UiCallback,
             &pid,

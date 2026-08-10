@@ -303,6 +303,27 @@ pub struct CommandRegistry {
     /// Lookups are linear over the small command set — every gate
     /// (palette filter, dispatch) walks the whole list anyway.
     entries: Vec<CommandEntry>,
+    /// Identity of the command currently detached for dispatch, plus
+    /// whether an unload/reload dropped it while it ran. Prevents the
+    /// reattach from resurrecting a command a mid-dispatch
+    /// `drop_for_plugin`/`drop_for_generation` already removed.
+    detached: Option<DetachedDispatch>,
+}
+
+#[derive(Clone)]
+struct DetachedDispatch {
+    plugin_id: String,
+    generation_id: Option<GenerationId>,
+    dropped: bool,
+}
+
+impl DetachedDispatch {
+    fn matches_plugin(&self, plugin_id: &str) -> bool {
+        self.plugin_id == plugin_id
+    }
+    fn matches_generation(&self, plugin_id: &str, generation_id: GenerationId) -> bool {
+        self.plugin_id == plugin_id && self.generation_id == Some(generation_id)
+    }
 }
 
 impl CommandRegistry {
@@ -386,6 +407,11 @@ impl CommandRegistry {
                 i += 1;
             }
         }
+        if let Some(detached) = self.detached.as_mut() {
+            if detached.matches_plugin(plugin_id) {
+                detached.dropped = true;
+            }
+        }
         removed
     }
 
@@ -406,6 +432,11 @@ impl CommandRegistry {
                 removed.push(self.entries.remove(i));
             } else {
                 i += 1;
+            }
+        }
+        if let Some(detached) = self.detached.as_mut() {
+            if detached.matches_generation(plugin_id, generation_id) {
+                detached.dropped = true;
             }
         }
         removed
@@ -1145,7 +1176,13 @@ fn detach_command_for_dispatch(
         .entries
         .iter()
         .position(|entry| entry.descriptor.name == name)?;
-    Some((registry.entries.remove(index), index))
+    let entry = registry.entries.remove(index);
+    registry.detached = Some(DetachedDispatch {
+        plugin_id: entry.descriptor.plugin_id.clone(),
+        generation_id: entry.descriptor.generation_id,
+        dropped: false,
+    });
+    Some((entry, index))
 }
 
 fn reattach_command_after_dispatch(
@@ -1154,6 +1191,12 @@ fn reattach_command_after_dispatch(
     original_index: usize,
 ) {
     let mut registry = commands.borrow_mut();
+    let dropped = registry.detached.take().is_some_and(|d| d.dropped);
+    // A reload/unload during dispatch already removed this command's live
+    // entry; reinserting the detached copy would resurrect a stale Lua key.
+    if dropped {
+        return;
+    }
     let insert_index = original_index.min(registry.entries.len());
     registry.entries.insert(insert_index, entry);
 }

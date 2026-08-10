@@ -7,6 +7,8 @@ use crate::message::Message;
 use crate::plugin::ui::focus::FocusReason;
 use crate::screens::repository::RepositoryMessage;
 
+use crate::screens::repository::GitWriteIntent;
+
 use super::fetch_policy::FetchCancellation;
 use super::App;
 
@@ -57,7 +59,7 @@ impl App {
             self.pending_focus_reason = Some(FocusReason::Keymap);
         }
         match message.git_write_intent() {
-            Some(_) => self.request_git_operation(tab_id, message),
+            Some(intent) => self.request_git_operation(tab_id, message, intent),
             None => self.dispatch_repository_message(tab_id, message),
         }
     }
@@ -77,10 +79,17 @@ impl App {
         &mut self,
         tab_id: TabId,
         message: RepositoryMessage,
+        intent: GitWriteIntent,
     ) -> Task<Message> {
-        let _ = self.cancel_active_fetch();
+        // Ref-mutating writes pre-empt an in-flight background fetch so the
+        // two never contend on git's ref locks. Index-only writes
+        // (stage/unstage/commit) touch disjoint state and run concurrently
+        // with it — a slow remote must never delay them.
+        if intent == GitWriteIntent::Normal {
+            let _ = self.cancel_active_fetch();
+        }
 
-        if self.git_operation_in_flight() {
+        if self.repository_write_in_flight() {
             self.git_queue.push_back_repository(tab_id, message);
             return Task::none();
         }
@@ -98,7 +107,7 @@ impl App {
             return Task::none();
         }
         let mut tasks = Vec::new();
-        while !self.git_operation_in_flight() {
+        while !self.repository_write_in_flight() {
             let Some(operation) = self.git_queue.pop_front() else {
                 break;
             };
@@ -113,10 +122,6 @@ impl App {
             tasks.push(task);
         }
         Task::batch(tasks)
-    }
-
-    pub(super) fn git_operation_in_flight(&self) -> bool {
-        self.fetch.is_fetching() || self.repository_write_in_flight()
     }
 
     pub(super) fn repository_write_in_flight(&self) -> bool {

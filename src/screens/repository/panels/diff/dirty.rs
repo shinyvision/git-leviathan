@@ -114,8 +114,10 @@ impl DiffPanel {
     ) -> DiffPanelAction {
         self.center_view_mode = super::CenterViewMode::DiffView;
         self.commit_file_diff = None;
+        self.merged_file_diff = None;
         self.diff_selection = None;
         self.diff_scroll_y = 0.0;
+        self.diff_scroll_x = 0.0;
         self.diff_viewport_height = None;
         self.text_search = None;
         self.highlight_scheduler.reset();
@@ -127,6 +129,7 @@ impl DiffPanel {
                 file_path: path.clone(),
                 result: None,
                 selections: vec![],
+                hunk_fingerprint: 0,
                 selected_file_idx,
                 initial_scroll_done: false,
                 ignore_initial_ours_top_scroll: false,

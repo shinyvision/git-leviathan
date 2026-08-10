@@ -105,6 +105,18 @@ pub(super) fn confirm_stash_delete(
     else {
         return DialogDispatch::Task(Task::none());
     };
+    // Resolve the stash's stable commit hash from the current sections so a
+    // shifted index (auto-stash pushed/popped since the dialog opened) can't
+    // drop the wrong stash.
+    let Some(stash_hash) = ctx
+        .sidebar_sections
+        .iter()
+        .flat_map(|section| section.stashes.iter())
+        .find(|stash| stash.stash_index == stash_index)
+        .map(|stash| stash.hash.clone())
+    else {
+        return DialogDispatch::Task(Task::none());
+    };
     let Some(operation_id) = ctx.operations.begin_write() else {
         return DialogDispatch::Task(Task::none());
     };
@@ -118,7 +130,7 @@ pub(super) fn confirm_stash_delete(
     let task = Task::perform(
         git_write_work(move || {
             repository
-                .drop_stash(stash_index)
+                .drop_stash(&stash_hash)
                 .map(|s| presenter.project_loaded(s))
         }),
         move |result| {
@@ -312,7 +324,7 @@ pub(super) fn confirm_delete_branch(
     let task = Task::perform(
         git_write_work(move || {
             repository
-                .delete_branch(&branch_ref, is_remote)
+                .delete_branch(&branch_ref, is_remote, true)
                 .map(|s| presenter.project_loaded(s))
         }),
         move |result| {

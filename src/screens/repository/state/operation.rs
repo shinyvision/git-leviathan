@@ -6,7 +6,6 @@ pub struct OperationId(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OperationKind {
     GitWrite,
-    Fetch,
     StageFile,
     StageAll,
     UnstageFile,
@@ -21,7 +20,6 @@ impl OperationKind {
     pub(crate) fn label(self) -> Option<&'static str> {
         match self {
             Self::GitWrite => Some("Working..."),
-            Self::Fetch => None,
             Self::StageFile => Some("Staging..."),
             Self::StageAll => Some("Staging..."),
             Self::UnstageFile => Some("Unstaging..."),
@@ -34,10 +32,14 @@ impl OperationKind {
     }
 }
 
+/// A background fetch occupies its own slot: it must never reject or delay
+/// user writes, which touch disjoint git state (`.git/index` vs remote refs)
+/// and are serialized against each other via `active_write` only.
 #[derive(Debug, Default)]
 pub(crate) struct OperationCoordinator {
     next_id: u64,
     active_write: Option<(OperationId, OperationKind)>,
+    active_fetch: Option<OperationId>,
     pending_watcher_reload: Option<PathBuf>,
 }
 
@@ -51,7 +53,12 @@ impl OperationCoordinator {
     }
 
     pub(crate) fn begin_fetch(&mut self) -> Option<OperationId> {
-        self.begin_write_kind(OperationKind::Fetch)
+        if self.active_fetch.is_some() || self.active_write.is_some() {
+            return None;
+        }
+        let id = self.next_id();
+        self.active_fetch = Some(id);
+        Some(id)
     }
 
     pub(crate) fn begin_write_kind(&mut self, kind: OperationKind) -> Option<OperationId> {
@@ -63,17 +70,25 @@ impl OperationCoordinator {
         Some(id)
     }
 
+    /// Finishes the operation holding `id`, whichever slot it lives in.
     pub(crate) fn finish_write(&mut self, id: OperationId) -> bool {
-        Self::finish(&mut self.active_write, id)
+        if self.active_write.is_some_and(|(active, _)| active == id) {
+            self.active_write = None;
+            return true;
+        }
+        if self.active_fetch == Some(id) {
+            self.active_fetch = None;
+            return true;
+        }
+        false
     }
 
     pub(crate) fn is_writing(&self) -> bool {
         self.active_write.is_some()
     }
 
-    pub(crate) fn is_blocking_write(&self) -> bool {
-        self.active_kind()
-            .is_some_and(|kind| kind != OperationKind::Fetch)
+    pub(crate) fn is_fetching(&self) -> bool {
+        self.active_fetch.is_some()
     }
 
     pub(crate) fn active_kind(&self) -> Option<OperationKind> {
@@ -100,15 +115,6 @@ impl OperationCoordinator {
     fn next_id(&mut self) -> OperationId {
         self.next_id += 1;
         OperationId(self.next_id)
-    }
-
-    fn finish(slot: &mut Option<(OperationId, OperationKind)>, id: OperationId) -> bool {
-        if slot.is_some_and(|(active_id, _)| active_id == id) {
-            *slot = None;
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -166,18 +172,33 @@ mod tests {
     }
 
     #[test]
-    fn fetch_kind_uses_same_backpressure_slot() {
+    fn fetch_does_not_block_writes() {
         let mut ops = OperationCoordinator::new();
-        let first = ops.begin_fetch().unwrap();
+        let fetch = ops.begin_fetch().unwrap();
 
-        assert_eq!(ops.active_kind(), Some(OperationKind::Fetch));
-        assert!(ops.is_writing());
-        assert!(!ops.is_blocking_write());
+        assert!(ops.is_fetching());
+        assert!(!ops.is_writing());
         assert_eq!(ops.active_label(), None);
-        assert!(ops.begin_write().is_none());
+        assert!(ops.begin_fetch().is_none());
 
-        assert!(ops.finish_write(first));
-        assert!(ops.begin_write().is_some());
+        let write = ops.begin_write().unwrap();
+        assert!(ops.is_writing());
+
+        assert!(ops.finish_write(write));
+        assert!(ops.is_fetching());
+        assert!(ops.finish_write(fetch));
+        assert!(!ops.is_fetching());
+    }
+
+    #[test]
+    fn fetch_does_not_start_during_write() {
+        let mut ops = OperationCoordinator::new();
+        let write = ops.begin_write().unwrap();
+
+        assert!(ops.begin_fetch().is_none());
+
+        assert!(ops.finish_write(write));
+        assert!(ops.begin_fetch().is_some());
     }
 
     #[test]

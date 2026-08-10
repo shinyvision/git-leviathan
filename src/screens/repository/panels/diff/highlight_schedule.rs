@@ -298,6 +298,21 @@ pub(in crate::screens::repository) fn highlight_scheduled_requests_with_stats(
     }
 
     let service = crate::services::syntax_highlight::get_syntax_service();
+    // `syntax_status_for_document` scans installed packages on disk; compute
+    // the missing-grammar flag once per side rather than per request so a
+    // missing-grammar diff doesn't re-scan for every line in the batch.
+    let old_missing_grammar = old_document.is_some_and(|doc| {
+        matches!(
+            service.syntax_status_for_document(doc),
+            SyntaxGrammarStatus::Missing { .. }
+        )
+    });
+    let new_missing_grammar = new_document.is_some_and(|doc| {
+        matches!(
+            service.syntax_status_for_document(doc),
+            SyntaxGrammarStatus::Missing { .. }
+        )
+    });
     for request in requests {
         if stats.highlighted >= budget {
             break;
@@ -323,10 +338,11 @@ pub(in crate::screens::repository) fn highlight_scheduled_requests_with_stats(
             stats.missing_documents += 1;
             continue;
         };
-        if matches!(
-            service.syntax_status_for_document(document),
-            SyntaxGrammarStatus::Missing { .. }
-        ) {
+        let side_missing_grammar = match request.reference.side {
+            DiffHighlightSide::Old => old_missing_grammar,
+            DiffHighlightSide::New => new_missing_grammar,
+        };
+        if side_missing_grammar {
             stats.missing_grammars += 1;
         }
         let before = document.highlight_stats();

@@ -235,7 +235,9 @@ pub(super) fn update(
                 && !is_remote
                 && !current.is_empty()
                 && current != branch_name
-                && ctx.data.snapshot.can_fast_forward_to(&branch_name);
+                // Computed on demand for just this branch (one ancestry walk)
+                // rather than eagerly for every branch on load.
+                && ctx.repository.can_fast_forward_to(&branch_name);
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
             ctx.data
                 .branch_popout

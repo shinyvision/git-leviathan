@@ -26,7 +26,7 @@ fn shell_api_test_lock() -> &'static Mutex<()> {
 fn terminal_text(id: u64) -> String {
     let snapshot = registry().snapshot(TerminalId::from(id));
     let mut rows = vec![String::new(); snapshot.rows as usize];
-    for cell in snapshot.cells {
+    for cell in &snapshot.cells {
         if !cell.text.is_empty() {
             rows[cell.row as usize].push_str(&cell.text);
         }

@@ -133,17 +133,19 @@ pub fn install(
                                     .map_err(|e| mlua::Error::external(format!("arg ser: {e}")))?;
                                 arr.push(j);
                             }
-                            let result = registry_for_method
-                                .borrow()
-                                .invoke(
-                                    &caller_plugin_id,
-                                    caller_generation_id,
-                                    Rc::clone(&caller_guard),
-                                    &key_for_method,
-                                    &mname,
-                                    serde_json::Value::Array(arr),
-                                )
-                                .map_err(mlua::Error::external)?;
+                            // Do NOT hold a borrow of the registry across the
+                            // provider call — it may reentrantly register a
+                            // service (needing a mutable borrow).
+                            let result = crate::plugin::services::ServiceRegistry::invoke_reentrant(
+                                &registry_for_method,
+                                &caller_plugin_id,
+                                caller_generation_id,
+                                Rc::clone(&caller_guard),
+                                &key_for_method,
+                                &mname,
+                                serde_json::Value::Array(arr),
+                            )
+                            .map_err(mlua::Error::external)?;
                             let v: LuaValue = consumer_lua.to_value(&result)?;
                             Ok(v)
                         })?,

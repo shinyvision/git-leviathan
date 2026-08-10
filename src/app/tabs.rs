@@ -64,6 +64,10 @@ pub struct TabManager {
     /// persisted-tab list on messages that left the tab set untouched.
     revision: u64,
     presenter: Arc<dyn Presenter>,
+    /// Cached settings connection. `SettingsService::new` opens the SQLite DB
+    /// and runs migrations; without caching, every tab open/close/reorder and
+    /// every fetch-driven most-recent write reopened it on the UI thread.
+    settings: Option<SettingsService>,
 }
 
 #[derive(Debug)]
@@ -82,7 +86,18 @@ impl TabManager {
             active_tab_persisted_as_recent: false,
             revision: 0,
             presenter,
+            settings: None,
         }
+    }
+
+    /// Lazily open (once) and return the cached settings connection. Returns
+    /// `None` if the DB can't be opened; callers treat persistence as
+    /// best-effort just as they did with the per-call `SettingsService::new`.
+    fn settings(&mut self) -> Option<&SettingsService> {
+        if self.settings.is_none() {
+            self.settings = SettingsService::new().ok();
+        }
+        self.settings.as_ref()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -229,7 +244,7 @@ impl TabManager {
             return Ok(Task::none());
         }
 
-        if let Ok(settings) = SettingsService::new() {
+        if let Some(settings) = self.settings() {
             let _ = settings.add_repo(&repo_path);
         }
 
@@ -267,26 +282,29 @@ impl TabManager {
 
     /// Remove a tab on user-initiated close. Writes the removal to settings
     /// so it doesn't re-open on next launch.
-    pub fn close_tab(&mut self, tab_id: TabId) {
+    pub fn close_tab(&mut self, tab_id: TabId) -> Task<Message> {
         let tab_idx = self.tabs.iter().position(|t| t.id == tab_id);
         let repo_path = tab_idx.and_then(|i| self.tabs[i].repo_path().map(ToOwned::to_owned));
-        self.remove_tab_inner(tab_id, tab_idx);
-        if let (Ok(settings), Some(path)) = (SettingsService::new(), repo_path) {
-            let _ = settings.remove_repo(&path);
+        let task = self.remove_tab_inner(tab_id, tab_idx);
+        if let Some(path) = repo_path {
+            if let Some(settings) = self.settings() {
+                let _ = settings.remove_repo(&path);
+            }
         }
+        task
     }
 
     /// Remove a tab whose initial open failed (GitError). Does not touch
     /// settings — a repo that failed to open should stay in the persisted
     /// list so the user can retry next launch.
-    pub fn drop_failed_tab(&mut self, tab_id: TabId) {
+    pub fn drop_failed_tab(&mut self, tab_id: TabId) -> Task<Message> {
         let tab_idx = self.tabs.iter().position(|t| t.id == tab_id);
-        self.remove_tab_inner(tab_id, tab_idx);
+        self.remove_tab_inner(tab_id, tab_idx)
     }
 
-    fn remove_tab_inner(&mut self, tab_id: TabId, tab_idx: Option<usize>) {
+    fn remove_tab_inner(&mut self, tab_id: TabId, tab_idx: Option<usize>) -> Task<Message> {
         if !self.tabs.iter().any(|t| t.id == tab_id) {
-            return;
+            return Task::none();
         }
         self.tabs.retain(|t| t.id != tab_id);
         self.screens.remove(&tab_id);
@@ -298,10 +316,22 @@ impl TabManager {
                 .unwrap_or(0)
                 .min(self.tabs.len().saturating_sub(1));
             if let Some(tab) = self.tabs.get(new_idx) {
-                self.active_tab_id = tab.id;
+                let new_active = tab.id;
+                self.active_tab_id = new_active;
                 self.active_tab_persisted_as_recent = false;
+                // The neighbor we just landed on may have been hibernated when
+                // the user last switched away — rehydrate it so its panels
+                // aren't left blank until the next tab switch.
+                if let Some(screen) = self.screens.get_mut(&new_active) {
+                    if screen.is_hibernated() {
+                        return screen.rehydrate_task();
+                    }
+                } else if let Some(screen) = self.plugin_screens.get_mut(&new_active) {
+                    screen.set_focused(true);
+                }
             }
         }
+        Task::none()
     }
 
     /// Next tab id for Ctrl+Tab. `None` when fewer than two tabs exist.
@@ -358,13 +388,13 @@ impl TabManager {
         self.persist_tab_order();
     }
 
-    fn persist_tab_order(&self) {
-        if let Ok(settings) = SettingsService::new() {
-            let paths: Vec<String> = self
-                .tabs
-                .iter()
-                .filter_map(|t| t.repo_path().map(ToOwned::to_owned))
-                .collect();
+    fn persist_tab_order(&mut self) {
+        let paths: Vec<String> = self
+            .tabs
+            .iter()
+            .filter_map(|t| t.repo_path().map(ToOwned::to_owned))
+            .collect();
+        if let Some(settings) = self.settings() {
             let _ = settings.set_repo_order(&paths);
         }
     }
@@ -423,7 +453,7 @@ impl TabManager {
             .find(|t| t.id == tab_id)
             .and_then(|t| t.repo_path().map(ToOwned::to_owned))
         {
-            if let Ok(settings) = SettingsService::new() {
+            if let Some(settings) = self.settings() {
                 let _ = settings.set_most_recent_repo(&repo_path);
             }
             self.active_tab_persisted_as_recent = true;

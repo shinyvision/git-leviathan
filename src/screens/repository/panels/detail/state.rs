@@ -700,7 +700,7 @@ impl DetailPanel {
             (None, false, 0)
         };
 
-        let actions_busy = data.operations.is_blocking_write();
+        let actions_busy = data.operations.is_writing();
         let fast_actions_busy = actions_busy;
         let selected_dirty_files = self.valid_selected_dirty_files(data, selection);
         let dirty_selection_counts = DirtySelectionCounts::from_keys(&selected_dirty_files);

@@ -97,6 +97,13 @@ fn key(raw: &str) -> dialog::model::DialogKey {
 }
 
 fn dialog_ctx<'a>(operations: &'a mut OperationCoordinator) -> DialogCtx<'a> {
+    dialog_ctx_with_sections(operations, &[])
+}
+
+fn dialog_ctx_with_sections<'a>(
+    operations: &'a mut OperationCoordinator,
+    sidebar_sections: &'a [crate::view_model::SidebarSection],
+) -> DialogCtx<'a> {
     let gateway = GitRepositoryGateway::from_path(".");
     DialogCtx {
         repository: gateway.clone(),
@@ -104,7 +111,7 @@ fn dialog_ctx<'a>(operations: &'a mut OperationCoordinator) -> DialogCtx<'a> {
         presenter: Arc::new(DefaultPresenter::new()),
         tab_id: TabId(1),
         active_path: PathBuf::from("."),
-        sidebar_sections: &[],
+        sidebar_sections,
         operations,
     }
 }
@@ -498,13 +505,25 @@ fn stash_delete_confirm_button_starts_native_drop_stash() {
         display_name: "WIP".into(),
     }));
     let mut operations = OperationCoordinator::new();
+    // The drop path resolves the stash's stable commit hash from the sections,
+    // so the section must contain a stash at the requested index.
+    let sections = vec![crate::view_model::SidebarSection {
+        kind: crate::view_model::SidebarSectionKind::Stashes,
+        count: 1,
+        branches: Vec::new(),
+        stashes: vec![crate::view_model::SidebarStash {
+            stash_index: 2,
+            hash: "abc123".into(),
+            display_name: "WIP".into(),
+        }],
+    }];
 
     let dispatch = m.dispatch(
         OverlayPanelAction::DialogButtonPressed {
             dialog_id: DialogId(stash_delete::DIALOG_ID.into()),
             button_id: DialogButtonId(stash_delete::CONFIRM_BUTTON_ID.into()),
         },
-        dialog_ctx(&mut operations),
+        dialog_ctx_with_sections(&mut operations, &sections),
     );
 
     assert!(matches!(dispatch, DialogDispatch::Task(_)));

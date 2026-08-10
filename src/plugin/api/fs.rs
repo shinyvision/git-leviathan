@@ -289,11 +289,21 @@ pub fn install(lua: &Lua, leviathan: &Table, guard: Rc<CapabilityGuard>) -> mlua
         })?,
     )?;
 
+    let g = Rc::clone(&guard);
+    let plugin_root = guard.plugin_root().to_path_buf();
     fs_tbl.set(
         "canonicalize",
-        lua.create_function(|_, path: String| match fs::canonicalize(&path) {
-            Ok(p) => Ok((Some(p.to_string_lossy().into_owned()), None::<String>)),
-            Err(e) => Ok((None, Some(e.to_string()))),
+        lua.create_function(move |_, path: String| {
+            // Gate like every other fs read: canonicalize reveals path
+            // existence and symlink targets, so an ungated call leaks
+            // filesystem structure to a plugin without fs:read.
+            let resolved = resolve_against_plugin_root(&plugin_root, &path);
+            g.check_fs_read(Path::new(&resolved))
+                .map_err(mlua::Error::external)?;
+            match fs::canonicalize(&resolved) {
+                Ok(p) => Ok((Some(p.to_string_lossy().into_owned()), None::<String>)),
+                Err(e) => Ok((None, Some(e.to_string()))),
+            }
         })?,
     )?;
 

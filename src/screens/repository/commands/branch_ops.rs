@@ -208,7 +208,7 @@ pub(in crate::screens::repository) fn delete_branch_direct(
     let tab_id = screen.tab_id;
     Task::perform(
         git_write_work(move || {
-            repo.delete_branch(&branch_ref, is_remote)
+            repo.delete_branch(&branch_ref, is_remote, true)
                 .map(|s| presenter.project_loaded(s))
         }),
         move |result| {

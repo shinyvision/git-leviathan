@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -656,6 +656,24 @@ pub struct ScopeResolver<'a> {
     pub workdir: Option<&'a Path>,
 }
 
+/// Collapse `.` and `..` components without touching the filesystem. Used as
+/// the scope-check fallback for paths that don't exist yet (so canonicalize
+/// can't resolve them). Purely lexical: it does not follow symlinks, which is
+/// why the existing-path branch still prefers `fs::canonicalize`.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 impl ScopeResolver<'_> {
     /// True when `path` (after canonicalisation) lives inside the
     /// directory the granted capability names. Returns the resolved
@@ -673,8 +691,12 @@ impl ScopeResolver<'_> {
         };
         // canonicalize collapses symlinks. We use it for both the
         // scope dir and the requested path so a `safe/link_to_denied`
-        // ends up under `denied/` and is rejected.
-        let canon = fs::canonicalize(&resolved).unwrap_or(resolved.clone());
+        // ends up under `denied/` and is rejected. When the target does
+        // not exist yet (a fresh write), canonicalize fails; the fallback
+        // MUST be lexically normalized, or a `..`-laden path like
+        // `plugin_root/../../etc/evil` passes the purely-lexical
+        // `starts_with(root)` check and escapes the sandbox.
+        let canon = fs::canonicalize(&resolved).unwrap_or_else(|_| lexical_normalize(&resolved));
         for cap in granted {
             match (cap, want_write) {
                 (Capability::FsRead { scope }, false) => {

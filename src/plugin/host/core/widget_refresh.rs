@@ -209,39 +209,73 @@ impl PluginHost {
         let generation_id = plugin.generation.generation_id;
         let chunk_name = format!("plugins/{plugin_id}/init.lua");
         let repository = self.repository_context_snapshot();
-        let chrome_widgets = Rc::clone(&plugin.chrome_widgets);
-        let chrome_widgets = chrome_widgets.borrow();
         let cause_labels = crate::plugin::ui::invalidation::cause_labels(causes);
-        for (handle, chrome) in chrome_widgets.iter() {
-            if !crate::plugin::ui::invalidation::dependencies_match(&chrome.dependencies, causes) {
-                continue;
-            }
-            let pid = PluginId::from(plugin_id);
-            let cb_id = format!("chrome:{handle}");
-            let func: Function = match plugin.lua().registry_value(&chrome.key) {
-                Ok(f) => f,
-                Err(e) => {
-                    record_chrome_error(
-                        chrome,
-                        &cause_labels,
-                        format!("handler lookup failed: {e}"),
-                    );
-                    self.diagnostics.record(
-                        PluginDiagnostic::new(
-                            pid,
-                            DiagnosticSeverity::Error,
-                            "lua.handler_lookup_failed",
-                            format!("chrome widget fn lookup failed for {handle}: {e}"),
-                        )
-                        .with_generation(generation_id)
-                        .with_source(PluginSourceSpan::ApiFunction {
-                            name: format!("chrome:{handle}"),
-                        }),
-                    );
+
+        // Snapshot the matching chrome entries (resolving each handler function
+        // and cloning the Rc-shared cache/telemetry) under a short borrow, then
+        // drop it BEFORE calling into Lua. A chrome handler may reentrantly
+        // (de)register a chrome contribution via `leviathan.ui.contribute`,
+        // which needs a mutable borrow of the same map — holding a borrow
+        // across the call would panic with BorrowMutError.
+        struct ChromeJob {
+            handle: String,
+            func: Function,
+            pane: crate::widgets::chrome::repo_region::ChromePane,
+            cache: crate::plugin::ui::chrome::ChromeAstCache,
+            telemetry: Rc<RefCell<crate::plugin::ui::invalidation::DynamicWidgetTelemetry>>,
+        }
+        let jobs: Vec<ChromeJob> = {
+            let chrome_widgets = plugin.chrome_widgets.borrow();
+            let mut jobs = Vec::new();
+            for (handle, chrome) in chrome_widgets.iter() {
+                if !crate::plugin::ui::invalidation::dependencies_match(&chrome.dependencies, causes)
+                {
                     continue;
                 }
-            };
-            let surface = chrome_pane_surface(chrome.pane);
+                match plugin.lua().registry_value::<Function>(&chrome.key) {
+                    Ok(func) => jobs.push(ChromeJob {
+                        handle: handle.clone(),
+                        func,
+                        pane: chrome.pane,
+                        cache: Rc::clone(&chrome.cache),
+                        telemetry: Rc::clone(&chrome.telemetry),
+                    }),
+                    Err(e) => {
+                        record_chrome_error(
+                            &chrome.telemetry,
+                            &chrome.cache,
+                            &cause_labels,
+                            format!("handler lookup failed: {e}"),
+                        );
+                        self.diagnostics.record(
+                            PluginDiagnostic::new(
+                                PluginId::from(plugin_id),
+                                DiagnosticSeverity::Error,
+                                "lua.handler_lookup_failed",
+                                format!("chrome widget fn lookup failed for {handle}: {e}"),
+                            )
+                            .with_generation(generation_id)
+                            .with_source(PluginSourceSpan::ApiFunction {
+                                name: format!("chrome:{handle}"),
+                            }),
+                        );
+                    }
+                }
+            }
+            jobs
+        };
+
+        for job in jobs {
+            let ChromeJob {
+                handle,
+                func,
+                pane,
+                cache,
+                telemetry,
+            } = job;
+            let pid = PluginId::from(plugin_id);
+            let cb_id = format!("chrome:{handle}");
+            let surface = chrome_pane_surface(pane);
             let ctx = crate::plugin::ui::context::context_for_surface_with_selection(
                 plugin_id,
                 generation_id,
@@ -267,7 +301,7 @@ impl PluginHost {
             let lua_val: LuaValue = match perf_outcome {
                 PerfOutcome::Ok(v) => v,
                 PerfOutcome::Skipped => {
-                    let mut telemetry = chrome.telemetry.borrow_mut();
+                    let mut telemetry = telemetry.borrow_mut();
                     telemetry.skipped_count = telemetry.skipped_count.saturating_add(1);
                     telemetry.last_causes = cause_labels.clone();
                     telemetry.last_status = "skipped".to_string();
@@ -276,7 +310,7 @@ impl PluginHost {
                     continue;
                 }
                 PerfOutcome::Err(e) => {
-                    record_chrome_error(chrome, &cause_labels, e.to_string());
+                    record_chrome_error(&telemetry, &cache, &cause_labels, e.to_string());
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -291,8 +325,8 @@ impl PluginHost {
                 }
             };
             if matches!(lua_val, LuaValue::Nil | LuaValue::Boolean(false)) {
-                *chrome.cache.borrow_mut() = None;
-                let mut telemetry = chrome.telemetry.borrow_mut();
+                *cache.borrow_mut() = None;
+                let mut telemetry = telemetry.borrow_mut();
                 telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
                 telemetry.last_duration_ms = duration_ms;
                 telemetry.last_causes = cause_labels.clone();
@@ -304,7 +338,7 @@ impl PluginHost {
             let json: serde_json::Value = match plugin.lua().from_value(lua_val) {
                 Ok(v) => v,
                 Err(e) => {
-                    record_chrome_error(chrome, &cause_labels, e.to_string());
+                    record_chrome_error(&telemetry, &cache, &cause_labels, e.to_string());
                     self.diagnostics.record(
                         PluginDiagnostic::new(
                             PluginId::from(plugin_id),
@@ -322,8 +356,8 @@ impl PluginHost {
             };
             match widget_ast::decode(&json) {
                 Ok(ast) => {
-                    *chrome.cache.borrow_mut() = Some(ast);
-                    let mut telemetry = chrome.telemetry.borrow_mut();
+                    *cache.borrow_mut() = Some(ast);
+                    let mut telemetry = telemetry.borrow_mut();
                     telemetry.refresh_count = telemetry.refresh_count.saturating_add(1);
                     telemetry.last_duration_ms = duration_ms;
                     telemetry.last_causes = cause_labels.clone();
@@ -332,7 +366,7 @@ impl PluginHost {
                     telemetry.diagnostic_badge = false;
                 }
                 Err(decode_err) => {
-                    record_chrome_error(chrome, &cause_labels, decode_err.message.clone());
+                    record_chrome_error(&telemetry, &cache, &cause_labels, decode_err.message.clone());
                     self.diagnostics.record(widget_decode_diagnostic(
                         plugin_id,
                         generation_id,
@@ -395,13 +429,14 @@ fn record_dynamic_skip(
 }
 
 fn record_chrome_error(
-    chrome: &crate::plugin::ui::chrome::ChromeRegistration,
+    telemetry: &Rc<RefCell<crate::plugin::ui::invalidation::DynamicWidgetTelemetry>>,
+    cache: &crate::plugin::ui::chrome::ChromeAstCache,
     causes: &[String],
     error: String,
 ) {
-    let mut telemetry = chrome.telemetry.borrow_mut();
+    let mut telemetry = telemetry.borrow_mut();
     telemetry.last_causes = causes.to_vec();
-    telemetry.last_status = if chrome.cache.borrow().is_some() {
+    telemetry.last_status = if cache.borrow().is_some() {
         telemetry.stale_count = telemetry.stale_count.saturating_add(1);
         "stale".to_string()
     } else {

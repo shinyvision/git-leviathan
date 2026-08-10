@@ -442,7 +442,7 @@ pub(in crate::screens::repository) fn update(
             )
         }
         DetailAction::DiscardAllRequested => {
-            if ctx.data.operations.is_blocking_write() {
+            if ctx.data.operations.is_writing() {
                 return Task::none();
             }
             ctx.data.branch_popout.close_context_menu();
@@ -453,7 +453,7 @@ pub(in crate::screens::repository) fn update(
             Task::none()
         }
         DetailAction::DiscardSelectedFilesRequested => {
-            if ctx.data.operations.is_blocking_write() {
+            if ctx.data.operations.is_writing() {
                 return Task::none();
             }
             let paths = panel.selected_dirty_paths_for_discard(ctx.data, &ctx.data.selection);
@@ -469,7 +469,7 @@ pub(in crate::screens::repository) fn update(
             Task::none()
         }
         DetailAction::DiscardFileRequested(path) => {
-            if ctx.data.operations.is_blocking_write() {
+            if ctx.data.operations.is_writing() {
                 return Task::none();
             }
             ctx.data.branch_popout.close_context_menu();

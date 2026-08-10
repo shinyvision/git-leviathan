@@ -1,12 +1,11 @@
 use std::time::Duration;
 
-use super::helpers::{
-    command_dir, spawn_git_command, spawn_git_command_with_timeout, wrap_git2_error,
-};
+use super::helpers::{command_dir, spawn_git_command_with_timeout, wrap_git2_error};
 use super::GitService;
 use crate::services::git_error::GitError;
 
 const LIST_REMOTE_TAGS_TIMEOUT: Duration = Duration::from_secs(10);
+const PUSH_TAG_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub(super) fn create_tag(
     service: &GitService,
@@ -44,7 +43,12 @@ pub(super) fn push_tag(
 ) -> Result<(), GitError> {
     let repo_dir = command_dir(&service.repo)?;
     let refspec = format!("refs/tags/{0}:refs/tags/{0}", tag_name);
-    let output = spawn_git_command(&repo_dir, &["push", remote_name, &refspec], "push tag")?;
+    let output = spawn_git_command_with_timeout(
+        &repo_dir,
+        &["push", remote_name, &refspec],
+        "push tag",
+        PUSH_TAG_TIMEOUT,
+    )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(GitError::Other(if stderr.is_empty() {
@@ -63,10 +67,11 @@ pub(super) fn delete_remote_tag(
 ) -> Result<(), GitError> {
     let repo_dir = command_dir(&service.repo)?;
     let refspec = format!(":refs/tags/{}", tag_name);
-    let output = spawn_git_command(
+    let output = spawn_git_command_with_timeout(
         &repo_dir,
         &["push", remote_name, &refspec],
         "push delete tag",
+        PUSH_TAG_TIMEOUT,
     )?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();

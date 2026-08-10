@@ -75,10 +75,7 @@ impl App {
                 self.plugin_host.split_drag_released();
             }
         }
-        Task::batch(vec![
-            self.drain_pending_navigation_effects(),
-            self.focus_plugin_overlay_input(),
-        ])
+        self.focus_plugin_overlay_input()
     }
 
     pub(super) fn update_app(&mut self, msg: AppMessage) -> Task<Message> {

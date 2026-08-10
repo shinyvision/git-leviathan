@@ -77,6 +77,10 @@ impl PluginHost {
                     ),
                 }
                 ledger.remove_resource(callback.resource_id);
+                ledger.remove_by_kind_handle(
+                    PluginResourceKind::LuaRegistryKey,
+                    &format!("async_job:{}", callback.resource_id),
+                );
             }
 
             let due = queue.borrow_mut().drain_due(now);
@@ -112,6 +116,10 @@ impl PluginHost {
                     ),
                 }
                 ledger.remove_resource(callback.resource_id);
+                ledger.remove_by_kind_handle(
+                    PluginResourceKind::LuaRegistryKey,
+                    &format!("timer:{}", callback.resource_id),
+                );
             }
 
             let drained: Vec<DeferredCallback> = std::mem::take(&mut queue.borrow_mut().coroutines);
@@ -134,6 +142,10 @@ impl PluginHost {
                             ),
                         );
                         ledger.remove_resource(callback.resource_id);
+                        ledger.remove_by_kind_handle(
+                            PluginResourceKind::LuaRegistryKey,
+                            &format!("coroutine:{}", callback.resource_id),
+                        );
                         continue;
                     }
                 };
@@ -151,9 +163,17 @@ impl PluginHost {
                         .with_mlua_error(&chunk_name, &e),
                     );
                     ledger.remove_resource(callback.resource_id);
+                    ledger.remove_by_kind_handle(
+                        PluginResourceKind::LuaRegistryKey,
+                        &format!("coroutine:{}", callback.resource_id),
+                    );
                     continue;
                 }
                 ledger.remove_resource(callback.resource_id);
+                ledger.remove_by_kind_handle(
+                    PluginResourceKind::LuaRegistryKey,
+                    &format!("coroutine:{}", callback.resource_id),
+                );
                 if thread.status() == ThreadStatus::Resumable {
                     match lua.create_registry_value(thread) {
                         Ok(new_key) => {
@@ -307,6 +327,13 @@ impl PluginHost {
                 crate::plugin::timers::TimerKind::After => {
                     let key_opt = plugin.timer_callbacks.borrow_mut().remove(due.timer_id);
                     plugin.ledger().remove_resource(due.resource_id);
+                    // Also drop the paired registry-key ledger row (recorded as
+                    // `timer:{timer_id}` at registration) — a one-shot `After`
+                    // timer would otherwise leave it behind on every fire.
+                    plugin.ledger().remove_by_kind_handle(
+                        PluginResourceKind::LuaRegistryKey,
+                        &format!("timer:{}", due.timer_id.get()),
+                    );
                     key_opt.and_then(|k| lua.registry_value::<Function>(&k).ok())
                 }
                 crate::plugin::timers::TimerKind::Every => plugin
@@ -434,6 +461,10 @@ impl PluginHost {
             only.insert(plugin_id);
             self.invalidate_dynamic_widgets(&causes, Some(&only));
         }
+        // Apply devtools actions a tick-driven callback (timer/watcher/async
+        // completion) may have queued — e.g. `plugin.reload`/`plugin.disable`.
+        // Without this they'd sit until an unrelated later user interaction.
+        self.drain_devtools_actions();
     }
 
     /// Invoke a plugin's named user command. The function is wrapped in

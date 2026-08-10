@@ -34,13 +34,21 @@ where
         .unwrap_or_else(|e| Err(GitError::Other(format!("{panic_label} task panicked: {e}"))))
 }
 
-pub(crate) async fn presentation_work<T>(f: impl FnOnce() -> T + Send + 'static) -> T
+/// Run a CPU-bound presentation closure off the UI thread. Returns `None` if
+/// the closure panicked (or the runtime cancelled it) rather than re-panicking
+/// inside the iced task future, which would take down the whole runtime — the
+/// caller drops the update instead.
+pub(crate) async fn presentation_work<T>(f: impl FnOnce() -> T + Send + 'static) -> Option<T>
 where
     T: Send + 'static,
 {
-    tokio::task::spawn_blocking(f)
-        .await
-        .expect("presentation task panicked")
+    match tokio::task::spawn_blocking(f).await {
+        Ok(value) => Some(value),
+        Err(e) => {
+            eprintln!("git_leviathan: presentation task failed: {e}");
+            None
+        }
+    }
 }
 
 pub(crate) async fn timer_work(delay: Duration) {

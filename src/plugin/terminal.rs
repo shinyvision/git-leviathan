@@ -51,6 +51,10 @@ struct TerminalSession {
     _reader: JoinHandle<()>,
     size: PtySize,
     exited: bool,
+    /// Set whenever the parser state changes; gates snapshot rebuilds so the
+    /// grid isn't re-walked (and a String allocated per cell) on every redraw.
+    dirty: bool,
+    cached_snapshot: Option<Arc<TerminalSnapshot>>,
 }
 
 #[derive(Clone)]
@@ -160,6 +164,8 @@ impl TerminalRegistry {
                 _reader: reader_thread,
                 size,
                 exited: false,
+                dirty: true,
+                cached_snapshot: None,
             },
         );
         Ok(id)
@@ -193,6 +199,18 @@ impl TerminalRegistry {
             })
     }
 
+    /// Whether `id` belongs to `plugin_id` (any generation). Used by the
+    /// widget-tree builder to refuse rendering — and thereby writing to —
+    /// another plugin's terminal via a guessed session id.
+    pub fn owned_by_plugin(&self, id: TerminalId, plugin_id: &str) -> bool {
+        self.inner
+            .lock()
+            .expect("terminal registry poisoned")
+            .sessions
+            .get(&id)
+            .is_some_and(|session| session.plugin_id.as_str() == plugin_id)
+    }
+
     pub fn resize(
         &self,
         id: TerminalId,
@@ -224,6 +242,7 @@ impl TerminalRegistry {
         session.master.resize(size).map_err(|e| e.to_string())?;
         session.parser.set_size(rows, cols);
         session.size = size;
+        session.dirty = true;
         Ok(())
     }
 
@@ -235,7 +254,11 @@ impl TerminalRegistry {
             .sessions
             .remove(&id);
         if let Some(mut session) = session {
+            // Kill then reap: dropping the Child without waiting leaves a
+            // <defunct> zombie until the app exits (compounded by plugin
+            // reloads via close_for_generation).
             let _ = session.child.kill();
+            let _ = session.child.wait();
             true
         } else {
             false
@@ -295,6 +318,7 @@ impl TerminalRegistry {
                 }
             }
             if changed {
+                session.dirty = true;
                 affected.push(session.plugin_id.as_str().to_string());
             }
         }
@@ -306,15 +330,20 @@ impl TerminalRegistry {
         affected
     }
 
-    pub fn snapshot(&self, id: TerminalId) -> TerminalSnapshot {
-        let inner = self.inner.lock().expect("terminal registry poisoned");
-        let Some(session) = inner.sessions.get(&id) else {
-            return TerminalSnapshot {
+    pub fn snapshot(&self, id: TerminalId) -> Arc<TerminalSnapshot> {
+        let mut inner = self.inner.lock().expect("terminal registry poisoned");
+        let Some(session) = inner.sessions.get_mut(&id) else {
+            return Arc::new(TerminalSnapshot {
                 id: Some(id),
                 missing: true,
                 ..TerminalSnapshot::default()
-            };
+            });
         };
+        if !session.dirty {
+            if let Some(cached) = &session.cached_snapshot {
+                return Arc::clone(cached);
+            }
+        }
         let screen = session.parser.screen();
         let (rows, cols) = screen.size();
         let (cursor_row, cursor_col) = screen.cursor_position();
@@ -337,7 +366,7 @@ impl TerminalRegistry {
                 }
             }
         }
-        TerminalSnapshot {
+        let snapshot = Arc::new(TerminalSnapshot {
             id: Some(id),
             name: session.name.clone(),
             rows,
@@ -348,7 +377,10 @@ impl TerminalRegistry {
             cells,
             missing: false,
             exited: session.exited,
-        }
+        });
+        session.cached_snapshot = Some(Arc::clone(&snapshot));
+        session.dirty = false;
+        snapshot
     }
 
     pub fn application_cursor(&self, id: TerminalId) -> bool {

@@ -227,7 +227,8 @@ pub(in crate::screens::repository) fn update(
                 && !is_remote
                 && !current.is_empty()
                 && current != branch_name
-                && ctx.data.snapshot.can_fast_forward_to(&branch_name);
+                // On-demand single-branch ancestry check (see sidebar handler).
+                && ctx.repository.can_fast_forward_to(&branch_name);
             let position = ctx.input.last_pointer_position.unwrap_or(Point::ORIGIN);
             ctx.data.branch_popout.open_context_menu(ContextMenuState {
                 branch_name,
@@ -535,7 +536,9 @@ pub(in crate::screens::repository) fn update(
             let presenter = ctx.presenter.clone();
             let tab_id = ctx.tab_id;
             Task::perform(
-                git_write_work(move || repo.create_stash().map(|s| presenter.project_loaded(s))),
+                git_write_work(move || {
+                    repo.create_stash(None).map(|s| presenter.project_loaded(s))
+                }),
                 move |result| {
                     Message::tab(
                         tab_id,
@@ -549,6 +552,9 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::StashApplyRequested { stash_index } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(stash_hash) = ctx.data.stash_hash_for_index(stash_index) else {
+                return Task::none();
+            };
             let Some(operation_id) = ctx.data.operations.begin_write() else {
                 return Task::none();
             };
@@ -557,7 +563,7 @@ pub(in crate::screens::repository) fn update(
             let tab_id = ctx.tab_id;
             Task::perform(
                 git_write_work(move || {
-                    repo.apply_stash(stash_index)
+                    repo.apply_stash(&stash_hash)
                         .map(|o| presenter.project_stash_apply(o))
                 }),
                 move |result| {
@@ -573,6 +579,9 @@ pub(in crate::screens::repository) fn update(
         }
         CenterAction::StashPopRequested { stash_index } => {
             ctx.data.branch_popout.close_context_menu();
+            let Some(stash_hash) = ctx.data.stash_hash_for_index(stash_index) else {
+                return Task::none();
+            };
             let Some(operation_id) = ctx.data.operations.begin_write() else {
                 return Task::none();
             };
@@ -581,7 +590,7 @@ pub(in crate::screens::repository) fn update(
             let tab_id = ctx.tab_id;
             Task::perform(
                 git_write_work(move || {
-                    repo.pop_stash(stash_index)
+                    repo.pop_stash(&stash_hash)
                         .map(|o| presenter.project_stash_apply(o))
                 }),
                 move |result| {

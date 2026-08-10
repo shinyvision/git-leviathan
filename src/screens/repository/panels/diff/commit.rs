@@ -115,6 +115,7 @@ impl DiffPanel {
         self.center_view_mode = super::CenterViewMode::DiffView;
         self.diff_selection = None;
         self.diff_scroll_y = 0.0;
+        self.diff_scroll_x = 0.0;
         self.diff_viewport_height = None;
         self.text_search = None;
         self.highlight_scheduler.reset();

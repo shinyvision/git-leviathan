@@ -105,6 +105,14 @@ impl PersistStore {
                     to: target_version,
                 },
             )?;
+            // A migration that doesn't advance the version (`to <= from`) would
+            // loop forever — the next iteration finds the same migration again.
+            if m.to <= file.version {
+                return Err(PersistError::NoMigration {
+                    from: file.version,
+                    to: target_version,
+                });
+            }
             let migrated = (m.transform)(std::mem::take(&mut file.data));
             file.data = migrated;
             file.version = m.to;

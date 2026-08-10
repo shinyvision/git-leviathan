@@ -272,6 +272,36 @@ where
         shell: &mut Shell<'_, M>,
         viewport: &Rectangle,
     ) {
+        // A drag in progress owns the next ButtonReleased: if a child captured
+        // it (e.g. a tab-embedded button), `on_released` would never run and
+        // the dragged tab would stay glued to the cursor. Finalize the drag
+        // here before deferring to children in that case.
+        {
+            let dragging = {
+                let state: &mut TabBarState<K> = tree.state.downcast_mut();
+                state.drag.is_dragging()
+            };
+            if dragging
+                && matches!(
+                    event,
+                    Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                )
+            {
+                let state: &mut TabBarState<K> = tree.state.downcast_mut();
+                match state.drag.on_released() {
+                    DragOutcome::None | DragOutcome::Click(_) => {}
+                    DragOutcome::Reorder(order) => {
+                        if let Some(f) = self.on_reorder.as_ref() {
+                            shell.publish(f(order));
+                        }
+                    }
+                }
+                shell.capture_event();
+                shell.request_redraw();
+                return;
+            }
+        }
+
         for ((child, child_tree), child_layout) in self
             .children
             .iter_mut()
@@ -307,6 +337,12 @@ where
                 }
             }
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                // Nothing to do unless a press is pending or a drag is active —
+                // bail before the per-move slot allocations, which otherwise
+                // run on every mouse move anywhere in the window.
+                if !state.drag.is_tracking_pointer() {
+                    return;
+                }
                 let Some(pos) = cursor.position() else {
                     return;
                 };

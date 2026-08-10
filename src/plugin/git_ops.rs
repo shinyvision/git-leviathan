@@ -779,9 +779,9 @@ fn run_request(
                 ],
             })
         }
-        GitOpRequest::DeleteBranch { name, .. } => {
+        GitOpRequest::DeleteBranch { name, force } => {
             let snapshot = gateway
-                .delete_branch(name, false)
+                .delete_branch(name, false, *force)
                 .map_err(|e| e.to_string())?;
             let mut refs_payload = EventPayload::new();
             refs_payload.insert(
@@ -838,12 +838,24 @@ fn run_request(
                 ],
             })
         }
-        GitOpRequest::StashPush { .. } => {
-            let _ = gateway.create_stash().map_err(|e| e.to_string())?;
+        GitOpRequest::StashPush { message } => {
+            let _ = gateway
+                .create_stash(message.as_deref())
+                .map_err(|e| e.to_string())?;
             Ok(GitOpEvents::empty())
         }
         GitOpRequest::StashPop { index } => {
-            let _ = gateway.pop_stash(*index).map_err(|e| e.to_string())?;
+            // Resolve the stash's stable commit hash so the pop targets the
+            // right entry even if indices shift; `pop_stash` re-resolves the
+            // hash against the live reflog under its own lock.
+            let snapshot = gateway.load_repo(1).map_err(|e| e.to_string())?;
+            let hash = snapshot
+                .stashes
+                .iter()
+                .find(|stash| stash.stash_index == *index)
+                .map(|stash| stash.hash.clone())
+                .ok_or_else(|| format!("no stash at index {index}"))?;
+            let _ = gateway.pop_stash(&hash).map_err(|e| e.to_string())?;
             Ok(GitOpEvents::empty())
         }
         GitOpRequest::Reset { ref_name, mode } => {

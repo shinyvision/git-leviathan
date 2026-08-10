@@ -184,7 +184,6 @@ impl CanvasRow for ConflictRow {
             } else {
                 span.style.color.unwrap_or(theme::TEXT_PRIMARY)
             };
-            let char_count = span.text.chars().count();
             frame.fill_text(Text {
                 content: span.text.clone(),
                 position: Point::new(x, baseline_y),
@@ -197,7 +196,7 @@ impl CanvasRow for ConflictRow {
                 shaping: Shaping::Advanced,
                 max_width: f32::INFINITY,
             });
-            x += char_count as f32 * char_width;
+            x += crate::widgets::text::text_cells(&span.text) as f32 * char_width;
         }
     }
 
@@ -331,8 +330,17 @@ fn build_canvas_data(
 }
 
 fn compute_content_width(rows: &[ConflictRow], char_w: f32) -> f32 {
-    let max_chars = rows.iter().map(|r| r.char_count).max().unwrap_or(0);
-    CONTENT_PAD_X * 2.0 + max_chars as f32 * char_w + 80.0
+    let max_cells = rows
+        .iter()
+        .map(|r| {
+            r.spans
+                .iter()
+                .map(|span| crate::widgets::text::text_cells(&span.text))
+                .sum::<usize>()
+        })
+        .max()
+        .unwrap_or(0);
+    CONTENT_PAD_X * 2.0 + max_cells as f32 * char_w + 80.0
 }
 
 pub fn conflict_content_canvas(

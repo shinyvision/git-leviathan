@@ -215,8 +215,10 @@ impl DiffPanel {
         self.highlight_in_flight = false;
         self.highlight_rescan_requested = false;
         self.invalidate_grammar_status_cache();
-        crate::services::release_syntax_caches();
-        crate::services::release_text_caches();
+        // Deliberately NOT releasing the process-wide syntax/text caches here:
+        // they're bounded LRUs shared by every open tab, so wiping them when
+        // one diff panel closes forces all other tabs to re-parse. They evict
+        // naturally under pressure.
     }
 
     pub(in crate::screens::repository) fn navigate_file(

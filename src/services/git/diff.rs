@@ -34,7 +34,7 @@ pub(super) fn load_merged_commit_file_diff(
     let oldest_parent_tree = oldest_commit.parent(0).ok().and_then(|p| p.tree().ok());
 
     let mut opts = git2::DiffOptions::new();
-    opts.pathspec(file_path);
+    opts.pathspec(file_path).disable_pathspec_match(true);
 
     let diff = repo
         .diff_tree_to_tree(
@@ -294,7 +294,7 @@ mod tests {
         index.write().expect("failed to write index");
 
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
-        service.create_stash().expect("failed to create stash");
+        service.create_stash(None).expect("failed to create stash");
         let stash = service
             .load_repo(super::super::COMMIT_LOAD_LIMIT)
             .stashes

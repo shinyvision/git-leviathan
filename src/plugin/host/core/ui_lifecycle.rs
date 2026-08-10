@@ -68,6 +68,9 @@ impl PluginHost {
         let mut effects = Vec::new();
         let tabs = self.last_tab_snapshot.clone();
         let focus = self.last_focus_snapshot.clone();
+        // A screen event can mutate plugin/tab state, so mark activity for the
+        // persistence gate — before taking the mutable plugin borrow below.
+        self.bump_lua_activity();
         {
             let Some(plugin) = self.plugins.get_mut(plugin_id) else {
                 return;
@@ -162,7 +165,10 @@ impl PluginHost {
                     );
                 }
                 PerfOutcome::Skipped => {
-                    disable_after_failures = true;
+                    // The circuit breaker already tripped and the body never
+                    // ran — a transient skip, not a failure. Disabling the
+                    // whole plugin here (and making `reset_breaker` useless for
+                    // screen callbacks) is wrong; no-op like dispatch_slot_click.
                 }
                 PerfOutcome::Err(e) => {
                     disable_after_failures = self.budget_tracker.is_tripped(
@@ -347,6 +353,7 @@ impl PluginHost {
                 }
             };
             let cb_id = format!("dialog:{dialog_id}.button:{button_id}.on_click");
+            self.bump_lua_activity();
             match self
                 .budget_tracker
                 .track_call::<Option<Table>, mlua::Error>(
@@ -795,6 +802,14 @@ impl PluginHost {
                     error_message: None,
                     timestamp_unix_ms: now_unix_ms(),
                 });
+                // Staged chrome/dynamic widgets were pre-rendered with an empty
+                // context during staging; render them now with the live
+                // repository context (cold-load does the same via
+                // `refresh_dynamic_widgets_for_plugin`). Clearing
+                // `last_repository_hash` also forces the next `sync_repository`
+                // to re-invalidate rather than short-circuit on the stale hash.
+                self.last_repository_hash = None;
+                self.refresh_dynamic_widgets_for_plugin(plugin_id);
                 self.refresh_active_widget_tree();
                 Ok(())
             }
@@ -806,6 +821,19 @@ impl PluginHost {
                 } = failure;
                 let summary_message = message.clone();
                 let summary_cause = cause.clone();
+                // The failed init.lua ran during staging and may have
+                // registered timers/watchers/async-jobs into the shared
+                // registries under `staging_generation_id`. Cancel them, or
+                // watcher inotify handles leak and timer records get re-armed
+                // every tick forever.
+                self.async_jobs
+                    .cancel_for_generation(&plugin_id_typed, staging_generation_id);
+                self.timers
+                    .cancel_for_generation(&plugin_id_typed, staging_generation_id);
+                self.watchers
+                    .cancel_for_generation(&plugin_id_typed, staging_generation_id);
+                crate::plugin::terminal::registry()
+                    .close_for_generation(&plugin_id_typed, staging_generation_id);
                 self.last_reload_errors
                     .insert(plugin_id_owned.clone(), summary_message.clone());
                 self.diagnostics.record(
@@ -1279,7 +1307,9 @@ impl PluginHost {
                             }
                         }
                         PerfOutcome::Skipped => {
-                            disable_after_failures = true;
+                            // Breaker already tripped, body never ran — a
+                            // transient skip, not a failure. Don't disable the
+                            // plugin (consistent with dispatch_slot_click).
                         }
                         PerfOutcome::Err(e) => {
                             disable_after_failures = self.budget_tracker.is_tripped(

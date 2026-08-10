@@ -1,8 +1,14 @@
 use git2::BranchType;
+use std::time::Duration;
 
-use super::helpers::{command_dir, find_branch_or, spawn_git_command, wrap_git2_error};
+use super::helpers::{
+    command_dir, find_branch_or, index_has_conflicts, output_mentions_conflict,
+    spawn_git_command_with_timeout, wrap_git2_error,
+};
 use super::GitService;
 use crate::services::git_error::GitError;
+
+const NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub enum PushOutcome {
     Pushed,
@@ -104,15 +110,31 @@ pub(super) fn current_branch_push_remote(service: &GitService) -> Result<String,
 pub(super) fn pull_current_branch(service: &GitService) -> Result<(), GitError> {
     let repo_dir = command_dir(&service.repo)?;
 
-    let ff_output = spawn_git_command(&repo_dir, &["pull", "--ff-only"], "pull --ff-only")?;
+    let ff_output = spawn_git_command_with_timeout(
+        &repo_dir,
+        &["pull", "--ff-only"],
+        "pull --ff-only",
+        NETWORK_TIMEOUT,
+    )?;
 
     if ff_output.status.success() {
         return Ok(());
     }
 
-    let merge_output = spawn_git_command(&repo_dir, &["pull", "--no-ff"], "pull --no-ff")?;
+    let merge_output = spawn_git_command_with_timeout(
+        &repo_dir,
+        &["pull", "--no-ff"],
+        "pull --no-ff",
+        NETWORK_TIMEOUT,
+    )?;
 
     if !merge_output.status.success() {
+        // A conflicted pull is not a failure: git has left the repo in merge
+        // state, so report success and let the caller's snapshot reload
+        // surface the conflicts instead of a toast over a stale view.
+        if output_mentions_conflict(&merge_output) || index_has_conflicts(&service.repo) {
+            return Ok(());
+        }
         let stderr = String::from_utf8_lossy(&merge_output.stderr)
             .trim()
             .to_string();
@@ -263,7 +285,7 @@ fn run_git_push(
     args.push(remote_name);
     args.push(refspec);
 
-    let output = spawn_git_command(&repo_dir, &args, "push")?;
+    let output = spawn_git_command_with_timeout(&repo_dir, &args, "push", NETWORK_TIMEOUT)?;
     handle_git_push_output(output, remote_name, remote_branch_name, "git push failed")
 }
 
@@ -281,7 +303,7 @@ fn run_git_push_current_branch(
     }
 
     let op = if force { "push --force" } else { "push" };
-    let output = spawn_git_command(&repo_dir, &args, op)?;
+    let output = spawn_git_command_with_timeout(&repo_dir, &args, op, NETWORK_TIMEOUT)?;
     handle_git_push_output(output, remote_name, branch_name, "git push failed")
 }
 

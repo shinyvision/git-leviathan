@@ -62,10 +62,9 @@ impl App {
     /// Produce a (coalesced) reload task for a tab after a file-watcher event.
     ///
     /// Two suppression paths keep the cascade under control:
-    ///   • If a user-driven network op (fetch/push/pull) is in flight on the
-    ///     tab, skip entirely — that op's completion message already publishes
-    ///     a fresh snapshot, so running a parallel reload just duplicates work
-    ///     and piles up tasks blocked on the gateway's write-lock.
+    ///   • If a write or fetch is in flight on the tab, skip entirely — that
+    ///     op's completion message already publishes a fresh snapshot, so
+    ///     running a parallel reload just duplicates work.
     ///   • Otherwise, abort any already-queued `reload_refs_task`. Bursts of
     ///     `.git` events then collapse to the single most-recent reload.
     pub(super) fn reload_refs_for_tab(&mut self, tab_id: TabId, path: PathBuf) -> Task<Message> {
@@ -78,9 +77,8 @@ impl App {
             span.finish_with("outcome", "stale_path");
             return Task::none();
         }
-        let network_op_active = tab_id == self.tabs.active_tab_id() && self.fetch.is_fetching();
-        let screen_busy = screen.is_git_write_in_flight();
-        if network_op_active || screen_busy {
+        let screen_busy = screen.is_git_write_in_flight() || screen.is_git_fetch_in_flight();
+        if screen_busy {
             if let Some(screen) = self.tabs.screen_mut(tab_id) {
                 screen.mark_watcher_reload_pending(path);
             }

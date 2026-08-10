@@ -173,17 +173,23 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
                         continue;
                     }
                     let char_count = row.char_count();
+                    let text = row.raw_text();
                     let from = if idx == start.row { start.col } else { 0 };
                     let to = if idx == end.row { end.col } else { char_count };
                     let from = from.min(char_count);
                     let to = to.min(char_count).max(from);
-                    let sx = col_to_pixel(from, char_width);
+                    let sx = col_to_pixel(from, char_width, &text);
                     let ex = if idx < end.row {
+                        // Middle rows of a multi-row selection extend to the
+                        // end of the line (in display cells) plus a half-cell.
+                        let line_cells = super::layout::text_cells(&text);
+                        let span_cells =
+                            super::layout::cells_before(&text, to) - super::layout::cells_before(&text, from);
                         CONTENT_PAD_X
-                            + (char_count as f32 * char_width).max((to - from) as f32 * char_width)
+                            + (line_cells as f32 * char_width).max(span_cells as f32 * char_width)
                             + char_width * 0.5
                     } else {
-                        col_to_pixel(to, char_width)
+                        col_to_pixel(to, char_width, &text)
                     };
                     let y = offs[idx];
                     let h = row.height();
@@ -408,14 +414,25 @@ pub fn shift_wheel_lock<'a, Msg>(
 where
     Msg: 'a,
 {
+    // Pixel deltas are expressed in device pixels; a diff line is ~20px, so
+    // divide by that (not 60) to keep trackpad shift-scroll speed in line with
+    // notch wheels rather than ~3x slower.
+    const PX_PER_LINE: f32 = 20.0;
     crate::widgets::primitives::wheel_intercept::WheelIntercept::new(content)
         .enabled(shift_held)
         .on_scroll(move |delta| {
             let dy = match delta {
                 mouse::ScrollDelta::Lines { y, .. } => y,
-                mouse::ScrollDelta::Pixels { y, .. } => y / 60.0,
+                mouse::ScrollDelta::Pixels { y, .. } => y / PX_PER_LINE,
             };
-            on_shift_wheel(dy)
+            // A pure-horizontal trackpad pan (y == 0) carries no vertical
+            // component to translate — let it fall through instead of
+            // swallowing it into a no-op.
+            if dy == 0.0 {
+                None
+            } else {
+                Some(on_shift_wheel(dy))
+            }
         })
         .into()
 }

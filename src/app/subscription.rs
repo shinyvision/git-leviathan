@@ -42,21 +42,20 @@ pub fn build(app: &App) -> Subscription<Message> {
     let fetch_tick_sub =
         iced::time::every(FETCH_TICK_INTERVAL).map(|t| Message::App(AppMessage::FetchTick(t)));
 
-    let animation_tick_sub = if app.tabs.is_empty() {
-        Subscription::none()
+    // Toasts must keep ticking even with no tab open (e.g. an error toast on
+    // the blank/no-git screen), so consult the toast animator independently of
+    // whether a screen is present.
+    let screen_or_toast_animating = app
+        .tabs
+        .active_screen()
+        .map(|s| s.is_animating())
+        .unwrap_or(false)
+        || app.toasts.is_animating();
+    let animation_tick_sub = if screen_or_toast_animating {
+        iced::time::every(ANIMATION_TICK_INTERVAL)
+            .map(|t| Message::App(AppMessage::AnimationTick(t)))
     } else {
-        let screen_or_toast_animating = app
-            .tabs
-            .active_screen()
-            .map(|s| s.is_animating())
-            .unwrap_or(false)
-            || app.toasts.is_animating();
-        if screen_or_toast_animating {
-            iced::time::every(ANIMATION_TICK_INTERVAL)
-                .map(|t| Message::App(AppMessage::AnimationTick(t)))
-        } else {
-            Subscription::none()
-        }
+        Subscription::none()
     };
 
     let screen_sub = if let Some(screen) = app.tabs.active_plugin_screen() {

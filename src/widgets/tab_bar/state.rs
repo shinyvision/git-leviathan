@@ -178,6 +178,12 @@ impl<K: Copy + Eq + Hash> DragState<K> {
         self.dragging.is_some()
     }
 
+    /// True when a cursor-move could change drag state (a press is pending or
+    /// a drag is active). Lets the widget skip slot computation otherwise.
+    pub fn is_tracking_pointer(&self) -> bool {
+        self.press_origin.is_some() || self.dragging.is_some()
+    }
+
     pub fn dragging_key(&self) -> Option<K> {
         self.dragging
     }

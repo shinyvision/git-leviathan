@@ -41,6 +41,9 @@ impl Program<Message> for FullGraphProgram<'_> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
+        let _probe = std::env::var("GLV_VIEW_MS")
+            .ok()
+            .map(|_| std::time::Instant::now());
         let row_count = self.rows.len();
         let selected_in_range: Cow<'_, [usize]> =
             if self.selected_indices.iter().all(|&idx| idx < row_count) {
@@ -118,6 +121,15 @@ impl Program<Message> for FullGraphProgram<'_> {
             geoms.push(geom);
         }
 
+        if let Some(t) = _probe {
+            let ms = t.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "graph_draw_ms={ms:.2} rows={} tiles={}..{}",
+                row_count,
+                self.visible_row_start / TILE_ROWS,
+                self.visible_row_end.div_ceil(TILE_ROWS)
+            );
+        }
         geoms
     }
 

@@ -127,10 +127,30 @@ impl LuaLoader {
     /// after `api::install_all` so the snapshot of "known globals"
     /// includes the `leviathan.*` surface.
     pub fn install(&self, lua: &Lua) -> mlua::Result<()> {
-        // 1. Drop unsafe loaders so plugins can't bypass us.
+        // 1. Drop the unsafe stdlib surface so plugins can't bypass the
+        // capability system. `Lua::new()` loads `StdLib::ALL_SAFE`, which under
+        // LuaJIT still exposes `os`, `io`, and `package` — leaving
+        // `os.execute`/`io.popen` (arbitrary process spawn), `io.open`
+        // (arbitrary file read/write), `os.exit` (crash the host), and
+        // `load`/`loadstring`/`package.loadlib` (load arbitrary Lua/C) fully
+        // ungated. Remove them here; the safe, commonly-used clock/date
+        // helpers on `os` are preserved so plugins don't lose them.
         let globals = lua.globals();
         globals.set("dofile", LuaValue::Nil)?;
         globals.set("loadfile", LuaValue::Nil)?;
+        globals.set("load", LuaValue::Nil)?;
+        globals.set("loadstring", LuaValue::Nil)?;
+        globals.set("io", LuaValue::Nil)?;
+        // The host's own `require` uses a private module cache, not `package`,
+        // so dropping `package` (incl. `loadlib`) doesn't break module loading.
+        globals.set("package", LuaValue::Nil)?;
+        if let Ok(os_table) = globals.get::<mlua::Table>("os") {
+            for unsafe_fn in [
+                "execute", "exit", "remove", "rename", "tmpname", "getenv", "setlocale",
+            ] {
+                os_table.set(unsafe_fn, LuaValue::Nil)?;
+            }
+        }
 
         // 2. Backing cache table living in Lua. Maps module-name -> the
         // value the chunk returned (or `true` if it returned nothing).
@@ -642,5 +662,50 @@ mod tests {
         let _: LuaValue = lua.load("require('p.foo')").eval().unwrap();
         // Two `require`s, one cached record.
         assert_eq!(loader.module_records().len(), 1);
+    }
+
+    #[test]
+    fn install_removes_the_capability_bypass_stdlib_surface() {
+        let (loader, _tmp) = make_loader_with_files("p", &[("foo.lua", "return 1")]);
+        let lua = Lua::new();
+        loader.install(&lua).unwrap();
+
+        // The process/file/code-execution surface must be gone so a
+        // zero-capability plugin can't bypass the capability system. `pcall`
+        // wraps the read so a strict-globals block counts as "inaccessible"
+        // the same as a plain nil.
+        for expr in [
+            "io",
+            "package",
+            "load",
+            "loadstring",
+            "dofile",
+            "loadfile",
+            "os.execute",
+            "os.exit",
+            "os.remove",
+            "os.rename",
+            "os.getenv",
+            "os.tmpname",
+        ] {
+            let blocked: bool = lua
+                .load(format!(
+                    "local ok, v = pcall(function() return {expr} end) return (not ok) or v == nil"
+                ))
+                .eval()
+                .unwrap();
+            assert!(blocked, "expected `{expr}` to be inaccessible after install()");
+        }
+
+        // The safe, commonly-used clock/date helpers stay available.
+        for expr in ["os.time", "os.date", "os.clock", "os.difftime"] {
+            let present: bool = lua
+                .load(format!(
+                    "local ok, v = pcall(function() return {expr} end) return ok and v ~= nil"
+                ))
+                .eval()
+                .unwrap();
+            assert!(present, "expected `{expr}` to remain available");
+        }
     }
 }

@@ -113,7 +113,7 @@ pub fn build(ast: &WidgetAst, ctx: &BuildCtx<'_>) -> Element<'static, Message> {
         WidgetNode::Scrollable(n) => scrollable::build(n, ctx),
         WidgetNode::MouseArea(n) => mouse_area::build(n, ctx),
         WidgetNode::Tablist(n) => tablist::build(n, ctx),
-        WidgetNode::Terminal(n) => terminal::build(n),
+        WidgetNode::Terminal(n) => terminal::build(n, ctx),
         WidgetNode::ResizableSplit(n) => split::build(n, ctx),
         WidgetNode::Semantic(n) => semantic::build(ast, n, ctx),
         WidgetNode::Layout(n) => semantic::build_layout(n, ctx),

@@ -28,20 +28,27 @@ pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, 
         let Some(name) = names.get(i) else {
             continue;
         };
-        let worktree = service
-            .repo
-            .find_worktree(name)
-            .map_err(|e| wrap_git2_error(&format!("find worktree '{name}'"), e))?;
+        let Ok(worktree) = service.repo.find_worktree(name) else {
+            continue;
+        };
         let is_locked = matches!(
             worktree.is_locked(),
             Ok(git2::WorktreeLockStatus::Locked(_))
         );
-        let is_prunable = worktree.validate().is_err();
+        let mut is_prunable = worktree.validate().is_err();
         let path = worktree.path().to_path_buf();
         let (head_hash, branch_name) = if is_prunable {
             (String::new(), String::new())
         } else {
-            head_info_for_workdir(&path)?
+            // An unopenable-but-valid worktree must not fail the whole
+            // listing; degrade it to a prunable entry instead.
+            match head_info_for_workdir(&path) {
+                Ok(info) => info,
+                Err(_) => {
+                    is_prunable = true;
+                    (String::new(), String::new())
+                }
+            }
         };
         let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
         results.push(WorktreeInfo {
@@ -180,11 +187,19 @@ pub(super) fn add_worktree(
     // A previous failed `add_worktree` may have left `.git/worktrees/<name>`
     // behind. libgit2 refuses to reuse that slot and surfaces it as
     // "failed to make directory '<git_dir>/worktrees/<name>': directory
-    // exists". Prune any matching metadata (valid or not) so the new add
-    // can claim the name.
+    // exists". Prune stale metadata so the new add can claim the name — but
+    // never a valid worktree: pruning one with `working_tree(true)` deletes
+    // its files on disk, so a name collision with a live worktree elsewhere
+    // must be an error, not a silent removal.
     if let Ok(existing) = service.repo.find_worktree(name) {
+        if existing.validate().is_ok() {
+            return Err(GitError::Other(format!(
+                "worktree name '{name}' is already in use at '{}'",
+                existing.path().display(),
+            )));
+        }
         let mut opts = git2::WorktreePruneOptions::new();
-        opts.valid(true).working_tree(true).locked(true);
+        opts.working_tree(true).locked(true);
         let _ = existing.prune(Some(&mut opts));
     }
     let stale_meta = service.repo.path().join("worktrees").join(name);
@@ -471,6 +486,40 @@ mod tests {
             .unwrap()
             .count();
         assert_eq!(local_count, 2, "no duplicate branch should be created");
+    }
+
+    #[test]
+    fn add_worktree_rejects_valid_name_collision_without_deleting_it() {
+        use crate::services::test_support::create_branch;
+        let (temp, repo) = init_test_repo("worktrees_name_collision");
+        let default_branch = repo.head().unwrap().shorthand().unwrap().to_string();
+        create_branch(&repo, "one");
+        create_branch(&repo, "two");
+        let service = GitService::open(temp.path_str()).expect("open service");
+
+        // Two worktree dirs sharing the same basename `feature` under
+        // different parents — the second add must not prune the first.
+        let base_a = unique_wt_path("collide_a");
+        let base_b = unique_wt_path("collide_b");
+        let wt_a = base_a.join("feature");
+        let wt_b = base_b.join("feature");
+        let _cleanup_a = CleanupDir(base_a.clone());
+        let _cleanup_b = CleanupDir(base_b.clone());
+
+        add_worktree(&service, &wt_a, Some("one"), &default_branch)
+            .expect("first worktree should add");
+        let marker = wt_a.join("keep.txt");
+        std::fs::write(&marker, b"precious").expect("write marker into first worktree");
+
+        let result = add_worktree(&service, &wt_b, Some("two"), &default_branch);
+        assert!(
+            result.is_err(),
+            "adding a worktree whose name collides with a valid one must error"
+        );
+        assert!(
+            marker.exists(),
+            "the existing valid worktree's files must be left intact"
+        );
     }
 
     #[test]
