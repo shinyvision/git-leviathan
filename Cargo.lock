@@ -1708,7 +1708,7 @@ dependencies = [
 
 [[package]]
 name = "git_leviathan"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "dirs",
