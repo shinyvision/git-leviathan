@@ -5,10 +5,12 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+publish = false
+description = "Internal build tasks for Git Leviathan (plugin schema generation, fixtures)."
 
 [dependencies]
 base64 = "0.22"
-git_leviathan_plugin_api = { path = "../git_leviathan_plugin_api" }
+git_leviathan_plugin_api = { path = "../git_leviathan_plugin_api", version = "0.1.0" }
 mlua = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

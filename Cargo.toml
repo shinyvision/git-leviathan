@@ -18,11 +18,30 @@ notify = { version = "7", features = ["macos_fsevent"] }
 
 [package]
 name = "git_leviathan"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
-description = "Git client built with Iced."
+description = "A fast, native, graph-first Git client built with Iced."
 license = "MIT"
+authors.workspace = true
 rust-version.workspace = true
+repository = "https://github.com/shinyvision/git-leviathan"
+homepage = "https://github.com/shinyvision/git-leviathan"
+readme = "README.md"
+keywords = ["git", "gui", "iced", "vcs", "git-client"]
+categories = ["development-tools", "gui"]
+# Keep the published tarball to the sources the crate actually builds from.
+# Docs, CI, screenshots and the icon sizes only used by the .deb/.rpm packaging
+# are not needed by `cargo install`.
+exclude = [
+    "/.cargo",
+    "/.claude",
+    "/.codex",
+    "/.github",
+    "/docs",
+    "/packaging/icons/hicolor",
+    "/*_REFACTOR.md",
+    "/PLUGIN_UI_V1_CONTRACT.md",
+]
 
 [[bin]]
 name = "git_leviathan"
@@ -47,7 +66,7 @@ mlua = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 toml = { workspace = true }
-git_leviathan_plugin_api = { path = "git_leviathan_plugin_api" }
+git_leviathan_plugin_api = { path = "git_leviathan_plugin_api", version = "0.1.0" }
 semver = { workspace = true }
 libloading = "0.8"
 sha2 = "0.10"

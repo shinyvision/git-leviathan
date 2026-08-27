@@ -5,6 +5,11 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 rust-version.workspace = true
+description = "Shared plugin manifest, capability and descriptor types for Git Leviathan plugins."
+repository = "https://github.com/shinyvision/git-leviathan"
+homepage = "https://github.com/shinyvision/git-leviathan"
+keywords = ["git", "plugin", "lua", "gui"]
+categories = ["development-tools"]
 
 [dependencies]
 serde = { workspace = true }

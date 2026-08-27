@@ -41,6 +41,23 @@ Git Leviathan started as an attempt to solve all three problems at once: an open
 
 ## Installation
 
+### Cargo (crates.io)
+
+```bash
+cargo install git_leviathan
+```
+
+This builds from source, so you need a recent Rust toolchain (see `rust-version` in
+`Cargo.toml`). On Linux you also need `fontconfig` development headers
+(`sudo apt-get install libfontconfig1-dev` on Debian/Ubuntu, `fontconfig` on
+Fedora/Arch). libgit2, SQLite and LuaJIT are vendored, so nothing else is required.
+
+The binary is installed as `git_leviathan` in `~/.cargo/bin`. Note that this route
+installs the executable only — it does not register a desktop entry or icons; use one
+of the packages below if you want the app to show up in your application launcher.
+
+### Pre-built binaries
+
 Pre-built binaries for every tagged release are available on the [Releases page](https://github.com/shinyvision/git-leviathan/releases). Pick the asset that matches your platform:
 
 | Platform | Architecture | Asset |
