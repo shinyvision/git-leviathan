@@ -151,7 +151,7 @@ mod tests {
         write_file(&temp.path, "tracked.txt", "base\n");
         commit_all(&repo, "base for stash test");
 
-        let mut service = GitService::open(temp.path_str()).expect("open service");
+        let service = GitService::open(temp.path_str()).expect("open service");
 
         // Stash A (will end up at a higher index as more are pushed).
         write_file(&temp.path, "tracked.txt", "change A\n");
@@ -179,7 +179,7 @@ mod tests {
         assert_ne!(a_index, 0, "A should have shifted off index 0");
 
         // Drop by A's stable hash.
-        drop_stash(&mut service, &stash_a_hash).expect("drop A by hash");
+        drop_stash(&service, &stash_a_hash).expect("drop A by hash");
 
         let after = load_stashes(&service);
         assert_eq!(after.len(), 2, "exactly one stash dropped");
@@ -202,11 +202,11 @@ mod tests {
         let (temp, repo) = init_test_repo("stash_hash_missing");
         write_file(&temp.path, "tracked.txt", "base\n");
         commit_all(&repo, "base");
-        let mut service = GitService::open(temp.path_str()).expect("open service");
+        let service = GitService::open(temp.path_str()).expect("open service");
         write_file(&temp.path, "tracked.txt", "change\n");
         create_stash(&service, Some("only stash")).expect("stash");
 
-        let result = drop_stash(&mut service, "0000000000000000000000000000000000000000");
+        let result = drop_stash(&service, "0000000000000000000000000000000000000000");
         assert!(result.is_err(), "dropping a non-existent hash must error");
         assert_eq!(load_stashes(&service).len(), 1, "the real stash survives");
     }

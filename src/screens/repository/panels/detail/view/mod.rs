@@ -254,7 +254,7 @@ fn detail_panel_content(screen: DetailViewModel<'_>) -> Element<'_, Message> {
             text(&commit.author)
                 .size(theme::FONT_MD)
                 .style(style::primary_text),
-            text(format!("authored {}", &commit.date))
+            text(format!("authored {}", commit.date))
                 .size(theme::FONT_SM)
                 .style(style::secondary_text),
         ]

@@ -1184,7 +1184,11 @@ mod tests {
                 ..RuntimeGrammarSecurityPolicy::default()
             },
         );
-        let document = HighlightDocument::from_path("{{ name }}\n", "templates/card.html.twig");
+        // Keep this document distinct from every other test's: a matching
+        // path and content produce the same HighlightSpanCacheKey, and a hit
+        // in the process-global span cache returns before `highlight_line`
+        // reaches the install queue, leaving the status stuck on Missing.
+        let document = HighlightDocument::from_path("{{ headline }}\n", "templates/hero.html.twig");
 
         let status = service.syntax_status_for_document(&document);
         let highlighted = service.highlight_line(&document, 1).unwrap();
@@ -1199,7 +1203,7 @@ mod tests {
                 install_status: GrammarInstallStatus::Missing,
             }
         );
-        assert_plain_line(highlighted.spans(), "{{ name }}");
+        assert_plain_line(highlighted.spans(), "{{ headline }}");
         assert_eq!(document.highlight_stats().parsed_trees, 0);
         let after_highlight_status = service.syntax_status_for_document(&document);
         assert!(
