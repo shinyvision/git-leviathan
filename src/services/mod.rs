@@ -3,6 +3,7 @@ pub mod gateway;
 pub mod git;
 pub mod git_detect;
 pub mod git_error;
+pub mod media;
 pub mod migrations;
 pub mod presenter;
 pub mod settings;
@@ -20,7 +21,8 @@ pub use git::working_tree_diff::{
 };
 pub use git::{
     kill_running_fetch_processes, kill_running_git_processes, load_commit_diff,
-    load_merged_commit_diff, load_merged_commit_file_diff, BranchMergeOutcome, CherryPickOutcome,
+    load_media_diff_sources, load_merged_commit_diff, load_merged_commit_file_diff,
+    BranchMergeOutcome, CherryPickOutcome, MediaDiffRequest,
     CommitDiffResult, ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult,
     ModifyDeleteConflict, ModifyDeleteConflictChoice, PushOutcome, RemoteCheckoutOutcome,
     ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,

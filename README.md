@@ -32,6 +32,7 @@ Git Leviathan started as an attempt to solve all three problems at once: an open
 - **Graph-first history view** — follow branches, merges, tags, stashes, and long-lived maintenance lines without losing context.
 - **Commit details at a glance** — select a commit and inspect the message, author, parents, changed files, and stats in one place.
 - **Diff viewer with syntax highlighting** — read changes with tree-sitter based highlighting.
+- **Media diffs** — images, audio and video open as old → new players instead of a binary blob. Images get zoom/pan, swipe, onion-skin and pixel-difference modes, animated GIF/APNG/WebP playback, SVG rendering and EXIF metadata; audio gets waveforms with scrubbing; video streams through FFmpeg with frame stepping and A/V sync. Exotic formats (HEIC, AVIF, JPEG XL, RAW, Opus, WMA, …) are handled by FFmpeg when it is installed.
 - **Multi-tab workspace** — keep several repositories open side by side.
 - **Plugin system** — extend the app with Lua plugins for commands, UI slots, dock panels, graph decorations, services, and more. Documentation coming soon.
 - **Live filesystem watching** — the UI updates when your working tree does.
@@ -48,9 +49,14 @@ cargo install git_leviathan
 ```
 
 This builds from source, so you need a recent Rust toolchain (see `rust-version` in
-`Cargo.toml`). On Linux you also need `fontconfig` development headers
-(`sudo apt-get install libfontconfig1-dev` on Debian/Ubuntu, `fontconfig` on
-Fedora/Arch). libgit2, SQLite and LuaJIT are vendored, so nothing else is required.
+`Cargo.toml`). On Linux you also need the `fontconfig` and ALSA development headers
+(`sudo apt-get install libfontconfig1-dev libasound2-dev` on Debian/Ubuntu,
+`fontconfig alsa-lib-devel` on Fedora, `fontconfig alsa-lib` on Arch). libgit2, SQLite
+and LuaJIT are vendored, so nothing else is required.
+
+Video previews (and a few exotic image/audio formats) are decoded by the `ffmpeg` and
+`ffprobe` executables at runtime. They are optional: without them images and common
+audio formats still work, and video files show a message explaining what to install.
 
 The binary is installed as `git_leviathan` in `~/.cargo/bin`. Note that this route
 installs the executable only — it does not register a desktop entry or icons; use one
@@ -123,11 +129,12 @@ SmartScreen may warn on first launch — click **More info** → **Run anyway**.
 
 ### Build from source
 
-Requires a recent Rust toolchain. On Linux you also need `fontconfig` development headers.
+Requires a recent Rust toolchain. On Linux you also need the `fontconfig` and ALSA
+development headers.
 
 ```bash
 # Linux prerequisites (Debian/Ubuntu)
-sudo apt-get install libfontconfig1-dev
+sudo apt-get install libfontconfig1-dev libasound2-dev
 
 git clone https://github.com/shinyvision/git-leviathan.git
 cd git-leviathan
@@ -156,6 +163,9 @@ cargo generate-rpm        # -> target/generate-rpm/*.rpm
 | Filesystem watching | [`notify`](https://crates.io/crates/notify) 7 |
 | Terminal support | [`portable-pty`](https://crates.io/crates/portable-pty) + [`vt100`](https://crates.io/crates/vt100) |
 | Text shaping | [`swash`](https://crates.io/crates/swash) |
+| Image decoding | [`image`](https://crates.io/crates/image) 0.25 + [`resvg`](https://crates.io/crates/resvg) + [`kamadak-exif`](https://crates.io/crates/kamadak-exif) |
+| Audio decoding / output | [`symphonia`](https://crates.io/crates/symphonia) 0.5 + [`cpal`](https://crates.io/crates/cpal) 0.17 |
+| Video | FFmpeg (`ffmpeg`/`ffprobe` subprocesses, optional at runtime) |
 
 ## License
 

@@ -5,6 +5,7 @@ mod diff;
 mod fetch;
 mod helpers;
 mod loader;
+mod media_diff;
 mod merge;
 mod push;
 mod rebase;
@@ -32,6 +33,7 @@ pub use conflict_resolution::{
     ConflictBlock, ConflictResolutionResult, ModifyDeleteConflict, ModifyDeleteConflictChoice,
 };
 pub use helpers::{kill_running_fetch_processes, kill_running_git_processes};
+pub use media_diff::MediaDiffRequest;
 pub use push::PushOutcome;
 
 pub const COMMIT_LOAD_LIMIT: usize = 500;
@@ -111,6 +113,36 @@ pub fn load_merged_commit_file_diff(
     file_path: &str,
 ) -> Result<WorkingTreeDiffResult, GitError> {
     diff::load_merged_commit_file_diff(repo_path, hashes, file_path)
+}
+
+/// Resolve both sides of a media change to blob bytes / workdir paths.
+pub fn load_media_diff_sources(
+    repo_path: &str,
+    request: &MediaDiffRequest,
+) -> Result<crate::services::media::MediaDiffSources, GitError> {
+    match request {
+        MediaDiffRequest::Dirty {
+            path,
+            is_staged,
+            kind,
+        } => {
+            let service = GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
+            media_diff::load_dirty_media_sources(&service, path, *is_staged, *kind)
+        }
+        MediaDiffRequest::Commit {
+            commit_hash,
+            path,
+            kind,
+        } => {
+            let service = GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
+            media_diff::load_commit_media_sources(&service.repo, commit_hash, path, *kind)
+        }
+        MediaDiffRequest::Merged {
+            hashes,
+            path,
+            kind,
+        } => media_diff::load_merged_media_sources(repo_path, hashes, path, *kind),
+    }
 }
 
 impl GitService {

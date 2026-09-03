@@ -38,9 +38,11 @@ use crate::screens::repository::{
 use super::conflict::ConflictResolverViewModel;
 
 mod buffers;
+mod media_view;
 mod rows;
 mod styles;
 
+pub(in crate::screens::repository) use media_view::{media_center_view, MediaViewModel};
 pub(in crate::screens::repository) use rows::{
     build_conflict_rows_for_canvas, build_diff_rows_public,
 };
@@ -61,7 +63,7 @@ pub(in crate::screens::repository) struct DiffViewModel<'a> {
 /// Shared header row: "Back to graph" button + right-aligned file path,
 /// optionally followed by a trailing element (e.g. the Save button on the
 /// conflict resolver). Identical styling/padding in both views.
-fn diff_header<'a>(
+pub(super) fn diff_header<'a>(
     file_path: &'a str,
     grammar_status: Option<Element<'a, Message>>,
     trailing: Option<Element<'a, Message>>,

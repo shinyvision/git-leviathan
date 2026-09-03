@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
       - run: cargo test --locked
 
   # Required aspirational gate. Flips from soft to strict once the warning
@@ -33,7 +33,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
       - run: cargo clippy --locked --all-targets -- -D warnings
 
   # Informational. Prints a bloat report so per-phase binary-size changes are visible.
@@ -45,7 +45,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
       - run: cargo install cargo-bloat --locked
       - name: bloat by crate
         run: cargo bloat --release --crates --message-format=json > bloat-crates.json || true
@@ -65,7 +65,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
-      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+      - run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
       - run: cargo install cargo-udeps --locked
       - run: cargo +nightly udeps --all-targets
 

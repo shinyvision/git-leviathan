@@ -39,6 +39,7 @@ mod commit;
 mod conflict;
 mod dirty;
 mod highlight_schedule;
+mod media;
 mod merged;
 mod search;
 mod selection;
@@ -54,6 +55,10 @@ pub(in crate::screens::repository) use conflict::{
     ConflictSide,
 };
 pub(in crate::screens::repository) use dirty::{DirtyDiffSyncResult, DirtyFileDiffState};
+pub(in crate::screens::repository) use media::{
+    AbsentReason, CompareMode, DifferenceState, MediaAction, MediaDiffState,
+    MediaSideState, TransportCommand, SEEK_STEP_SECS,
+};
 pub(in crate::screens::repository) use merged::MergedFileDiffState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +127,11 @@ pub(in crate::screens::repository) struct DiffPanel {
     >,
     highlight_in_flight: bool,
     highlight_rescan_requested: bool,
+    /// Media (image/audio/video) viewer state for the active file. Present
+    /// alongside the mode state that tracks which file is open.
+    pub media: Option<MediaDiffState>,
+    /// File the user explicitly asked to see as text instead of media.
+    force_text_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -170,7 +180,13 @@ impl DiffPanel {
             grammar_status_cache: std::cell::RefCell::new(None),
             highlight_in_flight: false,
             highlight_rescan_requested: false,
+            media: None,
+            force_text_path: None,
         }
+    }
+
+    pub(in crate::screens::repository) fn is_media_active(&self) -> bool {
+        self.is_active() && self.media.is_some()
     }
 
     fn next_diff_generation(&mut self) -> u64 {
@@ -214,6 +230,9 @@ impl DiffPanel {
         self.highlight_scheduler.reset();
         self.highlight_in_flight = false;
         self.highlight_rescan_requested = false;
+        // Dropping the media state stops playback and kills FFmpeg decoders.
+        self.media = None;
+        self.force_text_path = None;
         self.invalidate_grammar_status_cache();
         // Deliberately NOT releasing the process-wide syntax/text caches here:
         // they're bounded LRUs shared by every open tab, so wiping them when
@@ -356,6 +375,11 @@ impl DiffPanel {
                         save_busy: git_write_busy,
                     };
                     view::conflict_center_view(model)
+                } else if let Some(media) = &self.media {
+                    view::media_center_view(view::MediaViewModel {
+                        file_path: &media.file_path,
+                        state: media,
+                    })
                 } else if let Some(state) = self.active_single_file_diff() {
                     view::diff_center_view(self.build_single_file_view_model(state))
                 } else {
@@ -834,6 +858,12 @@ pub(in crate::screens::repository) fn on_diff_loaded<S: DiffLoadMode>(
     if state.file_path() != diff_result.file_path || state.generation() != generation {
         span.finish_with("applied", false);
         return Vec::new();
+    }
+    if let Some(kind) = diff_result.fallbacks.media_kind() {
+        // Binary content that sniffs as media behind a non-media extension:
+        // hand over to the media viewer instead of rendering a "binary" diff.
+        span.finish_with("applied", "media");
+        return vec![DiffPanelAction::Media(MediaAction::SwitchToMedia { kind })];
     }
     let WorkingTreeDiffResult {
         file_path,

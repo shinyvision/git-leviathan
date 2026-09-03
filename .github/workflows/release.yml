@@ -39,7 +39,7 @@ jobs:
           key: linux-${{ matrix.arch }}
 
       - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
 
       - name: Install cargo-deb and cargo-generate-rpm
         run: |

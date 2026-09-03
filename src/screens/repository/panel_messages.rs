@@ -377,6 +377,8 @@ pub enum DiffPanelAction {
     /// shared text-search bar re-renders on top of the new buffer; matches
     /// recompute silently (no scroll or re-select).
     CanvasHoverEntered(crate::widgets::diff_canvas::DiffCanvasId),
+    /// Media diff viewer (images / audio / video).
+    Media(super::panels::diff::MediaAction),
     None,
 }
 

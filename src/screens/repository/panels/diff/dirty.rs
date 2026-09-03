@@ -170,6 +170,17 @@ impl DiffPanel {
             selected_file_idx,
             last_signature: None,
         });
+        if let Some(kind) = self.media_kind_for_open(&path) {
+            return self.begin_media_load(
+                kind,
+                crate::services::MediaDiffRequest::Dirty {
+                    path,
+                    is_staged,
+                    kind,
+                },
+            );
+        }
+        self.media = None;
         DiffPanelAction::LoadDirtyFileDiff {
             generation,
             path,
@@ -230,6 +241,21 @@ impl DiffPanel {
         }
         if !result.force_reload && state.last_signature.as_ref() == Some(&result.signature) {
             return None;
+        }
+        if let Some(media) = &self.media {
+            let kind = media.kind;
+            let is_staged = result.is_staged;
+            if let Some(state) = self.dirty_file_diff.as_mut() {
+                state.last_signature = Some(result.signature.clone());
+            }
+            return Some(self.begin_media_load(
+                kind,
+                crate::services::MediaDiffRequest::Dirty {
+                    path: result.path,
+                    is_staged,
+                    kind,
+                },
+            ));
         }
         let generation = self.next_diff_generation();
         if let Some(state) = self.dirty_file_diff.as_mut() {

@@ -120,6 +120,7 @@ fn highlight_skip_summary(fallbacks: &DiffFallbacks) -> String {
             };
             let reason = match skip.reason {
                 DiffContentSkipReason::Binary => "binary content".to_string(),
+                DiffContentSkipReason::Media(kind) => format!("{} content", kind.label()),
                 DiffContentSkipReason::NonUtf8 => "non-UTF-8 content".to_string(),
                 DiffContentSkipReason::TooManyBytes { bytes, max } => {
                     format!("{bytes} bytes exceeds {max}")

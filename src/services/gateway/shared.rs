@@ -260,6 +260,13 @@ impl RepoRead for GitRepositoryGateway {
         self.with_service_unlocked(|service| service.load_conflict_resolution(file_path))
     }
 
+    fn load_media_diff_sources(
+        &self,
+        request: &crate::services::MediaDiffRequest,
+    ) -> Result<crate::services::media::MediaDiffSources, GitError> {
+        crate::services::load_media_diff_sources(&self.repo_path, request)
+    }
+
     fn load_modify_delete_conflict(
         &self,
         file_path: &str,

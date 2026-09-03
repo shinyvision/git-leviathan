@@ -574,6 +574,7 @@ pub(in crate::screens::repository) fn update(
             panel.on_canvas_hover_entered(canvas_id);
             Task::none()
         }
+        DiffPanelAction::Media(action) => panel.update_media(action, ctx),
         DiffPanelAction::None => Task::none(),
     }
 }
@@ -590,6 +591,12 @@ fn action_focuses_diff(action: &DiffPanelAction) -> bool {
             | DiffPanelAction::ConflictShiftWheel { .. }
             | DiffPanelAction::ConflictResolutionSaveRequested
             | DiffPanelAction::TextSearch(_)
+            | DiffPanelAction::Media(
+                super::media::MediaAction::Viewer { .. }
+                    | super::media::MediaAction::Transport { .. }
+                    | super::media::MediaAction::Timeline { .. }
+                    | super::media::MediaAction::Surface { .. }
+            )
     )
 }
 

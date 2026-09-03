@@ -39,6 +39,12 @@ pub trait RepoRead: Send + Sync {
         &self,
         file_path: &str,
     ) -> Result<ConflictResolutionResult, GitError>;
+    /// Bytes / on-disk locations of both sides of a media (image/audio/video)
+    /// change, for the media diff viewer.
+    fn load_media_diff_sources(
+        &self,
+        request: &crate::services::MediaDiffRequest,
+    ) -> Result<crate::services::media::MediaDiffSources, GitError>;
     fn load_modify_delete_conflict(
         &self,
         file_path: &str,

@@ -115,6 +115,17 @@ impl DiffPanel {
         self.diff_viewport_height = None;
         self.text_search = None;
         self.highlight_scheduler.reset();
+        if let Some(kind) = self.media_kind_for_open(&path) {
+            return self.begin_media_load(
+                kind,
+                crate::services::MediaDiffRequest::Merged {
+                    hashes,
+                    path,
+                    kind,
+                },
+            );
+        }
+        self.media = None;
         DiffPanelAction::LoadMergedFileDiff {
             generation,
             hashes,

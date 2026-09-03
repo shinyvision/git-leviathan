@@ -65,11 +65,21 @@ pub struct DiffFallbacks {
 }
 
 impl DiffFallbacks {
+    /// Media kind sniffed from binary content on either side, if any.
+    pub fn media_kind(&self) -> Option<crate::services::media::MediaKind> {
+        self.highlight_skips.iter().find_map(|skip| match skip.reason {
+            DiffContentSkipReason::Media(kind) => Some(kind),
+            _ => None,
+        })
+    }
+
     pub fn has_binary_or_non_utf8(&self) -> bool {
         self.highlight_skips.iter().any(|skip| {
             matches!(
                 skip.reason,
-                DiffContentSkipReason::Binary | DiffContentSkipReason::NonUtf8
+                DiffContentSkipReason::Binary
+                    | DiffContentSkipReason::Media(_)
+                    | DiffContentSkipReason::NonUtf8
             )
         })
     }
@@ -90,6 +100,8 @@ pub struct DiffContentSkip {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffContentSkipReason {
     Binary,
+    /// Binary content whose header identifies an image/audio/video format.
+    Media(crate::services::media::MediaKind),
     NonUtf8,
     TooManyBytes { bytes: usize, max: usize },
     TooManyLines { lines: usize, max: usize },
@@ -515,9 +527,18 @@ fn content_from_tree(
 
 pub(super) fn content_from_blob(blob: &git2::Blob<'_>) -> FileContent {
     if blob.is_binary() {
-        return FileContent::skipped(DiffContentSkipReason::Binary);
+        return FileContent::skipped(binary_skip_reason(blob.content()));
     }
     content_from_bytes(blob.content())
+}
+
+/// Binary content is either opaque or, when the header says so, media the
+/// viewer can render.
+fn binary_skip_reason(bytes: &[u8]) -> DiffContentSkipReason {
+    match crate::services::media::sniff_media_kind(&bytes[..bytes.len().min(64 * 1024)]) {
+        Some(kind) => DiffContentSkipReason::Media(kind),
+        None => DiffContentSkipReason::Binary,
+    }
 }
 
 fn content_from_bytes(bytes: &[u8]) -> FileContent {
@@ -528,6 +549,13 @@ fn content_from_bytes(bytes: &[u8]) -> FileContent {
         });
     }
     let Ok(text) = std::str::from_utf8(bytes) else {
+        // Working-tree files never go through `Blob::is_binary`; sniff here so
+        // an untracked image without a media extension still gets a viewer.
+        if let Some(kind) =
+            crate::services::media::sniff_media_kind(&bytes[..bytes.len().min(64 * 1024)])
+        {
+            return FileContent::skipped(DiffContentSkipReason::Media(kind));
+        }
         return FileContent::skipped(DiffContentSkipReason::NonUtf8);
     };
     let line_count = text.lines().take(MAX_HIGHLIGHT_LINES + 1).count();

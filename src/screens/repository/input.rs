@@ -117,6 +117,9 @@ pub(super) fn on_key_pressed(
         }
         return Some(super::commit_search::open(screen));
     }
+    if let Some(task) = media_key(screen, &key, modifiers) {
+        return Some(task);
+    }
     match key {
         keyboard::Key::Named(keyboard::key::Named::Escape) => {
             if screen.data.commit_search.is_some() {
@@ -153,6 +156,67 @@ pub(super) fn on_key_pressed(
         }
         _ => None,
     }
+}
+
+/// Transport / viewer shortcuts while a media diff is open and the center
+/// panel owns keyboard focus. Returns `None` for keys the media view doesn't
+/// claim so the regular handling continues.
+fn media_key(
+    screen: &mut RepositoryScreen,
+    key: &keyboard::Key,
+    modifiers: keyboard::Modifiers,
+) -> Option<Task<Message>> {
+    use super::panels::diff::{MediaAction, TransportCommand, SEEK_STEP_SECS};
+    if !screen.panels.diff.is_media_active()
+        || screen.overlay_manager.is_text_input_active()
+        || screen.input.focused_panel != FocusedPanel::Center
+        || modifiers.control()
+        || modifiers.alt()
+        || modifiers.logo()
+    {
+        return None;
+    }
+    let action = match key {
+        keyboard::Key::Named(keyboard::key::Named::Space) => {
+            MediaAction::KeyTransport(TransportCommand::TogglePlay)
+        }
+        keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
+            if modifiers.shift() {
+                MediaAction::KeyTransport(TransportCommand::StepFrame(-1))
+            } else {
+                MediaAction::KeyTransport(TransportCommand::SeekRelative(-SEEK_STEP_SECS))
+            }
+        }
+        keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
+            if modifiers.shift() {
+                MediaAction::KeyTransport(TransportCommand::StepFrame(1))
+            } else {
+                MediaAction::KeyTransport(TransportCommand::SeekRelative(SEEK_STEP_SECS))
+            }
+        }
+        keyboard::Key::Named(keyboard::key::Named::Home) => {
+            MediaAction::KeyTransport(TransportCommand::Stop)
+        }
+        keyboard::Key::Named(keyboard::key::Named::End) => {
+            MediaAction::KeyTransport(TransportCommand::SeekEnd)
+        }
+        keyboard::Key::Character(c) => match c.as_str() {
+            "m" => MediaAction::KeyTransport(TransportCommand::ToggleMute),
+            "l" => MediaAction::KeyTransport(TransportCommand::ToggleLoop),
+            "," => MediaAction::KeyTransport(TransportCommand::StepFrame(-1)),
+            "." => MediaAction::KeyTransport(TransportCommand::StepFrame(1)),
+            "+" | "=" => MediaAction::ZoomIn,
+            "-" | "_" => MediaAction::ZoomOut,
+            "0" | "f" => MediaAction::ZoomFit,
+            "1" => MediaAction::ZoomActual,
+            "i" => MediaAction::ToggleInfo,
+            "c" => MediaAction::ToggleCheckerboard,
+            "g" => MediaAction::TogglePixelGrid,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    Some(screen.handle_diff_panel_action(DiffPanelAction::Media(action)))
 }
 
 fn handle_navigate(screen: &mut RepositoryScreen, action: CenterAction) -> Task<Message> {
