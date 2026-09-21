@@ -146,7 +146,13 @@ impl LuaLoader {
         globals.set("package", LuaValue::Nil)?;
         if let Ok(os_table) = globals.get::<mlua::Table>("os") {
             for unsafe_fn in [
-                "execute", "exit", "remove", "rename", "tmpname", "getenv", "setlocale",
+                "execute",
+                "exit",
+                "remove",
+                "rename",
+                "tmpname",
+                "getenv",
+                "setlocale",
             ] {
                 os_table.set(unsafe_fn, LuaValue::Nil)?;
             }
@@ -694,7 +700,10 @@ mod tests {
                 ))
                 .eval()
                 .unwrap();
-            assert!(blocked, "expected `{expr}` to be inaccessible after install()");
+            assert!(
+                blocked,
+                "expected `{expr}` to be inaccessible after install()"
+            );
         }
 
         // The safe, commonly-used clock/date helpers stay available.

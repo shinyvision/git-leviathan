@@ -56,8 +56,8 @@ pub(in crate::screens::repository) use conflict::{
 };
 pub(in crate::screens::repository) use dirty::{DirtyDiffSyncResult, DirtyFileDiffState};
 pub(in crate::screens::repository) use media::{
-    AbsentReason, CompareMode, DifferenceState, MediaAction, MediaDiffState,
-    MediaSideState, TransportCommand, SEEK_STEP_SECS,
+    AbsentReason, CompareMode, DifferenceState, MediaAction, MediaDiffState, MediaSideState,
+    TransportCommand, SEEK_STEP_SECS,
 };
 pub(in crate::screens::repository) use merged::MergedFileDiffState;
 

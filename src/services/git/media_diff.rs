@@ -293,8 +293,7 @@ mod tests {
         commit_all(&repo, "add");
         std::fs::remove_file(temp.path.join("a.png")).unwrap();
         let service = GitService::open(temp.path_str()).unwrap();
-        let sources =
-            load_dirty_media_sources(&service, "a.png", false, MediaKind::Image).unwrap();
+        let sources = load_dirty_media_sources(&service, "a.png", false, MediaKind::Image).unwrap();
         assert!(matches!(sources.old, MediaSource::Blob { .. }));
         assert!(sources.new.is_missing());
     }
@@ -311,8 +310,7 @@ mod tests {
         index.add_path(Path::new("a.png")).unwrap();
         index.write().unwrap();
         let service = GitService::open(temp.path_str()).unwrap();
-        let sources =
-            load_dirty_media_sources(&service, "a.png", true, MediaKind::Image).unwrap();
+        let sources = load_dirty_media_sources(&service, "a.png", true, MediaKind::Image).unwrap();
         match (&sources.old, &sources.new) {
             (MediaSource::Blob { bytes: o, .. }, MediaSource::Blob { bytes: n, .. }) => {
                 assert_eq!(o.len(), 11);

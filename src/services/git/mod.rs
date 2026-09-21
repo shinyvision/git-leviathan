@@ -126,7 +126,8 @@ pub fn load_media_diff_sources(
             is_staged,
             kind,
         } => {
-            let service = GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
+            let service =
+                GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
             media_diff::load_dirty_media_sources(&service, path, *is_staged, *kind)
         }
         MediaDiffRequest::Commit {
@@ -134,14 +135,13 @@ pub fn load_media_diff_sources(
             path,
             kind,
         } => {
-            let service = GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
+            let service =
+                GitService::open(repo_path).map_err(|e| GitError::Other(e.to_string()))?;
             media_diff::load_commit_media_sources(&service.repo, commit_hash, path, *kind)
         }
-        MediaDiffRequest::Merged {
-            hashes,
-            path,
-            kind,
-        } => media_diff::load_merged_media_sources(repo_path, hashes, path, *kind),
+        MediaDiffRequest::Merged { hashes, path, kind } => {
+            media_diff::load_merged_media_sources(repo_path, hashes, path, *kind)
+        }
     }
 }
 

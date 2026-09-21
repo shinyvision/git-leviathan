@@ -1591,6 +1591,7 @@ fn fallback_queries_for_package(
             ),
         ],
         ("xml", _) => &[("queries/highlights.scm", XML_FALLBACK_HIGHLIGHTS)],
+        ("kotlin", _) => &[("queries/highlights.scm", KOTLIN_FALLBACK_HIGHLIGHTS)],
         ("markdown", _) => &[
             ("queries/highlights.scm", MARKDOWN_FALLBACK_HIGHLIGHTS),
             ("queries/injections.scm", MARKDOWN_FALLBACK_INJECTIONS),
@@ -1681,6 +1682,87 @@ const CPP_C_BASE_HIGHLIGHTS: &str = r##"(identifier) @variable
 
 (comment) @comment
 "##;
+
+const KOTLIN_FALLBACK_HIGHLIGHTS: &str = r#"; Comments
+(shebang) @comment
+(line_comment) @comment
+(block_comment) @comment
+
+; Strings and literals
+(string_literal) @string
+(multiline_string_literal) @string
+(string_content) @string
+(escape_sequence) @string
+(character_literal) @string
+
+(number_literal) @number
+(float_literal) @float
+
+; true/false/null are lexed as identifiers by this grammar
+((identifier) @constant.builtin
+  (#match? @constant.builtin "^(true|false|null)$"))
+
+; Soft modifiers that this grammar lexes as identifiers
+((identifier) @keyword
+  (#match? @keyword "^(actual|annotation|companion|const|constructor|data|enum|expect|external|field|file|final|get|init|inner|lateinit|operator|open|override|param|receiver|set|setparam|value)$"))
+
+; Declarations
+(function_declaration (identifier) @function)
+(class_declaration (identifier) @type)
+(object_declaration (identifier) @type)
+(companion_object (identifier) @type)
+(enum_entry (identifier) @constant)
+(constructor_invocation (user_type) @constructor)
+(callable_reference (identifier) @function)
+
+; Types
+(user_type) @type
+(type_parameter (identifier) @type)
+(type_constraint (identifier) @type)
+
+; Variables and parameters
+(variable_declaration (identifier) @variable)
+(class_parameter (identifier) @parameter)
+(parameter (identifier) @parameter)
+(for_statement (variable_declaration (identifier) @parameter))
+(catch_block (identifier) @parameter)
+(setter (identifier) @parameter)
+
+; Calls and member access
+(call_expression (identifier) @function)
+(call_expression (navigation_expression (identifier) @function .))
+(navigation_expression (identifier) @property .)
+(value_argument (identifier) @property)
+(infix_expression (identifier) @operator)
+
+; Annotations
+(use_site_target) @keyword
+
+; Operators
+[
+  "!" "!!" "!=" "!==" "!in" "!is"
+  "&" "&&" "*=" "+" "++" "+=" "->" "-" "--" "-="
+  "/" "/=" "%" "%=" "<" "<=" "=" "==" "===" ">" ">="
+  ".." "..<" "?:" "?." "||" "*" "?"
+] @operator
+
+; Keywords
+[
+  "abstract" "actual" "annotation" "by" "catch" "class" "companion" "const"
+  "constructor" "crossinline" "data" "delegate" "do" "dynamic" "else" "enum"
+  "expect" "external" "field" "file" "final" "finally" "for" "fun" "get" "if"
+  "import" "in" "infix" "init" "inline" "inner" "interface" "internal" "is"
+  "lateinit" "noinline" "object" "open" "operator" "out" "override" "package"
+  "param" "private" "property" "protected" "public" "receiver" "return"
+  "return@" "sealed" "set" "setparam" "suspend" "tailrec" "this" "this@"
+  "throw" "try" "typealias" "val" "value" "var" "vararg" "when" "where"
+  "while" "super" "super@"
+] @keyword
+
+; Punctuation
+[ "(" ")" "[" "]" "{" "}" ] @punctuation.bracket
+[ "," "." ";" ":" "::" "$" ] @punctuation.delimiter
+"#;
 
 const MARKDOWN_FALLBACK_HIGHLIGHTS: &str = r#"(atx_heading (inline) @text.title)
 (setext_heading (paragraph) @text.title)

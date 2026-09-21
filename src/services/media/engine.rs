@@ -93,7 +93,9 @@ pub enum VoiceSource {
     Stream(Arc<StreamBuffer>),
     /// A voice with nothing to play yet (e.g. video before the first seek
     /// finished). Keeps the transport state alive.
-    Silent { sample_rate: u32 },
+    Silent {
+        sample_rate: u32,
+    },
 }
 
 impl VoiceSource {
@@ -193,9 +195,7 @@ impl Voice {
         let state = self.shared.state.load(Ordering::Acquire);
         if state == STATE_PLAYING {
             if engine().is_ready() {
-                self.shared
-                    .state
-                    .store(STATE_STOPPING, Ordering::Release);
+                self.shared.state.store(STATE_STOPPING, Ordering::Release);
             } else {
                 self.shared.state.store(STATE_STOPPED, Ordering::Release);
             }
@@ -430,8 +430,7 @@ impl AudioEngine {
     }
 
     fn mark_failed(&self, message: String) {
-        *self.status.lock().unwrap_or_else(|e| e.into_inner()) =
-            EngineStatus::Unavailable(message);
+        *self.status.lock().unwrap_or_else(|e| e.into_inner()) = EngineStatus::Unavailable(message);
         self.ready.store(false, Ordering::Release);
     }
 }

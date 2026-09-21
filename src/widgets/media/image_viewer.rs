@@ -95,7 +95,8 @@ impl AnimationPlayback {
     }
 
     pub fn play(&mut self, image: &DecodedImage, now: Instant) {
-        let phase = image.frame_start_ms(self.paused_frame.min(image.frame_count().saturating_sub(1)));
+        let phase =
+            image.frame_start_ms(self.paused_frame.min(image.frame_count().saturating_sub(1)));
         self.anchor = Some((now, phase));
         self.playing = true;
     }
@@ -183,9 +184,15 @@ pub enum ImageViewerEvent {
     SwipeMoved(f32),
     /// Effective pixels-per-image-pixel currently drawn (changes with fit)
     /// plus the pane size, so toolbar zoom steps can be centred properly.
-    ScaleReported { scale: f32, pane: Size },
+    ScaleReported {
+        scale: f32,
+        pane: Size,
+    },
     /// Displayed animation frame changed (layer index, frame index).
-    FrameChanged { layer: usize, frame: usize },
+    FrameChanged {
+        layer: usize,
+        frame: usize,
+    },
 }
 
 pub struct ImageViewerSpec<'a, Message> {
@@ -334,7 +341,13 @@ pub fn zoom_at(
 }
 
 /// Zoom around the pane centre (toolbar buttons / keyboard).
-pub fn zoom_centered(view: ImageView, factor: f32, bounds: Size, image_w: f32, image_h: f32) -> ImageView {
+pub fn zoom_centered(
+    view: ImageView,
+    factor: f32,
+    bounds: Size,
+    image_w: f32,
+    image_h: f32,
+) -> ImageView {
     zoom_at(
         view,
         factor,
@@ -345,10 +358,20 @@ pub fn zoom_centered(view: ImageView, factor: f32, bounds: Size, image_w: f32, i
     )
 }
 
-pub fn pan_by(view: ImageView, delta: Vector, bounds: Size, image_w: f32, image_h: f32) -> ImageView {
+pub fn pan_by(
+    view: ImageView,
+    delta: Vector,
+    bounds: Size,
+    image_w: f32,
+    image_h: f32,
+) -> ImageView {
     let place = placement(view, bounds, image_w, image_h);
     let (cx, cy) = view.center;
-    let center = if view.scale.is_none() { (0.5, 0.5) } else { (cx, cy) };
+    let center = if view.scale.is_none() {
+        (0.5, 0.5)
+    } else {
+        (cx, cy)
+    };
     clamp_view(
         ImageView {
             scale: Some(place.scale),
@@ -387,12 +410,17 @@ impl<'a, Message: Clone + 'a> Program<Message> for ImageViewerProgram<'a, Messag
                 state.last_redraw = Some(*now);
                 let mut action: Option<canvas::Action<Message>> = None;
                 // Report fit-scale changes so the toolbar zoom label is right.
-                if state.last_scale.is_none_or(|s| (s - place.scale).abs() > 1e-4) {
+                if state
+                    .last_scale
+                    .is_none_or(|s| (s - place.scale).abs() > 1e-4)
+                {
                     state.last_scale = Some(place.scale);
-                    action = Some(canvas::Action::publish(emit(ImageViewerEvent::ScaleReported {
-                        scale: place.scale,
-                        pane: size,
-                    })));
+                    action = Some(canvas::Action::publish(emit(
+                        ImageViewerEvent::ScaleReported {
+                            scale: place.scale,
+                            pane: size,
+                        },
+                    )));
                 }
                 // Animation ticking.
                 let mut next_wait: Option<Duration> = None;
@@ -436,7 +464,10 @@ impl<'a, Message: Clone + 'a> Program<Message> for ImageViewerProgram<'a, Messag
                 }
                 let factor = 1.15f32.powf(lines.clamp(-6.0, 6.0));
                 let view = zoom_at(self.spec.view, factor, pos, size, iw, ih);
-                Some(canvas::Action::publish(emit(ImageViewerEvent::ViewChanged(view))).and_capture())
+                Some(
+                    canvas::Action::publish(emit(ImageViewerEvent::ViewChanged(view)))
+                        .and_capture(),
+                )
             }
             canvas::Event::Mouse(mouse::Event::ButtonPressed(button)) => {
                 let pos = cursor.position_in(bounds)?;
@@ -461,13 +492,18 @@ impl<'a, Message: Clone + 'a> Program<Message> for ImageViewerProgram<'a, Messag
             canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let pos = cursor.position_in(bounds).or_else(|| {
                     // Keep dragging while the cursor is outside the pane.
-                    cursor.position().map(|p| Point::new(p.x - bounds.x, p.y - bounds.y))
+                    cursor
+                        .position()
+                        .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y))
                 });
                 state.hover = cursor.position_in(bounds);
                 match (state.drag, pos) {
                     (Some(DragState::Pan { last, .. }), Some(pos)) => {
                         let delta = Vector::new(pos.x - last.x, pos.y - last.y);
-                        state.drag = Some(DragState::Pan { last: pos, moved: true });
+                        state.drag = Some(DragState::Pan {
+                            last: pos,
+                            moved: true,
+                        });
                         if delta.x == 0.0 && delta.y == 0.0 {
                             return None;
                         }
@@ -486,7 +522,9 @@ impl<'a, Message: Clone + 'a> Program<Message> for ImageViewerProgram<'a, Messag
                         )
                     }
                     _ => {
-                        if self.spec.inspector || matches!(self.spec.content, PaneContent::Swipe { .. }) {
+                        if self.spec.inspector
+                            || matches!(self.spec.content, PaneContent::Swipe { .. })
+                        {
                             Some(canvas::Action::request_redraw())
                         } else {
                             None
@@ -551,7 +589,11 @@ impl<'a, Message: Clone + 'a> Program<Message> for ImageViewerProgram<'a, Messag
         if self.spec.checkerboard {
             draw_checkerboard(&mut frame, rect, size);
         } else {
-            frame.fill_rectangle(rect.position(), rect.size(), Color::from_rgb8(0x10, 0x11, 0x19));
+            frame.fill_rectangle(
+                rect.position(),
+                rect.size(),
+                Color::from_rgb8(0x10, 0x11, 0x19),
+            );
         }
 
         let filter = if self.spec.nearest || place.scale >= 3.0 {
@@ -664,10 +706,16 @@ fn draw_layer(
     // its own pixel size anchored at the top-left so overlays line up.
     let rect = Rectangle::new(
         place.origin,
-        Size::new(img.width as f32 * place.scale, img.height as f32 * place.scale),
+        Size::new(
+            img.width as f32 * place.scale,
+            img.height as f32 * place.scale,
+        ),
     );
     if let Some(svg) = &img.svg {
-        frame.draw_svg(rect, iced::advanced::svg::Svg::new(svg.clone()).opacity(opacity));
+        frame.draw_svg(
+            rect,
+            iced::advanced::svg::Svg::new(svg.clone()).opacity(opacity),
+        );
         return;
     }
     let idx = layer.frame_index(now);
@@ -747,7 +795,13 @@ fn draw_pixel_grid(frame: &mut Frame, place: &Placement, size: Size) {
     }
 }
 
-fn draw_swipe_handle(frame: &mut Frame, x: f32, rect: Rectangle, hover: Option<Point>, dragging: bool) {
+fn draw_swipe_handle(
+    frame: &mut Frame,
+    x: f32,
+    rect: Rectangle,
+    hover: Option<Point>,
+    dragging: bool,
+) {
     let top = rect.y.max(0.0);
     let bottom = (rect.y + rect.height).min(frame.height());
     let hot = dragging || hover.is_some_and(|h| (h.x - x).abs() <= SWIPE_HANDLE_RADIUS + 4.0);
@@ -759,7 +813,10 @@ fn draw_swipe_handle(frame: &mut Frame, x: f32, rect: Rectangle, hover: Option<P
     frame.stroke(
         &Path::line(Point::new(x, top), Point::new(x, bottom)),
         Stroke::default()
-            .with_color(Color { a: 0.55, ..Color::BLACK })
+            .with_color(Color {
+                a: 0.55,
+                ..Color::BLACK
+            })
             .with_width(3.0),
     );
     frame.stroke(
@@ -768,7 +825,13 @@ fn draw_swipe_handle(frame: &mut Frame, x: f32, rect: Rectangle, hover: Option<P
     );
     let cy = (top + bottom) / 2.0;
     let knob = Point::new(x, cy);
-    frame.fill(&Path::circle(knob, SWIPE_HANDLE_RADIUS), Color { a: 0.85, ..theme::BG_HEADER });
+    frame.fill(
+        &Path::circle(knob, SWIPE_HANDLE_RADIUS),
+        Color {
+            a: 0.85,
+            ..theme::BG_HEADER
+        },
+    );
     frame.stroke(
         &Path::circle(knob, SWIPE_HANDLE_RADIUS),
         Stroke::default().with_color(color).with_width(1.5),
@@ -816,7 +879,9 @@ fn draw_inspector(
         let (fw, fh) = frame_dims(f, img);
         let sx = ((x as f32 / img.width as f32) * fw as f32) as u32;
         let sy = ((y as f32 / img.height as f32) * fh as f32) as u32;
-        let i = ((sy.min(fh.saturating_sub(1)) as usize) * fw as usize + sx.min(fw.saturating_sub(1)) as usize) * 4;
+        let i = ((sy.min(fh.saturating_sub(1)) as usize) * fw as usize
+            + sx.min(fw.saturating_sub(1)) as usize)
+            * 4;
         if i + 3 < f.rgba.len() {
             let (r, g, b, a) = (f.rgba[i], f.rgba[i + 1], f.rgba[i + 2], f.rgba[i + 3]);
             lines.push(format!(
@@ -835,7 +900,10 @@ fn draw_inspector(
     let y0 = size.height - h - 8.0;
     frame.fill(
         &Path::rounded_rectangle(Point::new(x0, y0), Size::new(w, h), 4.0.into()),
-        Color { a: 0.88, ..theme::BG_HEADER },
+        Color {
+            a: 0.88,
+            ..theme::BG_HEADER
+        },
     );
     for (i, line) in lines.iter().enumerate() {
         frame.fill_text(Text {

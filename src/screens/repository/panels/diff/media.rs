@@ -81,7 +81,9 @@ impl AbsentReason {
             AbsentReason::NoPreviousVersion => {
                 "This file is new in this change, so there is nothing to show on the old side."
             }
-            AbsentReason::Deleted => "This change removes the file; only the old version can be shown.",
+            AbsentReason::Deleted => {
+                "This change removes the file; only the old version can be shown."
+            }
         }
     }
 }
@@ -233,7 +235,9 @@ impl std::fmt::Debug for MediaSideState {
             MediaSideState::Loading => write!(f, "Loading"),
             MediaSideState::Absent(r) => write!(f, "Absent({r:?})"),
             MediaSideState::Failed { message, .. } => write!(f, "Failed({message})"),
-            MediaSideState::Image { image, .. } => write!(f, "Image({}x{})", image.width, image.height),
+            MediaSideState::Image { image, .. } => {
+                write!(f, "Image({}x{})", image.width, image.height)
+            }
             MediaSideState::Audio(p) => write!(f, "Audio({:.2}s)", p.clip.duration_secs()),
             MediaSideState::Video(p) => write!(f, "Video({:.2}s)", p.duration_secs()),
         }
@@ -1129,7 +1133,12 @@ impl DiffPanel {
     }
 }
 
-fn apply_to_side(state: &mut MediaDiffState, side: MediaSide, command: TransportCommand, now: Instant) {
+fn apply_to_side(
+    state: &mut MediaDiffState,
+    side: MediaSide,
+    command: TransportCommand,
+    now: Instant,
+) {
     let volume = state.volume;
     let muted = state.muted;
     let looping = state.looping;
@@ -1156,7 +1165,8 @@ fn apply_to_side(state: &mut MediaDiffState, side: MediaSide, command: Transport
                 }
                 TransportCommand::Seek(secs) => {
                     let ms = (secs * 1000.0).max(0.0) as u32;
-                    let frame = image.frame_index_at(ms.min(image.total_duration_ms.saturating_sub(1)));
+                    let frame =
+                        image.frame_index_at(ms.min(image.total_duration_ms.saturating_sub(1)));
                     playback.seek_frame(image, frame, now);
                 }
                 TransportCommand::SeekRelative(delta) => {
@@ -1172,7 +1182,8 @@ fn apply_to_side(state: &mut MediaDiffState, side: MediaSide, command: Transport
                 }
                 TransportCommand::StepFrame(delta) => {
                     let current = playback.frame_at(image, now) as i64;
-                    let next = (current + delta as i64).rem_euclid(image.frame_count() as i64) as usize;
+                    let next =
+                        (current + delta as i64).rem_euclid(image.frame_count() as i64) as usize;
                     playback.pause(image, now);
                     playback.seek_frame(image, next, now);
                 }
@@ -1261,7 +1272,10 @@ mod tests {
 
     #[test]
     fn absent_reasons_have_copy() {
-        assert_eq!(AbsentReason::NoPreviousVersion.title(), "No previous version");
+        assert_eq!(
+            AbsentReason::NoPreviousVersion.title(),
+            "No previous version"
+        );
         assert!(AbsentReason::Deleted.detail().contains("removes"));
     }
 

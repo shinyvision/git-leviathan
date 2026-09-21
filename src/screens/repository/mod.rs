@@ -9,8 +9,8 @@ mod panels;
 pub(crate) mod state;
 mod view;
 
-pub use messages::{RepositoryFocusTarget, RepositoryMessage};
 pub(crate) use messages::GitWriteIntent;
+pub use messages::{RepositoryFocusTarget, RepositoryMessage};
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;

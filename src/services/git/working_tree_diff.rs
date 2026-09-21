@@ -67,10 +67,12 @@ pub struct DiffFallbacks {
 impl DiffFallbacks {
     /// Media kind sniffed from binary content on either side, if any.
     pub fn media_kind(&self) -> Option<crate::services::media::MediaKind> {
-        self.highlight_skips.iter().find_map(|skip| match skip.reason {
-            DiffContentSkipReason::Media(kind) => Some(kind),
-            _ => None,
-        })
+        self.highlight_skips
+            .iter()
+            .find_map(|skip| match skip.reason {
+                DiffContentSkipReason::Media(kind) => Some(kind),
+                _ => None,
+            })
     }
 
     pub fn has_binary_or_non_utf8(&self) -> bool {
@@ -103,8 +105,14 @@ pub enum DiffContentSkipReason {
     /// Binary content whose header identifies an image/audio/video format.
     Media(crate::services::media::MediaKind),
     NonUtf8,
-    TooManyBytes { bytes: usize, max: usize },
-    TooManyLines { lines: usize, max: usize },
+    TooManyBytes {
+        bytes: usize,
+        max: usize,
+    },
+    TooManyLines {
+        lines: usize,
+        max: usize,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

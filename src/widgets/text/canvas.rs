@@ -183,8 +183,8 @@ impl<Msg: 'static> TextCanvasProgram<Msg> {
                         // Middle rows of a multi-row selection extend to the
                         // end of the line (in display cells) plus a half-cell.
                         let line_cells = super::layout::text_cells(&text);
-                        let span_cells =
-                            super::layout::cells_before(&text, to) - super::layout::cells_before(&text, from);
+                        let span_cells = super::layout::cells_before(&text, to)
+                            - super::layout::cells_before(&text, from);
                         CONTENT_PAD_X
                             + (line_cells as f32 * char_width).max(span_cells as f32 * char_width)
                             + char_width * 0.5

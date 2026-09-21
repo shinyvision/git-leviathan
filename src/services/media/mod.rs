@@ -110,7 +110,10 @@ pub struct MediaDiffSources {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MediaError {
     Missing,
-    TooLarge { bytes: u64, max: u64 },
+    TooLarge {
+        bytes: u64,
+        max: u64,
+    },
     Io(String),
     /// The bytes are not a recognizable media container (wrong extension,
     /// text masquerading as media, or a truncated header).
@@ -397,10 +400,7 @@ mod tests {
 
     #[test]
     fn too_large_source_is_rejected_before_decoding() {
-        let src = MediaSource::TooLarge {
-            bytes: 10,
-            max: 5,
-        };
+        let src = MediaSource::TooLarge { bytes: 10, max: 5 };
         let err = decode_side(MediaKind::Image, &src, "a.png").unwrap_err();
         assert!(matches!(err, MediaError::TooLarge { bytes: 10, max: 5 }));
     }
@@ -433,9 +433,23 @@ mod tests {
             dir.path(),
             "clip.mp4",
             &[
-                "-f", "lavfi", "-i", "testsrc=size=320x180:rate=25",
-                "-f", "lavfi", "-i", "sine=frequency=440:duration=3",
-                "-t", "3", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "aac", "-shortest",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=320x180:rate=25",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=3",
+                "-t",
+                "3",
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                "-c:a",
+                "aac",
+                "-shortest",
             ],
         ) else {
             eprintln!("ffmpeg not available; skipping video pipeline test");
@@ -449,7 +463,11 @@ mod tests {
         assert_eq!((info.width, info.height), (320, 180));
         assert!((info.fps - 25.0).abs() < 0.01, "fps {}", info.fps);
         assert!(info.has_audio);
-        assert!((info.duration_secs - 3.0).abs() < 0.2, "duration {}", info.duration_secs);
+        assert!(
+            (info.duration_secs - 3.0).abs() < 0.2,
+            "duration {}",
+            info.duration_secs
+        );
 
         // Poster frame arrives without playing.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -470,8 +488,15 @@ mod tests {
             player.advance(std::time::Instant::now());
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        assert!(player.frame_serial() > first_serial, "frames should advance while playing");
-        assert!(player.position_secs() > 0.3, "position {}", player.position_secs());
+        assert!(
+            player.frame_serial() > first_serial,
+            "frames should advance while playing"
+        );
+        assert!(
+            player.position_secs() > 0.3,
+            "position {}",
+            player.position_secs()
+        );
         player.pause();
         assert!(!player.is_playing());
 
@@ -484,14 +509,21 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         let frame = player.current_frame().unwrap();
-        assert!((frame.pts - 2.0).abs() < 0.2, "seek landed at {}", frame.pts);
+        assert!(
+            (frame.pts - 2.0).abs() < 0.2,
+            "seek landed at {}",
+            frame.pts
+        );
         assert!((player.position_secs() - 2.0).abs() < 0.2);
 
         // Frame stepping moves exactly one frame.
         let pts_before = player.current_frame().unwrap().pts;
         player.step_frame(1);
         let pts_after = player.current_frame().unwrap().pts;
-        assert!((pts_after - pts_before - 1.0 / 25.0).abs() < 0.005, "{pts_before} -> {pts_after}");
+        assert!(
+            (pts_after - pts_before - 1.0 / 25.0).abs() < 0.005,
+            "{pts_before} -> {pts_after}"
+        );
     }
 
     #[test]
@@ -500,7 +532,14 @@ mod tests {
         let Some(path) = synth(
             dir.path(),
             "voice.opus",
-            &["-f", "lavfi", "-i", "sine=frequency=660:duration=2", "-c:a", "libopus"],
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=660:duration=2",
+                "-c:a",
+                "libopus",
+            ],
         ) else {
             return;
         };
@@ -509,7 +548,11 @@ mod tests {
             panic!("expected audio");
         };
         assert_eq!(clip.info.decoder, "ffmpeg");
-        assert!((clip.duration_secs() - 2.0).abs() < 0.2, "{}", clip.duration_secs());
+        assert!(
+            (clip.duration_secs() - 2.0).abs() < 0.2,
+            "{}",
+            clip.duration_secs()
+        );
         // ffmpeg's `sine` source peaks around -18 dBFS.
         assert!(clip.waveform.peak > 0.05, "peak {}", clip.waveform.peak);
     }
@@ -520,7 +563,14 @@ mod tests {
         let Some(path) = synth(
             dir.path(),
             "song.m4a",
-            &["-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "aac"],
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:duration=2",
+                "-c:a",
+                "aac",
+            ],
         ) else {
             return;
         };
@@ -543,7 +593,14 @@ mod tests {
         let Some(path) = synth(
             dir.path(),
             "frame.sgi",
-            &["-f", "lavfi", "-i", "testsrc=size=64x48:rate=1", "-frames:v", "1"],
+            &[
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc=size=64x48:rate=1",
+                "-frames:v",
+                "1",
+            ],
         ) else {
             return;
         };

@@ -4,10 +4,10 @@
 //! FFmpeg transcode to PNG. EXIF is read where present and the orientation
 //! tag is baked into the displayed pixels.
 
-use std::io::Cursor;
 use bytes::Bytes;
 use iced::widget::image::Handle;
 use image::{AnimationDecoder, DynamicImage, GenericImageView, ImageDecoder, ImageFormat};
+use std::io::Cursor;
 
 use super::{format_bytes, MediaError};
 
@@ -127,7 +127,10 @@ impl DecodedImage {
                 "Dimensions".to_string(),
                 format!("{} × {}", info.original_width, info.original_height),
             ),
-            ("Megapixels".to_string(), format!("{:.2} MP", self.megapixels())),
+            (
+                "Megapixels".to_string(),
+                format!("{:.2} MP", self.megapixels()),
+            ),
             (
                 "Aspect ratio".to_string(),
                 aspect_ratio_label(info.original_width, info.original_height),
@@ -332,13 +335,7 @@ fn decode_with_image_crate(
                 h = img.height();
                 frames.push(frame_from_rgba(img, delay_ms));
             }
-            (
-                frames,
-                raw_frames.truncated,
-                w,
-                h,
-                w < orig_w || h < orig_h,
-            )
+            (frames, raw_frames.truncated, w, h, w < orig_w || h < orig_h)
         }
         _ => {
             let decoder = image::ImageReader::with_format(Cursor::new(bytes), format)
@@ -730,7 +727,11 @@ fn read_exif(bytes: &[u8]) -> ExifSummary {
             .get_field(exif::Tag::ResolutionUnit, primary)
             .and_then(|f| f.value.get_uint(0))
             .unwrap_or(2);
-        let (x, y) = if unit == 3 { (x * 2.54, y * 2.54) } else { (x, y) };
+        let (x, y) = if unit == 3 {
+            (x * 2.54, y * 2.54)
+        } else {
+            (x, y)
+        };
         if x > 0.0 && y > 0.0 {
             summary.dpi = Some((x, y));
         }
@@ -948,7 +949,8 @@ mod tests {
         let mut buf = Cursor::new(Vec::new());
         {
             let mut enc = GifEncoder::new(&mut buf);
-            enc.set_repeat(image::codecs::gif::Repeat::Infinite).unwrap();
+            enc.set_repeat(image::codecs::gif::Repeat::Infinite)
+                .unwrap();
             for c in [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]] {
                 let img = ImageBuffer::from_pixel(4, 4, Rgba(c));
                 enc.encode_frame(Frame::from_parts(
@@ -986,7 +988,8 @@ mod tests {
 
     #[test]
     fn broken_svg_is_reported_as_corrupt() {
-        let err = decode_image(b"<svg xmlns='http://www.w3.org/2000/svg'><rect", "bad.svg").unwrap_err();
+        let err =
+            decode_image(b"<svg xmlns='http://www.w3.org/2000/svg'><rect", "bad.svg").unwrap_err();
         assert!(matches!(err, MediaError::Corrupt(_)));
     }
 

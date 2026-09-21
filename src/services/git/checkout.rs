@@ -213,20 +213,12 @@ fn local_branch_is_merged(
     if let Some(head) = service.repo.head().ok().and_then(|h| h.target()) {
         bases.push(head);
     }
-    if let Some(upstream) = branch
-        .upstream()
-        .ok()
-        .and_then(|u| u.get().target())
-    {
+    if let Some(upstream) = branch.upstream().ok().and_then(|u| u.get().target()) {
         bases.push(upstream);
     }
-    Ok(bases.into_iter().any(|base| {
-        base == tip
-            || service
-                .repo
-                .graph_descendant_of(base, tip)
-                .unwrap_or(false)
-    }))
+    Ok(bases
+        .into_iter()
+        .any(|base| base == tip || service.repo.graph_descendant_of(base, tip).unwrap_or(false)))
 }
 
 pub(super) fn rename_branch(

@@ -1,7 +1,7 @@
 //! Pixel→(row, col) resolution for the text canvas.
 use iced::Point;
 
-use super::layout::{char_cells, cells_before, TextCanvasData, CONTENT_PAD_X};
+use super::layout::{cells_before, char_cells, TextCanvasData, CONTENT_PAD_X};
 use super::selection::TextPosition;
 
 impl TextCanvasData {

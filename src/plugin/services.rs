@@ -193,7 +193,12 @@ impl ServiceRegistry {
                 .registry_value(key)
                 .map_err(|e| format!("registry: {e}"))?;
             let tracker_opt = reg.budget_tracker.borrow().clone();
-            (Rc::clone(&handle.lua), function, provider_plugin_id, tracker_opt)
+            (
+                Rc::clone(&handle.lua),
+                function,
+                provider_plugin_id,
+                tracker_opt,
+            )
         };
 
         // Phase 2 — run the provider's Lua with NO registry borrow held.

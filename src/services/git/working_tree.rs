@@ -427,9 +427,7 @@ fn conflict_paths(service: &GitService) -> Result<Vec<String>, GitError> {
 
 fn expand_rename_sources(service: &GitService, paths: Vec<String>) -> Vec<String> {
     let mut options = StatusOptions::new();
-    options
-        .show(StatusShow::Index)
-        .renames_head_to_index(true);
+    options.show(StatusShow::Index).renames_head_to_index(true);
     let Ok(statuses) = service.repo.statuses(Some(&mut options)) else {
         return paths;
     };

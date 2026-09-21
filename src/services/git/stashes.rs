@@ -96,10 +96,7 @@ fn run_stash_subcommand(
     }
 }
 
-pub(super) fn create_stash(
-    service: &GitService,
-    message: Option<&str>,
-) -> Result<(), GitError> {
+pub(super) fn create_stash(service: &GitService, message: Option<&str>) -> Result<(), GitError> {
     let repo_dir = command_dir(&service.repo)?;
     let mut args: Vec<&str> = vec!["stash", "push", "--include-untracked"];
     if let Some(message) = message.map(str::trim).filter(|m| !m.is_empty()) {
@@ -121,10 +118,7 @@ pub(super) fn create_stash(
     }
 }
 
-pub(super) fn apply_stash(
-    service: &GitService,
-    hash: &str,
-) -> Result<StashApplyStatus, GitError> {
+pub(super) fn apply_stash(service: &GitService, hash: &str) -> Result<StashApplyStatus, GitError> {
     run_stash_subcommand(service, "apply", hash)
 }
 

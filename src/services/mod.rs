@@ -22,8 +22,8 @@ pub use git::working_tree_diff::{
 pub use git::{
     kill_running_fetch_processes, kill_running_git_processes, load_commit_diff,
     load_media_diff_sources, load_merged_commit_diff, load_merged_commit_file_diff,
-    BranchMergeOutcome, CherryPickOutcome, MediaDiffRequest,
-    CommitDiffResult, ConflictBlock, ConflictResolutionResult, GitService, MergedCommitDiffResult,
+    BranchMergeOutcome, CherryPickOutcome, CommitDiffResult, ConflictBlock,
+    ConflictResolutionResult, GitService, MediaDiffRequest, MergedCommitDiffResult,
     ModifyDeleteConflict, ModifyDeleteConflictChoice, PushOutcome, RemoteCheckoutOutcome,
     ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,
 };

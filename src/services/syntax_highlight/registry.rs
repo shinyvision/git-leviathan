@@ -496,6 +496,8 @@ impl BuiltinSyntaxRegistry {
             ("zsh", "bash"),
             ("sh", "bash"),
             ("lua", "lua"),
+            ("kotlinc", "kotlin"),
+            ("kotlin", "kotlin"),
         ];
 
         commands.iter().find_map(|(needle, language_id)| {
@@ -1031,6 +1033,14 @@ const BOOTSTRAP_NPM_WASM_GRAMMARS: &[NpmWasmGrammarSpec] = &[
         url: "https://registry.npmjs.org/tree-sitter-java/-/tree-sitter-java-0.23.5.tgz",
         filetypes: &["java"],
         extensions: &["java"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
+        language: "kotlin",
+        version: (1, 1, 0),
+        url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-kotlin/-/tree-sitter-kotlin-1.1.0.tgz",
+        filetypes: &["kotlin"],
+        extensions: &["kt", "kts"],
         filenames: &[],
     },
     NpmWasmGrammarSpec {

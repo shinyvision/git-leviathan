@@ -451,11 +451,7 @@ impl VideoPlayer {
             inner.position = 0.0;
             self.ended.store(false, Ordering::Release);
             self.start_pipeline(&mut inner, 0.0);
-        } else if inner
-            .pipeline
-            .as_ref()
-            .is_none_or(|p| p.is_exhausted())
-        {
+        } else if inner.pipeline.as_ref().is_none_or(|p| p.is_exhausted()) {
             let position = inner.position;
             self.start_pipeline(&mut inner, position);
         }
@@ -469,7 +465,11 @@ impl VideoPlayer {
             inner.position = self.media_time(&inner).min(self.info.duration_secs);
         }
         self.playing.store(false, Ordering::Release);
-        if let Clock::Wall { base_media, started } = &mut inner.clock {
+        if let Clock::Wall {
+            base_media,
+            started,
+        } = &mut inner.clock
+        {
             if let Some(start) = started.take() {
                 *base_media += start.elapsed().as_secs_f64() * self.rate() as f64;
             }
@@ -520,11 +520,7 @@ impl VideoPlayer {
         }
         let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         for _ in 0..delta {
-            if inner
-                .pipeline
-                .as_ref()
-                .is_none_or(|p| p.is_exhausted())
-            {
+            if inner.pipeline.as_ref().is_none_or(|p| p.is_exhausted()) {
                 let position = inner.position + interval;
                 if position >= self.info.duration_secs {
                     break;
@@ -635,9 +631,13 @@ impl VideoPlayer {
         }
 
         let duration = self.info.duration_secs;
-        let audio_done = self.voice.as_ref().is_none_or(|v| v.has_ended() || !v.is_playing());
-        let reached_end =
-            exhausted && (audio_done || media_time >= duration - half_frame) && inner.pipeline.is_some();
+        let audio_done = self
+            .voice
+            .as_ref()
+            .is_none_or(|v| v.has_ended() || !v.is_playing());
+        let reached_end = exhausted
+            && (audio_done || media_time >= duration - half_frame)
+            && inner.pipeline.is_some();
         if reached_end || (duration > 0.0 && media_time >= duration + 0.25) {
             if self.is_looping() {
                 inner.position = 0.0;
@@ -682,7 +682,10 @@ impl VideoPlayer {
         let position = inner.position;
         let use_audio = matches!(inner.clock, Clock::Audio { .. });
         match &mut inner.clock {
-            Clock::Wall { base_media, started } => {
+            Clock::Wall {
+                base_media,
+                started,
+            } => {
                 *base_media = position;
                 *started = Some(Instant::now());
             }
@@ -1034,6 +1037,9 @@ mod tests {
     #[test]
     fn missing_source_cannot_open() {
         let err = VideoPlayer::open(&MediaSource::Missing, "a.mp4").unwrap_err();
-        assert!(matches!(err, MediaError::Missing | MediaError::FfmpegMissing));
+        assert!(matches!(
+            err,
+            MediaError::Missing | MediaError::FfmpegMissing
+        ));
     }
 }

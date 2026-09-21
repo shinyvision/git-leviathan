@@ -236,10 +236,8 @@ fn parse_probe_json(json: &serde_json::Value) -> ProbeInfo {
                 let codec = str_field(stream, "codec_name");
                 // Attached cover art shows up as an mjpeg/png "video" stream in
                 // audio files; skip those so the file routes to the audio player.
-                let disposition_cover = stream["disposition"]["attached_pic"]
-                    .as_i64()
-                    .unwrap_or(0)
-                    == 1;
+                let disposition_cover =
+                    stream["disposition"]["attached_pic"].as_i64().unwrap_or(0) == 1;
                 if disposition_cover {
                     continue;
                 }
@@ -512,7 +510,9 @@ pub fn decode_audio_pcm(
     let stderr = child.stderr.take();
     let mut guard = ChildGuard(stderr, child);
     let mut stdout = guard.1.stdout.take().expect("piped stdout");
-    let max_bytes = max_frames.saturating_mul(channels as usize).saturating_mul(2);
+    let max_bytes = max_frames
+        .saturating_mul(channels as usize)
+        .saturating_mul(2);
     let mut raw = Vec::new();
     let mut buf = vec![0u8; 256 * 1024];
     let mut truncated = false;
@@ -533,8 +533,7 @@ pub fn decode_audio_pcm(
     drop(stdout);
     let (status, stderr) = guard.finish(truncated);
     if raw.len() < 4 {
-        if stderr.contains("Invalid data found") || stderr.contains("does not contain any stream")
-        {
+        if stderr.contains("Invalid data found") || stderr.contains("does not contain any stream") {
             return Err(MediaError::Unrecognized);
         }
         if !stderr.trim().is_empty() {
@@ -665,7 +664,6 @@ impl ChildGuard {
         let status = self.1.wait().map(|s| s.success()).unwrap_or(false);
         (status, stderr)
     }
-
 }
 
 impl Drop for ChildGuard {
@@ -697,7 +695,10 @@ mod tests {
             (4, 4)
         );
         assert_eq!(parse_version("ffmpeg version 6.1 Copyright"), (6, 1));
-        assert_eq!(parse_version("ffmpeg version N-112345-gabcdef"), (112345, 0));
+        assert_eq!(
+            parse_version("ffmpeg version N-112345-gabcdef"),
+            (112345, 0)
+        );
         assert_eq!(parse_version(""), (0, 0));
     }
 
@@ -760,10 +761,16 @@ mod tests {
     fn parses_ffmpeg_stderr_stream_dump() {
         // Exercise the line parser directly through a fake ffmpeg? Simpler:
         // validate the helpers it relies on.
-        assert_eq!(parse_dimensions("1920x1080 [SAR 1:1 DAR 16:9]"), Some((1920, 1080)));
+        assert_eq!(
+            parse_dimensions("1920x1080 [SAR 1:1 DAR 16:9]"),
+            Some((1920, 1080))
+        );
         assert_eq!(parse_dimensions("yuv420p(progressive)"), None);
         assert_eq!(parse_clock("00:01:02.34"), Some(62.34));
-        assert_eq!(parse_ratio(Some("30000/1001")).map(|f| (f * 100.0).round()), Some(2997.0));
+        assert_eq!(
+            parse_ratio(Some("30000/1001")).map(|f| (f * 100.0).round()),
+            Some(2997.0)
+        );
         assert_eq!(parse_ratio(Some("0/0")), None);
         assert_eq!(parse_ratio(Some("25")), Some(25.0));
     }
@@ -772,8 +779,14 @@ mod tests {
     fn atempo_chain_stays_within_filter_limits() {
         assert_eq!(atempo_chain(1.0), None);
         assert_eq!(atempo_chain(1.5).as_deref(), Some("atempo=1.5000"));
-        assert_eq!(atempo_chain(4.0).as_deref(), Some("atempo=2.0,atempo=2.0000"));
-        assert_eq!(atempo_chain(0.25).as_deref(), Some("atempo=0.5,atempo=0.5000"));
+        assert_eq!(
+            atempo_chain(4.0).as_deref(),
+            Some("atempo=2.0,atempo=2.0000")
+        );
+        assert_eq!(
+            atempo_chain(0.25).as_deref(),
+            Some("atempo=0.5,atempo=0.5000")
+        );
         assert_eq!(atempo_chain(0.0), None);
     }
 }

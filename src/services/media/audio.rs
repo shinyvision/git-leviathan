@@ -242,10 +242,7 @@ fn decode_with_symphonia(bytes: &[u8], file_path: &str) -> Result<AudioClip, Med
     let source_rate = params
         .sample_rate
         .ok_or_else(|| MediaError::Unsupported("unknown sample rate".to_string()))?;
-    let source_channels = params
-        .channels
-        .map(|c| c.count() as u16)
-        .unwrap_or(0);
+    let source_channels = params.channels.map(|c| c.count() as u16).unwrap_or(0);
 
     let codec_desc = symphonia::default::get_codecs().get_codec(params.codec);
     let codec_name = codec_desc
@@ -323,9 +320,8 @@ fn decode_with_symphonia(bytes: &[u8], file_path: &str) -> Result<AudioClip, Med
         if frames == 0 {
             continue;
         }
-        let buf = sample_buf.get_or_insert_with(|| {
-            SampleBuffer::<f32>::new(decoded.capacity() as u64, spec)
-        });
+        let buf = sample_buf
+            .get_or_insert_with(|| SampleBuffer::<f32>::new(decoded.capacity() as u64, spec));
         if buf.capacity() < frames * channels as usize {
             *buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
         }
@@ -716,7 +712,12 @@ pub fn build_waveform(samples: &[i16], channels: u16, buckets: usize) -> Wavefor
 mod tests {
     use super::*;
 
-    fn wav_bytes(sample_rate: u32, channels: u16, frames: usize, f: impl Fn(usize) -> i16) -> Vec<u8> {
+    fn wav_bytes(
+        sample_rate: u32,
+        channels: u16,
+        frames: usize,
+        f: impl Fn(usize) -> i16,
+    ) -> Vec<u8> {
         let data_len = (frames * channels as usize * 2) as u32;
         let mut out = Vec::new();
         out.extend_from_slice(b"RIFF");
@@ -742,9 +743,7 @@ mod tests {
 
     #[test]
     fn decodes_wav_via_symphonia() {
-        let bytes = wav_bytes(8000, 2, 4000, |i| {
-            ((i as f64 * 0.1).sin() * 16000.0) as i16
-        });
+        let bytes = wav_bytes(8000, 2, 4000, |i| ((i as f64 * 0.1).sin() * 16000.0) as i16);
         let clip = decode_audio(&bytes, "tone.wav", None).unwrap();
         assert_eq!(clip.sample_rate, 8000);
         assert_eq!(clip.channels, 2);
@@ -759,10 +758,13 @@ mod tests {
 
     #[test]
     fn garbage_is_unrecognized() {
-        let err = decode_audio(b"this is not audio at all, really it is not", "x.wav", None)
-            .unwrap_err();
+        let err =
+            decode_audio(b"this is not audio at all, really it is not", "x.wav", None).unwrap_err();
         assert!(
-            matches!(err, MediaError::Unrecognized | MediaError::Corrupt(_) | MediaError::Unsupported(_)),
+            matches!(
+                err,
+                MediaError::Unrecognized | MediaError::Corrupt(_) | MediaError::Unsupported(_)
+            ),
             "{err:?}"
         );
     }

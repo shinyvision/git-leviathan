@@ -48,7 +48,10 @@ pub fn letterbox(bounds: Size, width: u32, height: u32) -> Rectangle {
     let w = (width as f32 * scale).floor();
     let h = (height as f32 * scale).floor();
     Rectangle::new(
-        Point::new(((bounds.width - w) / 2.0).floor(), ((bounds.height - h) / 2.0).floor()),
+        Point::new(
+            ((bounds.width - w) / 2.0).floor(),
+            ((bounds.height - h) / 2.0).floor(),
+        ),
         Size::new(w, h),
     )
 }
@@ -150,14 +153,22 @@ impl<'a, Message: Clone + 'a> Program<Message> for VideoSurfaceProgram<'a, Messa
                 );
             }
             None => {
-                frame.fill_rectangle(rect.position(), rect.size(), Color::from_rgb8(0x0b, 0x0c, 0x12));
+                frame.fill_rectangle(
+                    rect.position(),
+                    rect.size(),
+                    Color::from_rgb8(0x0b, 0x0c, 0x12),
+                );
             }
         }
 
         if let Some(err) = player.error() {
             draw_banner(&mut frame, size, &err, theme::ACCENT_DANGER);
         } else if player.is_buffering() {
-            draw_spinner(&mut frame, size, state.last_redraw.unwrap_or_else(Instant::now));
+            draw_spinner(
+                &mut frame,
+                size,
+                state.last_redraw.unwrap_or_else(Instant::now),
+            );
         }
 
         // Big play glyph while paused (subtle when hovering).
@@ -175,7 +186,10 @@ impl<'a, Message: Clone + 'a> Program<Message> for VideoSurfaceProgram<'a, Messa
             frame.stroke(
                 &Path::circle(center, r),
                 Stroke::default()
-                    .with_color(Color { a: alpha, ..Color::WHITE })
+                    .with_color(Color {
+                        a: alpha,
+                        ..Color::WHITE
+                    })
                     .with_width(1.5),
             );
             let glyph = if player.has_ended() {
@@ -185,7 +199,13 @@ impl<'a, Message: Clone + 'a> Program<Message> for VideoSurfaceProgram<'a, Messa
             } else {
                 triangle(center, r * 0.55)
             };
-            frame.fill(&glyph, Color { a: alpha, ..Color::WHITE });
+            frame.fill(
+                &glyph,
+                Color {
+                    a: alpha,
+                    ..Color::WHITE
+                },
+            );
         }
 
         vec![frame.into_geometry()]
@@ -233,7 +253,13 @@ fn draw_spinner(frame: &mut Frame, size: Size, now: Instant) {
             end_angle: iced::Radians(start + std::f32::consts::PI * 1.4),
         });
     });
-    frame.fill(&Path::circle(center, r + 8.0), Color { a: 0.45, ..Color::BLACK });
+    frame.fill(
+        &Path::circle(center, r + 8.0),
+        Color {
+            a: 0.45,
+            ..Color::BLACK
+        },
+    );
     frame.stroke(
         &arc,
         Stroke::default()
@@ -247,13 +273,12 @@ fn draw_banner(frame: &mut Frame, size: Size, message: &str, color: Color) {
     frame.fill_rectangle(
         Point::new(0.0, size.height - h),
         Size::new(size.width, h),
-        Color { a: 0.85, ..theme::BG_HEADER },
+        Color {
+            a: 0.85,
+            ..theme::BG_HEADER
+        },
     );
-    frame.fill_rectangle(
-        Point::new(0.0, size.height - h),
-        Size::new(3.0, h),
-        color,
-    );
+    frame.fill_rectangle(Point::new(0.0, size.height - h), Size::new(3.0, h), color);
     frame.fill_text(Text {
         content: message.to_string(),
         position: Point::new(12.0, size.height - h / 2.0),

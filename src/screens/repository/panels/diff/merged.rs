@@ -118,11 +118,7 @@ impl DiffPanel {
         if let Some(kind) = self.media_kind_for_open(&path) {
             return self.begin_media_load(
                 kind,
-                crate::services::MediaDiffRequest::Merged {
-                    hashes,
-                    path,
-                    kind,
-                },
+                crate::services::MediaDiffRequest::Merged { hashes, path, kind },
             );
         }
         self.media = None;

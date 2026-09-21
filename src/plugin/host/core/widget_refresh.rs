@@ -228,8 +228,10 @@ impl PluginHost {
             let chrome_widgets = plugin.chrome_widgets.borrow();
             let mut jobs = Vec::new();
             for (handle, chrome) in chrome_widgets.iter() {
-                if !crate::plugin::ui::invalidation::dependencies_match(&chrome.dependencies, causes)
-                {
+                if !crate::plugin::ui::invalidation::dependencies_match(
+                    &chrome.dependencies,
+                    causes,
+                ) {
                     continue;
                 }
                 match plugin.lua().registry_value::<Function>(&chrome.key) {
@@ -255,9 +257,11 @@ impl PluginHost {
                                 format!("chrome widget fn lookup failed for {handle}: {e}"),
                             )
                             .with_generation(generation_id)
-                            .with_source(PluginSourceSpan::ApiFunction {
-                                name: format!("chrome:{handle}"),
-                            }),
+                            .with_source(
+                                PluginSourceSpan::ApiFunction {
+                                    name: format!("chrome:{handle}"),
+                                },
+                            ),
                         );
                     }
                 }
@@ -366,7 +370,12 @@ impl PluginHost {
                     telemetry.diagnostic_badge = false;
                 }
                 Err(decode_err) => {
-                    record_chrome_error(&telemetry, &cache, &cause_labels, decode_err.message.clone());
+                    record_chrome_error(
+                        &telemetry,
+                        &cache,
+                        &cause_labels,
+                        decode_err.message.clone(),
+                    );
                     self.diagnostics.record(widget_decode_diagnostic(
                         plugin_id,
                         generation_id,

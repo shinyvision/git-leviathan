@@ -109,7 +109,9 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
                 let playing = self.spec.source.is_playing();
                 if state.last_playing.is_some_and(|p| p != playing) {
                     state.last_playing = Some(playing);
-                    return Some(canvas::Action::publish(emit(TimelineEvent::PlaybackStateChanged)));
+                    return Some(canvas::Action::publish(emit(
+                        TimelineEvent::PlaybackStateChanged,
+                    )));
                 }
                 state.last_playing = Some(playing);
                 // Throttled seek flush while scrubbing.
@@ -121,13 +123,19 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
                         if due {
                             state.pending_seek = None;
                             state.last_seek_sent = Some(*now);
-                            return Some(canvas::Action::publish(emit(TimelineEvent::Seek(target))));
+                            return Some(canvas::Action::publish(emit(TimelineEvent::Seek(
+                                target,
+                            ))));
                         }
                     }
-                    return Some(canvas::Action::request_redraw_at(*now + Duration::from_millis(16)));
+                    return Some(canvas::Action::request_redraw_at(
+                        *now + Duration::from_millis(16),
+                    ));
                 }
                 if playing || self.spec.source.is_buffering() {
-                    Some(canvas::Action::request_redraw_at(*now + Duration::from_millis(33)))
+                    Some(canvas::Action::request_redraw_at(
+                        *now + Duration::from_millis(33),
+                    ))
                 } else {
                     None
                 }
@@ -262,7 +270,10 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
         } else {
             track.y + track.height / 2.0
         };
-        frame.fill(&Path::circle(Point::new(played_x, knob_y), 5.0), Color::WHITE);
+        frame.fill(
+            &Path::circle(Point::new(played_x, knob_y), 5.0),
+            Color::WHITE,
+        );
         frame.fill(&Path::circle(Point::new(played_x, knob_y), 3.0), accent);
 
         // Hover time marker.
@@ -270,9 +281,15 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
             if duration > 0.0 && hover.y <= track.y + track.height + 8.0 {
                 let x = hover.x.clamp(track.x, track.x + track.width);
                 frame.stroke(
-                    &Path::line(Point::new(x, track.y), Point::new(x, track.y + track.height)),
+                    &Path::line(
+                        Point::new(x, track.y),
+                        Point::new(x, track.y + track.height),
+                    ),
                     Stroke::default()
-                        .with_color(Color { a: 0.5, ..Color::WHITE })
+                        .with_color(Color {
+                            a: 0.5,
+                            ..Color::WHITE
+                        })
                         .with_width(1.0),
                 );
                 let secs = secs_at(x, track, duration);
@@ -286,8 +303,15 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
                 let lx = (x - label_w / 2.0).clamp(0.0, (size.width - label_w).max(0.0));
                 let ly = (track.y - 18.0).max(0.0);
                 frame.fill(
-                    &Path::rounded_rectangle(Point::new(lx, ly), Size::new(label_w, 16.0), 3.0.into()),
-                    Color { a: 0.92, ..theme::BG_HEADER },
+                    &Path::rounded_rectangle(
+                        Point::new(lx, ly),
+                        Size::new(label_w, 16.0),
+                        3.0.into(),
+                    ),
+                    Color {
+                        a: 0.92,
+                        ..theme::BG_HEADER
+                    },
                 );
                 frame.fill_text(Text {
                     content: label,
@@ -363,7 +387,13 @@ impl<'a, Message: Clone + 'a> Program<Message> for TimelineProgram<'a, Message> 
     }
 }
 
-fn draw_waveform(frame: &mut Frame, waveform: &Waveform, track: Rectangle, played_x: f32, accent: Color) {
+fn draw_waveform(
+    frame: &mut Frame,
+    waveform: &Waveform,
+    track: Rectangle,
+    played_x: f32,
+    accent: Color,
+) {
     let channels = waveform.channels.len().max(1) as f32;
     let lane_h = track.height / channels;
     let gain = if waveform.peak > 0.0 {
@@ -393,7 +423,9 @@ fn draw_waveform(frame: &mut Frame, waveform: &Waveform, track: Rectangle, playe
         let mut rms_rest = canvas::path::Builder::new();
         for px in 0..px_count {
             let start = (px as f32 * per_px) as usize;
-            let end = (((px + 1) as f32 * per_px) as usize).max(start + 1).min(buckets.len());
+            let end = (((px + 1) as f32 * per_px) as usize)
+                .max(start + 1)
+                .min(buckets.len());
             let mut min = 0.0f32;
             let mut max = 0.0f32;
             let mut rms = 0.0f32;
@@ -423,9 +455,15 @@ fn draw_waveform(frame: &mut Frame, waveform: &Waveform, track: Rectangle, playe
         frame.stroke(&rms_played.build(), stroke(played_rms));
         // Centre line.
         frame.stroke(
-            &Path::line(Point::new(track.x, mid), Point::new(track.x + track.width, mid)),
+            &Path::line(
+                Point::new(track.x, mid),
+                Point::new(track.x + track.width, mid),
+            ),
             Stroke::default()
-                .with_color(Color { a: 0.35, ..unplayed_rms })
+                .with_color(Color {
+                    a: 0.35,
+                    ..unplayed_rms
+                })
                 .with_width(1.0),
         );
     }

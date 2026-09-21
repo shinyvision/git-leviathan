@@ -27,16 +27,16 @@ const IMAGE_EXTENSIONS: &[&str] = &[
 ];
 
 const AUDIO_EXTENSIONS: &[&str] = &[
-    "wav", "wave", "mp3", "ogg", "oga", "opus", "flac", "aac", "m4a", "m4b", "aif", "aiff",
-    "aifc", "caf", "wma", "mka", "alac", "ac3", "eac3", "dts", "mp2", "mp1", "amr", "au", "snd",
-    "ape", "wv", "spx", "tta", "voc", "mpc", "aa3", "oma", "ra", "gsm", "adts", "w64", "rf64",
+    "wav", "wave", "mp3", "ogg", "oga", "opus", "flac", "aac", "m4a", "m4b", "aif", "aiff", "aifc",
+    "caf", "wma", "mka", "alac", "ac3", "eac3", "dts", "mp2", "mp1", "amr", "au", "snd", "ape",
+    "wv", "spx", "tta", "voc", "mpc", "aa3", "oma", "ra", "gsm", "adts", "w64", "rf64",
 ];
 
 const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "mov", "qt", "avi", "mkv", "webm", "wmv", "flv", "f4v", "mpg", "mpeg", "m2v",
     "mpe", "ts", "mts", "m2ts", "3gp", "3g2", "ogv", "vob", "rm", "rmvb", "asf", "divx", "mxf",
-    "y4m", "dv", "mjpeg", "mjpg", "h264", "264", "h265", "265", "hevc", "av1", "ivf", "nut",
-    "gxf", "mpv",
+    "y4m", "dv", "mjpeg", "mjpg", "h264", "264", "h265", "265", "hevc", "av1", "ivf", "nut", "gxf",
+    "mpv",
 ];
 
 fn extension_of(path: &str) -> Option<String> {
@@ -149,7 +149,8 @@ pub fn sniff_media_kind(bytes: &[u8]) -> Option<MediaKind> {
         || starts(b"\xFF\xF3")
         || starts(b"\xFF\xF2") // MPEG audio frame sync (no ID3)
         || starts(b"\xFF\xF1")
-        || starts(b"\xFF\xF9") // ADTS AAC
+        || starts(b"\xFF\xF9")
+    // ADTS AAC
     {
         return Some(MediaKind::Audio);
     }
@@ -195,7 +196,8 @@ pub fn sniff_media_kind(bytes: &[u8]) -> Option<MediaKind> {
         || starts(b"\x06\x0E\x2B\x34\x02\x05\x01\x01") // MXF
         || starts(b"\x00\x00\x00\x01\x67") // raw H.264 SPS
         || starts(b"\x00\x00\x00\x01\x40") // raw H.265 VPS
-        || (bytes[0] == 0x47 && bytes.len() >= 188 * 2 && bytes[188] == 0x47) // MPEG-TS
+        || (bytes[0] == 0x47 && bytes.len() >= 188 * 2 && bytes[188] == 0x47)
+    // MPEG-TS
     {
         return Some(MediaKind::Video);
     }
@@ -270,10 +272,7 @@ mod tests {
             media_kind_from_path("assets/Logo.PNG"),
             Some(MediaKind::Image)
         );
-        assert_eq!(
-            media_kind_from_path("sfx\\hit.WAV"),
-            Some(MediaKind::Audio)
-        );
+        assert_eq!(media_kind_from_path("sfx\\hit.WAV"), Some(MediaKind::Audio));
         assert_eq!(
             media_kind_from_path("trailer.final.mkv"),
             Some(MediaKind::Video)
@@ -290,7 +289,10 @@ mod tests {
             sniff_media_kind(b"\x89PNG\r\n\x1a\n\x00\x00"),
             Some(MediaKind::Image)
         );
-        assert_eq!(sniff_media_kind(b"\xFF\xD8\xFF\xE0JFIF"), Some(MediaKind::Image));
+        assert_eq!(
+            sniff_media_kind(b"\xFF\xD8\xFF\xE0JFIF"),
+            Some(MediaKind::Image)
+        );
         assert_eq!(
             sniff_media_kind(b"RIFF\x00\x00\x00\x00WEBPVP8 "),
             Some(MediaKind::Image)
@@ -303,8 +305,14 @@ mod tests {
             sniff_media_kind(b"RIFF\x00\x00\x00\x00AVI LIST"),
             Some(MediaKind::Video)
         );
-        assert_eq!(sniff_media_kind(b"fLaC\x00\x00\x00\x22"), Some(MediaKind::Audio));
-        assert_eq!(sniff_media_kind(b"ID3\x04\x00\x00\x00"), Some(MediaKind::Audio));
+        assert_eq!(
+            sniff_media_kind(b"fLaC\x00\x00\x00\x22"),
+            Some(MediaKind::Audio)
+        );
+        assert_eq!(
+            sniff_media_kind(b"ID3\x04\x00\x00\x00"),
+            Some(MediaKind::Audio)
+        );
         assert_eq!(
             sniff_media_kind(b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00"),
             Some(MediaKind::Video)

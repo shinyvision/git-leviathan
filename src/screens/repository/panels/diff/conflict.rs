@@ -178,9 +178,7 @@ impl DiffPanel {
                 // Reset selections when the hunk count OR the hunk content
                 // changed — a same-count reload after an external edit would
                 // otherwise apply prior picks to different hunks.
-                if state.selections.len() != hunk_count
-                    || state.hunk_fingerprint != fingerprint
-                {
+                if state.selections.len() != hunk_count || state.hunk_fingerprint != fingerprint {
                     state.selections = vec![ConflictHunkSelection::default(); hunk_count];
                 }
                 state.hunk_fingerprint = fingerprint;

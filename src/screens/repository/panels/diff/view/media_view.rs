@@ -6,9 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use iced::{
-    widget::{
-        button, column, container, row, scrollable, slider, text, tooltip, MouseArea, Space,
-    },
+    widget::{button, column, container, row, scrollable, slider, text, tooltip, MouseArea, Space},
     Alignment, Border, Color, Element, Length, Padding, Theme,
 };
 
@@ -115,7 +113,9 @@ fn kind_badge<'a>(kind: MediaKind) -> Element<'a, Message> {
     container(
         row![
             assets::icon(icon, 12.0, theme::TEXT_SECONDARY),
-            text(label).size(theme::FONT_XS).style(style::secondary_text),
+            text(label)
+                .size(theme::FONT_XS)
+                .style(style::secondary_text),
         ]
         .spacing(4)
         .align_y(Alignment::Center),
@@ -147,7 +147,11 @@ fn tool_button_style(active: bool) -> impl Fn(&Theme, button::Status) -> button:
             background,
             text_color: theme::TEXT_PRIMARY,
             border: Border {
-                color: if active { theme::ACCENT_BLUE } else { Color::TRANSPARENT },
+                color: if active {
+                    theme::ACCENT_BLUE
+                } else {
+                    Color::TRANSPARENT
+                },
                 width: 1.0,
                 radius: 4.0.into(),
             },
@@ -209,7 +213,12 @@ fn icon_button<'a>(
     with_tip(btn, tip, tooltip::Position::Bottom)
 }
 
-fn text_button<'a>(label: &'a str, tip: &'a str, active: bool, on_press: Option<Message>) -> Element<'a, Message> {
+fn text_button<'a>(
+    label: &'a str,
+    tip: &'a str,
+    active: bool,
+    on_press: Option<Message>,
+) -> Element<'a, Message> {
     let color = if on_press.is_none() {
         theme::TEXT_MUTED
     } else if active {
@@ -231,13 +240,17 @@ fn text_button<'a>(label: &'a str, tip: &'a str, active: bool, on_press: Option<
 }
 
 fn toolbar_separator<'a>() -> Element<'a, Message> {
-    container(Space::new().width(Length::Fixed(1.0)).height(Length::Fixed(18.0)))
-        .style(|_: &Theme| container::Style {
-            background: Some(theme::BORDER.into()),
-            ..Default::default()
-        })
-        .padding(Padding::from([0, 4]))
-        .into()
+    container(
+        Space::new()
+            .width(Length::Fixed(1.0))
+            .height(Length::Fixed(18.0)),
+    )
+    .style(|_: &Theme| container::Style {
+        background: Some(theme::BORDER.into()),
+        ..Default::default()
+    })
+    .padding(Padding::from([0, 4]))
+    .into()
 }
 
 fn slider_style(_: &Theme, status: slider::Status) -> slider::Style {
@@ -280,36 +293,62 @@ fn toolbar<'a>(state: &'a MediaDiffState, kind: MediaKind) -> Element<'a, Messag
                     enabled.then(|| msg(MediaAction::SetCompareMode(m))),
                 )
             };
-            items.push(mode_btn(assets::COLUMNS, "Side by side", CompareMode::SideBySide));
-            items.push(mode_btn(assets::SWIPE, "Swipe (drag the divider)", CompareMode::Swipe));
-            items.push(mode_btn(assets::LAYERS, "Onion skin (blend old and new)", CompareMode::OnionSkin));
-            items.push(mode_btn(assets::CONTRAST, "Difference (highlight changed pixels)", CompareMode::Difference));
+            items.push(mode_btn(
+                assets::COLUMNS,
+                "Side by side",
+                CompareMode::SideBySide,
+            ));
+            items.push(mode_btn(
+                assets::SWIPE,
+                "Swipe (drag the divider)",
+                CompareMode::Swipe,
+            ));
+            items.push(mode_btn(
+                assets::LAYERS,
+                "Onion skin (blend old and new)",
+                CompareMode::OnionSkin,
+            ));
+            items.push(mode_btn(
+                assets::CONTRAST,
+                "Difference (highlight changed pixels)",
+                CompareMode::Difference,
+            ));
 
             match mode {
                 CompareMode::Swipe => {
                     items.push(toolbar_separator());
                     items.push(
-                        slider(0.0..=1.0f32, state.image.swipe, |v| msg(MediaAction::SetSwipe(v)))
-                            .step(0.005_f32)
-                            .width(Length::Fixed(140.0))
-                            .style(slider_style)
-                            .into(),
+                        slider(0.0..=1.0f32, state.image.swipe, |v| {
+                            msg(MediaAction::SetSwipe(v))
+                        })
+                        .step(0.005_f32)
+                        .width(Length::Fixed(140.0))
+                        .style(slider_style)
+                        .into(),
                     );
                 }
                 CompareMode::OnionSkin => {
                     items.push(toolbar_separator());
                     items.push(
-                        text("Old").size(theme::FONT_XS).style(style::secondary_text).into(),
-                    );
-                    items.push(
-                        slider(0.0..=1.0f32, state.image.onion, |v| msg(MediaAction::SetOnion(v)))
-                            .step(0.01_f32)
-                            .width(Length::Fixed(140.0))
-                            .style(slider_style)
+                        text("Old")
+                            .size(theme::FONT_XS)
+                            .style(style::secondary_text)
                             .into(),
                     );
                     items.push(
-                        text("New").size(theme::FONT_XS).style(style::secondary_text).into(),
+                        slider(0.0..=1.0f32, state.image.onion, |v| {
+                            msg(MediaAction::SetOnion(v))
+                        })
+                        .step(0.01_f32)
+                        .width(Length::Fixed(140.0))
+                        .style(slider_style)
+                        .into(),
+                    );
+                    items.push(
+                        text("New")
+                            .size(theme::FONT_XS)
+                            .style(style::secondary_text)
+                            .into(),
                     );
                 }
                 _ => {}
@@ -425,8 +464,16 @@ fn toolbar<'a>(state: &'a MediaDiffState, kind: MediaKind) -> Element<'a, Messag
             items.push(toolbar_separator());
             let muted = state.muted || state.volume <= 0.0;
             items.push(icon_button(
-                if muted { assets::VOLUME_OFF } else { assets::VOLUME },
-                if state.muted { "Unmute (m)" } else { "Mute (m)" },
+                if muted {
+                    assets::VOLUME_OFF
+                } else {
+                    assets::VOLUME
+                },
+                if state.muted {
+                    "Unmute (m)"
+                } else {
+                    "Mute (m)"
+                },
                 false,
                 TOOL_ICON,
                 Some(msg(MediaAction::KeyTransport(TransportCommand::ToggleMute))),
@@ -452,32 +499,39 @@ fn toolbar<'a>(state: &'a MediaDiffState, kind: MediaKind) -> Element<'a, Messag
             );
             items.push(icon_button(
                 assets::REPEAT,
-                if state.looping { "Loop on (l)" } else { "Loop off (l)" },
+                if state.looping {
+                    "Loop on (l)"
+                } else {
+                    "Loop off (l)"
+                },
                 state.looping,
                 TOOL_ICON,
                 Some(msg(MediaAction::KeyTransport(TransportCommand::ToggleLoop))),
             ));
             if kind == MediaKind::Video {
                 items.push(toolbar_separator());
-                items.push(assets::icon(assets::SPEED, TOOL_ICON, theme::TEXT_SECONDARY));
+                items.push(assets::icon(
+                    assets::SPEED,
+                    TOOL_ICON,
+                    theme::TEXT_SECONDARY,
+                ));
                 for rate in PLAYBACK_RATES {
                     let label = format_rate(rate);
                     let active = (state.rate - rate).abs() < 1e-3;
-                    let mut btn = button(
-                        text(label)
-                            .size(theme::FONT_XS)
-                            .font(theme::MONO)
-                            .style(move |_: &Theme| text::Style {
-                                color: Some(if active {
-                                    theme::ACCENT_BLUE
-                                } else {
-                                    theme::TEXT_SECONDARY
-                                }),
+                    let mut btn = button(text(label).size(theme::FONT_XS).font(theme::MONO).style(
+                        move |_: &Theme| text::Style {
+                            color: Some(if active {
+                                theme::ACCENT_BLUE
+                            } else {
+                                theme::TEXT_SECONDARY
                             }),
-                    )
+                        },
+                    ))
                     .style(tool_button_style(active))
                     .padding(Padding::from([3, 5]));
-                    btn = btn.on_press(msg(MediaAction::KeyTransport(TransportCommand::SetRate(rate))));
+                    btn = btn.on_press(msg(MediaAction::KeyTransport(TransportCommand::SetRate(
+                        rate,
+                    ))));
                     items.push(btn.into());
                 }
             }
@@ -542,7 +596,12 @@ fn format_rate(rate: f32) -> String {
     }
 }
 
-fn caption<'a>(side: MediaSide, summary: String, status: Option<String>, focused: bool) -> Element<'a, Message> {
+fn caption<'a>(
+    side: MediaSide,
+    summary: String,
+    status: Option<String>,
+    focused: bool,
+) -> Element<'a, Message> {
     let chip = container(
         text(side.label().to_ascii_uppercase())
             .size(theme::FONT_XS)
@@ -572,7 +631,9 @@ fn caption<'a>(side: MediaSide, summary: String, status: Option<String>, focused
     });
     let mut r = row![
         chip,
-        text(summary).size(theme::FONT_SM).style(style::secondary_text),
+        text(summary)
+            .size(theme::FONT_SM)
+            .style(style::secondary_text),
         horizontal_space(),
     ]
     .spacing(8)
@@ -590,7 +651,11 @@ fn caption<'a>(side: MediaSide, summary: String, status: Option<String>, focused
         .style(move |_: &Theme| container::Style {
             background: Some(theme::BG_HEADER.into()),
             border: Border {
-                color: if focused { theme::ACCENT_BLUE } else { theme::BORDER },
+                color: if focused {
+                    theme::ACCENT_BLUE
+                } else {
+                    theme::BORDER
+                },
                 width: 1.0,
                 radius: 0.0.into(),
             },
@@ -599,7 +664,12 @@ fn caption<'a>(side: MediaSide, summary: String, status: Option<String>, focused
         .into()
 }
 
-fn placeholder<'a>(icon: &'static [u8], title: String, detail: String, color: Color) -> Element<'a, Message> {
+fn placeholder<'a>(
+    icon: &'static [u8],
+    title: String,
+    detail: String,
+    color: Color,
+) -> Element<'a, Message> {
     container(
         column![
             assets::icon(icon, 34.0, color),
@@ -700,7 +770,9 @@ fn side_summary(side: &MediaSideState) -> String {
         }
         MediaSideState::Loading => "Loading…".to_string(),
         MediaSideState::Absent(_) => "—".to_string(),
-        MediaSideState::Failed { size, .. } => size.map(format_bytes).unwrap_or_else(|| "—".to_string()),
+        MediaSideState::Failed { size, .. } => {
+            size.map(format_bytes).unwrap_or_else(|| "—".to_string())
+        }
     }
 }
 
@@ -813,7 +885,11 @@ fn layer_for(
     }
 }
 
-fn viewer_for<'a>(state: &'a MediaDiffState, side: MediaSide, content: PaneContent) -> Element<'a, Message> {
+fn viewer_for<'a>(
+    state: &'a MediaDiffState,
+    side: MediaSide,
+    content: PaneContent,
+) -> Element<'a, Message> {
     let view = state.view_for(side);
     image_viewer(ImageViewerSpec {
         content,
@@ -829,7 +905,10 @@ fn viewer_for<'a>(state: &'a MediaDiffState, side: MediaSide, content: PaneConte
 fn image_pane<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Message> {
     let side_state = state.side(side);
     let focused = state.focused_side == side && state.any_playing();
-    let mut col = column![].spacing(0).width(Length::Fill).height(Length::Fill);
+    let mut col = column![]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     match side_state {
         MediaSideState::Image { image, playback } => {
@@ -888,11 +967,7 @@ fn overlay_pane<'a>(
             }),
     );
     // Animated overlays: drive both sides from the new side's controls.
-    if let (
-        MediaSideState::Image { image, playback },
-        _,
-    ) = (&state.new, &state.old)
-    {
+    if let (MediaSideState::Image { image, playback }, _) = (&state.new, &state.old) {
         if image.is_animated() {
             col = col.push(animation_controls(MediaSide::New, image, *playback));
         }
@@ -913,7 +988,11 @@ fn animation_controls<'a>(
     let controls = row![
         icon_button(
             if playing { assets::PAUSE } else { assets::PLAY },
-            if playing { "Pause (space)" } else { "Play (space)" },
+            if playing {
+                "Pause (space)"
+            } else {
+                "Play (space)"
+            },
             false,
             CONTROL_ICON,
             Some(transport(side, TransportCommand::TogglePlay)),
@@ -937,7 +1016,10 @@ fn animation_controls<'a>(
             waveform: None,
             height: ANIMATION_TIMELINE_HEIGHT,
             accent: theme::ACCENT_BLUE,
-            on_event: Box::new(move |event: TimelineEvent| msg(MediaAction::Timeline { side, event })),
+            on_event: Box::new(move |event: TimelineEvent| msg(MediaAction::Timeline {
+                side,
+                event
+            })),
         }),
     ]
     .spacing(2)
@@ -975,7 +1057,10 @@ fn audio_body<'a>(state: &'a MediaDiffState) -> Element<'a, Message> {
 fn audio_block<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Message> {
     let side_state = state.side(side);
     let focused = state.focused_side == side && state.any_playing();
-    let mut col = column![].spacing(0).width(Length::Fill).height(Length::Fill);
+    let mut col = column![]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
     match side_state {
         MediaSideState::Audio(player) => {
             let status = if player.voice.is_playing() {
@@ -997,13 +1082,18 @@ fn audio_block<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Me
                 } else {
                     theme::ACCENT_GREEN
                 },
-                on_event: Box::new(move |event: TimelineEvent| msg(MediaAction::Timeline { side, event })),
+                on_event: Box::new(move |event: TimelineEvent| {
+                    msg(MediaAction::Timeline { side, event })
+                }),
             });
             col = col.push(
                 container(
-                    column![tl, transport_controls(side, player.voice.is_playing(), false)]
-                        .spacing(4)
-                        .width(Length::Fill),
+                    column![
+                        tl,
+                        transport_controls(side, player.voice.is_playing(), false)
+                    ]
+                    .spacing(4)
+                    .width(Length::Fill),
                 )
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -1027,18 +1117,29 @@ fn audio_block<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Me
         .into()
 }
 
-fn transport_controls<'a>(side: MediaSide, playing: bool, with_frame_step: bool) -> Element<'a, Message> {
+fn transport_controls<'a>(
+    side: MediaSide,
+    playing: bool,
+    with_frame_step: bool,
+) -> Element<'a, Message> {
     let mut r = row![
         icon_button(
             assets::SKIP_BACK,
             "Back 5 s (←)",
             false,
             CONTROL_ICON,
-            Some(transport(side, TransportCommand::SeekRelative(-super::super::media::SEEK_STEP_SECS))),
+            Some(transport(
+                side,
+                TransportCommand::SeekRelative(-super::super::media::SEEK_STEP_SECS)
+            )),
         ),
         icon_button(
             if playing { assets::PAUSE } else { assets::PLAY },
-            if playing { "Pause (space)" } else { "Play (space)" },
+            if playing {
+                "Pause (space)"
+            } else {
+                "Play (space)"
+            },
             playing,
             CONTROL_ICON + 4.0,
             Some(transport(side, TransportCommand::TogglePlay)),
@@ -1048,7 +1149,10 @@ fn transport_controls<'a>(side: MediaSide, playing: bool, with_frame_step: bool)
             "Forward 5 s (→)",
             false,
             CONTROL_ICON,
-            Some(transport(side, TransportCommand::SeekRelative(super::super::media::SEEK_STEP_SECS))),
+            Some(transport(
+                side,
+                TransportCommand::SeekRelative(super::super::media::SEEK_STEP_SECS)
+            )),
         ),
     ]
     .spacing(2)
@@ -1099,7 +1203,10 @@ fn video_body<'a>(state: &'a MediaDiffState) -> Element<'a, Message> {
 fn video_pane<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Message> {
     let side_state = state.side(side);
     let focused = state.focused_side == side && state.any_playing();
-    let mut col = column![].spacing(0).width(Length::Fill).height(Length::Fill);
+    let mut col = column![]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
     match side_state {
         MediaSideState::Video(player) => {
             let status = if player.is_buffering() {
@@ -1133,7 +1240,9 @@ fn video_pane<'a>(state: &'a MediaDiffState, side: MediaSide) -> Element<'a, Mes
                 } else {
                     theme::ACCENT_GREEN
                 },
-                on_event: Box::new(move |event: TimelineEvent| msg(MediaAction::Timeline { side, event })),
+                on_event: Box::new(move |event: TimelineEvent| {
+                    msg(MediaAction::Timeline { side, event })
+                }),
             });
             col = col.push(
                 container(
@@ -1188,9 +1297,18 @@ fn info_panel<'a>(state: &'a MediaDiffState) -> Element<'a, Message> {
     let mut rows: Vec<Element<'a, Message>> = Vec::with_capacity(keys.len() + 1);
     rows.push(
         row![
-            text("Property").size(theme::FONT_XS).style(style::dim_text).width(Length::FillPortion(3)),
-            text("Old").size(theme::FONT_XS).style(style::dim_text).width(Length::FillPortion(4)),
-            text("New").size(theme::FONT_XS).style(style::dim_text).width(Length::FillPortion(4)),
+            text("Property")
+                .size(theme::FONT_XS)
+                .style(style::dim_text)
+                .width(Length::FillPortion(3)),
+            text("Old")
+                .size(theme::FONT_XS)
+                .style(style::dim_text)
+                .width(Length::FillPortion(4)),
+            text("New")
+                .size(theme::FONT_XS)
+                .style(style::dim_text)
+                .width(Length::FillPortion(4)),
         ]
         .spacing(6)
         .padding(Padding::from([2, 0]))
@@ -1257,7 +1375,9 @@ fn info_panel<'a>(state: &'a MediaDiffState) -> Element<'a, Message> {
 
     let title = row![
         assets::icon(assets::INFO, 13.0, theme::TEXT_SECONDARY),
-        text("Properties").size(theme::FONT_SM).style(style::primary_text),
+        text("Properties")
+            .size(theme::FONT_SM)
+            .style(style::primary_text),
         horizontal_space(),
         icon_button(
             assets::CLOSE,
@@ -1290,4 +1410,3 @@ fn info_panel<'a>(state: &'a MediaDiffState) -> Element<'a, Message> {
     })
     .into()
 }
-

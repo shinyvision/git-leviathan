@@ -22,8 +22,8 @@ use crate::{
     services::{HighlightedFile, SegmentKind, SyntaxHighlightedSpan},
     theme,
     widgets::text::{
-        self, text_cells, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData,
-        TextSelection, CONTENT_PAD_X, DEFAULT_CONTENT_LINE_HEIGHT,
+        self, text_cells, CanvasCallbacks, CanvasId, CanvasRow, TextCanvasData, TextSelection,
+        CONTENT_PAD_X, DEFAULT_CONTENT_LINE_HEIGHT,
     },
 };
 
