@@ -567,7 +567,7 @@ fn decode_svg(bytes: &[u8]) -> Result<DecodedImage, MediaError> {
     resvg::render(&tree, transform, &mut pixmap.as_mut());
     // tiny-skia stores premultiplied RGBA; un-premultiply for the GPU path.
     let mut rgba = pixmap.take();
-    for px in rgba.chunks_exact_mut(4) {
+    for px in rgba.as_chunks_mut::<4>().0 {
         let a = px[3] as u32;
         if a > 0 && a < 255 {
             px[0] = ((px[0] as u32 * 255 + a / 2) / a).min(255) as u8;
@@ -844,8 +844,10 @@ pub fn difference_image(old: &DecodedImage, new: &DecodedImage) -> Result<Differ
 
     for (i, (pa, pb)) in a
         .rgba
-        .chunks_exact(4)
-        .zip(b.rgba.chunks_exact(4))
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.rgba.as_chunks::<4>().0)
         .enumerate()
     {
         let d = pa

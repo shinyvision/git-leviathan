@@ -32,11 +32,13 @@ const AUDIO_EXTENSIONS: &[&str] = &[
     "wv", "spx", "tta", "voc", "mpc", "aa3", "oma", "ra", "gsm", "adts", "w64", "rf64",
 ];
 
+// `.ts`/`.mts` are deliberately absent: they're far more often TypeScript
+// than MPEG transport streams. Real transport streams are binary and still
+// reach the viewer via `sniff_media_kind`.
 const VIDEO_EXTENSIONS: &[&str] = &[
     "mp4", "m4v", "mov", "qt", "avi", "mkv", "webm", "wmv", "flv", "f4v", "mpg", "mpeg", "m2v",
-    "mpe", "ts", "mts", "m2ts", "3gp", "3g2", "ogv", "vob", "rm", "rmvb", "asf", "divx", "mxf",
-    "y4m", "dv", "mjpeg", "mjpg", "h264", "264", "h265", "265", "hevc", "av1", "ivf", "nut", "gxf",
-    "mpv",
+    "mpe", "m2ts", "3gp", "3g2", "ogv", "vob", "rm", "rmvb", "asf", "divx", "mxf", "y4m", "dv",
+    "mjpeg", "mjpg", "h264", "264", "h265", "265", "hevc", "av1", "ivf", "nut", "gxf", "mpv",
 ];
 
 fn extension_of(path: &str) -> Option<String> {
@@ -281,6 +283,8 @@ mod tests {
         assert_eq!(media_kind_from_path("Makefile"), None);
         assert_eq!(media_kind_from_path(".gitignore"), None);
         assert_eq!(media_kind_from_path("dir.png/readme"), None);
+        assert_eq!(media_kind_from_path("src/app/state.ts"), None);
+        assert_eq!(media_kind_from_path("src/app/state.mts"), None);
     }
 
     #[test]
