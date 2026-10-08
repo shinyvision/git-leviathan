@@ -980,6 +980,14 @@ const BOOTSTRAP_NPM_WASM_GRAMMARS: &[NpmWasmGrammarSpec] = &[
         filenames: &[],
     },
     NpmWasmGrammarSpec {
+        language: "sql",
+        version: (0, 26, 4),
+        url: "https://registry.npmjs.org/@lumis-sh/wasm-sql/-/wasm-sql-0.26.4.tgz",
+        filetypes: &["sql"],
+        extensions: &["sql", "pgsql", "mysql"],
+        filenames: &[],
+    },
+    NpmWasmGrammarSpec {
         language: "lua",
         version: (0, 4, 1),
         url: "https://registry.npmjs.org/@tree-sitter-grammars/tree-sitter-lua/-/tree-sitter-lua-0.4.1.tgz",
@@ -1526,6 +1534,7 @@ fn normalize_injection_language(language: &str) -> Option<String> {
         "html.twig" => "twig",
         "jsonc" => "json",
         "md" => "markdown",
+        "mysql" | "pgsql" | "postgres" | "postgresql" | "psql" | "sqlite" => "sql",
         other => other,
     };
     Some(key.to_string())
