@@ -135,10 +135,11 @@ impl DetailPanel {
         self.dirty_file_list_scroll_y = 0.0;
         self.merged_file_list_scroll_y = 0.0;
 
-        iced::widget::operation::scroll_to(
-            detail_file_list_scroll_id(),
-            scrollable::AbsoluteOffset { x: 0.0, y: 0.0 },
-        )
+        let top = scrollable::AbsoluteOffset { x: 0.0, y: 0.0 };
+        Task::batch([
+            iced::widget::operation::scroll_to(detail_file_list_scroll_id(), top),
+            iced::widget::operation::scroll_to(detail_commit_message_scroll_id(), top),
+        ])
     }
 
     pub(in crate::screens::repository) fn select_file(
@@ -1604,6 +1605,10 @@ mod tests {
 
 pub(in crate::screens::repository) fn detail_file_list_scroll_id() -> iced::widget::Id {
     iced::widget::Id::new("detail-file-list")
+}
+
+pub(in crate::screens::repository) fn detail_commit_message_scroll_id() -> iced::widget::Id {
+    iced::widget::Id::new("detail-commit-message")
 }
 
 pub(in crate::screens::repository) fn dirty_commit_message_editor_id() -> iced::widget::Id {

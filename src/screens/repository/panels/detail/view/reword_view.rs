@@ -6,7 +6,7 @@
 
 use iced::{
     keyboard,
-    widget::{button, column, container, text, text_editor, MouseArea},
+    widget::{button, column, container, scrollable, text, text_editor, MouseArea},
     Border, Element, Length, Padding, Theme,
 };
 
@@ -15,10 +15,13 @@ use crate::{
     message::Message,
     screens::repository::{panel_messages::DetailAction, RepositoryMessage},
     style, theme,
-    widgets::primitives::hoverable::{HoverStatus, Hoverable},
+    widgets::{
+        primitives::hoverable::{HoverStatus, Hoverable},
+        shared::scrollbar_style,
+    },
 };
 
-use super::super::state::RewordViewModel;
+use super::super::state::{detail_commit_message_scroll_id, RewordViewModel};
 use super::styles::{detail_text_editor_style, green_button_style, red_button_style};
 
 pub(super) fn reword_message_view<'a>(
@@ -107,8 +110,21 @@ pub(super) fn reword_message_view<'a>(
         content_col = content_col.push(column(body_lines).spacing(2));
     }
 
-    let inner = container(content_col)
-        .padding(Padding::from([12, 14]))
+    let message_scroll = scrollable(
+        container(content_col)
+            .padding(Padding::from([9, 11]))
+            .width(Length::Fill),
+    )
+    .id(detail_commit_message_scroll_id())
+    .height(Length::Fill)
+    .direction(scrollable::Direction::Vertical(
+        scrollable::Scrollbar::new().width(5).scroller_width(5),
+    ))
+    .style(scrollbar_style);
+
+    // The inset keeps the scrollbar rail clear of the rounded border.
+    let inner = container(message_scroll)
+        .padding(3)
         .width(Length::Fill)
         .height(Length::Fixed(180.0));
 
