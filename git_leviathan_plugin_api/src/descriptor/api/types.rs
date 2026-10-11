@@ -111,13 +111,13 @@ const TYPE_TAB_REGISTRY_FIELDS: &[ApiTypeField] = &[
         name: "list",
         lua_type: "LeviathanTab[]",
         required: true,
-        doc: "Open tabs.",
+        doc: "Open tabs of the active workspace, in tab-bar order.",
     },
     ApiTypeField {
         name: "current",
         lua_type: "LeviathanTab|nil",
         required: true,
-        doc: "Currently focused tab.",
+        doc: "Currently focused tab; nil while the active workspace has no tabs.",
     },
 ];
 

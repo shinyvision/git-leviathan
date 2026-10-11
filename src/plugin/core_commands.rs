@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use serde_json::{json, Value};
 
-use crate::message::AppMessage;
+use crate::message::{AppMessage, WorkspaceMessage};
 use crate::plugin::commands::{
     CommandArg, CommandArgType, CommandAvailability, CommandBody, CommandContext,
     CommandDescriptor, CommandHooks, CommandRegistry, HOST_COMMAND_PLUGIN_ID,
@@ -20,6 +20,7 @@ pub enum CoreCommandAction {
     CloseTab { path: Option<String> },
     SelectTab { path: String },
     ReorderTabs { paths: Vec<String> },
+    SelectWorkspace { name: String },
     RefreshGrammarRegistry { path: String },
     InstallGrammar { language: String },
     UpdateGrammar { language: String },
@@ -166,6 +167,47 @@ fn specs() -> Vec<CoreCommandSpec> {
         .arg("paths", StringArg, true, None, "Comma-separated paths.")
         .cap("command:invoke:tab.reorder")
         .action(reorder_tabs),
+        spec(
+            "workspace.next",
+            "Workspace: Next",
+            "Switch to the next workspace.",
+            CommandContext::GLOBAL,
+        )
+        .cap("command:invoke:workspace.next")
+        .action(|_| Ok(workspace_action(WorkspaceMessage::Next))),
+        spec(
+            "workspace.previous",
+            "Workspace: Previous",
+            "Switch to the previous workspace.",
+            CommandContext::GLOBAL,
+        )
+        .cap("command:invoke:workspace.previous")
+        .action(|_| Ok(workspace_action(WorkspaceMessage::Previous))),
+        spec(
+            "workspace.select",
+            "Workspace: Select",
+            "Switch to a workspace by name.",
+            CommandContext::GLOBAL,
+        )
+        .arg("name", StringArg, true, None, "Workspace name.")
+        .cap("command:invoke:workspace.select")
+        .action(select_workspace),
+        spec(
+            "workspace.new",
+            "Workspace: New",
+            "Create a workspace.",
+            CommandContext::GLOBAL,
+        )
+        .cap("command:invoke:workspace.new")
+        .action(|_| Ok(workspace_action(WorkspaceMessage::StartCreate))),
+        spec(
+            "workspace.switcher",
+            "Workspace: Show Switcher",
+            "Open or close the workspace switcher.",
+            CommandContext::GLOBAL,
+        )
+        .cap("command:invoke:workspace.switcher")
+        .action(|_| Ok(workspace_action(WorkspaceMessage::TogglePanel))),
         spec(
             "repository.fetch",
             "Repository: Fetch",
@@ -761,6 +803,16 @@ fn reorder_tabs(args: &Value) -> Result<CoreCommandAction, String> {
     Ok(CoreCommandAction::ReorderTabs { paths })
 }
 
+fn workspace_action(message: WorkspaceMessage) -> CoreCommandAction {
+    CoreCommandAction::App(AppMessage::Workspace(message))
+}
+
+fn select_workspace(args: &Value) -> Result<CoreCommandAction, String> {
+    Ok(CoreCommandAction::SelectWorkspace {
+        name: required_string_arg(args, "name")?,
+    })
+}
+
 fn create_branch(args: &Value) -> Result<CoreCommandAction, String> {
     Ok(repository(RepositoryMessage::CreateBranchAtSelected {
         commit_idx: args
@@ -1047,6 +1099,11 @@ mod tests {
         for expected in [
             "app.open_repository",
             "tab.close",
+            "workspace.next",
+            "workspace.previous",
+            "workspace.select",
+            "workspace.new",
+            "workspace.switcher",
             "repository.pull",
             "repository.push",
             "branch.create",

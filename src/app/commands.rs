@@ -126,6 +126,7 @@ impl App {
                 let _ = self.apply_tab_registry_op(TabRegistryOp::Reorder(paths));
                 Task::none()
             }
+            CoreCommandAction::SelectWorkspace { name } => self.select_workspace_named(&name),
             CoreCommandAction::RefreshGrammarRegistry { path } => {
                 self.refresh_grammar_registry(path)
             }

@@ -9,5 +9,5 @@ pub mod ids;
 pub mod worktree;
 
 pub use commit::{ChangeKind, ChangedFile, Commit, CommitKind};
-pub use ids::{RepoVersion, TabId};
+pub use ids::{RepoVersion, TabId, WorkspaceId};
 pub use worktree::WorktreeInfo;

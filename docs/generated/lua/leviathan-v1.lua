@@ -114,8 +114,8 @@ function LeviathanShellJobHandle:id() end
 
 ---Tab registry namespace.
 ---@class leviathan.tab_registry
----@field list LeviathanTab[] Open tabs.
----@field current LeviathanTab|nil Currently focused tab.
+---@field list LeviathanTab[] Open tabs of the active workspace, in tab-bar order.
+---@field current LeviathanTab|nil Currently focused tab; nil while the active workspace has no tabs.
 
 ---Active repository snapshot.
 ---@class leviathan.repository

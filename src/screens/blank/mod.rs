@@ -23,6 +23,44 @@ impl BlankScreen {
     pub fn new() -> Self {
         Self
     }
+
+    /// The blank screen for a workspace without tabs (shown under the tab
+    /// bar, so the user can still switch workspaces).
+    pub fn view_empty_workspace(&self, name: &str) -> Element<'_, Message> {
+        let copy = BlankCopy::empty_workspace(name);
+        responsive(move |size| blank_view(size, &copy)).into()
+    }
+}
+
+/// Words on the blank screen: a two-tone title and two lines below it.
+struct BlankCopy {
+    title_lead: String,
+    title_accent: String,
+    lines: [String; 2],
+}
+
+impl BlankCopy {
+    fn welcome() -> Self {
+        Self {
+            title_lead: "Welcome to ".into(),
+            title_accent: "Git Leviathan!".into(),
+            lines: [
+                "You currently don't have any repositories open.".into(),
+                "Click the big blue button to start!".into(),
+            ],
+        }
+    }
+
+    fn empty_workspace(name: &str) -> Self {
+        Self {
+            title_lead: String::new(),
+            title_accent: name.to_string(),
+            lines: [
+                "This workspace doesn't have any repositories yet.".into(),
+                "Open one here, or move a tab in from its right-click menu.".into(),
+            ],
+        }
+    }
 }
 
 impl Screen for BlankScreen {
@@ -38,11 +76,12 @@ impl Screen for BlankScreen {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        responsive(blank_view).into()
+        let copy = BlankCopy::welcome();
+        responsive(move |size| blank_view(size, &copy)).into()
     }
 }
 
-fn blank_view(size: iced::Size) -> Element<'static, Message> {
+fn blank_view(size: iced::Size, copy: &BlankCopy) -> Element<'static, Message> {
     let background = image(assets::blank_background_handle())
         .width(Length::Fill)
         .height(Length::Fill)
@@ -74,17 +113,21 @@ fn blank_view(size: iced::Size) -> Element<'static, Message> {
         .content_fit(ContentFit::Contain);
 
     let title = row![
-        text("Welcome to ").size(title_size).color(Color::WHITE),
-        text("Git Leviathan!").size(title_size).color(WARM_TITLE),
+        text(copy.title_lead.clone())
+            .size(title_size)
+            .color(Color::WHITE),
+        text(copy.title_accent.clone())
+            .size(title_size)
+            .color(WARM_TITLE),
     ]
     .spacing(0)
     .align_y(Alignment::Center);
 
     let copy = column![
-        text("You currently don't have any repositories open.")
+        text(copy.lines[0].clone())
             .size(subtitle_size)
             .color(SUBTITLE),
-        text("Click the big blue button to start!")
+        text(copy.lines[1].clone())
             .size(subtitle_size)
             .color(SUBTITLE),
     ]

@@ -24,6 +24,9 @@ enum ActiveScreenRef<'a> {
 pub fn render(app: &App) -> Element<'_, Message> {
     match active_screen_ref(app) {
         ActiveScreenRef::NoGit(screen) => app_screen_view(screen.view(), app),
+        ActiveScreenRef::Blank(screen) if app.workspace_chrome_visible() => {
+            empty_workspace_view(app, screen)
+        }
         ActiveScreenRef::Blank(screen) => app_screen_view(screen.view(), app),
         ActiveScreenRef::Repository(screen) => repository_view(app, screen),
         ActiveScreenRef::Plugin(screen) => plugin_view(app, screen),
@@ -42,19 +45,53 @@ fn app_screen_view<'a>(body: Element<'a, Message>, app: &'a App) -> Element<'a, 
         .into()
 }
 
+fn tab_bar(app: &App) -> Element<'_, Message> {
+    chrome::tab_bar_view(
+        &app.tab_bar_registry,
+        app.plugin_host.tab_snapshot(),
+        &app.workspace_switcher,
+    )
+}
+
+/// Tab context menu layers, when one is open.
+fn tab_menu_layers(app: &App) -> Vec<Element<'_, Message>> {
+    let Some(menu) = app.workspace_ui.tab_menu.as_ref() else {
+        return Vec::new();
+    };
+    let Some(workspace) = app.tabs.entry(menu.tab_id).map(|t| t.workspace) else {
+        return Vec::new();
+    };
+    chrome::workspace_switcher::tab_menu_layers(&app.workspace_switcher, menu, workspace)
+}
+
+fn empty_workspace_view<'a>(app: &'a App, screen: &'a BlankScreen) -> Element<'a, Message> {
+    let name = app.tabs.workspaces().name(app.tabs.active_workspace());
+    let content: Element<Message> = column![tab_bar(app), screen.view_empty_workspace(name)]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+    let mut layers: Vec<Element<Message>> = vec![content];
+    layers.extend(plugin_overlay::layers(&app.plugin_host));
+    if let Some(toast_overlay) = app.toasts.overlay() {
+        layers.push(toast_overlay);
+    }
+    Stack::with_children(layers)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
 fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Message> {
     let _screen_nav = (
         <PluginScreen as Screen>::title(screen),
         <PluginScreen as Screen>::breadcrumbs(screen),
         <PluginScreen as Screen>::has_focus(screen),
     );
-    let mut content_col = column![chrome::tab_bar_view(
-        &app.tab_bar_registry,
-        app.plugin_host.tab_snapshot()
-    ),]
-    .spacing(0)
-    .width(Length::Fill)
-    .height(Length::Fill);
+    let mut content_col = column![tab_bar(app)]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
     let ctx = ToolbarCtx {
         now: app.fetch.started_at(),
         main_bar_registry: &app.main_bar_registry,
@@ -67,6 +104,7 @@ fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Messag
 
     let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(plugin_overlay::layers(&app.plugin_host));
+    layers.extend(tab_menu_layers(app));
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);
     }
@@ -77,13 +115,10 @@ fn plugin_view<'a>(app: &'a App, screen: &'a PluginScreen) -> Element<'a, Messag
 }
 
 fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a, Message> {
-    let mut content_col = column![chrome::tab_bar_view(
-        &app.tab_bar_registry,
-        app.plugin_host.tab_snapshot()
-    ),]
-    .spacing(0)
-    .width(Length::Fill)
-    .height(Length::Fill);
+    let mut content_col = column![tab_bar(app)]
+        .spacing(0)
+        .width(Length::Fill)
+        .height(Length::Fill);
     let ctx = ToolbarCtx {
         now: app.fetch.started_at(),
         main_bar_registry: &app.main_bar_registry,
@@ -99,6 +134,7 @@ fn repository_view<'a>(app: &'a App, screen: &'a RepositoryScreen) -> Element<'a
     let mut layers: Vec<Element<Message>> = vec![content];
     layers.extend(<RepositoryScreen as Screen>::overlay_layers(screen));
     layers.extend(plugin_overlay::layers(&app.plugin_host));
+    layers.extend(tab_menu_layers(app));
 
     if let Some(toast_overlay) = app.toasts.overlay() {
         layers.push(toast_overlay);

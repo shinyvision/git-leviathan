@@ -6,15 +6,17 @@
 //!
 //! ## Priority map
 //!
-//! | Section | Priority | ID                       |
-//! | ------- | -------- | ------------------------ |
-//! | Left    | 10       | `builtin.plus_button`    |
-//! | Center  | 10       | `builtin.tab_list`       |
-//! | Right   | 10       | `builtin.version_label`  |
+//! | Section | Priority | ID                             |
+//! | ------- | -------- | ------------------------------ |
+//! | Left    | 5        | `builtin.workspace_switcher`   |
+//! | Left    | 10       | `builtin.plus_button`          |
+//! | Center  | 10       | `builtin.tab_list`             |
+//! | Right   | 10       | `builtin.version_label`        |
 //!
 //! `builtin.tab_list` carries the entire native tab strip: drag-reorder,
-//! hover, click, close button, folder icon. Plugins replacing it should
-//! use the `tablist` widget kind to keep that behaviour.
+//! scrolling, hover, click, close button, folder icon, and the right-click
+//! menu that moves a tab to another workspace. Plugins replacing it should
+//! use the `tablist` widget kind to keep the core of that behaviour.
 
 use iced::{
     widget::{button, container},
@@ -24,8 +26,9 @@ use iced::{
 use crate::{
     assets,
     core::TabId,
-    message::{AppMessage, Message},
+    message::{AppMessage, Message, WorkspaceMessage},
     style, theme,
+    widgets::chrome::workspace_switcher,
     widgets::tab_bar::{TabBar, TabItem},
 };
 
@@ -33,9 +36,22 @@ use super::registry::{Section, TabBarCtx, TabBarRegistry, TabBarSlot};
 use crate::widgets::tab_bar::parts::{close_button, folder_icon};
 
 pub fn register_all(registry: &mut TabBarRegistry) {
+    registry.add(workspace_switcher_slot());
     registry.add(plus_button_slot());
     registry.add(tab_list_slot());
     registry.add(version_label_slot());
+}
+
+fn workspace_switcher_slot() -> TabBarSlot {
+    TabBarSlot::new(
+        "builtin.workspace_switcher",
+        Section::Left,
+        5,
+        |ctx: &TabBarCtx<'_>| match ctx.workspaces {
+            Some(model) => workspace_switcher::switcher_view(model),
+            None => iced::widget::Space::new().into(),
+        },
+    )
 }
 
 fn plus_button_slot() -> TabBarSlot {
@@ -72,6 +88,12 @@ fn tab_list_slot() -> TabBarSlot {
                 snap.tabs.iter().map(|t| (t.id, t.path.clone())).collect();
             let reorder_paths = select_paths.clone();
             TabBar::new(items, active)
+                .on_context_menu(|tab_id, position| {
+                    Message::App(AppMessage::Workspace(WorkspaceMessage::OpenTabMenu {
+                        tab_id,
+                        position,
+                    }))
+                })
                 .on_select(move |id| {
                     let path = select_paths
                         .iter()

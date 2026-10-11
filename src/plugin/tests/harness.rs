@@ -466,6 +466,7 @@ pub fn tab_snapshot() -> TabsSnapshot {
         }],
         active_id: Some(TabId(1)),
         active_path: Some("/tmp/repo".into()),
+        workspace_id: 0,
     }
 }
 

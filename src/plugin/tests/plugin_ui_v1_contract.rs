@@ -1002,7 +1002,10 @@ fn default_builtin_registry_order_is_unchanged() {
     assert_eq!(
         tab_ids,
         vec![
-            ("left", vec!["builtin.plus_button"]),
+            (
+                "left",
+                vec!["builtin.workspace_switcher", "builtin.plus_button"]
+            ),
             ("center", vec!["builtin.tab_list"]),
             ("right", vec!["builtin.version_label"]),
         ]

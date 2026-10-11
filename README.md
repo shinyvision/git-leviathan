@@ -33,7 +33,7 @@ Git Leviathan started as an attempt to solve all three problems at once: an open
 - **Commit details at a glance** — select a commit and inspect the message, author, parents, changed files, and stats in one place.
 - **Diff viewer with syntax highlighting** — read changes with tree-sitter based highlighting.
 - **Media diffs** — images, audio and video open as old → new players instead of a binary blob. Images get zoom/pan, swipe, onion-skin and pixel-difference modes, animated GIF/APNG/WebP playback, SVG rendering and EXIF metadata; audio gets waveforms with scrubbing; video streams through FFmpeg with frame stepping and A/V sync. Exotic formats (HEIC, AVIF, JPEG XL, RAW, Opus, WMA, …) are handled by FFmpeg when it is installed.
-- **Multi-tab workspace** — keep several repositories open side by side.
+- **Tabs and workspaces** — keep several repositories open side by side, and optionally group them into workspaces (named, with an icon, drag-and-drop sortable) that you switch between from the tab bar. Right-click a tab to move it to another workspace.
 - **Plugin system** — extend the app with Lua plugins for commands, UI slots, dock panels, graph decorations, services, and more. Documentation coming soon.
 - **Live filesystem watching** — the UI updates when your working tree does.
 - **Structured error reporting** — auth failures, corrupt objects, and network issues surfaced with context, not stack traces.

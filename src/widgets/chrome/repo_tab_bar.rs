@@ -2,9 +2,10 @@
 //!
 //! The bar is a `row![left, centre, fill, right]` strip wrapped in a
 //! toolbar-styled container; every visual piece is a slot in
-//! `TabBarRegistry`. Built-ins (`builtin.plus_button` / `builtin.tab_list`
-//! / `builtin.version_label`) are registered at app startup; plugins
-//! contribute or replace by id via `leviathan.ui.slot.*`.
+//! `TabBarRegistry`. Built-ins (`builtin.workspace_switcher` /
+//! `builtin.plus_button` / `builtin.tab_list` / `builtin.version_label`)
+//! are registered at app startup; plugins contribute or replace by id via
+//! `leviathan.ui.slot.*`.
 //! Drag-reorder, click selection, close button — all live
 //! inside the `builtin.tab_list` slot's `TabBar` widget.
 
@@ -18,13 +19,15 @@ use crate::{
     plugin::tab_snapshot::TabsSnapshot,
     style, theme,
     widgets::chrome::tab_bar_slots::{self, TabBarCtx, TabBarRegistry},
+    widgets::chrome::workspace_switcher::WorkspaceSwitcherModel,
 };
 
 pub fn tab_bar_view<'a>(
     registry: &'a TabBarRegistry,
     snapshot: &'a TabsSnapshot,
+    workspaces: &'a WorkspaceSwitcherModel,
 ) -> Element<'a, Message> {
-    let ctx = TabBarCtx::with_tabs(snapshot);
+    let ctx = TabBarCtx::with_tabs(snapshot).workspaces(workspaces);
 
     let left: Vec<Element<'a, Message>> =
         tab_bar_slots::iter_section(registry, tab_bar_slots::Section::Left)

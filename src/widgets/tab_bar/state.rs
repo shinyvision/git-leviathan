@@ -1,6 +1,7 @@
 //! Drag-reorder state machine. Pure: no widget tree, no rendering. Owned by
-//! the TabBar widget via its tree state. Click vs drag is decided by a small
-//! pixel threshold; while dragging, hovers over other tabs swap them in the
+//! the TabBar widget (horizontal) and the workspace `ReorderList` (vertical)
+//! via their tree state. Click vs drag is decided by a small pixel
+//! threshold; while dragging, hovers over other items swap them in the
 //! visual `working_order`. Release returns either a click or — if the order
 //! changed — the new order for the caller to persist.
 
@@ -17,8 +18,27 @@ pub enum DragOutcome<K> {
     Reorder(Vec<K>),
 }
 
+/// Which cursor coordinate drives reordering. Slot bounds and the grab
+/// anchor passed in by the owner are measured along this axis.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DragAxis {
+    #[default]
+    Horizontal,
+    Vertical,
+}
+
+impl DragAxis {
+    pub fn main(self, p: Point) -> f32 {
+        match self {
+            DragAxis::Horizontal => p.x,
+            DragAxis::Vertical => p.y,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DragState<K: Copy + Eq + Hash> {
+    axis: DragAxis,
     press_origin: Option<(K, Point)>,
     dragging: Option<K>,
     grab_offset: Option<f32>,
@@ -30,6 +50,7 @@ pub struct DragState<K: Copy + Eq + Hash> {
 impl<K: Copy + Eq + Hash> Default for DragState<K> {
     fn default() -> Self {
         Self {
+            axis: DragAxis::Horizontal,
             press_origin: None,
             dragging: None,
             grab_offset: None,
@@ -45,12 +66,21 @@ impl<K: Copy + Eq + Hash> DragState<K> {
         Self::default()
     }
 
-    pub fn on_press(&mut self, key: K, cursor: Point, tab_left_x: f32, current_order: &[K]) {
+    pub fn with_axis(axis: DragAxis) -> Self {
+        Self {
+            axis,
+            ..Self::default()
+        }
+    }
+
+    /// `item_start` is the pressed item's leading edge along the drag axis
+    /// (left for horizontal, top for vertical).
+    pub fn on_press(&mut self, key: K, cursor: Point, item_start: f32, current_order: &[K]) {
         if !current_order.contains(&key) {
             return;
         }
         self.press_origin = Some((key, cursor));
-        self.grab_offset = Some(cursor.x - tab_left_x);
+        self.grab_offset = Some(self.axis.main(cursor) - item_start);
         self.cursor = Some(cursor);
         self.working_order = Some(current_order.to_vec());
         self.initial_order = Some(current_order.to_vec());
@@ -92,7 +122,7 @@ impl<K: Copy + Eq + Hash> DragState<K> {
             return false;
         };
         let dragged_w = r - l;
-        let dragged_center = cursor.x - grab + dragged_w * 0.5;
+        let dragged_center = self.axis.main(cursor) - grab + dragged_w * 0.5;
 
         let mut to = from;
         while to + 1 < slot_bounds.len() {
@@ -156,6 +186,12 @@ impl<K: Copy + Eq + Hash> DragState<K> {
                 DragOutcome::None
             }
         }
+    }
+
+    /// Abandon any press or drag without an outcome (e.g. a stale drag whose
+    /// release never arrived).
+    pub fn cancel(&mut self) {
+        *self = Self::with_axis(self.axis);
     }
 
     /// Clear a post-release `working_order` once the caller's input
@@ -392,5 +428,36 @@ mod tests {
         s.on_cursor_moved(pt(10.0, 10.0), &SLOTS_2, |_| false);
         assert_eq!(s.working_order(), Some(&[1u32, 2][..]));
         assert_eq!(s.on_released(), DragOutcome::None);
+    }
+
+    #[test]
+    fn cancel_drops_drag_and_keeps_axis() {
+        let mut s: DragState<u32> = DragState::with_axis(DragAxis::Vertical);
+        s.on_press(1, pt(0.0, 10.0), 0.0, &[1, 2, 3]);
+        s.on_cursor_moved(pt(0.0, 130.0), &SLOTS_3, |_| false);
+        assert!(s.is_dragging());
+        s.cancel();
+        assert!(!s.is_dragging());
+        assert!(!s.is_tracking_pointer());
+        assert_eq!(s.working_order(), None);
+        assert_eq!(s.on_released(), DragOutcome::None);
+        s.on_press(1, pt(0.0, 10.0), 0.0, &[1, 2]);
+        assert_eq!(s.grab_offset(), Some(10.0), "still measures along y");
+    }
+
+    #[test]
+    fn vertical_axis_reorders_by_y() {
+        let mut s: DragState<u32> = DragState::with_axis(DragAxis::Vertical);
+        // Rows 40px tall stacked top to bottom. Press near the top of row 1.
+        s.on_press(1, pt(500.0, 10.0), 0.0, &[1, 2, 3]);
+        assert_eq!(s.grab_offset(), Some(10.0));
+        // Large horizontal motion alone crosses the threshold but never
+        // swaps: only y drives the slot pick.
+        s.on_cursor_moved(pt(900.0, 10.0), &SLOTS_3, |_| false);
+        assert!(s.is_dragging());
+        assert_eq!(s.working_order(), Some(&[1u32, 2, 3][..]));
+        s.on_cursor_moved(pt(900.0, 130.0), &SLOTS_3, |_| false);
+        assert_eq!(s.working_order(), Some(&[2u32, 3, 1][..]));
+        assert_eq!(s.on_released(), DragOutcome::Reorder(vec![2, 3, 1]));
     }
 }

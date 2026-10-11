@@ -11,6 +11,9 @@ mod view;
 
 pub(crate) use messages::GitWriteIntent;
 pub use messages::{RepositoryFocusTarget, RepositoryMessage};
+/// Dialog buttons / inputs, shared with app-level panels (workspaces) so
+/// they speak the same visual language as the repository dialogs.
+pub(crate) use overlays::widgets as overlay_widgets;
 
 use iced::{event, keyboard, mouse, Element, Subscription, Task};
 use std::sync::Arc;

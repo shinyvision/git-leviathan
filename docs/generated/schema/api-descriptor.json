@@ -6761,13 +6761,13 @@
       "doc": "Tab registry namespace.",
       "fields": [
         {
-          "doc": "Open tabs.",
+          "doc": "Open tabs of the active workspace, in tab-bar order.",
           "lua_type": "LeviathanTab[]",
           "name": "list",
           "required": true
         },
         {
-          "doc": "Currently focused tab.",
+          "doc": "Currently focused tab; nil while the active workspace has no tabs.",
           "lua_type": "LeviathanTab|nil",
           "name": "current",
           "required": true

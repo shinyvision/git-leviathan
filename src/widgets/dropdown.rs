@@ -39,6 +39,7 @@ pub struct Dropdown<'a> {
     trigger: Element<'a, Message>,
     menu: Option<Element<'a, Message>>,
     on_close: Message,
+    on_escape: Option<Message>,
     menu_width: Option<f32>,
     menu_max_height: f32,
 }
@@ -53,9 +54,25 @@ impl<'a> Dropdown<'a> {
             trigger,
             menu,
             on_close,
+            on_escape: None,
             menu_width: None,
             menu_max_height: DROPDOWN_MAX_HEIGHT,
         }
+    }
+
+    /// Message for Esc, when it should differ from an outside click (e.g. a
+    /// multi-step menu where Esc steps back before it closes). Defaults to
+    /// `on_close`.
+    pub fn on_escape(mut self, message: Message) -> Self {
+        self.on_escape = Some(message);
+        self
+    }
+
+    /// Height the menu may grow to before it is clipped. Defaults to
+    /// `DROPDOWN_MAX_HEIGHT`.
+    pub fn menu_max_height(mut self, height: f32) -> Self {
+        self.menu_max_height = height;
+        self
     }
 
     /// Forces a specific menu width (in pixels). Without this the menu inherits
@@ -100,12 +117,13 @@ impl<'a> Widget<Message, Theme, iced::Renderer> for Dropdown<'a> {
     fn diff(&self, tree: &mut Tree) {
         tree.diff_children(&[&self.trigger]);
         // Keep the menu's state tree in sync with whatever menu element we
-        // were given this frame. When the menu is absent (closed) we still
-        // keep the old tree around — cheap, and avoids reinitializing item
-        // state on each toggle.
+        // were given this frame.
         let state = tree.state.downcast_mut::<DropdownState>();
-        if let Some(menu) = &self.menu {
-            state.menu_tree.diff(menu.as_widget());
+        match &self.menu {
+            Some(menu) => state.menu_tree.diff(menu.as_widget()),
+            // Drop the closed menu's state so nothing mid-gesture (a drag in
+            // the menu when it closed) survives into the next opening.
+            None => state.menu_tree = Tree::empty(),
         }
     }
 
@@ -218,6 +236,10 @@ impl<'a> Widget<Message, Theme, iced::Renderer> for Dropdown<'a> {
             menu,
             menu_tree: &mut state.menu_tree,
             on_close: self.on_close.clone(),
+            on_escape: self
+                .on_escape
+                .clone()
+                .unwrap_or_else(|| self.on_close.clone()),
             trigger_bounds,
             menu_width: width,
             menu_max_height: self.menu_max_height,
@@ -229,6 +251,7 @@ struct DropdownOverlay<'a, 'b> {
     menu: &'b mut Element<'a, Message>,
     menu_tree: &'b mut Tree,
     on_close: Message,
+    on_escape: Message,
     trigger_bounds: Rectangle,
     menu_width: f32,
     menu_max_height: f32,
@@ -260,6 +283,19 @@ impl<'a, 'b> overlay::Overlay<Message, Theme, iced::Renderer> for DropdownOverla
         node.move_to(position)
     }
 
+    /// Lets widget operations (focusing a text input in the menu, for one)
+    /// reach the menu while it is open.
+    fn operate(
+        &mut self,
+        layout: Layout<'_>,
+        renderer: &iced::Renderer,
+        operation: &mut dyn Operation,
+    ) {
+        self.menu
+            .as_widget_mut()
+            .operate(self.menu_tree, layout, renderer, operation);
+    }
+
     fn update(
         &mut self,
         event: &Event,
@@ -278,7 +314,7 @@ impl<'a, 'b> overlay::Overlay<Message, Theme, iced::Renderer> for DropdownOverla
             ..
         }) = event
         {
-            shell.publish(self.on_close.clone());
+            shell.publish(self.on_escape.clone());
             shell.capture_event();
             return;
         }
@@ -303,6 +339,19 @@ impl<'a, 'b> overlay::Overlay<Message, Theme, iced::Renderer> for DropdownOverla
             shell,
             &menu_bounds,
         );
+
+        // The menu is opaque: presses and wheel turns on its padding, labels
+        // or dividers must not reach whatever lies underneath. Releases are
+        // left alone — drags that started below may end over the menu.
+        if !shell.is_event_captured()
+            && cursor.is_over(menu_bounds)
+            && matches!(
+                event,
+                Event::Mouse(mouse::Event::ButtonPressed(_) | mouse::Event::WheelScrolled { .. })
+            )
+        {
+            shell.capture_event();
+        }
     }
 
     fn mouse_interaction(
@@ -312,13 +361,18 @@ impl<'a, 'b> overlay::Overlay<Message, Theme, iced::Renderer> for DropdownOverla
         renderer: &iced::Renderer,
     ) -> mouse::Interaction {
         if cursor.is_over(layout.bounds()) {
-            self.menu.as_widget().mouse_interaction(
+            // Never `None` over the menu: iced only hides the cursor from the
+            // layer below when the overlay claims an interaction.
+            match self.menu.as_widget().mouse_interaction(
                 self.menu_tree,
                 layout,
                 cursor,
                 &layout.bounds(),
                 renderer,
-            )
+            ) {
+                mouse::Interaction::None => mouse::Interaction::Idle,
+                interaction => interaction,
+            }
         } else {
             mouse::Interaction::Idle
         }

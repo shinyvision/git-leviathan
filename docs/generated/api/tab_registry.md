@@ -14,8 +14,8 @@ Read-only tab snapshot plus queued tab mutation APIs.
 
 Tab registry namespace.
 
-- `list` (`LeviathanTab[]`; required) - Open tabs.
-- `current` (`LeviathanTab|nil`; required) - Currently focused tab.
+- `list` (`LeviathanTab[]`; required) - Open tabs of the active workspace, in tab-bar order.
+- `current` (`LeviathanTab|nil`; required) - Currently focused tab; nil while the active workspace has no tabs.
 
 ### `LeviathanTab`
 

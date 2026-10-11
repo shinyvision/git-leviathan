@@ -18,6 +18,12 @@ impl App {
         modified_key: keyboard::Key,
         modifiers: keyboard::Modifiers,
     ) -> Task<Message> {
+        // An open workspace panel or tab menu owns the keyboard.
+        if let Some(task) = self.handle_workspace_popup_key(&key) {
+            self.clear_key_chord("cancelled");
+            return task;
+        }
+
         let is_ctrl_tab =
             modifiers.control() && matches!(key, keyboard::Key::Named(keyboard::key::Named::Tab));
 
@@ -396,7 +402,7 @@ mod tests {
             build_slot_registries(&plugin_host);
 
         App {
-            tabs: TabManager::new(Arc::new(DefaultPresenter::new())),
+            tabs: TabManager::new(Arc::new(DefaultPresenter::new())).without_persistence(),
             blank_screen: BlankScreen::new(),
             no_git_screen: None,
             toasts: ToastManager::default(),
@@ -418,6 +424,8 @@ mod tests {
             tab_changes_revision: None,
             plugin_tabs_dirty: true,
             last_lua_activity: 0,
+            workspace_ui: Default::default(),
+            workspace_switcher: Default::default(),
         }
     }
 

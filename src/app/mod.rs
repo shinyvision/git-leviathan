@@ -10,9 +10,13 @@ mod subscription;
 mod tabs;
 mod update;
 mod view;
+mod workspace_ops;
+mod workspaces;
 
 use iced::{Element, Subscription, Task};
 use std::sync::Arc;
+
+use crate::core::WorkspaceId;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -34,12 +38,14 @@ use crate::{
     widgets::chrome::main_bar::{builtins as main_bar_builtins, MainBarRegistry},
     widgets::chrome::repo_region::{RepoChromeRegistry, RepoRegionRegistry},
     widgets::chrome::tab_bar_slots::{builtins as tab_bar_builtins, TabBarRegistry},
+    widgets::chrome::workspace_switcher::WorkspaceSwitcherModel,
 };
 
 use fetch_policy::FetchPolicy;
 use git_queue::GitOperationQueue;
 use key_chord::KeyChordState;
 use tabs::TabManager;
+use workspace_ops::WorkspaceUi;
 
 /// Delay between Ctrl+Tab settling on a tab and kicking off its auto-fetch.
 ///
@@ -98,6 +104,10 @@ pub struct App {
     /// counter also forces a re-serialize. The `last_persisted_tabs`
     /// equality check still suppresses redundant disk writes.
     pub(super) last_lua_activity: u64,
+    /// Workspace panel / tab menu state.
+    pub(super) workspace_ui: WorkspaceUi,
+    /// Render snapshot of the workspace switcher, rebuilt after each update.
+    pub(super) workspace_switcher: WorkspaceSwitcherModel,
 }
 
 impl App {
@@ -133,6 +143,8 @@ impl App {
             tab_changes_revision: None,
             plugin_tabs_dirty: true,
             last_lua_activity: 0,
+            workspace_ui: WorkspaceUi::default(),
+            workspace_switcher: WorkspaceSwitcherModel::default(),
         };
 
         // Test hook: GIT_LEVIATHAN_FORCE_SCREEN overrides normal startup.
@@ -160,12 +172,15 @@ impl App {
         // plugin tab.
         let intended_active = app.tabs.active_tab_id();
         app.restore_plugin_tabs();
+        // A remembered plugin tab could only be resolved now.
+        let intended_active = app.tabs.remembered_startup_tab().unwrap_or(intended_active);
         if app.tabs.active_tab_id() != intended_active {
             let _ = app.tabs.select(intended_active);
         }
         app.sync_repository_to_plugins();
         app.process_tab_changes();
         app.rebuild_slot_registries();
+        app.refresh_workspace_switcher();
         app.last_persisted_tabs = Some(app.collect_plugin_tabs());
         (app, task)
     }
@@ -173,13 +188,19 @@ impl App {
     fn load_initial_repos(&mut self) -> Task<Message> {
         let config = AppConfig::load();
         let env_repo = config.repo_path();
+        self.tabs.restore_workspaces(env_repo.is_some());
 
         let (repo_paths, most_recent_repo) = if let Some(path) = env_repo {
-            (vec![path.to_string()], None)
+            (vec![(path.to_string(), WorkspaceId::DEFAULT)], None)
         } else {
             SettingsService::new()
                 .map(|s| {
-                    let repos = s.load_repos().unwrap_or_default();
+                    let repos = s
+                        .load_repos_with_workspaces()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|(path, workspace)| (path, WorkspaceId(workspace)))
+                        .collect();
                     let most_recent = s.get_most_recent_repo().unwrap_or_default();
                     (repos, most_recent)
                 })
@@ -211,7 +232,12 @@ impl App {
                     state,
                 );
             }
-            self.open_plugin_screen_tab(tab.plugin_id, tab.screen_id, tab.bound_repo_path);
+            self.open_plugin_screen_tab(
+                tab.plugin_id,
+                tab.screen_id,
+                tab.bound_repo_path,
+                Some(WorkspaceId(tab.workspace_id)),
+            );
         }
     }
 
@@ -223,7 +249,7 @@ impl App {
                 PluginNavigationEffect::OpenScreen {
                     plugin_id,
                     screen_id,
-                } => self.open_plugin_screen_tab(plugin_id, screen_id, None),
+                } => self.open_plugin_screen_tab(plugin_id, screen_id, None, None),
             }
         }
         Task::none()
@@ -249,6 +275,7 @@ impl App {
         plugin_id: String,
         screen_id: String,
         restored_bound_repo_path: Option<String>,
+        restored_workspace: Option<WorkspaceId>,
     ) {
         let Some(summary) = self.plugin_host.screen_summary(&plugin_id, &screen_id) else {
             return;
@@ -263,7 +290,8 @@ impl App {
             }
         });
         self.plugin_host.open_screen(plugin_id, screen_id);
-        self.tabs.open_plugin_screen(summary, bound_repo_path);
+        self.tabs
+            .open_plugin_screen(summary, bound_repo_path, restored_workspace);
     }
 
     fn collect_plugin_tabs(&self) -> Vec<PersistedPluginTab> {
@@ -280,6 +308,7 @@ impl App {
                     state: self
                         .plugin_host
                         .serialize_screen_state(screen.plugin_id(), screen.screen_id()),
+                    workspace_id: entry.workspace.raw(),
                 })
             })
             .collect()
@@ -320,6 +349,9 @@ impl App {
         self.sync_toolbar_dialog_to_plugins();
         self.process_tab_changes();
         let command_actions = self.drain_core_command_actions();
+        // Commands (tab close, workspace switch) change the tab set after the
+        // reflection above; the tab bar draws from this snapshot.
+        self.process_tab_changes();
         let drain = self.drain_pending_tab_ops();
         let git_drain = self.drain_git_operation_queue();
         let ui_effects = self.drain_plugin_ui_effects();
@@ -328,10 +360,12 @@ impl App {
         // them here rather than only in update_plugin, or a plugin-bound
         // "open screen" key appears to do nothing until the next plugin event.
         let navigation = self.drain_pending_navigation_effects();
+        self.process_tab_changes();
         self.persist_plugin_tabs();
         let snapshot = self.compute_focus_snapshot();
         let _ = self.plugin_host.sync_focus(snapshot);
         self.rebuild_slot_registries();
+        self.refresh_workspace_switcher();
         self.reset_animation_clock_if_idle();
         Task::batch(vec![
             task,
@@ -587,11 +621,11 @@ impl App {
         payload
     }
 
+    /// Snapshot of the tabs the tab bar shows: the active workspace's.
     fn snapshot_tabs(&self) -> TabsSnapshot {
         let entries: Vec<TabSnapshotEntry> = self
             .tabs
-            .tabs()
-            .iter()
+            .visible_tabs()
             .map(|t| TabSnapshotEntry {
                 id: t.id,
                 path: t.path_key().to_string(),
@@ -609,6 +643,7 @@ impl App {
             tabs: entries,
             active_id,
             active_path,
+            workspace_id: self.tabs.active_workspace().raw(),
         }
     }
 
@@ -801,42 +836,50 @@ fn build_slot_registries(
     )
 }
 
+/// An `App` with no tabs, no plugins and no settings DB access (tests).
+#[cfg(test)]
+pub(super) fn test_app() -> App {
+    use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
+
+    let mut plugin_host = PluginHost::new();
+    plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
+    let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
+        build_slot_registries(&plugin_host);
+    App {
+        tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())).without_persistence(),
+        blank_screen: BlankScreen::new(),
+        no_git_screen: None,
+        toasts: ToastManager::default(),
+        last_animation_tick: None,
+        fetch: FetchPolicy::new(),
+        git_queue: GitOperationQueue::new(),
+        reload_refs_abort: None,
+        plugin_host,
+        key_chord: KeyChordState::new(),
+        main_bar_registry,
+        tab_bar_registry,
+        repo_region_registry,
+        repo_chrome_registry,
+        slot_registry_revision: 0,
+        pending_focus_reason: None,
+        settings: None,
+        last_persisted_tabs: None,
+        last_synced_repo: None,
+        tab_changes_revision: None,
+        plugin_tabs_dirty: true,
+        last_lua_activity: 0,
+        workspace_ui: WorkspaceUi::default(),
+        workspace_switcher: WorkspaceSwitcherModel::default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{plugin::tests::harness::MockHost, services::test_support};
 
     fn empty_test_app() -> App {
-        use crate::plugin::diagnostic::{DiagnosticStore, NullSink};
-
-        let mut plugin_host = PluginHost::new();
-        plugin_host.set_diagnostic_store(DiagnosticStore::with_sink(std::sync::Arc::new(NullSink)));
-        let (main_bar_registry, tab_bar_registry, repo_region_registry, repo_chrome_registry) =
-            build_slot_registries(&plugin_host);
-        App {
-            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())),
-            blank_screen: BlankScreen::new(),
-            no_git_screen: None,
-            toasts: ToastManager::default(),
-            last_animation_tick: None,
-            fetch: FetchPolicy::new(),
-            git_queue: GitOperationQueue::new(),
-            reload_refs_abort: None,
-            plugin_host,
-            key_chord: KeyChordState::new(),
-            main_bar_registry,
-            tab_bar_registry,
-            repo_region_registry,
-            repo_chrome_registry,
-            slot_registry_revision: 0,
-            pending_focus_reason: None,
-            settings: None,
-            last_persisted_tabs: None,
-            last_synced_repo: None,
-            tab_changes_revision: None,
-            plugin_tabs_dirty: true,
-            last_lua_activity: 0,
-        }
+        super::test_app()
     }
 
     fn dialog_request(
@@ -866,9 +909,13 @@ mod tests {
     fn app_with_repository() -> (test_support::TempRepo, App) {
         let (repo_dir, _repo) = test_support::init_test_repo("plugin_dialog_bridge");
         let mut app = empty_test_app();
-        let _ = app
-            .tabs
-            .load_initial_repos(vec![repo_dir.path.to_string_lossy().into_owned()], None);
+        let _ = app.tabs.load_initial_repos(
+            vec![(
+                repo_dir.path.to_string_lossy().into_owned(),
+                WorkspaceId::DEFAULT,
+            )],
+            None,
+        );
         (repo_dir, app)
     }
 
@@ -1130,7 +1177,8 @@ capabilities = ["ui:region:main_bar"]
         assert_eq!(initial_missing_count, 1);
 
         let mut app = App {
-            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new())),
+            tabs: TabManager::new(std::sync::Arc::new(DefaultPresenter::new()))
+                .without_persistence(),
             blank_screen: BlankScreen::new(),
             no_git_screen: None,
             toasts: ToastManager::default(),
@@ -1152,6 +1200,8 @@ capabilities = ["ui:region:main_bar"]
             tab_changes_revision: None,
             plugin_tabs_dirty: true,
             last_lua_activity: 0,
+            workspace_ui: WorkspaceUi::default(),
+            workspace_switcher: WorkspaceSwitcherModel::default(),
         };
 
         app.rebuild_slot_registries();

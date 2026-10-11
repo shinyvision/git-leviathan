@@ -30,7 +30,7 @@ pub use git::{
 pub use git_detect::{detect as detect_git, resolve_primary_and_active, GitStatus};
 pub use git_error::GitError;
 pub use presenter::{DefaultPresenter, Presenter};
-pub use settings::{PersistedPluginTab, SettingsService};
+pub use settings::{PersistedPluginTab, PersistedWorkspace, SettingsService};
 pub use snapshot::{
     CommitSnapshot, DirtySnapshot, RefsSnapshot, RepoRef, RepoRefKind, RepoSnapshot, StashSnapshot,
 };

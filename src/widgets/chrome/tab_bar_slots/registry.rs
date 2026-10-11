@@ -9,6 +9,7 @@ use iced::Element;
 use crate::message::Message;
 use crate::plugin::slots::{Container, IsSlot, SlotAddress, SlotRegistry};
 use crate::plugin::tab_snapshot::TabsSnapshot;
+use crate::widgets::chrome::workspace_switcher::WorkspaceSwitcherModel;
 
 /// Where on the tab bar a slot sits. `Left`/`Right` are the chrome edges
 /// (plus button, version label by default); `Center` is the tab list
@@ -37,14 +38,24 @@ impl Section {
 
 /// Per-render context. Carries the live tab snapshot so the
 /// `builtin.tab_list` slot — and any plugin slot that wants to mirror
-/// native tab state — can render without reaching back into `App`.
+/// native tab state — can render without reaching back into `App`, and the
+/// workspace switcher model for `builtin.workspace_switcher`.
 pub struct TabBarCtx<'a> {
     pub tabs: Option<&'a TabsSnapshot>,
+    pub workspaces: Option<&'a WorkspaceSwitcherModel>,
 }
 
 impl<'a> TabBarCtx<'a> {
     pub fn with_tabs(tabs: &'a TabsSnapshot) -> Self {
-        Self { tabs: Some(tabs) }
+        Self {
+            tabs: Some(tabs),
+            workspaces: None,
+        }
+    }
+
+    pub fn workspaces(mut self, workspaces: &'a WorkspaceSwitcherModel) -> Self {
+        self.workspaces = Some(workspaces);
+        self
     }
 }
 

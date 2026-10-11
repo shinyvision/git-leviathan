@@ -6,10 +6,12 @@
 pub mod app;
 pub mod screen;
 pub mod toast;
+pub mod workspace;
 
 pub use app::{AppMessage, SyntaxGrammarCommandOutcome};
 pub use screen::{ScreenMessage, ScreenRouted};
 pub use toast::ToastMessage;
+pub use workspace::WorkspaceMessage;
 
 use crate::core::TabId;
 use crate::plugin::PluginMessage;

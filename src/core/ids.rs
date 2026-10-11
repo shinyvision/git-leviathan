@@ -23,6 +23,30 @@ impl fmt::Display for TabId {
     }
 }
 
+/// Identifier for a workspace (a named group of tabs). `DEFAULT` is the
+/// built-in "Workspace" that always exists and is never stored in the
+/// settings DB; user-created workspaces take their id from the DB row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct WorkspaceId(pub u64);
+
+impl WorkspaceId {
+    pub const DEFAULT: WorkspaceId = WorkspaceId(0);
+
+    pub const fn raw(self) -> u64 {
+        self.0
+    }
+
+    pub const fn is_default(self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl fmt::Display for WorkspaceId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 /// Monotonic version counter for a repository snapshot. Bumped on every reload
 /// so stale `Task` results can be dropped without applying their payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]

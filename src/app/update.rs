@@ -145,6 +145,7 @@ impl App {
                 }
             }
             AppMessage::TabOpened { tab_id, result } => self.handle_tab_opened(tab_id, result),
+            AppMessage::Workspace(msg) => self.update_workspace(msg),
             AppMessage::AnimationTick(timestamp) => self.handle_animation_tick(timestamp),
             AppMessage::PluginRuntimeTick(timestamp) => {
                 let _ = timestamp;

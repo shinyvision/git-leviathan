@@ -12,6 +12,8 @@ use crate::screens::repository::state::OperationId;
 use crate::services::GitError;
 use crate::view_model::LoadedRepo;
 
+use super::WorkspaceMessage;
+
 #[derive(Debug, Clone)]
 pub enum AppMessage {
     NoOp,
@@ -61,6 +63,7 @@ pub enum AppMessage {
     GitRecheckRequested,
     CopyToClipboard(String),
     OpenUrl(String),
+    Workspace(WorkspaceMessage),
 }
 
 #[derive(Debug, Clone)]

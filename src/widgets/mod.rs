@@ -8,6 +8,7 @@ pub mod list;
 pub mod media;
 pub mod palette;
 pub mod primitives;
+pub mod reorder_list;
 pub mod search_widget;
 pub mod shared;
 pub mod tab_bar;

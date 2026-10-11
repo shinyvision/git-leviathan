@@ -34,6 +34,7 @@ pub const POP: &[u8] = include_bytes!("icons/package-import.svg");
 pub const FOLDER: &[u8] = include_bytes!("icons/folder.svg");
 pub const CHEVRON_DOWN: &[u8] = include_bytes!("icons/chevron-down.svg");
 pub const CHEVRON_RIGHT: &[u8] = include_bytes!("icons/chevron-right.svg");
+pub const CHEVRON_LEFT: &[u8] = include_bytes!("icons/chevron-left.svg");
 pub const CLOSE: &[u8] = include_bytes!("icons/x.svg");
 
 pub const SEARCH: &[u8] = include_bytes!("icons/search.svg");
@@ -84,6 +85,82 @@ pub const WARNING: &[u8] = include_bytes!("icons/alert-triangle.svg");
 pub const SPEED: &[u8] = include_bytes!("icons/gauge.svg");
 pub const EXTERNAL_LINK: &[u8] = include_bytes!("icons/external-link.svg");
 
+// Workspaces.
+pub const TRASH: &[u8] = include_bytes!("icons/trash.svg");
+pub const PENCIL_OUTLINE: &[u8] = include_bytes!("icons/pencil.svg");
+pub const DRAG_HANDLE: &[u8] = include_bytes!("icons/grip-lines.svg");
+
+/// Icons offered by the workspace icon picker, keyed by the name persisted in
+/// the settings DB. Order is the picker's grid order (eight per row).
+pub const WORKSPACE_ICONS: &[(&str, &[u8])] = &[
+    ("stack", STACK),
+    ("briefcase", include_bytes!("icons/briefcase.svg")),
+    ("code", include_bytes!("icons/code.svg")),
+    ("terminal", include_bytes!("icons/terminal-2.svg")),
+    ("git-branch", BRANCH),
+    ("bug", include_bytes!("icons/bug.svg")),
+    ("rocket", include_bytes!("icons/rocket.svg")),
+    ("flask", include_bytes!("icons/flask.svg")),
+    ("database", include_bytes!("icons/database.svg")),
+    ("server", include_bytes!("icons/server.svg")),
+    ("cloud", CLOUD),
+    ("cpu", include_bytes!("icons/cpu.svg")),
+    ("api", include_bytes!("icons/api.svg")),
+    ("package", include_bytes!("icons/package.svg")),
+    ("tool", include_bytes!("icons/tool.svg")),
+    ("shield", include_bytes!("icons/shield.svg")),
+    ("home", include_bytes!("icons/home.svg")),
+    ("building", include_bytes!("icons/building.svg")),
+    ("school", include_bytes!("icons/school.svg")),
+    ("users", include_bytes!("icons/users.svg")),
+    ("world", include_bytes!("icons/world.svg")),
+    ("planet", include_bytes!("icons/planet.svg")),
+    ("chart", include_bytes!("icons/chart-bar.svg")),
+    ("mail", include_bytes!("icons/mail.svg")),
+    ("book", include_bytes!("icons/book.svg")),
+    ("palette", include_bytes!("icons/palette.svg")),
+    ("brush", include_bytes!("icons/brush.svg")),
+    ("camera", include_bytes!("icons/camera.svg")),
+    ("music", MUSIC),
+    ("gamepad", include_bytes!("icons/device-gamepad-2.svg")),
+    ("headphones", include_bytes!("icons/headphones.svg")),
+    ("coffee", include_bytes!("icons/coffee.svg")),
+    ("star", include_bytes!("icons/star.svg")),
+    ("heart", include_bytes!("icons/heart.svg")),
+    ("bolt", include_bytes!("icons/bolt.svg")),
+    ("flame", include_bytes!("icons/flame.svg")),
+    ("leaf", include_bytes!("icons/leaf.svg")),
+    ("bulb", include_bytes!("icons/bulb.svg")),
+    ("target", include_bytes!("icons/target.svg")),
+    ("puzzle", include_bytes!("icons/puzzle.svg")),
+];
+
+/// Icon the default workspace always shows, and the fallback for a stored
+/// key this build does not know.
+pub const DEFAULT_WORKSPACE_ICON: &str = "stack";
+
+/// SVG bytes for a workspace icon key, falling back to the stack icon.
+pub fn workspace_icon(key: &str) -> &'static [u8] {
+    WORKSPACE_ICONS
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, data)| *data)
+        .unwrap_or(STACK)
+}
+
+/// The picker's own `'static` key equal to `key`, or the default icon key.
+pub fn workspace_icon_key(key: &str) -> &'static str {
+    WORKSPACE_ICONS
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(name, _)| *name)
+        .unwrap_or(DEFAULT_WORKSPACE_ICON)
+}
+
+pub fn is_workspace_icon(key: &str) -> bool {
+    WORKSPACE_ICONS.iter().any(|(name, _)| *name == key)
+}
+
 pub fn icon<'a, Message: 'a>(data: &'static [u8], size: f32, color: Color) -> Element<'a, Message> {
     svg(svg::Handle::from_memory(data))
         .width(Length::Fixed(size))
@@ -107,6 +184,22 @@ pub fn tab_icon<'a, Message: 'a>(data: &'static [u8], color: Color) -> Element<'
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workspace_icon_keys_are_unique_and_resolve() {
+        let mut keys: Vec<&str> = WORKSPACE_ICONS.iter().map(|(k, _)| *k).collect();
+        let total = keys.len();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), total, "duplicate workspace icon key");
+        assert_eq!(total % 8, 0, "icon grid rows should be full");
+        assert!(is_workspace_icon(DEFAULT_WORKSPACE_ICON));
+        assert_eq!(workspace_icon("rocket"), WORKSPACE_ICONS[6].1);
+        assert_eq!(workspace_icon("no-such-icon"), STACK);
+        for (_, data) in WORKSPACE_ICONS {
+            assert!(std::str::from_utf8(data).unwrap().contains("<svg"));
+        }
+    }
 
     #[test]
     fn blank_screen_image_handles_are_stable() {

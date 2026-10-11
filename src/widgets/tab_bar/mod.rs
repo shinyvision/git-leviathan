@@ -3,8 +3,8 @@
 //! in `widgets::chrome::repo_tab_bar`.
 
 pub mod parts;
-mod state;
-mod tracker;
+pub(crate) mod state;
+pub(crate) mod tracker;
 mod widget;
 
 pub use widget::{TabBar, TabItem};
