@@ -1,10 +1,12 @@
 use git2::{build::CheckoutBuilder, BranchType, StatusOptions};
 
+use super::autostash::{maybe_stash_workdir, restore_stash};
 use super::helpers::{
-    command_dir, find_branch_or, find_commit_or, find_reference_or, spawn_git_command_with_timeout,
+    command_dir, find_branch_or, find_commit_or, find_reference_or, process_output_detail,
     wrap_git2_error,
 };
-use super::squash::{maybe_stash_workdir, restore_stash};
+use super::hooks::{self, PostHook};
+use super::process::spawn_git_command_with_timeout;
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -38,6 +40,7 @@ pub(super) fn checkout_remote_branch(
         .find_branch(branch_name, BranchType::Local)
         .is_err()
     {
+        ensure_checkout_available(service, branch_name)?;
         create_local_tracking_branch(service, branch_name, &remote_ref, remote_oid)?;
         checkout_branch(service, branch_name)?;
         return Ok(CheckoutRemoteBranchResult::Success);
@@ -82,6 +85,7 @@ pub(super) fn create_branch_from_remote_ref_and_checkout(
     }
 
     let (remote_ref, remote_oid) = resolve_remote_ref_oid(service, remote_ref)?;
+    ensure_checkout_available(service, new_name)?;
     create_local_tracking_branch(service, new_name, &remote_ref, remote_oid)?;
     checkout_branch(service, new_name)
 }
@@ -92,7 +96,9 @@ pub(super) fn reset_branch_to_remote_and_checkout(
     remote_ref: &str,
 ) -> Result<(), GitError> {
     let (remote_ref, remote_oid) = resolve_remote_ref_oid(service, remote_ref)?;
+    let previous = hooks::head_commit(&service.repo);
 
+    ensure_checkout_available(service, branch_name)?;
     let ref_name = format!("refs/heads/{}", branch_name);
     service
         .repo
@@ -120,7 +126,10 @@ pub(super) fn reset_branch_to_remote_and_checkout(
         .map_err(|e| GitError::ResetFailed {
             branch: branch_name.to_string(),
             reason: format!("failed to reset working tree to '{}': {e}", branch_name),
-        })
+        })?;
+
+    run_post_checkout(service, previous);
+    Ok(())
 }
 
 pub(super) fn create_branch_at_commit(
@@ -133,16 +142,8 @@ pub(super) fn create_branch_at_commit(
         return Err(GitError::EmptyBranchName);
     }
 
-    if branch_name.ends_with('/') {
-        return Err(GitError::InvalidBranchName(branch_name.to_string()));
-    }
-
-    if branch_name.contains("..")
-        || branch_name.contains('~')
-        || branch_name.contains('^')
-        || branch_name.contains(':')
-    {
-        return Err(GitError::InvalidBranchName(branch_name.to_string()));
+    if !git2::Branch::name_is_valid(branch_name).unwrap_or(false) {
+        return Err(GitError::InvalidBranchName(branch_name.into()));
     }
 
     let oid = git2::Oid::from_str(commit_hash)
@@ -185,6 +186,7 @@ pub(super) fn delete_branch(
             .ok_or_else(|| GitError::RemoteBranchNotFound(branch_name.to_string()))?;
         delete_remote_branch_ref(service, &remote_ref)
     } else {
+        ensure_branch_not_in_other_worktree(service, branch_name)?;
         let mut branch = find_branch_or(&service.repo, branch_name, BranchType::Local)?;
         // git2's `branch.delete()` is unconditional (unlike `git branch -d`),
         // so a non-force delete must first confirm the branch is fully merged
@@ -201,7 +203,7 @@ pub(super) fn delete_branch(
 }
 
 /// A local branch is safe to delete when its tip is already reachable from
-/// HEAD or from its configured upstream (mirrors `git branch -d`).
+/// its upstream, falling back to HEAD for a branch without one.
 fn local_branch_is_merged(
     service: &GitService,
     branch: &git2::Branch<'_>,
@@ -209,16 +211,21 @@ fn local_branch_is_merged(
     let Some(tip) = branch.get().target() else {
         return Ok(true);
     };
-    let mut bases: Vec<git2::Oid> = Vec::new();
-    if let Some(head) = service.repo.head().ok().and_then(|h| h.target()) {
-        bases.push(head);
+    let base = branch
+        .upstream()
+        .ok()
+        .and_then(|u| u.get().target())
+        .or_else(|| service.repo.head().ok().and_then(|h| h.target()));
+    let Some(base) = base else {
+        return Ok(false);
+    };
+    if base == tip {
+        return Ok(true);
     }
-    if let Some(upstream) = branch.upstream().ok().and_then(|u| u.get().target()) {
-        bases.push(upstream);
-    }
-    Ok(bases
-        .into_iter()
-        .any(|base| base == tip || service.repo.graph_descendant_of(base, tip).unwrap_or(false)))
+    service
+        .repo
+        .graph_descendant_of(base, tip)
+        .map_err(|e| wrap_git2_error("check merged branch", e))
 }
 
 pub(super) fn rename_branch(
@@ -245,50 +252,9 @@ pub(super) fn rename_branch(
         let (remote_ref, _) = resolve_remote_branch_input(service, old_name)?
             .ok_or_else(|| GitError::RemoteBranchNotFound(old_name.to_string()))?;
 
-        let branch = find_branch_or(&service.repo, &remote_ref, BranchType::Remote)?;
-
-        let target_oid = branch.get().target().ok_or_else(|| {
-            GitError::ReferenceBroken(format!("remote branch '{}' has no target", remote_ref))
-        })?;
-
-        let remote_name = remote_ref
-            .split_once('/')
-            .map(|(remote, _)| remote)
-            .ok_or_else(|| {
-                GitError::RemoteBranchNotFound(format!(
-                    "remote branch '{}' is missing a remote name",
-                    remote_ref
-                ))
-            })?;
-        let new_remote_ref = format!("{}/{}", remote_name, new_name);
-        let new_full_ref = format!("refs/remotes/{}", new_remote_ref);
-
-        service
-            .repo
-            .reference(
-                &new_full_ref,
-                target_oid,
-                false,
-                &format!("rename from {}", old_name),
-            )
-            .map_err(|e| {
-                wrap_git2_error(&format!("create remote branch ref '{new_remote_ref}'"), e)
-            })?;
-
-        if let Ok(mut old_ref) = service
-            .repo
-            .find_reference(&format!("refs/remotes/{}", remote_ref))
-        {
-            old_ref.delete().map_err(|e| {
-                wrap_git2_error(&format!("delete old remote branch ref '{remote_ref}'"), e)
-            })?;
-        }
-
-        // Repoint any local branch that was tracking the old remote ref so
-        // it now tracks the new one. Without this, `git push` would still
-        // push to the old remote name using the stale upstream config.
-        repoint_local_upstreams(service, &remote_ref, &new_remote_ref)?;
+        rename_remote_branch(service, &remote_ref, new_name)?;
     } else {
+        ensure_branch_not_in_other_worktree(service, old_name)?;
         let mut branch = find_branch_or(&service.repo, old_name, BranchType::Local)?;
         branch
             .rename(new_name, false)
@@ -311,19 +277,14 @@ pub(super) fn delete_branch_all(
         return Err(GitError::CantDeleteHead(branch_name.to_string()));
     }
 
-    if service
-        .repo
-        .find_branch(branch_name, BranchType::Local)
-        .is_ok()
-    {
-        let mut branch = find_branch_or(&service.repo, branch_name, BranchType::Local)?;
+    ensure_branch_not_in_other_worktree(service, branch_name)?;
+    for remote_ref in matching_remote_branch_refs(service, branch_name)? {
+        delete_remote_branch_ref(service, &remote_ref)?;
+    }
+    if let Ok(mut branch) = service.repo.find_branch(branch_name, BranchType::Local) {
         branch
             .delete()
             .map_err(|e| wrap_git2_error(&format!("delete local branch '{branch_name}'"), e))?;
-    }
-
-    for remote_ref in matching_remote_branch_refs(service, branch_name)? {
-        delete_remote_branch_ref(service, &remote_ref)?;
     }
 
     Ok(())
@@ -340,16 +301,18 @@ pub(super) fn checkout_branch(service: &mut GitService, branch_name: &str) -> Re
         return Ok(());
     }
 
+    ensure_checkout_available(service, branch_name)?;
     let previous_head_ref = current_head_ref(service);
+    let previous = hooks::head_commit(&service.repo);
     ensure_local_checkout_branch(service, branch_name)?;
 
     let created_stash = if previous_branch.is_some() {
         maybe_stash_workdir(service, "before checkout")?
     } else {
-        false
+        None
     };
 
-    if let Err(err) = checkout_local_branch(service, branch_name, created_stash) {
+    if let Err(err) = checkout_local_branch(service, branch_name, created_stash.is_some()) {
         rollback_checkout(service, previous_head_ref.as_deref(), created_stash);
         return Err(err);
     }
@@ -360,7 +323,22 @@ pub(super) fn checkout_branch(service: &mut GitService, branch_name: &str) -> Re
         &format!("checkout to {branch_name}"),
     );
 
+    run_post_checkout(service, previous);
     Ok(())
+}
+
+/// Run the post-checkout hook for a branch checkout that moved HEAD away from
+/// `previous`. libgit2 does not run hooks, git would.
+fn run_post_checkout(service: &GitService, previous: git2::Oid) {
+    let current = hooks::head_commit(&service.repo);
+    hooks::run(
+        &service.repo,
+        PostHook::Checkout {
+            previous,
+            current,
+            branch_checkout: true,
+        },
+    );
 }
 
 pub(super) fn current_branch_name(service: &GitService) -> Option<String> {
@@ -386,6 +364,33 @@ pub(super) fn workdir_has_changes(service: &GitService) -> Result<bool, GitError
         .any(|entry| entry.status() != git2::Status::CURRENT))
 }
 
+fn ensure_checkout_available(service: &GitService, branch_name: &str) -> Result<(), GitError> {
+    if service.repo.state() != git2::RepositoryState::Clean {
+        return Err(GitError::Other(
+            "finish the current repository operation before switching or moving branches".into(),
+        ));
+    }
+    ensure_branch_not_in_other_worktree(service, branch_name)
+}
+
+fn ensure_branch_not_in_other_worktree(
+    service: &GitService,
+    branch_name: &str,
+) -> Result<(), GitError> {
+    if current_branch_name(service).as_deref() != Some(branch_name) {
+        if let Some(owner) = super::worktrees::list_worktrees(service)?
+            .into_iter()
+            .find(|worktree| worktree.branch_name == branch_name)
+        {
+            return Err(GitError::CheckoutFailed {
+                branch: branch_name.into(),
+                reason: format!("already checked out at '{}'", owner.path.display()),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn current_head_ref(service: &GitService) -> Option<String> {
     service
         .repo
@@ -397,15 +402,13 @@ fn current_head_ref(service: &GitService) -> Option<String> {
 fn rollback_checkout(
     service: &mut GitService,
     previous_head_ref: Option<&str>,
-    created_stash: bool,
+    created_stash: Option<git2::Oid>,
 ) {
     if let Some(previous_head_ref) = previous_head_ref {
         let _ = restore_head(service, previous_head_ref);
     }
 
-    if created_stash {
-        super::squash::restore_stash(service, true, "checkout rollback");
-    }
+    restore_stash(service, created_stash, "checkout rollback");
 }
 
 fn ensure_local_checkout_branch(
@@ -582,41 +585,86 @@ fn local_tracking_name_for(
     Ok(None)
 }
 
-/// Repoint local branches whose upstream was `old_remote_ref` (e.g.
-/// "origin/my-branch") to `new_remote_ref`. Used after a client-side remote
-/// rename so subsequent `git push` resolves to the new remote branch.
-fn repoint_local_upstreams(
+/// Create the new remote head and remove the old one in one push. Both
+/// leases refer to the state the user selected when initiating the rename.
+fn rename_remote_branch(
     service: &GitService,
-    old_remote_ref: &str,
-    new_remote_ref: &str,
+    remote_ref: &str,
+    new_name: &str,
 ) -> Result<(), GitError> {
-    let branches = service
+    if !git2::Branch::name_is_valid(new_name).unwrap_or(false) {
+        return Err(GitError::InvalidBranchName(new_name.into()));
+    }
+    let tracking_ref = format!("refs/remotes/{remote_ref}");
+    let reference = find_reference_or(&service.repo, &tracking_ref)?;
+    let tip = reference
+        .target()
+        .ok_or_else(|| GitError::ReferenceBroken(tracking_ref.clone()))?;
+    let (remote_name, old_ref) = remote_branch_destination(service, remote_ref)?
+        .ok_or_else(|| GitError::RemoteBranchNotFound(remote_ref.into()))?;
+    let new_ref = format!("refs/heads/{new_name}");
+    if old_ref == new_ref {
+        return Ok(());
+    }
+    let tracking_locals = local_branches_tracking(service, &tracking_ref)?;
+    let output = spawn_git_command_with_timeout(
+        &command_dir(&service.repo)?,
+        &[
+            "push",
+            "--atomic",
+            &format!("--force-with-lease={old_ref}:{tip}"),
+            &format!("--force-with-lease={new_ref}:"),
+            "--",
+            &remote_name,
+            &format!("{tip}:{new_ref}"),
+            &format!(":{old_ref}"),
+        ],
+        "rename remote branch",
+        std::time::Duration::from_secs(300),
+    )?;
+    if !output.status.success() {
+        return Err(GitError::Other(format!(
+            "remote rename failed: {}",
+            process_output_detail(&output)
+        )));
+    }
+    let mut config = service
+        .repo
+        .config()
+        .map_err(|e| wrap_git2_error("open config", e))?;
+    for local in tracking_locals {
+        config
+            .set_str(&format!("branch.{local}.merge"), &new_ref)
+            .map_err(|e| {
+                wrap_git2_error("remote renamed but failed to update local upstream", e)
+            })?;
+    }
+    Ok(())
+}
+
+fn local_branches_tracking(
+    service: &GitService,
+    tracking_ref: &str,
+) -> Result<Vec<String>, GitError> {
+    let mut locals = Vec::new();
+    for entry in service
         .repo
         .branches(Some(BranchType::Local))
-        .map_err(|e| wrap_git2_error("list local branches", e))?;
-
-    for branch_result in branches {
-        let (mut branch, _) =
-            branch_result.map_err(|e| wrap_git2_error("iterate local branches", e))?;
-
-        let upstream = match branch.upstream() {
-            Ok(upstream) => upstream,
-            Err(_) => continue,
-        };
-        let upstream_name = match upstream.name() {
-            Ok(Some(name)) => name.to_string(),
-            _ => continue,
-        };
-        if upstream_name != old_remote_ref {
+        .map_err(|e| wrap_git2_error("list local branches", e))?
+    {
+        let (branch, _) = entry.map_err(|e| wrap_git2_error("read local branch", e))?;
+        let Some(name) = branch.get().name() else {
             continue;
+        };
+        if service
+            .repo
+            .branch_upstream_name(name)
+            .is_ok_and(|buf| buf.as_str() == Some(tracking_ref))
+        {
+            locals.push(name.trim_start_matches("refs/heads/").to_owned());
         }
-
-        branch
-            .set_upstream(Some(new_remote_ref))
-            .map_err(|e| wrap_git2_error(&format!("repoint upstream to '{new_remote_ref}'"), e))?;
     }
-
-    Ok(())
+    Ok(locals)
 }
 
 fn matching_remote_branch_refs(
@@ -647,32 +695,58 @@ fn matching_remote_branch_refs(
     Ok(matches)
 }
 
+/// Reverse the configured fetch refspec to find the real name on the server.
+fn remote_branch_destination(
+    service: &GitService,
+    remote_ref: &str,
+) -> Result<Option<(String, String)>, GitError> {
+    let tracking_ref = format!("refs/remotes/{remote_ref}");
+    let remote_name = match service.repo.branch_remote_name(&tracking_ref) {
+        Ok(name) => name,
+        Err(error) if error.code() == git2::ErrorCode::NotFound => return Ok(None),
+        Err(error) => return Err(wrap_git2_error("find tracking remote", error)),
+    };
+    let remote_name = remote_name
+        .as_str()
+        .ok_or_else(|| GitError::Other("remote name is not UTF-8".into()))?;
+    let remote = service
+        .repo
+        .find_remote(remote_name)
+        .map_err(|e| wrap_git2_error("find remote", e))?;
+    let old_ref = remote
+        .refspecs()
+        .find(|spec| spec.direction() == git2::Direction::Fetch && spec.dst_matches(&tracking_ref))
+        .ok_or_else(|| GitError::RemoteBranchNotFound(remote_ref.into()))?
+        .rtransform(&tracking_ref)
+        .map_err(|e| wrap_git2_error("resolve remote branch", e))?;
+    let old_ref = old_ref
+        .as_str()
+        .filter(|name| name.starts_with("refs/heads/"))
+        .ok_or_else(|| GitError::RemoteBranchNotFound(remote_ref.into()))?;
+    Ok(Some((remote_name.to_owned(), old_ref.to_owned())))
+}
+
 fn delete_remote_branch_ref(service: &mut GitService, remote_ref: &str) -> Result<(), GitError> {
-    let (remote_name, remote_branch_name) = remote_ref.split_once('/').ok_or_else(|| {
-        GitError::RemoteBranchNotFound(format!(
-            "remote branch '{}' is missing a remote name",
-            remote_ref
-        ))
-    })?;
-
-    if service.repo.find_remote(remote_name).is_ok() {
-        push_delete_remote_branch(service, remote_name, remote_branch_name)?;
+    if let Some((remote, head_ref)) = remote_branch_destination(service, remote_ref)? {
+        push_delete_remote_branch(service, &remote, &head_ref)?;
     }
-
     delete_remote_tracking_branch_ref(service, remote_ref)
 }
 
 fn push_delete_remote_branch(
     service: &GitService,
     remote_name: &str,
-    remote_branch_name: &str,
+    remote_head_ref: &str,
 ) -> Result<(), GitError> {
     let repo_dir = command_dir(&service.repo)?;
-    let refspec = format!(":refs/heads/{}", remote_branch_name);
+    let remote_branch_name = remote_head_ref
+        .strip_prefix("refs/heads/")
+        .unwrap_or(remote_head_ref);
+    let refspec = format!(":{remote_head_ref}");
     let op = format!("push delete {remote_name}/{remote_branch_name}");
     let output = spawn_git_command_with_timeout(
         &repo_dir,
-        &["push", remote_name, &refspec],
+        &["push", "--", remote_name, &refspec],
         &op,
         std::time::Duration::from_secs(300),
     )
@@ -686,20 +760,10 @@ fn push_delete_remote_branch(
         return Ok(());
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    let detail = if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        format!("git exited with status {}", output.status)
-    };
-
     Err(GitError::RemoteDeleteFailed {
         remote: remote_name.to_string(),
         branch: remote_branch_name.to_string(),
-        reason: detail,
+        reason: process_output_detail(&output),
     })
 }
 
@@ -793,33 +857,30 @@ fn fast_forward_and_checkout(
     remote_oid: git2::Oid,
 ) -> Result<(), GitError> {
     let previous_branch = current_branch_name(service);
+    ensure_checkout_available(service, branch_name)?;
     let previous_head_ref = current_head_ref(service);
+    let previous = hooks::head_commit(&service.repo);
 
     let created_stash = if previous_branch.is_some() {
         maybe_stash_workdir(service, "before fast-forward checkout")?
     } else {
-        false
+        None
     };
 
+    let target_commit = find_commit_or(&service.repo, remote_oid)?;
+    let mut checkout = CheckoutBuilder::new();
+    checkout.safe();
+    if let Err(error) = service
+        .repo
+        .checkout_tree(target_commit.as_object(), Some(&mut checkout))
     {
-        let target_commit =
-            service
-                .repo
-                .find_commit(remote_oid)
-                .map_err(|e| GitError::FastForwardFailed {
-                    branch: branch_name.to_string(),
-                    reason: format!("failed to find remote commit: {e}"),
-                })?;
-        let mut checkout = CheckoutBuilder::new();
-        checkout.safe();
-        service
-            .repo
-            .checkout_tree(target_commit.as_object(), Some(&mut checkout))
-            .map_err(|e| GitError::FastForwardFailed {
-                branch: branch_name.to_string(),
-                reason: format!("failed to checkout fast-forward tree: {e}"),
-            })?;
+        restore_stash(service, created_stash, "failed fast-forward checkout");
+        return Err(GitError::FastForwardFailed {
+            branch: branch_name.to_owned(),
+            reason: format!("failed to checkout fast-forward tree: {error}"),
+        });
     }
+    drop(target_commit);
 
     let ref_name = format!("refs/heads/{}", branch_name);
     let update_result: Result<(), GitError> = service
@@ -858,6 +919,7 @@ fn fast_forward_and_checkout(
         &format!("fast-forward checkout to {branch_name}"),
     );
 
+    run_post_checkout(service, previous);
     Ok(())
 }
 
@@ -942,6 +1004,7 @@ pub(super) fn fast_forward_branch_to_branch(
         });
     }
 
+    ensure_checkout_available(service, source_branch)?;
     let is_current = current_branch_name(service).as_deref() == Some(source_branch);
 
     if is_current {
@@ -987,6 +1050,8 @@ pub(super) fn fast_forward_branch_to_branch(
                 branch: source_branch.to_string(),
                 reason: format!("failed to update HEAD: {e}"),
             })?;
+        // Git runs post-merge for a fast-forward of the current branch.
+        hooks::run(&service.repo, PostHook::Merge { squash: false });
     }
 
     Ok(())

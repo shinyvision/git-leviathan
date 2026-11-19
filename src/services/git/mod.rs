@@ -1,12 +1,15 @@
+mod autostash;
 mod checkout;
 mod cherry_pick;
 mod conflict_resolution;
 mod diff;
 mod fetch;
 mod helpers;
+mod hooks;
 mod loader;
 mod media_diff;
 mod merge;
+pub(super) mod process;
 mod push;
 mod rebase;
 mod refs;
@@ -32,9 +35,11 @@ pub use checkout::ResetMode;
 pub use conflict_resolution::{
     ConflictBlock, ConflictResolutionResult, ModifyDeleteConflict, ModifyDeleteConflictChoice,
 };
-pub use helpers::{kill_running_fetch_processes, kill_running_git_processes};
+pub use hooks::{take_hook_report_receiver, HookReport};
 pub use media_diff::MediaDiffRequest;
-pub use push::PushOutcome;
+pub use process::{kill_running_fetch_processes, kill_running_git_processes};
+pub use push::{PushOutcome, PushTarget};
+pub use rebase::RebaseAction;
 
 pub const COMMIT_LOAD_LIMIT: usize = 500;
 
@@ -336,6 +341,10 @@ impl GitService {
         rebase::rebase_current_onto(self, source_branch, target_ref)
     }
 
+    pub fn resume_rebase(&mut self, action: RebaseAction) -> Result<(), GitError> {
+        rebase::resume_rebase(self, action)
+    }
+
     pub fn stage_file(&mut self, path: &str) -> Result<(), GitError> {
         working_tree::stage_file(self, path)
     }
@@ -395,8 +404,9 @@ impl GitService {
         &mut self,
         file_path: &str,
         content: &str,
+        source_hash: [u8; 32],
     ) -> Result<(), GitError> {
-        conflict_resolution::save_conflict_resolution(self, file_path, content)
+        conflict_resolution::save_conflict_resolution(self, file_path, content, source_hash)
     }
 
     pub fn commit_dirty_changes(
@@ -431,20 +441,19 @@ impl GitService {
         push::current_branch_push_remote(self)
     }
 
-    pub fn push_and_set_upstream(
+    pub fn push_and_set_upstream(&mut self, target: &PushTarget) -> Result<PushOutcome, GitError> {
+        push::push_and_set_upstream(self, target)
+    }
+
+    pub fn force_push_current_branch(
         &mut self,
-        remote_name: &str,
-        remote_branch_name: &str,
-    ) -> Result<(), GitError> {
-        push::push_and_set_upstream(self, remote_name, remote_branch_name)
+        target: &PushTarget,
+    ) -> Result<PushOutcome, GitError> {
+        push::force_push_current_branch(self, target)
     }
 
-    pub fn force_push_current_branch(&mut self) -> Result<PushOutcome, GitError> {
-        push::force_push_current_branch(self)
-    }
-
-    pub fn pull_current_branch(&mut self) -> Result<(), GitError> {
-        push::pull_current_branch(self)
+    pub fn pull_current_branch(&mut self, target: Option<&PushTarget>) -> Result<(), GitError> {
+        push::pull_current_branch(self, target)
     }
 
     pub fn add_remote(
@@ -823,6 +832,30 @@ mod tests {
     }
 
     #[test]
+    fn deleting_a_custom_tracking_ref_deletes_only_its_mapped_remote_branch() {
+        let (temp, repo) = init_test_repo("mapped_remote_delete");
+        let (remote, bare) = init_bare_test_repo("mapped_remote_bare");
+        add_remote(&repo, "origin", remote.path_str());
+        repo.config()
+            .unwrap()
+            .set_str(
+                "remote.origin.fetch",
+                "+refs/heads/review/*:refs/remotes/origin/*",
+            )
+            .unwrap();
+        push_refspec(&repo, "origin", "HEAD:refs/heads/topic");
+        push_refspec(&repo, "origin", "HEAD:refs/heads/review/topic");
+        fetch_remote(&repo, "origin");
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        service
+            .delete_branch("refs/remotes/origin/topic", true, true)
+            .unwrap();
+        assert!(bare.find_reference("refs/heads/review/topic").is_err());
+        assert!(bare.find_reference("refs/heads/topic").is_ok());
+        assert!(repo.find_reference("refs/remotes/origin/topic").is_err());
+    }
+
+    #[test]
     fn delete_branch_all_removes_local_and_remote_branch_from_configured_remote() {
         let (temp_repo, repo) = init_test_repo("delete_branch_all_push");
         let (remote_temp, _remote_repo) = init_bare_test_repo("delete_branch_all_push_origin");
@@ -1128,10 +1161,48 @@ mod tests {
         let (temp_repo, repo) = init_test_repo("rename_exact_duplicate_remote");
         let (origin_oid, fork_oid) = create_duplicate_remote_main_refs(&repo, &temp_repo.path);
 
+        let (fork, bare) = init_bare_test_repo("rename_destination");
+        bare.set_head("refs/heads/default").unwrap();
+        add_remote(&repo, "fork", fork.path_str());
+        push_refspec(&repo, "fork", "refs/heads/fork-source:refs/heads/main");
+        repo.find_branch("fork-source", git2::BranchType::Local)
+            .unwrap()
+            .set_upstream(Some("fork/main"))
+            .unwrap();
         let mut service = GitService::open(temp_repo.path_str()).expect("failed to open service");
+        // A destination that already contains different work must survive a failed rename.
+        bare.reference(
+            "refs/heads/taken",
+            origin_oid,
+            false,
+            "existing destination",
+        )
+        .unwrap();
+        assert!(service.rename_branch("fork/main", "taken", true).is_err());
+        assert_eq!(
+            bare.find_reference("refs/heads/main").unwrap().target(),
+            Some(fork_oid)
+        );
+        assert_eq!(
+            bare.find_reference("refs/heads/taken").unwrap().target(),
+            Some(origin_oid)
+        );
         service
             .rename_branch("fork/main", "renamed", true)
             .expect("rename should target exact fork ref");
+
+        assert!(bare.find_reference("refs/heads/main").is_err());
+        assert_eq!(
+            bare.find_reference("refs/heads/renamed").unwrap().target(),
+            Some(fork_oid)
+        );
+        assert_eq!(
+            repo.config()
+                .unwrap()
+                .get_string("branch.fork-source.merge")
+                .unwrap(),
+            "refs/heads/renamed"
+        );
 
         let repo = Repository::open(temp_repo.path_str()).expect("failed to reopen repo");
         assert_eq!(
@@ -1254,7 +1325,7 @@ mod tests {
         assert!(resolution.theirs_label.contains("develop"));
 
         service
-            .save_conflict_resolution("tracked.txt", "resolved\n")
+            .save_conflict_resolution("tracked.txt", "resolved\n", resolution.source_hash)
             .expect("saving resolution should stage the file");
 
         let dirty = service

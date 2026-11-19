@@ -72,7 +72,7 @@ impl CommitData {
             parents: commit.parent_hashes.clone(),
             index,
             is_merge: commit.parent_hashes.len() > 1,
-            is_merge_in_progress: commit.is_merge_in_progress,
+            is_merge_in_progress: commit.operation == crate::core::WorkingTreeOperation::Merge,
             actions,
         }
     }

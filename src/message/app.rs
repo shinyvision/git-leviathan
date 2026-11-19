@@ -58,6 +58,8 @@ pub enum AppMessage {
     },
     SyntaxGrammarCommandFinished(SyntaxGrammarCommandOutcome),
     EagerGrammarInstallRequested(String),
+    /// A git hook that the app ran printed something or failed.
+    HookReported(crate::services::HookReport),
     /// User requested window close or OS sent SIGTERM/SIGINT.
     ShutdownRequested,
     GitRecheckRequested,

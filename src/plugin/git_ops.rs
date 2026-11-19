@@ -976,13 +976,9 @@ fn run_request(
                 }) => Err(GitOpFailure::new(format!(
                     "current branch `{branch_name}` has no upstream; set an upstream before pushing (suggested remote `{remote_name}`)"
                 ))),
-                Ok(PushGatewayOutcome::BehindRemote {
-                    branch_name,
-                    remote_name,
-                }) => {
-                    let error = format!(
-                        "push target `{remote_name}/{branch_name}` is behind its remote counterpart; pull first"
-                    );
+                Ok(PushGatewayOutcome::BehindRemote(target)) => {
+                    let remote_name = target.remote_name;
+                    let error = format!("push to `{remote_name}/{}` was rejected; integrate its changes first", target.remote_branch);
                     let started_payload = remote_event_payload(Some(&remote_name), event_scope);
                     let finished_payload = finished_remote_event_payload(
                         Some(&remote_name),

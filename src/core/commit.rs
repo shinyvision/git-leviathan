@@ -18,6 +18,14 @@ pub enum CommitKind {
     Stash,
 }
 
+/// Operation that the working-tree panel can finish or abort.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum WorkingTreeOperation {
+    None,
+    Merge,
+    Rebase,
+}
+
 /// Pure git-domain commit data.
 ///
 /// Per-commit projection data (relative time, branch labels) lives in
@@ -31,9 +39,9 @@ pub struct Commit {
     pub message: String,
     pub author: String,
     pub date: String,
-    /// Full hashes of all parents, in order. Empty for root/dirty commits.
+    /// Full hashes of all parents, in order. A pending merge includes its merge heads.
     pub parent_hashes: Vec<String>,
-    pub is_merge_in_progress: bool,
+    pub operation: WorkingTreeOperation,
     /// Dirty-commit-only file buckets sourced from the working-tree snapshot.
     /// Empty for `Commit`/`Stash` kinds.
     pub conflicted_files: Vec<ChangedFile>,

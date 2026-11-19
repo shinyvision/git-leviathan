@@ -254,8 +254,9 @@ impl DiffPanel {
         &self,
     ) -> Option<DiffPanelAction> {
         let state = self.conflict_file_resolution.as_ref()?;
-        let _ = state.result.as_ref()?;
-        Some(DiffPanelAction::ConflictResolutionSaveRequested)
+        let result = state.result.as_ref()?;
+        selections_complete(result, &state.selections)
+            .then_some(DiffPanelAction::ConflictResolutionSaveRequested)
     }
 
     pub(in crate::screens::repository) fn handle_conflict_buffer_scrolled(
@@ -485,11 +486,40 @@ pub(in crate::screens::repository) fn conflict_resolution_output_text(
     result: &ConflictResolutionResult,
     selections: &[ConflictHunkSelection],
 ) -> String {
-    let mut text = conflict_resolution_output_lines(result, selections).join("\n");
-    if result.has_trailing_newline {
+    let lines = conflict_resolution_output_lines(result, selections);
+    let mut text = lines.join("\n");
+    let last_side_unterminated = match result.blocks.last() {
+        Some(ConflictBlock::Conflict(hunk)) => selections
+            .get(hunk.index)
+            .and_then(|selection| {
+                selection.picked.iter().rev().find_map(|side| match side {
+                    ConflictSide::Ours if !hunk.ours_lines.is_empty() => {
+                        Some(hunk.ours_unterminated)
+                    }
+                    ConflictSide::Theirs if !hunk.theirs_lines.is_empty() => {
+                        Some(hunk.theirs_unterminated)
+                    }
+                    _ => None,
+                })
+            })
+            .unwrap_or(false),
+        _ => false,
+    };
+    if !lines.is_empty() && result.has_trailing_newline && !last_side_unterminated {
         text.push('\n');
     }
     text
+}
+
+pub(super) fn selections_complete(
+    result: &ConflictResolutionResult,
+    selections: &[ConflictHunkSelection],
+) -> bool {
+    !selections.is_empty()
+        && selections.len() == conflict_hunk_count(result)
+        && selections
+            .iter()
+            .all(|selection| !selection.picked.is_empty())
 }
 
 pub(in crate::screens::repository) fn conflict_hunk_count(
@@ -734,4 +764,56 @@ pub(in crate::screens::repository) fn build_conflict_rows_for_canvas(
     theirs_hl: Option<&HighlightedFile>,
 ) -> Option<Arc<crate::widgets::text::TextCanvasData>> {
     super::view::build_conflict_rows_for_canvas(canvas_id, result, selections, ours_hl, theirs_hl)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::{
+        test_support::{init_test_repo, write_file},
+        GitService,
+    };
+
+    #[test]
+    fn picking_a_side_at_eof_restores_its_original_final_newline() {
+        use crate::services::test_support::{
+            checkout_branch_for_setup, commit_all, configure_test_signature, create_branch,
+        };
+        let (temp, repo) = init_test_repo("conflict_no_final_lf");
+        configure_test_signature(&repo);
+        let main = repo.head().unwrap().shorthand().unwrap().to_owned();
+        create_branch(&repo, "other");
+        checkout_branch_for_setup(&repo, "other");
+        write_file(&temp.path, "tracked.txt", "other");
+        commit_all(&repo, "without newline");
+        checkout_branch_for_setup(&repo, &main);
+        write_file(&temp.path, "tracked.txt", "ours\n");
+        commit_all(&repo, "with newline");
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        service.merge_branch_into("other", &main).unwrap();
+        let result = service.load_conflict_resolution("tracked.txt").unwrap();
+        for (side, expected) in [
+            (ConflictSide::Ours, "ours\n"),
+            (ConflictSide::Theirs, "other"),
+        ] {
+            let choices = [ConflictHunkSelection { picked: vec![side] }];
+            assert_eq!(conflict_resolution_output_text(&result, &choices), expected);
+        }
+    }
+
+    #[test]
+    fn every_hunk_requires_a_choice_and_empty_sides_produce_an_empty_file() {
+        let (temp, _repo) = init_test_repo("empty_conflict_side");
+        let hunk = "<<<<<<< ours\n=======\nincoming\n>>>>>>> theirs\n";
+        write_file(&temp.path, "tracked.txt", &hunk.repeat(2));
+        let service = GitService::open(temp.path_str()).unwrap();
+        let result = service.load_conflict_resolution("tracked.txt").unwrap();
+        let mut selections = vec![ConflictHunkSelection::default(); 2];
+        assert!(!selections_complete(&result, &selections));
+        selections[0].toggle(ConflictSide::Ours);
+        assert!(!selections_complete(&result, &selections));
+        selections[1].toggle(ConflictSide::Ours);
+        assert!(selections_complete(&result, &selections));
+        assert_eq!(conflict_resolution_output_text(&result, &selections), "");
+    }
 }

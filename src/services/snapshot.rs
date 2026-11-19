@@ -74,6 +74,7 @@ pub struct StashSnapshot {
 
 #[derive(Debug, Clone)]
 pub struct DirtySnapshot {
+    pub operation: crate::core::WorkingTreeOperation,
     pub conflicted_files: Vec<ChangedFile>,
     pub staged_files: Vec<ChangedFile>,
     pub unstaged_files: Vec<ChangedFile>,
@@ -81,6 +82,10 @@ pub struct DirtySnapshot {
 }
 
 impl DirtySnapshot {
+    pub fn needs_working_tree_row(&self) -> bool {
+        self.operation != crate::core::WorkingTreeOperation::None || self.has_changes()
+    }
+
     pub fn has_changes(&self) -> bool {
         !self.conflicted_files.is_empty()
             || !self.staged_files.is_empty()

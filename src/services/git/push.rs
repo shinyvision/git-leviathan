@@ -2,13 +2,20 @@ use git2::BranchType;
 use std::time::Duration;
 
 use super::helpers::{
-    command_dir, find_branch_or, index_has_conflicts, output_mentions_conflict,
-    spawn_git_command_with_timeout, wrap_git2_error,
+    command_dir, find_branch_or, index_has_conflicts, process_output_detail, wrap_git2_error,
 };
+use super::process::{run_git_command, spawn_git_command_with_timeout};
 use super::GitService;
 use crate::services::git_error::GitError;
 
 const NETWORK_TIMEOUT: Duration = Duration::from_secs(300);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushTarget {
+    pub local_branch: String,
+    pub remote_name: String,
+    pub remote_branch: String,
+}
 
 pub enum PushOutcome {
     Pushed,
@@ -21,67 +28,62 @@ pub enum PushOutcome {
         remote_name: String,
     },
     /// Current branch tip is behind its remote counterpart; push was rejected.
-    BehindRemote {
-        branch_name: String,
-        remote_name: String,
-    },
+    BehindRemote(PushTarget),
 }
 
 pub(super) fn push_current_branch(service: &GitService) -> Result<PushOutcome, GitError> {
-    let branch_name = current_branch_shorthand(service)?;
-
-    let upstream = resolve_upstream(service, &branch_name)?;
-    let remote_name = configured_push_remote(
-        service,
-        &branch_name,
-        upstream.as_ref().map(|(remote, _)| remote.as_str()),
-    )?;
-    match upstream {
-        Some(_) => run_git_push_current_branch(service, false, &branch_name, &remote_name),
-        None => Ok(PushOutcome::NeedsUpstream {
-            branch_name,
+    let local_branch = current_branch_shorthand(service)?;
+    let tracking_remote = config_string(service, &format!("branch.{local_branch}.remote"));
+    let remote_name = configured_push_remote(service, &local_branch, tracking_remote.as_deref())?;
+    let merge_ref = config_string(service, &format!("branch.{local_branch}.merge"));
+    let Some(upstream) = merge_ref
+        .as_deref()
+        .and_then(|name| name.strip_prefix("refs/heads/"))
+    else {
+        return Ok(PushOutcome::NeedsUpstream {
+            branch_name: local_branch,
             remote_name,
-        }),
-    }
+        });
+    };
+    let remote_branch = if tracking_remote.as_deref() == Some(&remote_name) {
+        upstream.to_owned()
+    } else {
+        local_branch.clone()
+    };
+    run_git_push(
+        service,
+        PushTarget {
+            local_branch,
+            remote_name,
+            remote_branch,
+        },
+        PushMode::Normal,
+    )
 }
 
 pub(super) fn push_and_set_upstream(
     service: &GitService,
-    remote_name: &str,
-    remote_branch_name: &str,
-) -> Result<(), GitError> {
-    let remote_branch_name = remote_branch_name.trim();
-    if remote_branch_name.is_empty() {
-        return Err(GitError::EmptyBranchName);
-    }
-
-    let refspec = format!("HEAD:refs/heads/{}", remote_branch_name);
-    match run_git_push(service, true, remote_name, &refspec, remote_branch_name)? {
-        PushOutcome::Pushed => Ok(()),
-        PushOutcome::NeedsUpstream { .. } => Ok(()),
-        PushOutcome::BehindRemote { branch_name, .. } => Err(GitError::Other(format!(
-            "'{}' is behind its remote counterpart; pull first",
-            branch_name
-        ))),
-    }
+    target: &PushTarget,
+) -> Result<PushOutcome, GitError> {
+    require_current_branch(service, &target.local_branch)?;
+    run_git_push(service, target.clone(), PushMode::SetUpstream)
 }
 
-pub(super) fn force_push_current_branch(service: &GitService) -> Result<PushOutcome, GitError> {
-    let branch_name = current_branch_shorthand(service)?;
+pub(super) fn force_push_current_branch(
+    service: &GitService,
+    target: &PushTarget,
+) -> Result<PushOutcome, GitError> {
+    require_current_branch(service, &target.local_branch)?;
+    run_git_push(service, target.clone(), PushMode::Force)
+}
 
-    let upstream = resolve_upstream(service, &branch_name)?;
-    let remote_name = configured_push_remote(
-        service,
-        &branch_name,
-        upstream.as_ref().map(|(remote, _)| remote.as_str()),
-    )?;
-    match upstream {
-        Some(_) => run_git_push_current_branch(service, true, &branch_name, &remote_name),
-        None => Ok(PushOutcome::NeedsUpstream {
-            branch_name,
-            remote_name,
-        }),
+fn require_current_branch(service: &GitService, expected: &str) -> Result<(), GitError> {
+    if current_branch_shorthand(service)? != expected {
+        return Err(GitError::Other(format!(
+            "'{expected}' is no longer the checked-out branch"
+        )));
     }
+    Ok(())
 }
 
 pub(super) fn push_ref_to_remote(
@@ -89,63 +91,64 @@ pub(super) fn push_ref_to_remote(
     remote_name: &str,
     ref_name: &str,
 ) -> Result<PushOutcome, GitError> {
-    ensure_remote_exists(service, remote_name)?;
-    let branch_name = resolve_explicit_local_branch(service, ref_name)?;
-    let source_ref = format!("refs/heads/{branch_name}");
-    let destination_ref = format!("refs/heads/{branch_name}");
-    let refspec = format!("{source_ref}:{destination_ref}");
-    run_git_push(service, false, remote_name, &refspec, &branch_name)
-}
-
-pub(super) fn current_branch_push_remote(service: &GitService) -> Result<String, GitError> {
-    let branch_name = current_branch_shorthand(service)?;
-    let upstream = resolve_upstream(service, &branch_name)?;
-    configured_push_remote(
+    let local_branch = resolve_explicit_local_branch(service, ref_name)?;
+    run_git_push(
         service,
-        &branch_name,
-        upstream.as_ref().map(|(remote, _)| remote.as_str()),
+        PushTarget {
+            remote_branch: local_branch.clone(),
+            local_branch,
+            remote_name: remote_name.to_owned(),
+        },
+        PushMode::Normal,
     )
 }
 
-pub(super) fn pull_current_branch(service: &GitService) -> Result<(), GitError> {
-    let repo_dir = command_dir(&service.repo)?;
+pub(super) fn current_branch_push_remote(service: &GitService) -> Result<String, GitError> {
+    let branch = current_branch_shorthand(service)?;
+    configured_push_remote(
+        service,
+        &branch,
+        config_string(service, &format!("branch.{branch}.remote")).as_deref(),
+    )
+}
 
-    let ff_output = spawn_git_command_with_timeout(
-        &repo_dir,
-        &["pull", "--ff-only"],
-        "pull --ff-only",
-        NETWORK_TIMEOUT,
-    )?;
-
-    if ff_output.status.success() {
-        return Ok(());
+pub(super) fn pull_current_branch(
+    service: &GitService,
+    target: Option<&PushTarget>,
+) -> Result<(), GitError> {
+    if service.repo.state() != git2::RepositoryState::Clean || index_has_conflicts(&service.repo) {
+        return Err(GitError::Other(
+            "finish the current repository operation before pulling".into(),
+        ));
     }
-
-    let merge_output = spawn_git_command_with_timeout(
-        &repo_dir,
-        &["pull", "--no-ff"],
-        "pull --no-ff",
-        NETWORK_TIMEOUT,
-    )?;
-
-    if !merge_output.status.success() {
-        // A conflicted pull is not a failure: git has left the repo in merge
-        // state, so report success and let the caller's snapshot reload
-        // surface the conflicts instead of a toast over a stale view.
-        if output_mentions_conflict(&merge_output) || index_has_conflicts(&service.repo) {
-            return Ok(());
+    // Prefer a fast-forward and create a merge only for divergent histories.
+    let mut args = vec!["pull", "--no-rebase", "--ff", "--no-edit"];
+    let ref_name;
+    if let Some(target) = target {
+        require_current_branch(service, &target.local_branch)?;
+        if !has_upstream_config(service, target) {
+            args.push("--set-upstream");
         }
-        let stderr = String::from_utf8_lossy(&merge_output.stderr)
-            .trim()
-            .to_string();
-        return Err(GitError::Other(if stderr.is_empty() {
-            "git pull failed".to_string()
-        } else {
-            stderr
-        }));
+        ref_name = format!("refs/heads/{}", target.remote_branch);
+        args.extend(["--", &target.remote_name, &ref_name]);
     }
-
-    Ok(())
+    let output = spawn_git_command_with_timeout(
+        &command_dir(&service.repo)?,
+        &args,
+        "pull",
+        NETWORK_TIMEOUT,
+    )?;
+    if output.status.success()
+        || (service.repo.state() == git2::RepositoryState::Merge
+            && index_has_conflicts(&service.repo))
+    {
+        Ok(())
+    } else {
+        Err(GitError::Other(format!(
+            "pull failed: {}",
+            process_output_detail(&output)
+        )))
+    }
 }
 
 fn current_branch_shorthand(service: &GitService) -> Result<String, GitError> {
@@ -187,6 +190,10 @@ fn config_string(service: &GitService, key: &str) -> Option<String> {
         .and_then(|config| config.get_string(key).ok())
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
+}
+
+fn has_upstream_config(service: &GitService, target: &PushTarget) -> bool {
+    config_string(service, &format!("branch.{}.merge", target.local_branch)).is_some()
 }
 
 fn configured_push_remote(
@@ -242,93 +249,74 @@ fn resolve_explicit_local_branch(service: &GitService, ref_name: &str) -> Result
     Ok(branch_name.to_string())
 }
 
-/// Returns (remote_name, remote_short_branch_name) from the upstream of
-/// `branch_name`, if one is configured. The short name is the remote branch
-/// without the remote prefix — e.g. upstream "origin/other" → ("origin", "other").
-fn resolve_upstream(
-    service: &GitService,
-    branch_name: &str,
-) -> Result<Option<(String, String)>, GitError> {
-    let branch = find_branch_or(&service.repo, branch_name, BranchType::Local)?;
-
-    let upstream = match branch.upstream() {
-        Ok(upstream) => upstream,
-        Err(_) => return Ok(None),
-    };
-
-    let upstream_name = match upstream.name() {
-        Ok(Some(name)) => name.to_string(),
-        _ => return Ok(None),
-    };
-
-    let (remote, short) = match upstream_name.split_once('/') {
-        Some((remote, short)) => (remote.to_string(), short.to_string()),
-        None => return Ok(None),
-    };
-
-    Ok(Some((remote, short)))
+#[derive(Clone, Copy)]
+enum PushMode {
+    Normal,
+    SetUpstream,
+    Force,
 }
 
 fn run_git_push(
     service: &GitService,
-    set_upstream: bool,
-    remote_name: &str,
-    refspec: &str,
-    remote_branch_name: &str,
+    target: PushTarget,
+    mode: PushMode,
 ) -> Result<PushOutcome, GitError> {
-    let repo_dir = command_dir(&service.repo)?;
-
-    let mut args: Vec<&str> = vec!["push"];
-    if set_upstream {
-        args.push("--set-upstream");
+    // "." is Git's special name for an upstream in the current repository.
+    if target.remote_name != "." {
+        ensure_remote_exists(service, &target.remote_name)?;
     }
-    args.push(remote_name);
-    args.push(refspec);
-
-    let output = spawn_git_command_with_timeout(&repo_dir, &args, "push", NETWORK_TIMEOUT)?;
-    handle_git_push_output(output, remote_name, remote_branch_name, "git push failed")
-}
-
-fn run_git_push_current_branch(
-    service: &GitService,
-    force: bool,
-    branch_name: &str,
-    remote_name: &str,
-) -> Result<PushOutcome, GitError> {
-    let repo_dir = command_dir(&service.repo)?;
-
-    let mut args: Vec<&str> = vec!["push"];
-    if force {
-        args.push("--force");
+    if !git2::Branch::name_is_valid(&target.remote_branch).unwrap_or(false) {
+        return Err(GitError::Other(format!(
+            "invalid remote branch name '{}'",
+            target.remote_branch
+        )));
     }
-
-    let op = if force { "push --force" } else { "push" };
-    let output = spawn_git_command_with_timeout(&repo_dir, &args, op, NETWORK_TIMEOUT)?;
-    handle_git_push_output(output, remote_name, branch_name, "git push failed")
-}
-
-fn handle_git_push_output(
-    output: std::process::Output,
-    remote_name: &str,
-    remote_branch_name: &str,
-    fallback_error: &str,
-) -> Result<PushOutcome, GitError> {
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr.contains("[rejected]") || stderr.contains("non-fast-forward") {
-            return Ok(PushOutcome::BehindRemote {
-                branch_name: remote_branch_name.to_string(),
-                remote_name: remote_name.to_string(),
-            });
+    let refspec = format!(
+        "refs/heads/{}:refs/heads/{}",
+        target.local_branch, target.remote_branch
+    );
+    let mut args = vec!["push", "--porcelain"];
+    match mode {
+        PushMode::Normal => (),
+        PushMode::Force => {
+            args.push("--force");
+            if !has_upstream_config(service, &target) {
+                args.push("--set-upstream");
+            }
         }
-        return Err(GitError::Other(if stderr.is_empty() {
-            fallback_error.to_string()
-        } else {
-            stderr
-        }));
+        PushMode::SetUpstream => args.push("--set-upstream"),
     }
-
-    Ok(PushOutcome::Pushed)
+    args.extend(["--", &target.remote_name, &refspec]);
+    // Git translates even the rejection reason in --porcelain output.
+    let output = run_git_command(
+        &command_dir(&service.repo)?,
+        &args,
+        "push",
+        Some(NETWORK_TIMEOUT),
+        &[("LC_ALL", "C")],
+    )?;
+    if output.status.success() {
+        return Ok(PushOutcome::Pushed);
+    }
+    let porcelain = String::from_utf8_lossy(&output.stdout);
+    if !matches!(mode, PushMode::Force)
+        && porcelain
+            .lines()
+            .filter_map(|line| line.strip_prefix("!\t"))
+            .filter_map(|line| line.split_once('\t'))
+            .any(|(_, reason)| {
+                matches!(
+                    reason,
+                    "[rejected] (non-fast-forward)" | "[rejected] (fetch first)"
+                )
+            })
+    {
+        return Ok(PushOutcome::BehindRemote(target));
+    }
+    Err(GitError::Other(format!(
+        "push failed: {}",
+        process_output_detail(&output)
+    )))
 }
 
 #[cfg(test)]
@@ -394,6 +382,107 @@ mod tests {
         let pushed_oid = commit_all(&repo, "local ahead");
 
         (temp_repo, upstream_temp, fork_temp, base_oid, pushed_oid)
+    }
+
+    #[test]
+    fn custom_upstream_survives_missing_tracking_ref_and_matching_push_configuration() {
+        let (temp, repo) = init_test_repo("push_named_upstream");
+        ensure_main_checked_out(&repo);
+        let (remote, bare) = init_bare_test_repo("push_named_remote");
+        add_file_remote(&repo, "fork", remote.path_str());
+        let base = repo.head().unwrap().target().unwrap();
+        create_branch(&repo, "other");
+        push_refspec(&repo, "fork", "refs/heads/other:refs/heads/other");
+        let target = PushTarget {
+            local_branch: "main".into(),
+            remote_name: "fork".into(),
+            remote_branch: "review/topic".into(),
+        };
+        let service = GitService::open(temp.path_str()).unwrap();
+        push_and_set_upstream(&service, &target).unwrap();
+        repo.find_reference("refs/remotes/fork/review/topic")
+            .unwrap()
+            .delete()
+            .unwrap();
+        repo.config()
+            .unwrap()
+            .set_str("push.default", "matching")
+            .unwrap();
+        checkout_branch_for_setup(&repo, "other");
+        write_file(&temp.path, "other.txt", "do not push\n");
+        commit_all(&repo, "other");
+        assert!(force_push_current_branch(&service, &target).is_err());
+        checkout_branch_for_setup(&repo, "main");
+        write_file(&temp.path, "tracked.txt", "new\n");
+        let latest = commit_all(&repo, "new");
+        assert!(matches!(
+            push_current_branch(&service).unwrap(),
+            PushOutcome::Pushed
+        ));
+        assert_eq!(
+            bare_branch_target(remote.path_str(), "review/topic"),
+            latest
+        );
+        assert_eq!(bare_branch_target(remote.path_str(), "other"), base);
+        assert!(bare.find_reference("refs/heads/main").is_err());
+        // The remote has a commit which the local branch no longer contains.
+        repo.reset(
+            &repo.find_object(base, None).unwrap(),
+            git2::ResetType::Hard,
+            None,
+        )
+        .unwrap();
+        assert!(
+            matches!(push_current_branch(&service).unwrap(), PushOutcome::BehindRemote(rejected) if rejected == target)
+        );
+        force_push_current_branch(&service, &target).unwrap();
+        assert_eq!(bare_branch_target(remote.path_str(), "review/topic"), base);
+        assert_eq!(bare_branch_target(remote.path_str(), "other"), base);
+    }
+
+    #[test]
+    fn pull_reports_its_own_conflict_and_rejects_an_already_unmerged_index() {
+        let (temp, repo) = init_test_repo("pull_rejection_target");
+        crate::services::test_support::configure_test_signature(&repo);
+        ensure_main_checked_out(&repo);
+        let (remote, _) = init_bare_test_repo("pull_rejection_remote");
+        add_file_remote(&repo, "fork", remote.path_str());
+        create_branch(&repo, "remote-side");
+        checkout_branch_for_setup(&repo, "remote-side");
+        write_file(&temp.path, "tracked.txt", "remote\n");
+        commit_all(&repo, "remote");
+        push_refspec(
+            &repo,
+            "fork",
+            "refs/heads/remote-side:refs/heads/review/topic",
+        );
+        checkout_branch_for_setup(&repo, "main");
+        write_file(&temp.path, "tracked.txt", "local\n");
+        commit_all(&repo, "local");
+        repo.config()
+            .unwrap()
+            .set_bool("pull.rebase", true)
+            .unwrap();
+        let service = GitService::open(temp.path_str()).unwrap();
+        let target = PushTarget {
+            local_branch: "main".into(),
+            remote_name: "fork".into(),
+            remote_branch: "review/topic".into(),
+        };
+        assert!(
+            matches!(push_and_set_upstream(&service, &target).unwrap(), PushOutcome::BehindRemote(rejected) if rejected == target)
+        );
+        pull_current_branch(&service, Some(&target)).unwrap();
+        assert_eq!(
+            repo.config()
+                .unwrap()
+                .get_string("branch.main.merge")
+                .unwrap(),
+            "refs/heads/review/topic"
+        );
+        assert_eq!(service.repo.state(), git2::RepositoryState::Merge);
+        assert!(index_has_conflicts(&service.repo));
+        assert!(pull_current_branch(&service, Some(&target)).is_err());
     }
 
     #[test]

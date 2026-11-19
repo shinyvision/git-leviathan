@@ -233,14 +233,6 @@ pub enum RepositoryMessage {
         operation_id: OperationId,
         result: Result<LoadedPushOutcome, GitError>,
     },
-    SetUpstreamPushCompleted {
-        operation_id: Option<OperationId>,
-        result: Result<LoadedRepo, GitError>,
-    },
-    ForcePushCompleted {
-        operation_id: Option<OperationId>,
-        result: Result<LoadedPushOutcome, GitError>,
-    },
     PullRequested,
     PullCompleted {
         operation_id: Option<OperationId>,
@@ -335,6 +327,7 @@ fn detail_write_intent(action: &DetailAction) -> Option<GitWriteIntent> {
         | DetailAction::CommitConfirmed => Some(GitWriteIntent::FastLocal),
         DetailAction::MarkConflictResolved(_)
         | DetailAction::MarkAllConflictsResolved
+        | DetailAction::ResumeRebase(_)
         | DetailAction::AbortMergeConfirmed
         | DetailAction::RewordConfirmed => Some(GitWriteIntent::Normal),
         _ => None,

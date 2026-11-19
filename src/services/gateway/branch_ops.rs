@@ -46,6 +46,10 @@ pub trait BranchOps: RepoRead {
         target_branch: &str,
     ) -> Result<RepoSnapshot, GitError>;
     fn abort_merge(&self) -> Result<RepoSnapshot, GitError>;
+    fn resume_rebase(
+        &self,
+        action: crate::services::git::RebaseAction,
+    ) -> Result<RepoSnapshot, GitError>;
     fn rebase_current_onto(
         &self,
         source_branch: &str,

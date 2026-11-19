@@ -27,6 +27,7 @@ pub use git::{
     ModifyDeleteConflict, ModifyDeleteConflictChoice, PushOutcome, RemoteCheckoutOutcome,
     ResetMode, RevertOutcome, StashApplyOutcome, COMMIT_LOAD_LIMIT,
 };
+pub use git::{take_hook_report_receiver, HookReport};
 pub use git_detect::{detect as detect_git, resolve_primary_and_active, GitStatus};
 pub use git_error::GitError;
 pub use presenter::{DefaultPresenter, Presenter};

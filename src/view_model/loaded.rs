@@ -92,8 +92,5 @@ pub enum LoadedPushOutcome {
         branch_name: String,
         remote_name: String,
     },
-    BehindRemote {
-        branch_name: String,
-        remote_name: String,
-    },
+    BehindRemote(crate::services::git::PushTarget),
 }

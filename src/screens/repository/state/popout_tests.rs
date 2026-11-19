@@ -61,7 +61,7 @@ fn sample_commit(hash: &str) -> Commit {
         author: "author".to_string(),
         date: "today".to_string(),
         parent_hashes: vec![],
-        is_merge_in_progress: false,
+        operation: crate::core::WorkingTreeOperation::None,
         conflicted_files: vec![],
         staged_files: vec![],
         unstaged_files: vec![],

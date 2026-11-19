@@ -1,8 +1,10 @@
+use super::autostash::{apply_autostash, maybe_stash_workdir};
 use super::helpers::{
     command_dir, find_commit_or, index_has_conflicts, output_mentions_conflict,
-    process_output_detail, spawn_git_command,
+    process_output_detail,
 };
-use super::squash::maybe_stash_workdir;
+use super::process::spawn_git_command;
+use super::stashes::StashApplyStatus;
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -19,6 +21,12 @@ pub(super) fn revert_commit(
     commit_hash: &str,
     immediate_commit: bool,
 ) -> Result<RevertStatus, GitError> {
+    if service.repo.state() != git2::RepositoryState::Clean {
+        return Err(GitError::Other(
+            "finish the current repository operation before reverting".to_string(),
+        ));
+    }
+
     let oid = git2::Oid::from_str(commit_hash)
         .map_err(|e| GitError::Other(format!("invalid commit hash '{}': {}", commit_hash, e)))?;
     let commit = find_commit_or(&service.repo, oid)?;
@@ -68,8 +76,13 @@ fn revert_and_commit(
         )));
     }
 
-    if pop_created_stash(service, repo_dir, created_stash)? {
-        return Ok(RevertStatus::StashRestoreConflicted);
+    if let Some(stash) = created_stash {
+        if matches!(
+            apply_autostash(service, repo_dir, stash)?,
+            StashApplyStatus::Conflicted
+        ) {
+            return Ok(RevertStatus::StashRestoreConflicted);
+        }
     }
 
     Ok(RevertStatus::Committed)
@@ -80,12 +93,6 @@ fn revert_in_place(
     repo_dir: &str,
     commit_hash: &str,
 ) -> Result<RevertStatus, GitError> {
-    if service.repo.state() != git2::RepositoryState::Clean {
-        return Err(GitError::Other(
-            "finish the current repository operation before reverting".to_string(),
-        ));
-    }
-
     let output = spawn_git_command(repo_dir, &["revert", "--no-commit", commit_hash], "revert")?;
     if output.status.success() {
         return Ok(RevertStatus::Applied);
@@ -109,33 +116,12 @@ fn revert_in_place(
     )))
 }
 
-fn pop_created_stash(
+fn restore_stash_after_failed_revert(
     service: &GitService,
     repo_dir: &str,
-    created_stash: bool,
-) -> Result<bool, GitError> {
-    if !created_stash {
-        return Ok(false);
-    }
-
-    let output = spawn_git_command(repo_dir, &["stash", "pop"], "stash pop after revert")?;
-    if output.status.success() {
-        return Ok(false);
-    }
-    if index_has_conflicts(&service.repo) || output_mentions_conflict(&output) {
-        return Ok(true);
-    }
-
-    Err(GitError::StashFailed(format!(
-        "revert commit was created, but restoring stashed changes failed: {}",
-        process_output_detail(&output)
-    )))
-}
-
-fn restore_stash_after_failed_revert(service: &GitService, repo_dir: &str, created_stash: bool) {
-    if !created_stash {
-        return;
-    }
+    created_stash: Option<git2::Oid>,
+) {
+    let Some(stash) = created_stash else { return };
     if index_has_conflicts(&service.repo) {
         return;
     }
@@ -144,7 +130,7 @@ fn restore_stash_after_failed_revert(service: &GitService, repo_dir: &str, creat
         &["reset", "--hard", "HEAD"],
         "reset after failed revert",
     );
-    let _ = spawn_git_command(repo_dir, &["stash", "pop"], "stash pop after failed revert");
+    let _ = apply_autostash(service, repo_dir, stash);
 }
 
 fn abort_revert(repo_dir: &str) {

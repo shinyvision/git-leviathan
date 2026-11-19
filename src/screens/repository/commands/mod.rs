@@ -280,14 +280,6 @@ pub(in crate::screens::repository) fn dispatch_result(
             operation_id,
             result,
         } => remote_ops::on_push_completed(screen, operation_id, result),
-        RepositoryMessage::SetUpstreamPushCompleted {
-            operation_id,
-            result,
-        } => remote_ops::on_set_upstream_push_completed(screen, operation_id, result),
-        RepositoryMessage::ForcePushCompleted {
-            operation_id,
-            result,
-        } => remote_ops::on_force_push_completed(screen, operation_id, result),
         RepositoryMessage::PullRequested => remote_ops::on_pull_requested(screen),
         RepositoryMessage::PullCompleted {
             operation_id,

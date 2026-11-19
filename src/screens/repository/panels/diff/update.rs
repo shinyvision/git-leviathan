@@ -255,6 +255,7 @@ pub(in crate::screens::repository) fn update(
                 };
 
                 let path = state.file_path.clone();
+                let source_hash = result.source_hash;
                 let content = conflict_resolution_output_text(result, &state.selections);
                 let Some(operation_id) = ctx
                     .data
@@ -268,7 +269,7 @@ pub(in crate::screens::repository) fn update(
                 let tab_id = ctx.tab_id;
                 Task::perform(
                     git_write_work(move || {
-                        repo.save_conflict_resolution(&path, &content)
+                        repo.save_conflict_resolution(&path, &content, source_hash)
                             .map(|s| presenter.project_loaded(s))
                     }),
                     move |result| {

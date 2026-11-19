@@ -331,12 +331,12 @@ pub(in crate::screens::repository) fn conflict_center_view<'a>(
         .field("kind", "conflict")
         .field("path", file_path);
 
-    let save_button: Option<Element<Message>> = result.map(|_| {
+    let save_button: Option<Element<Message>> = result.map(|result| {
         let label = if save_busy { "Saving..." } else { "Save" };
         let button = button(text(label).size(theme::FONT_SM).style(style::white_text))
             .style(save_button_style)
             .padding(Padding::from([4, 14]));
-        let button = if save_busy {
+        let button = if save_busy || !super::conflict::selections_complete(result, selections) {
             button
         } else {
             button.on_press(Message::repo(RepositoryMessage::DiffPanel(

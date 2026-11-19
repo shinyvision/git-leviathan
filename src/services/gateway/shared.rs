@@ -184,13 +184,7 @@ impl GitRepositoryGateway {
                 branch_name,
                 remote_name,
             },
-            PushOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            } => PushGatewayOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            },
+            PushOutcome::BehindRemote(target) => PushGatewayOutcome::BehindRemote(target),
         })
     }
 }
@@ -389,6 +383,16 @@ impl BranchOps for GitRepositoryGateway {
         })
     }
 
+    fn resume_rebase(
+        &self,
+        action: crate::services::git::RebaseAction,
+    ) -> Result<RepoSnapshot, GitError> {
+        self.with_service(|service| {
+            service.resume_rebase(action)?;
+            Ok(service.load_repo(COMMIT_LOAD_LIMIT))
+        })
+    }
+
     fn rebase_current_onto(
         &self,
         source_branch: &str,
@@ -523,9 +527,10 @@ impl WorkingTreeOps for GitRepositoryGateway {
         &self,
         file_path: &str,
         content: &str,
+        source_hash: [u8; 32],
     ) -> Result<RepoSnapshot, GitError> {
         self.with_service(|service| {
-            service.save_conflict_resolution(file_path, content)?;
+            service.save_conflict_resolution(file_path, content, source_hash)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }
@@ -648,34 +653,30 @@ impl RemoteOps for GitRepositoryGateway {
 
     fn push_and_set_upstream(
         &self,
-        remote_name: &str,
-        remote_branch_name: &str,
-    ) -> Result<RepoSnapshot, GitError> {
+        target: &crate::services::git::PushTarget,
+    ) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| {
-            service.push_and_set_upstream(remote_name, remote_branch_name)?;
-            Ok(service.load_repo(COMMIT_LOAD_LIMIT))
-        })
-    }
-
-    fn force_push_current_branch(&self) -> Result<PushGatewayOutcome, GitError> {
-        self.with_service(|service| {
-            let outcome = service.force_push_current_branch()?;
-            if let PushOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            } = outcome
-            {
-                return Err(GitError::Other(format!(
-                    "force push of '{branch_name}' was rejected by '{remote_name}'",
-                )));
-            }
+            let outcome = service.push_and_set_upstream(target)?;
             Self::map_push_outcome(service, outcome)
         })
     }
 
-    fn pull_current_branch(&self) -> Result<RepoSnapshot, GitError> {
+    fn force_push_current_branch(
+        &self,
+        target: &crate::services::git::PushTarget,
+    ) -> Result<PushGatewayOutcome, GitError> {
         self.with_service(|service| {
-            service.pull_current_branch()?;
+            let outcome = service.force_push_current_branch(target)?;
+            Self::map_push_outcome(service, outcome)
+        })
+    }
+
+    fn pull_current_branch(
+        &self,
+        target: Option<&crate::services::git::PushTarget>,
+    ) -> Result<RepoSnapshot, GitError> {
+        self.with_service(|service| {
+            service.pull_current_branch(target)?;
             Ok(service.load_repo(COMMIT_LOAD_LIMIT))
         })
     }

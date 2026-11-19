@@ -34,6 +34,7 @@ pub(crate) mod force_push;
 pub(crate) mod modify_delete_conflict;
 mod native_actions;
 pub(crate) mod push_behind;
+mod push_target;
 pub(crate) mod remove_worktree;
 pub(crate) mod rename_branch;
 pub(crate) mod revert_confirm;

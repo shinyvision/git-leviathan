@@ -6,18 +6,19 @@
 
 use iced::{
     keyboard,
-    widget::{button, column, container, responsive, row, text, text_editor, Space},
+    widget::{button, column, container, row, text, text_editor, Space},
     Element, Length, Padding,
 };
 
 use crate::{
     assets,
-    core::{ChangedFile, Commit},
+    core::{ChangedFile, Commit, WorkingTreeOperation},
     message::Message,
     screens::repository::{
         panel_messages::{DetailAction, DetailFileListKind},
         RepositoryMessage,
     },
+    services::git::RebaseAction,
     style, theme,
     widgets::shared::{h_divider, horizontal_space, v_divider},
 };
@@ -172,14 +173,10 @@ pub(super) fn dirty_detail_panel_content<'a>(
         left: 10.0,
     });
 
-    let can_commit = !commit.staged_files.is_empty()
-        && dirty_commit_message_has_summary(screen.dirty_commit_message);
-
-    let commit_form = dirty_commit_form_inline(
+    let commit_form = dirty_commit_form(
+        commit,
         screen.dirty_commit_message,
-        can_commit,
-        commit.is_merge_in_progress,
-        width - 20.0,
+        Length::Fixed(104.0),
         busy,
         screen.dirty_operation_label,
     );
@@ -233,12 +230,10 @@ pub(super) fn dirty_detail_panel_content_horizontal<'a>(
         busy,
     );
 
-    let can_commit = !commit.staged_files.is_empty()
-        && dirty_commit_message_has_summary(screen.dirty_commit_message);
-    let commit_form = dirty_commit_form_responsive(
+    let commit_form = dirty_commit_form(
+        commit,
         screen.dirty_commit_message,
-        can_commit,
-        commit.is_merge_in_progress,
+        Length::Fill,
         busy,
         screen.dirty_operation_label,
     );
@@ -290,15 +285,25 @@ fn dirty_hash_bar<'a>(
     selected_count: usize,
 ) -> Element<'a, Message> {
     let summary = dirty_summary.to_string();
-    if commit.is_merge_in_progress {
+    if commit.operation != WorkingTreeOperation::None {
         row![
             text(summary).size(theme::FONT_SM).style(style::dim_text),
-            text(" on ").size(theme::FONT_SM).style(style::dim_text),
-            text(current_branch)
-                .size(theme::FONT_SM)
-                .style(|_: &iced::Theme| text::Style {
-                    color: Some(theme::ACCENT_BLUE),
-                }),
+            text(if commit.operation == WorkingTreeOperation::Rebase {
+                " · "
+            } else {
+                " on "
+            })
+            .size(theme::FONT_SM)
+            .style(style::dim_text),
+            text(if commit.operation == WorkingTreeOperation::Rebase {
+                "rebase in progress"
+            } else {
+                current_branch
+            })
+            .size(theme::FONT_SM)
+            .style(|_: &iced::Theme| text::Style {
+                color: Some(theme::ACCENT_BLUE),
+            }),
         ]
         .align_y(iced::Alignment::Center)
         .spacing(8)
@@ -463,17 +468,36 @@ fn dirty_file_list<'a>(
     )
 }
 
-fn dirty_commit_form_inline<'a>(
+fn dirty_commit_form<'a>(
+    commit: &Commit,
     dirty_commit_message: &'a text_editor::Content,
-    can_commit: bool,
-    is_merge_in_progress: bool,
-    editor_width: f32,
+    editor_height: Length,
     busy: DirtyActionBusy,
     operation_label: Option<&'static str>,
 ) -> Element<'a, Message> {
+    let resolved = commit.conflicted_files.is_empty();
+    if commit.operation == WorkingTreeOperation::Rebase {
+        return container(commit_action_row(
+            resolved,
+            commit.operation,
+            busy,
+            operation_label,
+        ))
+        .padding(10)
+        .into();
+    }
+    let can_commit = resolved
+        && (commit.operation == WorkingTreeOperation::Merge || !commit.staged_files.is_empty())
+        && (dirty_commit_message_has_summary(dirty_commit_message)
+            || (commit.operation == WorkingTreeOperation::Merge
+                && dirty_commit_message.text().trim().is_empty()));
     let editor = text_editor(dirty_commit_message)
         .id(dirty_commit_message_editor_id())
-        .placeholder("Commit Message")
+        .placeholder(if commit.operation == WorkingTreeOperation::Merge {
+            "Use Git’s merge message"
+        } else {
+            "Commit Message"
+        })
         .on_action(|action| {
             Message::repo(RepositoryMessage::Detail(
                 DetailAction::CommitMessageAction(action),
@@ -482,54 +506,16 @@ fn dirty_commit_form_inline<'a>(
         .key_binding(commit_message_key_binding)
         .size(theme::FONT_MD)
         .padding(Padding::from([8, 10]))
-        .height(Length::Fixed(104.0))
-        .width(editor_width)
+        .height(editor_height)
         .style(detail_text_editor_style);
 
     column![
         commit_message_label(),
         editor,
-        commit_action_row(can_commit, is_merge_in_progress, busy, operation_label),
+        commit_action_row(can_commit, commit.operation, busy, operation_label),
     ]
     .padding(Padding::from([10, 10]))
     .spacing(8)
-    .into()
-}
-
-fn dirty_commit_form_responsive<'a>(
-    dirty_commit_message: &'a text_editor::Content,
-    can_commit: bool,
-    is_merge_in_progress: bool,
-    busy: DirtyActionBusy,
-    operation_label: Option<&'static str>,
-) -> Element<'a, Message> {
-    responsive(move |size| {
-        let editor_width = (size.width - 20.0).max(100.0);
-        let editor = text_editor(dirty_commit_message)
-            .id(dirty_commit_message_editor_id())
-            .placeholder("Commit Message")
-            .on_action(|action| {
-                Message::repo(RepositoryMessage::Detail(
-                    DetailAction::CommitMessageAction(action),
-                ))
-            })
-            .key_binding(commit_message_key_binding)
-            .size(theme::FONT_MD)
-            .padding(Padding::from([8, 10]))
-            .height(Length::Fill)
-            .width(editor_width)
-            .style(detail_text_editor_style);
-
-        column![
-            commit_message_label(),
-            editor,
-            commit_action_row(can_commit, is_merge_in_progress, busy, operation_label),
-        ]
-        .padding(Padding::from([10, 10]))
-        .spacing(8)
-        .height(Length::Fill)
-        .into()
-    })
     .into()
 }
 
@@ -569,48 +555,72 @@ fn commit_message_label<'a>() -> Element<'a, Message> {
 
 fn commit_action_row<'a>(
     can_commit: bool,
-    is_merge_in_progress: bool,
+    operation: WorkingTreeOperation,
     busy: DirtyActionBusy,
     operation_label: Option<&'static str>,
 ) -> Element<'a, Message> {
-    let commit_label = if busy.fast {
+    let action_busy = if operation == WorkingTreeOperation::Rebase {
+        busy.general
+    } else {
+        busy.fast
+    };
+    let (label, action) = match operation {
+        WorkingTreeOperation::Rebase => (
+            "Continue Rebase",
+            DetailAction::ResumeRebase(RebaseAction::Continue),
+        ),
+        WorkingTreeOperation::Merge => ("Commit Merge", DetailAction::CommitConfirmed),
+        WorkingTreeOperation::None => ("Commit Staged Changes", DetailAction::CommitConfirmed),
+    };
+    let label = if action_busy {
         operation_label.unwrap_or("Working...")
     } else {
-        "Commit All Changes"
+        label
     };
-    let commit_enabled = can_commit && !busy.fast;
-    let mut commit_button = button(dirty_commit_action_label(commit_label))
-        .style(green_button_style(commit_enabled))
-        .padding(Padding::from([0, 16]))
-        .height(Length::Fixed(DIRTY_COMMIT_ACTION_BUTTON_HEIGHT))
-        .width(Length::Fill);
-
-    if commit_enabled {
-        commit_button = commit_button.on_press(Message::repo(RepositoryMessage::Detail(
-            DetailAction::CommitConfirmed,
-        )));
-    }
-
-    if is_merge_in_progress {
-        let mut abort_button = button(dirty_commit_action_label("Abort Merge"))
-            .style(red_button_style(!busy.general))
-            .padding(Padding::from([0, 16]))
+    let enabled = can_commit && !action_busy;
+    let action_button = |label, action, enabled: bool| {
+        button(dirty_commit_action_label(label))
+            .padding(Padding::from([0, 8]))
             .height(Length::Fixed(DIRTY_COMMIT_ACTION_BUTTON_HEIGHT))
-            .width(Length::Fill);
-        if !busy.general {
-            abort_button = abort_button.on_press(Message::repo(RepositoryMessage::Detail(
-                DetailAction::AbortMergeConfirmed,
-            )));
-        }
-
-        row![commit_button, abort_button]
-            .spacing(8)
-            .align_y(iced::Alignment::Center)
             .width(Length::Fill)
-            .into()
-    } else {
-        commit_button.into()
+            .on_press_maybe(enabled.then(|| Message::repo(RepositoryMessage::Detail(action))))
+    };
+    let mut buttons =
+        row![action_button(label, action, enabled).style(green_button_style(enabled))];
+    let enabled = !busy.general;
+    match operation {
+        WorkingTreeOperation::Rebase => {
+            buttons = buttons
+                .push(
+                    action_button(
+                        "Skip Commit",
+                        DetailAction::ResumeRebase(RebaseAction::Skip),
+                        enabled,
+                    )
+                    .style(super::styles::resolve_button_style(enabled)),
+                )
+                .push(
+                    action_button(
+                        "Abort Rebase",
+                        DetailAction::ResumeRebase(RebaseAction::Abort),
+                        enabled,
+                    )
+                    .style(red_button_style(enabled)),
+                );
+        }
+        WorkingTreeOperation::Merge => {
+            buttons = buttons.push(
+                action_button("Abort Merge", DetailAction::AbortMergeConfirmed, enabled)
+                    .style(red_button_style(enabled)),
+            );
+        }
+        WorkingTreeOperation::None => {}
     }
+    buttons
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .width(Length::Fill)
+        .into()
 }
 
 #[derive(Clone, Copy)]

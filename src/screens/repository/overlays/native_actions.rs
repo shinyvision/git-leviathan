@@ -7,8 +7,8 @@ use crate::{
 use super::super::{state::OperationKind, RepositoryMessage};
 use super::{
     cherry_pick_confirm, conflict_checkout, create_branch, create_tag, delete_branch, delete_tag,
-    discard, force_push, modify_delete_conflict, push_behind, remove_worktree, rename_branch,
-    revert_confirm, set_upstream, stash_delete, DialogCtx, DialogDispatch, OverlayManager,
+    discard, force_push, modify_delete_conflict, remove_worktree, rename_branch, revert_confirm,
+    set_upstream, stash_delete, DialogCtx, DialogDispatch, OverlayManager,
 };
 
 pub(super) fn resolve_modify_delete_conflict(
@@ -62,6 +62,13 @@ pub(super) fn confirm_force_push(
     let Some(ctx) = ctx else {
         return DialogDispatch::Task(Task::none());
     };
+    let Some(target) = manager
+        .toolbar_dialog
+        .as_ref()
+        .and_then(super::push_target::read)
+    else {
+        return DialogDispatch::Task(Task::none());
+    };
     let Some(operation_id) = ctx.operations.begin_write() else {
         return DialogDispatch::Task(Task::none());
     };
@@ -75,14 +82,14 @@ pub(super) fn confirm_force_push(
     let task = Task::perform(
         git_write_work(move || {
             repository
-                .force_push_current_branch()
+                .force_push_current_branch(&target)
                 .map(|o| presenter.project_push(o))
         }),
         move |result| {
             Message::tab(
                 tab_id,
-                RepositoryMessage::ForcePushCompleted {
-                    operation_id: Some(operation_id),
+                RepositoryMessage::PushCompleted {
+                    operation_id,
                     result,
                 },
             )
@@ -599,6 +606,9 @@ pub(super) fn confirm_set_upstream(
     let Some(dialog) = manager.toolbar_dialog.as_ref() else {
         return DialogDispatch::Task(Task::none());
     };
+    let Some(local_branch) = set_upstream::local_branch(dialog) else {
+        return DialogDispatch::Task(Task::none());
+    };
     let remote_branch = set_upstream::remote_branch_input(dialog)
         .unwrap_or_default()
         .trim()
@@ -626,14 +636,18 @@ pub(super) fn confirm_set_upstream(
     let task = Task::perform(
         git_write_work(move || {
             repository
-                .push_and_set_upstream(&remote_name, &remote_branch)
-                .map(|s| presenter.project_loaded(s))
+                .push_and_set_upstream(&crate::services::git::PushTarget {
+                    local_branch,
+                    remote_name,
+                    remote_branch,
+                })
+                .map(|o| presenter.project_push(o))
         }),
         move |result| {
             Message::tab(
                 tab_id,
-                RepositoryMessage::SetUpstreamPushCompleted {
-                    operation_id: Some(operation_id),
+                RepositoryMessage::PushCompleted {
+                    operation_id,
                     result,
                 },
             )
@@ -649,6 +663,13 @@ pub(super) fn confirm_push_behind_pull(
     let Some(ctx) = ctx else {
         return DialogDispatch::Task(Task::none());
     };
+    let Some(target) = manager
+        .toolbar_dialog
+        .as_ref()
+        .and_then(super::push_target::read)
+    else {
+        return DialogDispatch::Task(Task::none());
+    };
     let Some(operation_id) = ctx.operations.begin_write() else {
         return DialogDispatch::Task(Task::none());
     };
@@ -662,7 +683,7 @@ pub(super) fn confirm_push_behind_pull(
     let task = Task::perform(
         git_write_work(move || {
             repository
-                .pull_current_branch()
+                .pull_current_branch(Some(&target))
                 .map(|s| presenter.project_loaded(s))
         }),
         move |result| {
@@ -682,16 +703,10 @@ pub(super) fn confirm_push_behind_force_push(manager: &mut OverlayManager) -> Di
     let Some(dialog) = manager.toolbar_dialog.as_ref() else {
         return DialogDispatch::Task(Task::none());
     };
-    let Some(branch_name) = push_behind::branch_name(dialog) else {
+    let Some(target) = super::push_target::read(dialog) else {
         return DialogDispatch::Task(Task::none());
     };
-    let Some(remote_name) = push_behind::remote_name(dialog) else {
-        return DialogDispatch::Task(Task::none());
-    };
-    manager.open_toolbar_dialog(force_push::dialog(force_push::State {
-        branch_name,
-        remote_name,
-    }));
+    manager.open_toolbar_dialog(force_push::dialog(target));
     DialogDispatch::RestoreCenterListScroll
 }
 

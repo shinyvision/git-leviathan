@@ -68,57 +68,57 @@ pub fn branch_context_menu(
         ));
     }
 
-    if !is_tag && !is_remote && !current_branch.is_empty() && current_branch != branch_name {
+    if !is_tag
+        && !current_branch.is_empty()
+        && current_branch != "HEAD"
+        && (is_remote || current_branch != branch_name)
+    {
+        let remote_ref = is_remote
+            .then(|| remote_ref_name(remote_name.as_deref(), &remote_branch_name))
+            .flatten();
+        let target_display = remote_ref.as_ref().unwrap_or(branch_name);
+        let target_ref = if is_remote {
+            format!("refs/remotes/{target_display}")
+        } else {
+            format!("refs/heads/{branch_name}")
+        };
+
         items.push(context_menu_item(
-            format!("Merge {} into {}", branch_name, current_branch),
+            format!("Merge {target_display} into {current_branch}"),
             Some(Message::repo(RepositoryMessage::Center(
                 CenterAction::BranchMergeRequested {
-                    source_branch: branch_name.clone(),
-                    target_branch: current_branch.to_string(),
+                    source_branch: if is_remote {
+                        target_ref.clone()
+                    } else {
+                        branch_name.clone()
+                    },
+                    target_branch: current_branch.to_owned(),
                 },
             ))),
         ));
 
-        if state.can_fast_forward {
+        if !is_remote && state.can_fast_forward {
             items.push(context_menu_item(
-                format!("Fast-forward {} to {}", current_branch, branch_name),
+                format!("Fast-forward {current_branch} to {branch_name}"),
                 Some(Message::repo(RepositoryMessage::Center(
                     CenterAction::BranchFastForwardRequested {
-                        source_branch: current_branch.to_string(),
+                        source_branch: current_branch.to_owned(),
                         target_branch: branch_name.clone(),
                     },
                 ))),
             ));
         }
-    }
 
-    // Rebase current branch onto the right-clicked target. Target may be a
-    // local branch or a remote tracking ref (e.g. "origin/main").
-    if !is_tag && !current_branch.is_empty() {
-        let same_local = !is_remote && branch_name == current_branch;
-        if !same_local {
-            let (target_ref, target_display, target_remote_ref) = if is_remote {
-                let target_remote_ref =
-                    remote_ref_name(remote_name.as_deref(), &remote_branch_name);
-                let target = target_remote_ref
-                    .clone()
-                    .unwrap_or_else(|| remote_branch_name.clone());
-                (target.clone(), target, target_remote_ref)
-            } else {
-                (branch_name.clone(), branch_name.clone(), None)
-            };
-            items.push(context_menu_item(
-                format!("Rebase {} onto {}", current_branch, target_display),
-                Some(Message::repo(RepositoryMessage::Center(
-                    CenterAction::BranchRebaseRequested {
-                        source_branch: current_branch.to_string(),
-                        target_ref,
-                        target_display,
-                        target_remote_ref,
-                    },
-                ))),
-            ));
-        }
+        items.push(context_menu_item(
+            format!("Rebase {current_branch} onto {target_display}"),
+            Some(Message::repo(RepositoryMessage::Center(
+                CenterAction::BranchRebaseRequested {
+                    source_branch: current_branch.to_owned(),
+                    target_ref,
+                    target_display: target_display.clone(),
+                },
+            ))),
+        ));
     }
 
     // Local rename/delete — shown whenever a local counterpart exists.

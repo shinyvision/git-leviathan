@@ -10,24 +10,18 @@ const OWNER_ID: &str = "force_push";
 pub(crate) const CONFIRM_BUTTON_ID: &str = "confirm";
 pub(crate) const CANCEL_BUTTON_ID: &str = "cancel";
 
-#[derive(Debug, Clone)]
-pub(crate) struct State {
-    pub branch_name: String,
-    pub remote_name: String,
-}
-
-pub(crate) fn dialog(state: State) -> Dialog {
+pub(crate) fn dialog(target: crate::services::git::PushTarget) -> Dialog {
     Dialog {
         id: DialogId(DIALOG_ID.into()),
         owner: DialogOwner::native(OWNER_ID),
         message: DialogMessage {
             title: None,
             text: format!(
-                "Force push {} to {}. This cannot be undone.",
-                state.branch_name, state.remote_name
+                "Force push {} to {}/{}. This cannot be undone.",
+                target.local_branch, target.remote_name, target.remote_branch
             ),
         },
-        data: Vec::new(),
+        data: super::push_target::data(target),
         controls: Vec::new(),
         buttons: vec![
             DialogButton {
@@ -63,15 +57,16 @@ mod tests {
 
     #[test]
     fn builds_native_force_push_dialog() {
-        let dialog = dialog(State {
-            branch_name: "main".into(),
+        let dialog = dialog(crate::services::git::PushTarget {
+            remote_branch: "main".into(),
+            local_branch: "main".into(),
             remote_name: "origin".into(),
         });
 
         assert!(is_dialog(&dialog));
         assert_eq!(
             dialog.message.text,
-            "Force push main to origin. This cannot be undone."
+            "Force push main to origin/main. This cannot be undone."
         );
         assert_eq!(dialog.buttons[0].id.0, CONFIRM_BUTTON_ID);
         assert_eq!(dialog.buttons[1].id.0, CANCEL_BUTTON_ID);

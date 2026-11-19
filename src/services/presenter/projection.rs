@@ -56,6 +56,7 @@ pub fn compute_signature(snapshot: &RepoSnapshot) -> ProjectionSignature {
 
     snapshot.dirty.is_some().hash(&mut h);
     if let Some(d) = &snapshot.dirty {
+        d.operation.hash(&mut h);
         d.conflicted_files.len().hash(&mut h);
         d.staged_files.len().hash(&mut h);
         d.unstaged_files.len().hash(&mut h);
@@ -250,7 +251,8 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
 
     let branch_refs = refs.clone();
 
-    let has_dirty_changes = dirty.as_ref().is_some_and(DirtySnapshot::has_changes);
+    let dirty = dirty.filter(DirtySnapshot::needs_working_tree_row);
+    let has_dirty_changes = dirty.is_some();
     let dirty_parent_hashes = if has_dirty_changes {
         resolve_dirty_parent_hashes(&head_hash, &refs, &commit_snapshots, dirty.as_ref())
     } else {
@@ -322,7 +324,7 @@ pub fn project_repo(snapshot: RepoSnapshot) -> RepositoryProjection {
         .map(|_| CommitDiffState::empty())
         .collect();
 
-    if let Some(dirty) = dirty.filter(DirtySnapshot::has_changes) {
+    if let Some(dirty) = dirty {
         let (dirty_commit, dirty_diff) = project_dirty_commit(dirty);
         commits.insert(0, dirty_commit);
         commit_diff_states.insert(0, dirty_diff);
@@ -520,7 +522,7 @@ fn project_commit(snapshot: &CommitSnapshot) -> Commit {
         author: snapshot.author_name.clone(),
         date: format_date(snapshot.authored_at, snapshot.authored_offset_minutes),
         parent_hashes: snapshot.parent_hashes.clone(),
-        is_merge_in_progress: false,
+        operation: crate::core::WorkingTreeOperation::None,
         conflicted_files: vec![],
         staged_files: vec![],
         unstaged_files: vec![],
@@ -536,7 +538,7 @@ fn project_stash_commit(snapshot: &CommitSnapshot, stash_index: usize) -> Commit
         author: snapshot.author_name.clone(),
         date: format_date(snapshot.authored_at, snapshot.authored_offset_minutes),
         parent_hashes: snapshot.parent_hashes.clone(),
-        is_merge_in_progress: false,
+        operation: crate::core::WorkingTreeOperation::None,
         conflicted_files: vec![],
         staged_files: vec![],
         unstaged_files: vec![],
@@ -545,12 +547,12 @@ fn project_stash_commit(snapshot: &CommitSnapshot, stash_index: usize) -> Commit
 
 fn project_dirty_commit(snapshot: DirtySnapshot) -> (Commit, CommitDiffState) {
     let DirtySnapshot {
+        operation,
         conflicted_files,
         staged_files,
         unstaged_files,
         parent_hashes,
     } = snapshot;
-    let is_merge_in_progress = parent_hashes.len() >= 2;
     let files: Vec<_> = unstaged_files
         .iter()
         .chain(conflicted_files.iter())
@@ -575,7 +577,7 @@ fn project_dirty_commit(snapshot: DirtySnapshot) -> (Commit, CommitDiffState) {
         author: "Working Tree".to_string(),
         date: "uncommitted changes".to_string(),
         parent_hashes: parent_hashes.clone(),
-        is_merge_in_progress,
+        operation,
         conflicted_files,
         staged_files,
         unstaged_files,
@@ -1553,6 +1555,7 @@ mod tests {
             commits: vec![commit(head_hash, &[], "head commit")],
             refs: vec![],
             dirty: Some(DirtySnapshot {
+                operation: crate::core::WorkingTreeOperation::None,
                 conflicted_files: vec![],
                 staged_files: vec![ChangedFile {
                     path: "staged.txt".to_string(),
@@ -1575,7 +1578,10 @@ mod tests {
         assert_eq!(projection.commits.len(), 2);
         assert_eq!(projection.commits[0].kind, CommitKind::Dirty);
         assert_eq!(projection.commits[0].message, "WIP");
-        assert!(!projection.commits[0].is_merge_in_progress);
+        assert_eq!(
+            projection.commits[0].operation,
+            crate::core::WorkingTreeOperation::None
+        );
         assert_eq!(projection.commits[0].staged_files.len(), 1);
         assert_eq!(projection.commits[0].unstaged_files.len(), 1);
         assert_eq!(projection.commits[1].hash, head_hash);
@@ -1627,6 +1633,7 @@ mod tests {
                 },
             ],
             dirty: Some(DirtySnapshot {
+                operation: crate::core::WorkingTreeOperation::None,
                 conflicted_files: vec![],
                 staged_files: vec![ChangedFile {
                     path: "staged.txt".to_string(),
@@ -1685,6 +1692,7 @@ mod tests {
                 },
             ],
             dirty: Some(DirtySnapshot {
+                operation: crate::core::WorkingTreeOperation::Merge,
                 conflicted_files: vec![ChangedFile {
                     path: "conflicted.txt".to_string(),
                     kind: ChangeKind::Modified,
@@ -1702,7 +1710,10 @@ mod tests {
         });
 
         assert_eq!(projection.num_lanes, 2);
-        assert!(projection.commits[0].is_merge_in_progress);
+        assert_eq!(
+            projection.commits[0].operation,
+            crate::core::WorkingTreeOperation::Merge
+        );
         assert!(!projection.graph_rows[0].has_commit);
         assert!(projection.graph_rows[0].connectors.is_empty());
         assert!(has_segment(
@@ -1880,6 +1891,7 @@ mod tests {
                 upstream_ref: None,
             }],
             dirty: Some(DirtySnapshot {
+                operation: crate::core::WorkingTreeOperation::None,
                 conflicted_files: vec![],
                 staged_files: vec![ChangedFile {
                     path: "file.txt".to_string(),

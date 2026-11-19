@@ -105,6 +105,20 @@ impl ToastData {
         }
     }
 
+    /// What a git hook printed, or that it failed. Hooks like hardy's report
+    /// what they did after a checkout, and the user should see it.
+    pub fn hook_report(report: &crate::services::HookReport) -> Self {
+        if report.succeeded {
+            return Self::success(format!("{} hook", report.hook), report.output.clone());
+        }
+        let body = if report.output.is_empty() {
+            "The hook exited with an error.".to_string()
+        } else {
+            report.output.clone()
+        };
+        Self::error(format!("{} hook failed", report.hook), body)
+    }
+
     pub fn delete_failed(branch_name: &str, is_remote: bool, body: impl Into<String>) -> Self {
         let reference_name = if is_remote {
             format!("refs/remotes/{}", branch_name)

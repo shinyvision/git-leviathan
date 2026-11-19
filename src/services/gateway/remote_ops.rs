@@ -13,10 +13,7 @@ pub enum PushGatewayOutcome {
         branch_name: String,
         remote_name: String,
     },
-    BehindRemote {
-        branch_name: String,
-        remote_name: String,
-    },
+    BehindRemote(crate::services::git::PushTarget),
 }
 
 /// Network-facing operations (fetch, push, pull, remote management).
@@ -38,11 +35,16 @@ pub trait RemoteOps: RepoRead {
     fn current_branch_push_remote(&self) -> Result<String, GitError>;
     fn push_and_set_upstream(
         &self,
-        remote_name: &str,
-        remote_branch_name: &str,
+        target: &crate::services::git::PushTarget,
+    ) -> Result<PushGatewayOutcome, GitError>;
+    fn force_push_current_branch(
+        &self,
+        target: &crate::services::git::PushTarget,
+    ) -> Result<PushGatewayOutcome, GitError>;
+    fn pull_current_branch(
+        &self,
+        target: Option<&crate::services::git::PushTarget>,
     ) -> Result<RepoSnapshot, GitError>;
-    fn force_push_current_branch(&self) -> Result<PushGatewayOutcome, GitError>;
-    fn pull_current_branch(&self) -> Result<RepoSnapshot, GitError>;
     fn add_remote(
         &self,
         name: &str,

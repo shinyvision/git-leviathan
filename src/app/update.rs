@@ -130,6 +130,7 @@ impl App {
             AppMessage::EagerGrammarInstallRequested(language) => {
                 self.eager_install_grammar(language)
             }
+            AppMessage::HookReported(report) => self.show_hook_report(&report),
             AppMessage::TabRegistryOp(op) => {
                 if let crate::plugin::tab_snapshot::TabRegistryOp::Select(ref path) = op {
                     if self.tabs.tab_id_for_path(path) == Some(self.tabs.active_tab_id()) {

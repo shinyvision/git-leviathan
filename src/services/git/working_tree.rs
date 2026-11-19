@@ -1,12 +1,14 @@
-use git2::{IndexAddOption, Oid, RepositoryState, Status, StatusEntry, StatusOptions, StatusShow};
+use git2::{Oid, RepositoryState, Status, StatusEntry, StatusOptions, StatusShow};
 use std::path::Path;
 
 use crate::{
-    core::{ChangeKind, ChangedFile},
+    core::{ChangeKind, ChangedFile, WorkingTreeOperation},
     services::{git_error::GitError, DirtySnapshot},
 };
 
-use super::helpers::{find_commit_or, wrap_git2_error};
+use super::helpers::{command_dir, process_output_detail, wrap_git2_error};
+use super::process::{spawn_git_command, spawn_program};
+use super::rebase;
 use super::GitService;
 
 pub(super) fn load_dirty_snapshot(service: &GitService) -> Option<DirtySnapshot> {
@@ -27,20 +29,20 @@ pub(super) fn load_dirty_snapshot(service: &GitService) -> Option<DirtySnapshot>
         let status = entry.status();
         if status.is_conflicted() {
             conflicted_files.push(ChangedFile {
-                path: status_path(&entry),
+                path: status_path(&entry, StatusShow::IndexAndWorkdir),
                 kind: ChangeKind::Modified,
             });
             continue;
         }
         if let Some(kind) = staged_change_kind(status) {
             staged_files.push(ChangedFile {
-                path: status_path(&entry),
+                path: status_path(&entry, StatusShow::Index),
                 kind,
             });
         }
         if let Some(kind) = unstaged_change_kind(status) {
             unstaged_files.push(ChangedFile {
-                path: status_path(&entry),
+                path: status_path(&entry, StatusShow::Workdir),
                 kind,
             });
         }
@@ -50,13 +52,19 @@ pub(super) fn load_dirty_snapshot(service: &GitService) -> Option<DirtySnapshot>
     staged_files.sort_by(|left, right| left.path.cmp(&right.path));
     unstaged_files.sort_by(|left, right| left.path.cmp(&right.path));
 
+    let operation = match service.repo.state() {
+        RepositoryState::Merge => WorkingTreeOperation::Merge,
+        state if rebase::in_progress(state) => WorkingTreeOperation::Rebase,
+        _ => WorkingTreeOperation::None,
+    };
     let snapshot = DirtySnapshot {
+        operation,
         conflicted_files,
         staged_files,
         unstaged_files,
         parent_hashes: dirty_parent_hashes(service),
     };
-    snapshot.has_changes().then_some(snapshot)
+    snapshot.needs_working_tree_row().then_some(snapshot)
 }
 
 fn dirty_parent_hashes(service: &GitService) -> Vec<String> {
@@ -79,31 +87,15 @@ fn dirty_parent_hashes(service: &GitService) -> Vec<String> {
     parent_hashes
 }
 
-fn commit_parent_hashes(service: &GitService) -> Result<Vec<String>, GitError> {
-    let mut parent_hashes = Vec::new();
-    if let Some(head_oid) = service.repo.head().ok().and_then(|head| head.target()) {
-        parent_hashes.push(head_oid.to_string());
-    }
-
-    if service.repo.state() == RepositoryState::Merge {
-        for oid in merge_head_oids(service)? {
-            let hash = oid.to_string();
-            if !parent_hashes.iter().any(|existing| existing == &hash) {
-                parent_hashes.push(hash);
-            }
-        }
-    }
-
-    Ok(parent_hashes)
-}
-
 pub(super) fn commit_dirty_changes(
     service: &mut GitService,
     summary: &str,
     description: &str,
 ) -> Result<(), GitError> {
     let summary = summary.trim();
-    if summary.is_empty() {
+    if summary.is_empty()
+        && (service.repo.state() != RepositoryState::Merge || !description.trim().is_empty())
+    {
         return Err(GitError::Other(
             "commit summary cannot be empty".to_string(),
         ));
@@ -111,131 +103,46 @@ pub(super) fn commit_dirty_changes(
 
     let dirty = load_dirty_snapshot(service)
         .ok_or_else(|| GitError::Other("there are no changes to commit".to_string()))?;
-    if dirty.staged_files.is_empty() {
+    if dirty.operation == WorkingTreeOperation::Rebase {
+        return Err(GitError::Other(
+            "use Continue Rebase to finish the current step".into(),
+        ));
+    }
+    if !dirty.conflicted_files.is_empty() {
+        return Err(GitError::Other(
+            "resolve the remaining conflicts before committing".into(),
+        ));
+    }
+    if dirty.operation != WorkingTreeOperation::Merge && dirty.staged_files.is_empty() {
         return Err(GitError::Other(
             "there are no staged changes to commit".to_string(),
         ));
     }
 
-    let signature = service
-        .repo
-        .signature()
-        .map_err(|e| wrap_git2_error("read git author identity", e))?;
     let message = commit_message(summary, description);
-    let is_merge_state = service.repo.state() == RepositoryState::Merge;
-
-    let mut index = service
-        .repo
-        .index()
-        .map_err(|e| wrap_git2_error("open repository index", e))?;
-    let tree_id = index
-        .write_tree()
-        .map_err(|e| wrap_git2_error("write commit tree", e))?;
-    let tree = service
-        .repo
-        .find_tree(tree_id)
-        .map_err(|e| wrap_git2_error("find commit tree", e))?;
-    // The snapshot builder reads MERGE_HEAD leniently for display; on the commit
-    // path a failed read must surface as an error rather than silently dropping a
-    // merge parent, so resolve the parent hashes fallibly here.
-    let parent_hashes = commit_parent_hashes(service)?;
-    let parents = commit_parents(service, &parent_hashes)?;
-
-    if let Some(parent) = parents.first() {
-        let parent_tree = parent
-            .tree()
-            .map_err(|e| wrap_git2_error("read parent tree", e))?;
-        if !is_merge_state && parent_tree.id() == tree.id() {
-            return Err(GitError::Other(
-                "there are no changes to commit".to_string(),
-            ));
-        }
+    let args = if summary.is_empty() {
+        ["commit", "--no-edit", "--cleanup=strip"]
+    } else {
+        ["commit", "-m", &message]
+    };
+    let output = spawn_git_command(&command_dir(&service.repo)?, &args, "commit")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(GitError::Other(format!(
+            "commit failed: {}",
+            process_output_detail(&output)
+        )))
     }
-
-    let parent_refs = parents.iter().collect::<Vec<_>>();
-    service
-        .repo
-        .commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            &message,
-            &tree,
-            &parent_refs,
-        )
-        .map_err(|e| wrap_git2_error("create commit", e))?;
-    if is_merge_state {
-        service
-            .repo
-            .cleanup_state()
-            .map_err(|e| wrap_git2_error("clean merge state", e))?;
-    }
-    Ok(())
 }
 
 pub(super) fn stage_file(service: &mut GitService, path: &str) -> Result<(), GitError> {
-    if path.is_empty() {
-        return Err(GitError::Other("file path cannot be empty".to_string()));
-    }
-
-    let mut index = service
-        .repo
-        .index()
-        .map_err(|e| wrap_git2_error("open repository index", e))?;
-    let relative_path = Path::new(path);
-    let exists_in_workdir = service
-        .repo
-        .workdir()
-        .map(|workdir| workdir.join(relative_path).symlink_metadata().is_ok())
-        .unwrap_or(false);
-    if exists_in_workdir {
-        index
-            .add_path(relative_path)
-            .map_err(|e| wrap_git2_error(&format!("stage file '{path}'"), e))?;
-    } else {
-        index
-            .remove_path(relative_path)
-            .map_err(|e| wrap_git2_error(&format!("stage deletion '{path}'"), e))?;
-    }
-    index
-        .write()
-        .map_err(|e| wrap_git2_error("write repository index", e))?;
-    Ok(())
+    stage_files(service, &[path.to_owned()])
 }
 
-pub(super) fn stage_files(service: &mut GitService, paths: &[String]) -> Result<(), GitError> {
-    if paths.is_empty() {
-        return Ok(());
-    }
-    if paths.iter().any(|path| path.is_empty()) {
-        return Err(GitError::Other("file path cannot be empty".to_string()));
-    }
-
-    let mut index = service
-        .repo
-        .index()
-        .map_err(|e| wrap_git2_error("open repository index", e))?;
-    let workdir = service.repo.workdir().map(|workdir| workdir.to_path_buf());
-    for path in paths {
-        let relative_path = Path::new(path);
-        let exists_in_workdir = workdir
-            .as_ref()
-            .map(|workdir| workdir.join(relative_path).symlink_metadata().is_ok())
-            .unwrap_or(false);
-        if exists_in_workdir {
-            index
-                .add_path(relative_path)
-                .map_err(|e| wrap_git2_error(&format!("stage file '{path}'"), e))?;
-        } else {
-            index
-                .remove_path(relative_path)
-                .map_err(|e| wrap_git2_error(&format!("stage deletion '{path}'"), e))?;
-        }
-    }
-    index
-        .write()
-        .map_err(|e| wrap_git2_error("write repository index", e))?;
-    Ok(())
+pub(super) fn stage_files(service: &GitService, paths: &[String]) -> Result<(), GitError> {
+    let paths = expand_rename_sources(service, paths.to_vec(), StatusShow::Workdir)?;
+    update_index_paths(service, &["add", "--all"], &paths)
 }
 
 pub(super) fn stage_all_dirty_changes(service: &mut GitService) -> Result<(), GitError> {
@@ -244,46 +151,77 @@ pub(super) fn stage_all_dirty_changes(service: &mut GitService) -> Result<(), Gi
         .index()
         .map_err(|e| wrap_git2_error("open repository index", e))?;
     index
-        .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
-        .map_err(|e| wrap_git2_error("stage changes", e))?;
-    index
-        .update_all(["."].iter(), None)
-        .map_err(|e| wrap_git2_error("stage deletions", e))?;
-    index
-        .write()
-        .map_err(|e| wrap_git2_error("write repository index", e))?;
-    Ok(())
+        .read(true)
+        .map_err(|e| wrap_git2_error("read repository index", e))?;
+    if index.has_conflicts() {
+        // The Stage All button belongs to the unstaged section. Only the
+        // explicit resolution actions should remove unmerged index entries.
+        let mut options = StatusOptions::new();
+        options.include_untracked(true).recurse_untracked_dirs(true);
+        let statuses = service
+            .repo
+            .statuses(Some(&mut options))
+            .map_err(|e| wrap_git2_error("inspect unstaged files", e))?;
+        let paths = statuses
+            .iter()
+            .filter(|entry| {
+                !entry.status().is_conflicted() && unstaged_change_kind(entry.status()).is_some()
+            })
+            .map(|entry| status_path(&entry, StatusShow::Workdir))
+            .collect::<Vec<_>>();
+        return update_index_paths(service, &["add", "--all"], &paths);
+    }
+    let output = spawn_git_command(
+        &command_dir(&service.repo)?,
+        &["add", "--all"],
+        "stage all changes",
+    )?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(GitError::Other(process_output_detail(&output)))
+    }
 }
 
 pub(super) fn unstage_file(service: &mut GitService, path: &str) -> Result<(), GitError> {
-    if path.is_empty() {
-        return Err(GitError::Other("file path cannot be empty".to_string()));
-    }
-
-    let paths = expand_rename_sources(service, vec![path.to_string()]);
-    let head = head_object(service)?;
-    service
-        .repo
-        .reset_default(head.as_ref(), paths.iter().map(String::as_str))
-        .map_err(|e| wrap_git2_error(&format!("unstage file '{path}'"), e))?;
-    Ok(())
+    unstage_files(service, &[path.to_owned()])
 }
 
-pub(super) fn unstage_files(service: &mut GitService, paths: &[String]) -> Result<(), GitError> {
+pub(super) fn unstage_files(service: &GitService, paths: &[String]) -> Result<(), GitError> {
+    let paths = expand_rename_sources(service, paths.to_vec(), StatusShow::Index)?;
+    update_index_paths(service, &["reset", "--quiet"], &paths)
+}
+
+// Git takes the index lock for the entire operation. Literal NUL-delimited
+// paths preserve wildcard characters and newlines in multiselections.
+fn update_index_paths(
+    service: &GitService,
+    args: &[&str],
+    paths: &[String],
+) -> Result<(), GitError> {
     if paths.is_empty() {
         return Ok(());
     }
-    if paths.iter().any(|path| path.is_empty()) {
-        return Err(GitError::Other("file path cannot be empty".to_string()));
+    if paths.iter().any(|p| p.is_empty() || p.contains('\0')) {
+        return Err(GitError::Other("invalid file path".into()));
     }
-
-    let paths = expand_rename_sources(service, paths.to_vec());
-    let head = head_object(service)?;
-    service
-        .repo
-        .reset_default(head.as_ref(), paths.iter().map(String::as_str))
-        .map_err(|e| wrap_git2_error("unstage files", e))?;
-    Ok(())
+    let mut command = std::process::Command::new("git");
+    command
+        .current_dir(command_dir(&service.repo)?)
+        .arg("--literal-pathspecs")
+        .args(args)
+        .args(["--pathspec-from-file=-", "--pathspec-file-nul"]);
+    let mut input = Vec::new();
+    for path in paths {
+        input.extend_from_slice(path.as_bytes());
+        input.push(0);
+    }
+    let output = spawn_program(command, &input, "update index paths")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(GitError::Other(process_output_detail(&output)))
+    }
 }
 
 pub(super) fn unstage_all_dirty_changes(service: &mut GitService) -> Result<(), GitError> {
@@ -295,17 +233,7 @@ pub(super) fn unstage_all_dirty_changes(service: &mut GitService) -> Result<(), 
         .into_iter()
         .map(|file| file.path)
         .collect::<Vec<_>>();
-    if paths.is_empty() {
-        return Ok(());
-    }
-
-    let paths = expand_rename_sources(service, paths);
-    let head = head_object(service)?;
-    service
-        .repo
-        .reset_default(head.as_ref(), paths.iter().map(String::as_str))
-        .map_err(|e| wrap_git2_error("unstage changes", e))?;
-    Ok(())
+    unstage_files(service, &paths)
 }
 
 pub(super) fn discard_file(service: &mut GitService, path: &str) -> Result<(), GitError> {
@@ -313,14 +241,10 @@ pub(super) fn discard_file(service: &mut GitService, path: &str) -> Result<(), G
         return Err(GitError::Other("file path cannot be empty".to_string()));
     }
 
-    let paths = expand_rename_sources(service, vec![path.to_string()]);
+    let paths = expand_rename_sources(service, vec![path.to_string()], StatusShow::Workdir)?;
+    let paths = expand_rename_sources(service, paths, StatusShow::Index)?;
     let head = head_object(service)?;
-    if head.is_some() {
-        service
-            .repo
-            .reset_default(head.as_ref(), paths.iter().map(String::as_str))
-            .map_err(|e| wrap_git2_error(&format!("reset index for '{path}'"), e))?;
-    }
+    update_index_paths(service, &["reset", "--quiet"], &paths)?;
 
     let head_tree = head.as_ref().and_then(|object| object.peel_to_tree().ok());
     for path in &paths {
@@ -330,12 +254,14 @@ pub(super) fn discard_file(service: &mut GitService, path: &str) -> Result<(), G
             .is_some();
 
         if in_head {
-            let mut checkout = git2::build::CheckoutBuilder::new();
-            checkout.force().path(path);
-            service
-                .repo
-                .checkout_head(Some(&mut checkout))
-                .map_err(|e| wrap_git2_error(&format!("restore '{path}'"), e))?;
+            let output = spawn_git_command(
+                &command_dir(&service.repo)?,
+                &["checkout-index", "--force", "--", path],
+                "restore file",
+            )?;
+            if !output.status.success() {
+                return Err(GitError::Other(process_output_detail(&output)));
+            }
         } else if let Some(workdir) = service.repo.workdir() {
             let full = workdir.join(Path::new(path));
             if full.symlink_metadata().is_ok() {
@@ -349,92 +275,82 @@ pub(super) fn discard_file(service: &mut GitService, path: &str) -> Result<(), G
 }
 
 pub(super) fn discard_all_dirty_changes(service: &mut GitService) -> Result<(), GitError> {
-    let mut untracked_paths: Vec<String> = Vec::new();
-    {
-        let mut options = StatusOptions::new();
-        options
-            .show(StatusShow::IndexAndWorkdir)
-            .include_untracked(true)
-            .recurse_untracked_dirs(true);
-        if let Ok(statuses) = service.repo.statuses(Some(&mut options)) {
-            for entry in statuses.iter() {
-                let status = entry.status();
-                if status.is_wt_new() && !status.is_index_new() {
-                    if let Some(path) = entry.path() {
-                        untracked_paths.push(path.to_string());
-                    }
-                }
-            }
-        }
-    }
-
+    let repo_dir = command_dir(&service.repo)?;
     if let Some(head) = head_object(service)? {
         service
             .repo
             .reset(&head, git2::ResetType::Hard, None)
             .map_err(|e| wrap_git2_error("discard changes", e))?;
-    }
-
-    if let Some(workdir) = service.repo.workdir().map(|p| p.to_path_buf()) {
-        for path in untracked_paths {
-            let full = workdir.join(&path);
-            let _ = std::fs::remove_file(&full);
+    } else {
+        let output = spawn_git_command(&repo_dir, &["read-tree", "--empty"], "clear unborn index")?;
+        if !output.status.success() {
+            return Err(GitError::Other(process_output_detail(&output)));
         }
     }
-
-    Ok(())
+    // Ask Git which paths are still untracked after restoring the index.
+    // It also knows how to preserve ignored files and nested repositories.
+    let output = spawn_git_command(&repo_dir, &["clean", "-fd"], "discard untracked files")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(GitError::Other(process_output_detail(&output)))
+    }
 }
 
 pub(super) fn mark_conflict_resolved(service: &mut GitService, path: &str) -> Result<(), GitError> {
-    stage_file(service, path)
+    update_index_paths(service, &["add", "--all"], &[path.to_owned()])
 }
 
 pub(super) fn mark_all_conflicts_resolved(service: &mut GitService) -> Result<(), GitError> {
-    let paths = conflict_paths(service)?;
-    for path in paths {
-        stage_file(service, &path)?;
-    }
-    Ok(())
-}
-
-fn conflict_paths(service: &GitService) -> Result<Vec<String>, GitError> {
-    let index = service
+    let mut index = service
         .repo
         .index()
         .map_err(|e| wrap_git2_error("open repository index", e))?;
+    index
+        .read(true)
+        .map_err(|e| wrap_git2_error("read repository index", e))?;
     let conflicts = index
         .conflicts()
         .map_err(|e| wrap_git2_error("read index conflicts", e))?;
     let mut paths = Vec::new();
-
     for conflict in conflicts {
         let conflict = conflict.map_err(|e| wrap_git2_error("read index conflict", e))?;
-        let path = conflict
-            .our
-            .as_ref()
-            .or(conflict.their.as_ref())
-            .or(conflict.ancestor.as_ref())
-            .map(|entry| String::from_utf8_lossy(&entry.path).into_owned())
-            .unwrap_or_default();
-        if !path.is_empty() && !paths.iter().any(|existing| existing == &path) {
-            paths.push(path);
+        for entry in [conflict.our, conflict.their, conflict.ancestor]
+            .into_iter()
+            .flatten()
+        {
+            paths.push(
+                String::from_utf8(entry.path)
+                    .map_err(|_| GitError::Other("conflicted filename is not UTF-8".into()))?,
+            );
         }
     }
-
-    paths.sort();
-    Ok(paths)
+    paths.sort_unstable();
+    paths.dedup();
+    update_index_paths(service, &["add", "--all"], &paths)
 }
 
-fn expand_rename_sources(service: &GitService, paths: Vec<String>) -> Vec<String> {
+fn expand_rename_sources(
+    service: &GitService,
+    mut paths: Vec<String>,
+    side: StatusShow,
+) -> Result<Vec<String>, GitError> {
+    if paths.is_empty() {
+        return Ok(paths);
+    }
     let mut options = StatusOptions::new();
-    options.show(StatusShow::Index).renames_head_to_index(true);
-    let Ok(statuses) = service.repo.statuses(Some(&mut options)) else {
-        return paths;
-    };
-
-    let mut expanded = paths;
+    options
+        .show(side)
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .renames_head_to_index(true)
+        .renames_index_to_workdir(true);
+    let statuses = service
+        .repo
+        .statuses(Some(&mut options))
+        .map_err(|e| wrap_git2_error("inspect renames", e))?;
     for entry in statuses.iter() {
-        let Some(delta) = entry.head_to_index() else {
+        let Some(delta) = status_delta(&entry, side) else {
             continue;
         };
         let (Some(old), Some(new)) = (delta.old_file().path(), delta.new_file().path()) else {
@@ -445,11 +361,11 @@ fn expand_rename_sources(service: &GitService, paths: Vec<String>) -> Vec<String
         }
         let old = old.to_string_lossy().into_owned();
         let new = new.to_string_lossy().into_owned();
-        if expanded.contains(&new) && !expanded.contains(&old) {
-            expanded.push(old);
+        if paths.contains(&new) && !paths.contains(&old) {
+            paths.push(old);
         }
     }
-    expanded
+    Ok(paths)
 }
 
 fn head_object(service: &GitService) -> Result<Option<git2::Object<'_>>, GitError> {
@@ -498,10 +414,16 @@ fn unstaged_change_kind(status: Status) -> Option<ChangeKind> {
     }
 }
 
-fn status_path(entry: &StatusEntry<'_>) -> String {
-    entry
-        .index_to_workdir()
-        .or_else(|| entry.head_to_index())
+fn status_delta<'a>(entry: &'a StatusEntry<'_>, side: StatusShow) -> Option<git2::DiffDelta<'a>> {
+    match side {
+        StatusShow::Index => entry.head_to_index(),
+        StatusShow::Workdir => entry.index_to_workdir(),
+        StatusShow::IndexAndWorkdir => entry.index_to_workdir().or_else(|| entry.head_to_index()),
+    }
+}
+
+fn status_path(entry: &StatusEntry<'_>, side: StatusShow) -> String {
+    status_delta(entry, side)
         .and_then(|delta| {
             delta
                 .new_file()
@@ -520,20 +442,6 @@ fn commit_message(summary: &str, description: &str) -> String {
     } else {
         format!("{}\n\n{}", summary, description)
     }
-}
-
-fn commit_parents<'repo>(
-    service: &'repo GitService,
-    parent_hashes: &[String],
-) -> Result<Vec<git2::Commit<'repo>>, GitError> {
-    parent_hashes
-        .iter()
-        .map(|hash| {
-            let oid = Oid::from_str(hash)
-                .map_err(|e| GitError::Other(format!("invalid parent oid '{hash}': {e}")))?;
-            find_commit_or(&service.repo, oid)
-        })
-        .collect()
 }
 
 fn merge_head_oids(service: &GitService) -> Result<Vec<Oid>, GitError> {
@@ -555,6 +463,99 @@ fn merge_head_oids(service: &GitService) -> Result<Vec<Oid>, GitError> {
 mod tests {
     use super::*;
     use crate::services::test_support::{commit_all, init_test_repo, write_file};
+
+    #[test]
+    fn renames_show_the_actual_index_and_worktree_paths_and_stage_both_sides() {
+        let (temp, repo) = init_test_repo("rename_twice");
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        std::fs::rename(temp.path.join("tracked.txt"), temp.path.join("middle.txt")).unwrap();
+        stage_file(&mut service, "middle.txt").unwrap();
+        std::fs::rename(temp.path.join("middle.txt"), temp.path.join("final.txt")).unwrap();
+        let changes = load_dirty_snapshot(&service).unwrap();
+        assert_eq!(changes.staged_files.len(), 1);
+        assert_eq!(changes.staged_files[0].path, "middle.txt");
+        assert_eq!(changes.unstaged_files.len(), 1);
+        assert_eq!(changes.unstaged_files[0].path, "final.txt");
+        stage_file(&mut service, "final.txt").unwrap();
+        let index = git2::Repository::open(repo.path())
+            .unwrap()
+            .index()
+            .unwrap();
+        assert_eq!(index.len(), 1);
+        assert!(index.get_path(Path::new("final.txt"), 0).is_some());
+    }
+
+    #[test]
+    fn discarding_a_literal_filename_preserves_other_staged_and_worktree_edits() {
+        let (temp, repo) = init_test_repo("discard_literal");
+        for path in ["item[1].txt", "item1.txt"] {
+            write_file(&temp.path, path, "original");
+        }
+        commit_all(&repo, "add files");
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        for path in ["item[1].txt", "item1.txt"] {
+            write_file(&temp.path, path, "staged");
+        }
+        stage_all_dirty_changes(&mut service).unwrap();
+        write_file(&temp.path, "item1.txt", "working");
+        discard_file(&mut service, "item[1].txt").unwrap();
+        assert_eq!(
+            std::fs::read(temp.path.join("item[1].txt")).unwrap(),
+            b"original"
+        );
+        assert_eq!(
+            std::fs::read(temp.path.join("item1.txt")).unwrap(),
+            b"working"
+        );
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        let entry = index.get_path(Path::new("item1.txt"), 0).unwrap();
+        assert_eq!(repo.find_blob(entry.id).unwrap().content(), b"staged");
+    }
+
+    #[test]
+    fn discard_all_restores_recreated_file_and_preserves_ignored_files() {
+        let (temp, repo) = init_test_repo("discard_recreated");
+        write_file(&temp.path, ".gitignore", "ignored\n");
+        commit_all(&repo, "ignore generated file");
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        std::fs::remove_file(temp.path.join("tracked.txt")).unwrap();
+        stage_file(&mut service, "tracked.txt").unwrap();
+        write_file(&temp.path, "tracked.txt", "replacement");
+        write_file(&temp.path, "ignored", "keep");
+        write_file(&temp.path, "untracked", "discard");
+        discard_all_dirty_changes(&mut service).unwrap();
+        assert_eq!(
+            std::fs::read(temp.path.join("tracked.txt")).unwrap(),
+            b"base\n"
+        );
+        assert_eq!(std::fs::read(temp.path.join("ignored")).unwrap(), b"keep");
+        assert!(!temp.path.join("untracked").exists());
+        assert!(load_dirty_snapshot(&service).is_none());
+    }
+
+    #[test]
+    fn unborn_branch_can_unstage_and_discard_files_before_the_first_commit() {
+        let temp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(temp.path()).unwrap();
+        std::fs::write(repo.path().join("info/exclude"), "ignored\n").unwrap();
+        let mut service = GitService::open(temp.path().to_str().unwrap()).unwrap();
+        for path in ["ignored", "first", "second"] {
+            write_file(temp.path(), path, "file");
+        }
+        stage_all_dirty_changes(&mut service).unwrap();
+        unstage_file(&mut service, "first").unwrap();
+        assert_eq!(
+            load_dirty_snapshot(&service).unwrap().staged_files[0].path,
+            "second"
+        );
+        discard_all_dirty_changes(&mut service).unwrap();
+        assert_eq!(std::fs::read(temp.path().join("ignored")).unwrap(), b"file");
+        assert!(!temp.path().join("first").exists());
+        assert!(!temp.path().join("second").exists());
+        assert!(repo.index().unwrap().is_empty());
+        assert!(repo.head().is_err());
+    }
 
     /// Unstaging a staged rename must clear both the new path (the delta's
     /// visible path) and the old path's staged deletion; otherwise "unstage

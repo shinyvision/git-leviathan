@@ -75,6 +75,7 @@ pub fn build(app: &App) -> Subscription<Message> {
 
     let sigterm_sub = Subscription::run(sigterm_stream);
     let eager_grammar_install_sub = Subscription::run(eager_grammar_install_stream);
+    let hook_report_sub = Subscription::run(hook_report_stream);
 
     let mut subs = vec![
         app_events,
@@ -84,6 +85,7 @@ pub fn build(app: &App) -> Subscription<Message> {
         plugin_runtime_sub,
         sigterm_sub,
         eager_grammar_install_sub,
+        hook_report_sub,
     ];
     subs.extend(file_watcher_subs);
 
@@ -137,6 +139,20 @@ fn eager_grammar_install_stream() -> impl iced::futures::Stream<Item = Message> 
                 let _ = sender.try_send(Message::App(AppMessage::EagerGrammarInstallRequested(
                     language,
                 )));
+            }
+        },
+    )
+}
+
+fn hook_report_stream() -> impl iced::futures::Stream<Item = Message> {
+    iced::stream::channel(
+        16,
+        |mut sender: iced::futures::channel::mpsc::Sender<Message>| async move {
+            let Some(mut rx) = crate::services::take_hook_report_receiver() else {
+                return;
+            };
+            while let Some(report) = rx.recv().await {
+                let _ = sender.try_send(Message::App(AppMessage::HookReported(report)));
             }
         },
     )

@@ -1,8 +1,7 @@
-use super::helpers::{
-    command_dir, find_commit_or, find_reference_or, spawn_git_command, spawn_git_command_with_env,
-    wrap_git2_error,
-};
-use super::squash::{maybe_stash_workdir, restore_stash};
+use super::autostash::{maybe_stash_workdir, restore_stash};
+use super::helpers::{command_dir, find_commit_or, find_reference_or, wrap_git2_error};
+use super::hooks::{self, PostHook, RewriteCommand};
+use super::process::{spawn_git_command, spawn_git_command_with_env};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -48,7 +47,18 @@ pub(super) fn reword_commit(
 
     restore_stash(service, created_stash, "reword");
 
-    result
+    // Amending HEAD goes through libgit2. Rewording an older commit runs
+    // `git rebase`, which runs the hook itself.
+    if let Ok(Some(amended)) = result {
+        hooks::run(
+            &service.repo,
+            PostHook::Rewrite {
+                command: RewriteCommand::Amend,
+                rewritten: vec![amended],
+            },
+        );
+    }
+    result.map(|_| ())
 }
 
 fn reword_commit_inner(
@@ -57,7 +67,7 @@ fn reword_commit_inner(
     new_message: &str,
     head_oid: git2::Oid,
     repo_dir: &str,
-) -> Result<(), GitError> {
+) -> Result<Option<(git2::Oid, git2::Oid)>, GitError> {
     let target_commit = find_commit_or(&service.repo, target_oid)?;
     let author = target_commit.author().to_owned();
     let committer = service.repo.signature().unwrap_or_else(|_| author.clone());
@@ -92,7 +102,7 @@ fn reword_commit_inner(
             .repo
             .checkout_head(Some(&mut git2::build::CheckoutBuilder::new().force()))
             .map_err(|e| wrap_git2_error("checkout after amend", e))?;
-        return Ok(());
+        return Ok(Some((head_oid, new_oid)));
     }
 
     if parent_refs.is_empty() {
@@ -135,7 +145,7 @@ fn reword_commit_inner(
         )));
     }
 
-    Ok(())
+    Ok(None)
 }
 
 fn is_reachable_via_first_parent(

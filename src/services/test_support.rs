@@ -174,3 +174,28 @@ pub(crate) fn stash_names(repo: &mut Repository) -> Vec<String> {
     .expect("failed to iterate stash");
     names
 }
+
+/// Install an executable hook that appends its name, arguments and stdin to
+/// `hook.log` in the git directory, prints `say` in green and exits with
+/// `exit`. The log lives next to the hooks folder, so it never shows up as a
+/// working-tree change and linked worktrees log to the same file.
+#[cfg(unix)]
+pub(crate) fn install_logging_hook(repo: &Repository, name: &str, say: &str, exit: i32) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = repo.path().join("hooks");
+    fs::create_dir_all(&dir).expect("failed to create hooks dir");
+    let path = dir.join(name);
+    fs::write(
+        &path,
+        format!(
+            "#!/bin/sh\nlog=\"$(dirname \"$0\")/../hook.log\"\necho \"{name} $*\" >> \"$log\"\ncat >> \"$log\"\nprintf '\\033[32m{say}\\033[0m'\nexit {exit}\n"
+        ),
+    )
+    .expect("failed to write hook");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("failed to chmod hook");
+}
+
+/// What the hooks from `install_logging_hook` logged, or "" when none ran.
+pub(crate) fn read_hook_log(repo: &Repository) -> String {
+    fs::read_to_string(repo.path().join("hook.log")).unwrap_or_default()
+}

@@ -117,7 +117,7 @@ tar -xzf git-leviathan-<version>-aarch64-apple-darwin.tar.gz
 mv "git-leviathan-<version>-aarch64-apple-darwin/Git Leviathan.app" /Applications/
 ```
 
-The app is **not signed or notarized**. The first time you launch it, macOS will block it — right-click `Git Leviathan.app` → **Open**, then confirm. After that it launches normally.
+The macOS release workflow applies an ad hoc signature to the app bundle. Releases do not currently have Apple Developer ID signing or notarization. Apple explains how to distinguish an unidentified developer warning from a damaged app alert. [Apple’s guide to opening downloaded apps](https://support.apple.com/en-us/102445)
 
 ### Windows
 

@@ -39,5 +39,6 @@ pub trait WorkingTreeOps: RepoRead {
         &self,
         file_path: &str,
         content: &str,
+        source_hash: [u8; 32],
     ) -> Result<RepoSnapshot, GitError>;
 }

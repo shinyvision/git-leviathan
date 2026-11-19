@@ -369,6 +369,7 @@ mod tests {
 
     fn dirty(staged: Vec<&str>, unstaged: Vec<&str>) -> DirtySnapshot {
         DirtySnapshot {
+            operation: crate::core::WorkingTreeOperation::None,
             conflicted_files: vec![],
             staged_files: staged
                 .into_iter()

@@ -264,6 +264,16 @@ pub(in crate::screens::repository) fn restore_selection_by_hash(
             let anchor = new_indices[0];
             data.selection.replace_with_set(anchor, &new_indices);
         }
+        (None, true)
+            if prior_anchor_hash.is_none()
+                && data
+                    .snapshot
+                    .commits()
+                    .first()
+                    .is_some_and(|c| c.operation != crate::core::WorkingTreeOperation::None) =>
+        {
+            data.selection.replace_with_single(0);
+        }
         _ => {
             let head_idx = data
                 .snapshot
@@ -300,6 +310,23 @@ pub(in crate::screens::repository) fn handle_remote_checkout(
     }
 }
 
+/// Focus the operation controls when a merge, pull or rebase pauses for input.
+pub(super) fn handle_integration_result(
+    screen: &mut RepositoryScreen,
+    loaded: LoadedRepo,
+) -> Task<Message> {
+    let paused = loaded
+        .projection
+        .commits
+        .first()
+        .is_some_and(|commit| commit.operation != crate::core::WorkingTreeOperation::None);
+    let task = handle_repo_loaded(screen, loaded);
+    if paused {
+        screen.data.selection.replace_with_single(0);
+    }
+    task
+}
+
 pub(in crate::screens::repository) fn handle_branch_merge_outcome(
     screen: &mut RepositoryScreen,
     source: String,
@@ -307,13 +334,13 @@ pub(in crate::screens::repository) fn handle_branch_merge_outcome(
     outcome: LoadedBranchMergeOutcome,
 ) -> Task<Message> {
     match outcome {
-        LoadedBranchMergeOutcome::Merged(_) => screen.reload_task(),
-        LoadedBranchMergeOutcome::Conflicted(_) => {
-            screen
-                .panels
-                .detail
-                .set_commit_message_from_merge(&source, &target);
-            screen.reload_refs_task()
+        LoadedBranchMergeOutcome::Merged(loaded) => handle_repo_loaded(screen, loaded),
+        LoadedBranchMergeOutcome::Conflicted(loaded) => {
+            screen.panels.detail.set_commit_message_from_merge(
+                source.strip_prefix("refs/remotes/").unwrap_or(&source),
+                &target,
+            );
+            handle_integration_result(screen, loaded)
         }
     }
 }

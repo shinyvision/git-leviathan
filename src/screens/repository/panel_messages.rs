@@ -55,16 +55,11 @@ pub enum CenterAction {
         target_branch: String,
     },
     /// Rebase the checked-out branch onto another ref.
-    /// `target_ref` is what gets handed to `git rebase` — a local shorthand
-    /// or `"<remote>/<branch>"` for remote targets. `target_display` is the
-    /// human-readable label shown in toasts.
+    /// Keep the fully qualified reference distinct from the display label.
     BranchRebaseRequested {
         source_branch: String,
         target_ref: String,
         target_display: String,
-        /// Exact remote ref for remote targets. Mirrors `target_ref` when the
-        /// target is remote and is kept explicit for exact-ref service wiring.
-        target_remote_ref: Option<String>,
     },
     /// "Reset ... to this commit" parent item clicked — opens submenu.
     ResetSubmenuRequested {
@@ -215,6 +210,7 @@ pub enum DetailAction {
     DiscardFileRequested(String),
     CommitConfirmed,
     AbortMergeConfirmed,
+    ResumeRebase(crate::services::git::RebaseAction),
     CommitFileClicked {
         commit_idx: usize,
         path: String,

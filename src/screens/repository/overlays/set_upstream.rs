@@ -138,6 +138,10 @@ pub(crate) fn is_dialog(dialog: &Dialog) -> bool {
     dialog.id.0 == DIALOG_ID && dialog.owner.is_native(OWNER_ID)
 }
 
+pub(crate) fn local_branch(dialog: &Dialog) -> Option<String> {
+    dialog.data_value(DATA_BRANCH_NAME).map(str::to_owned)
+}
+
 pub(crate) fn selected_remote_name(dialog: &Dialog) -> Option<String> {
     if !is_dialog(dialog) {
         return None;

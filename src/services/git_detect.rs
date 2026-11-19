@@ -1,5 +1,5 @@
+use crate::services::git::process::capture_program;
 use crate::services::git_error::GitError;
-use crate::utils::configure_background_command;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -103,16 +103,7 @@ fn xcode_clt_installed() -> bool {
 fn run_git_version(path: &Path) -> Option<String> {
     let mut cmd = Command::new(path);
     cmd.arg("--version");
-    configure_background_command(&mut cmd);
-
-    let child = cmd
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
-        .ok()?;
-
-    let output = wait_with_timeout(child, Duration::from_secs(3))?;
+    let output = capture_program(cmd, "git --version", Some(Duration::from_secs(3))).ok()?;
     if !output.status.success() {
         return None;
     }
@@ -146,81 +137,26 @@ pub fn resolve_primary_and_active(path: &Path) -> Result<(PathBuf, PathBuf), Git
         ))
     })?;
 
-    let canonical_primary = if repo.is_worktree() {
-        // repo.path() for a secondary worktree is <primary>/.git/worktrees/<name>/.
-        // Walk back: strip the worktree-name component, assert the parent is literally
-        // named "worktrees", then strip that and assert its parent is literally ".git".
-        let git_wt_dir = repo.path();
-        let worktrees_dir = git_wt_dir.parent().ok_or_else(|| {
-            GitError::Other(format!(
-                "worktree git dir '{}' has no parent",
-                git_wt_dir.display(),
-            ))
-        })?;
-        if worktrees_dir
-            .file_name()
-            .map(|n| n != "worktrees")
-            .unwrap_or(true)
-        {
-            return Err(GitError::Other(format!(
-                "unexpected worktree layout: expected 'worktrees' component at '{}'",
-                worktrees_dir.display(),
-            )));
-        }
-        let git_dir = worktrees_dir.parent().ok_or_else(|| {
-            GitError::Other(format!("'{}' has no parent", worktrees_dir.display(),))
-        })?;
-        if git_dir.file_name().map(|n| n != ".git").unwrap_or(true) {
-            return Err(GitError::Other(format!(
-                "unexpected worktree layout: expected '.git' component at '{}'",
-                git_dir.display(),
-            )));
-        }
-        let primary_workdir = git_dir.parent().ok_or_else(|| {
-            GitError::Other(format!(
-                "primary '.git' dir '{}' has no parent workdir",
-                git_dir.display(),
-            ))
-        })?;
-        primary_workdir.canonicalize().map_err(|e| {
-            GitError::Other(format!(
-                "canonicalize primary '{}': {e}",
-                primary_workdir.display()
-            ))
-        })?
-    } else {
-        // Primary repo: workdir() is the workdir itself.
-        let workdir = repo
-            .workdir()
-            .ok_or_else(|| GitError::Other("bare repository has no workdir".to_string()))?
-            .to_path_buf();
-        workdir.canonicalize().map_err(|e| {
-            GitError::Other(format!("canonicalize primary '{}': {e}", workdir.display()))
-        })?
-    };
-
-    Ok((canonical_primary, canonical_active))
+    Ok((primary_repository_path(&repo)?, canonical_active))
 }
 
-fn wait_with_timeout(
-    mut child: std::process::Child,
-    timeout: Duration,
-) -> Option<std::process::Output> {
-    let start = std::time::Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => return child.wait_with_output().ok(),
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return None;
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            }
-            Err(_) => return None,
-        }
-    }
+/// Use Git's common directory for linked worktrees. Its name and location
+/// are configurable and a bare primary has no checked-out working tree.
+pub(super) fn primary_repository_path(repo: &git2::Repository) -> Result<PathBuf, GitError> {
+    let common_repo;
+    let primary = if repo.is_worktree() {
+        let common = std::fs::read_to_string(repo.path().join("commondir"))
+            .map_err(|e| GitError::Other(format!("read worktree common directory: {e}")))?;
+        common_repo =
+            git2::Repository::open(repo.path().join(common.trim_end_matches(['\r', '\n'])))
+                .map_err(|e| GitError::Other(format!("open worktree common directory: {e}")))?;
+        &common_repo
+    } else {
+        repo
+    };
+    let path = primary.workdir().unwrap_or_else(|| primary.path());
+    path.canonicalize()
+        .map_err(|e| GitError::Other(format!("canonicalize primary '{}': {e}", path.display())))
 }
 
 #[cfg(test)]

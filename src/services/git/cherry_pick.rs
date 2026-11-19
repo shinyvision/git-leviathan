@@ -1,8 +1,6 @@
-use super::helpers::{
-    command_dir, find_commit_or, index_has_conflicts, output_mentions_conflict, spawn_git_command,
-    spawn_git_command_with_env,
-};
-use super::squash::{maybe_stash_workdir, restore_stash};
+use super::autostash::{maybe_stash_workdir, restore_stash};
+use super::helpers::{command_dir, find_commit_or, index_has_conflicts, output_mentions_conflict};
+use super::process::{spawn_git_command, spawn_git_command_with_env};
 use super::GitService;
 use crate::services::git_error::GitError;
 
@@ -17,6 +15,11 @@ pub(super) fn cherry_pick_commit(
     commit_hash: &str,
     immediate_commit: bool,
 ) -> Result<CherryPickStatus, GitError> {
+    if service.repo.state() != git2::RepositoryState::Clean {
+        return Err(GitError::Other(
+            "finish the current repository operation before cherry-picking".into(),
+        ));
+    }
     let oid = git2::Oid::from_str(commit_hash)
         .map_err(|e| GitError::Other(format!("invalid commit hash '{}': {}", commit_hash, e)))?;
     let _ = find_commit_or(&service.repo, oid)?;
@@ -32,7 +35,7 @@ pub(super) fn cherry_pick_commit(
     let created_stash = if immediate_commit {
         maybe_stash_workdir(service, "before cherry-pick")?
     } else {
-        false
+        None
     };
 
     // git2 has no first-class cherry-pick path that matches CLI behaviour for

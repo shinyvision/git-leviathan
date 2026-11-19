@@ -22,7 +22,16 @@ pub(super) fn on_write_repo_loaded(
     if !screen.finish_git_write(operation_id) {
         return Task::none();
     }
-    let task = on_repo_loaded(screen, result);
+    let task = match result {
+        Ok(loaded) => on_repo_loaded(screen, Ok(loaded)),
+        Err(error) => Task::batch([
+            screen.reload_task(),
+            Task::done(Message::show_toast(ToastData::error(
+                "Repository Operation Failed",
+                error.to_string(),
+            ))),
+        ]),
+    };
     super::helpers::pending_reload_task_after_write(screen, task)
 }
 
@@ -158,20 +167,20 @@ pub(super) fn on_more_commits_loaded(
         .field("kind", "more_commits")
         .field("result_version", repo_version)
         .field("active_version", screen.panels.center.repo_version);
+    if repo_version != screen.panels.center.repo_version {
+        span.finish_with("applied", false);
+        return Task::none();
+    }
+    screen.panels.center.loading_more_commits = false;
     match result {
         Ok(loaded) => {
             let has_more_commits = loaded.has_more_commits;
             screen.data.replace_loaded(loaded);
-            let accepted = screen.panels.center.on_more_commits_loaded(
-                repo_version,
+            screen.panels.center.on_more_commits_loaded(
                 screen.data.snapshot.commits(),
                 has_more_commits,
                 &mut screen.data.branch_popout,
             );
-            if !accepted {
-                span.finish_with("applied", false);
-                return Task::none();
-            }
             span.finish_with("applied", true);
             super::super::commit_search::refresh_matches(screen);
 
@@ -290,6 +299,21 @@ pub(super) fn on_conflict_resolution_loaded(
     generation: u64,
     result: Result<ConflictResolutionResult, GitError>,
 ) -> Task<Message> {
+    if let Err(err) = &result {
+        if screen
+            .panels
+            .diff
+            .conflict_file_resolution
+            .as_ref()
+            .is_some_and(|state| state.render_generation == generation)
+        {
+            screen.panels.diff.close();
+            return Task::done(Message::show_toast(ToastData::error(
+                "Conflict Resolver",
+                err.to_string(),
+            )));
+        }
+    }
     if let Some(action) = screen
         .panels
         .diff

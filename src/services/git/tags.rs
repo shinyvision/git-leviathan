@@ -1,6 +1,7 @@
 use std::time::Duration;
 
-use super::helpers::{command_dir, spawn_git_command_with_timeout, wrap_git2_error};
+use super::helpers::{command_dir, wrap_git2_error};
+use super::process::spawn_git_command_with_timeout;
 use super::GitService;
 use crate::services::git_error::GitError;
 

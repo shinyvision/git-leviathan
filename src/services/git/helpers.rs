@@ -1,101 +1,8 @@
-//! Centralised `find_branch` / `find_commit` / `find_reference` and git-CLI
-//! subprocess invocation for the service layer. Uniform error classification
-//! via `wrap_git2_error`; callers should not re-roll their own boilerplate.
-
-use std::collections::HashMap;
-use std::io::Read;
-use std::process::{Command, Output, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
-use std::time::{Duration, Instant};
-
-use git2::{Branch, BranchType, Commit, ErrorClass, ErrorCode, Oid, Reference, Repository};
+//! Repository queries and Git error classification.
 
 use crate::services::git_error::GitError;
-use crate::utils::configure_background_command;
-
-/// PIDs of `git` subprocesses currently being awaited by `spawn_git_command`.
-/// On app shutdown the close handler calls `kill_running_git_processes` to
-/// SIGKILL anything still running so the process can exit immediately instead
-/// of blocking on a slow `git ls-remote` / `git push`.
-static RUNNING_GIT_PIDS: OnceLock<Mutex<HashMap<u32, String>>> = OnceLock::new();
-
-fn pid_set() -> &'static Mutex<HashMap<u32, String>> {
-    RUNNING_GIT_PIDS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-fn register_pid(pid: u32, op: &str) {
-    if let Ok(mut set) = pid_set().lock() {
-        set.insert(pid, op.to_string());
-    }
-}
-
-fn unregister_pid(pid: u32) {
-    if let Ok(mut set) = pid_set().lock() {
-        set.remove(&pid);
-    }
-}
-
-/// Force-kill every git subprocess registered by `spawn_git_command`. Intended
-/// to be called once from the shutdown path; safe to call when none are
-/// running. Does not wait for the children to be reaped.
-pub fn kill_running_git_processes() {
-    kill_running_git_processes_matching(|_| true);
-}
-
-/// Bumped by `kill_running_fetch_processes`. `fetch_all_refs` snapshots it on
-/// entry and stops between remotes once it changes — killing only the
-/// currently running subprocess would let the per-remote loop spawn the next
-/// fetch (and sit out its full timeout) after the fetch was cancelled.
-static FETCH_CANCEL_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-pub(super) fn fetch_cancel_generation() -> u64 {
-    FETCH_CANCEL_GENERATION.load(Ordering::SeqCst)
-}
-
-/// Force-kill network fetch subprocesses owned by the auto-fetch pipeline.
-/// This covers both `git fetch` and the follow-up `git ls-remote --tags`
-/// cache refresh, without interrupting unrelated local git subprocesses.
-pub fn kill_running_fetch_processes() {
-    FETCH_CANCEL_GENERATION.fetch_add(1, Ordering::SeqCst);
-    kill_running_git_processes_matching(|op| op.starts_with("fetch '") || op == "ls-remote --tags");
-}
-
-fn kill_running_git_processes_matching(predicate: impl Fn(&str) -> bool) {
-    let pids: Vec<u32> = match pid_set().lock() {
-        Ok(set) => set
-            .iter()
-            .filter_map(|(pid, op)| predicate(op).then_some(*pid))
-            .collect(),
-        Err(_) => return,
-    };
-    for pid in pids {
-        kill_pid(pid);
-    }
-}
-
-#[cfg(unix)]
-fn kill_pid(pid: u32) {
-    let _ = Command::new("kill")
-        .arg("-9")
-        .arg(pid.to_string())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
-#[cfg(windows)]
-fn kill_pid(pid: u32) {
-    let mut command = Command::new("taskkill");
-    let _ = configure_background_command(&mut command)
-        .args(["/F", "/PID", &pid.to_string()])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
-#[cfg(not(any(unix, windows)))]
-fn kill_pid(_pid: u32) {}
+use git2::{Branch, BranchType, Commit, ErrorClass, ErrorCode, Oid, Reference, Repository};
+use std::process::Output;
 
 /// Classify a `git2::Error` into the narrowest `GitError` variant from its
 /// class+code. `op` is a short imperative label (e.g. "rename branch") that
@@ -125,14 +32,12 @@ pub(super) fn wrap_git2_error(op: &str, err: git2::Error) -> GitError {
     }
 }
 
-/// Directory to run `git` subprocesses in: the working tree, falling back to
-/// the parent of the `.git` directory for setups that report no workdir. Bare
-/// repositories have no command directory and yield an error.
+/// Keep CLI commands inside the opened repository, including for bare remotes.
 pub(super) fn command_dir(repo: &Repository) -> Result<String, GitError> {
-    repo.workdir()
-        .or_else(|| repo.path().parent())
-        .map(|p| p.to_string_lossy().into_owned())
-        .ok_or_else(|| GitError::Other("repository has no command directory".to_string()))
+    let dir = repo.workdir().unwrap_or_else(|| repo.path());
+    dir.to_str()
+        .map(str::to_owned)
+        .ok_or_else(|| GitError::Other(format!("repository path is not UTF-8: {}", dir.display())))
 }
 
 /// Whether the repository index currently records merge conflicts. Errors
@@ -203,127 +108,4 @@ pub(super) fn find_reference_or<'repo>(
         }
         Err(e) => Err(wrap_git2_error(&format!("find reference '{full_ref}'"), e)),
     }
-}
-
-/// Spawn `git <args>` inside `repo_path` and return the completed `Output`
-/// regardless of exit status; the caller interprets status/stdout/stderr.
-/// Returns `GitError::Other` on spawn failure (fork/exec errors).
-pub(super) fn spawn_git_command(
-    repo_path: &str,
-    args: &[&str],
-    op: &str,
-) -> Result<Output, GitError> {
-    spawn_git_command_inner(repo_path, args, op, None, &[])
-}
-
-pub(super) fn spawn_git_command_with_timeout(
-    repo_path: &str,
-    args: &[&str],
-    op: &str,
-    timeout: Duration,
-) -> Result<Output, GitError> {
-    spawn_git_command_inner(repo_path, args, op, Some(timeout), &[])
-}
-
-/// Like `spawn_git_command` but with extra environment variables applied to the
-/// child (e.g. `GIT_EDITOR`). Still registers the PID so the child is killable
-/// on shutdown.
-pub(super) fn spawn_git_command_with_env(
-    repo_path: &str,
-    args: &[&str],
-    op: &str,
-    envs: &[(&str, &str)],
-) -> Result<Output, GitError> {
-    spawn_git_command_inner(repo_path, args, op, None, envs)
-}
-
-fn spawn_git_command_inner(
-    repo_path: &str,
-    args: &[&str],
-    op: &str,
-    timeout: Option<Duration>,
-    envs: &[(&str, &str)],
-) -> Result<Output, GitError> {
-    let mut command = Command::new("git");
-    let configured = configure_background_command(&mut command)
-        .current_dir(repo_path)
-        .args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .env("GIT_TERMINAL_PROMPT", "0");
-    for (key, value) in envs {
-        configured.env(key, value);
-    }
-    let child = configured
-        .spawn()
-        .map_err(|e| GitError::Other(format!("{op}: failed to spawn git: {e}")))?;
-    let pid = child.id();
-    register_pid(pid, op);
-    let result = match timeout {
-        Some(timeout) => wait_with_timeout(child, op, timeout),
-        None => child
-            .wait_with_output()
-            .map_err(|e| GitError::Other(format!("{op}: failed to wait on git: {e}"))),
-    };
-    unregister_pid(pid);
-    result
-}
-
-fn wait_with_timeout(
-    mut child: std::process::Child,
-    op: &str,
-    timeout: Duration,
-) -> Result<Output, GitError> {
-    let mut stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| GitError::Other(format!("{op}: failed to capture stdout")))?;
-    let mut stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| GitError::Other(format!("{op}: failed to capture stderr")))?;
-    let stdout_reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stdout.read_to_end(&mut buf);
-        buf
-    });
-    let stderr_reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = stderr.read_to_end(&mut buf);
-        buf
-    });
-
-    let start = Instant::now();
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break status,
-            Ok(None) if start.elapsed() >= timeout => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(GitError::NetworkFailure {
-                    op: op.to_string(),
-                    reason: format!("timed out after {}s", timeout.as_secs()),
-                });
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(50)),
-            Err(e) => {
-                let _ = child.kill();
-                let _ = child.wait();
-                let _ = stdout_reader.join();
-                let _ = stderr_reader.join();
-                return Err(GitError::Other(format!("{op}: failed to wait on git: {e}")));
-            }
-        }
-    };
-
-    let stdout = stdout_reader.join().unwrap_or_default();
-    let stderr = stderr_reader.join().unwrap_or_default();
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-    })
 }

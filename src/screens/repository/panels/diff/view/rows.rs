@@ -148,7 +148,11 @@ pub(super) fn build_conflict_side_rows(
         match block {
             ConflictBlock::Context(lines) => {
                 for line in lines {
-                    let spans = resolve_spans(highlighted, Some(line_number), line);
+                    let spans = resolve_spans(
+                        highlighted,
+                        Some(line_number),
+                        line.strip_suffix('\r').unwrap_or(line),
+                    );
                     let char_count = row_char_count(&spans);
                     rows.push(ConflictRow {
                         line_number: Some(line_number),
@@ -186,7 +190,11 @@ pub(super) fn build_conflict_side_rows(
                     });
                 } else {
                     for (idx, line) in source_lines.iter().enumerate() {
-                        let spans = resolve_spans(highlighted, Some(line_number), line);
+                        let spans = resolve_spans(
+                            highlighted,
+                            Some(line_number),
+                            line.strip_suffix('\r').unwrap_or(line),
+                        );
                         let char_count = row_char_count(&spans);
                         rows.push(ConflictRow {
                             line_number: Some(line_number),
@@ -217,7 +225,7 @@ pub(super) fn build_conflict_output_rows(
         .into_iter()
         .enumerate()
         .map(|(idx, line)| {
-            let spans = conflict_canvas::plain_spans(&line);
+            let spans = conflict_canvas::plain_spans(line.strip_suffix('\r').unwrap_or(&line));
             let char_count = row_char_count(&spans);
             ConflictRow {
                 line_number: Some((idx + 1) as u32),

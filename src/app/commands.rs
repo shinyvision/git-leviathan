@@ -87,6 +87,13 @@ impl App {
         auto_dismiss_task(toast_id)
     }
 
+    pub(super) fn show_hook_report(
+        &mut self,
+        report: &crate::services::HookReport,
+    ) -> Task<Message> {
+        self.show_toast(ToastData::hook_report(report))
+    }
+
     pub(super) fn drain_core_command_actions(&mut self) -> Task<Message> {
         let actions = self.plugin_host.take_core_command_actions();
         Task::batch(

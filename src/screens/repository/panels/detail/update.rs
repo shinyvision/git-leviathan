@@ -481,12 +481,12 @@ pub(in crate::screens::repository) fn update(
         }
         DetailAction::CommitConfirmed => {
             let message = dirty_commit_message_text(&panel.dirty_commit_message);
-            if message.is_empty() {
-                return Task::none();
-            }
-
+            let use_merge_message = message.is_empty()
+                && ctx.data.snapshot.commits().first().is_some_and(|commit| {
+                    commit.operation == crate::core::WorkingTreeOperation::Merge
+                });
             let (summary, description) = split_commit_message(&message);
-            if summary.is_empty() {
+            if summary.is_empty() && !use_merge_message {
                 return Task::none();
             }
             let Some(operation_id) = ctx.data.operations.begin_write_kind(OperationKind::Commit)
@@ -511,6 +511,29 @@ pub(in crate::screens::repository) fn update(
                     Message::tab(
                         tab_id,
                         RepositoryMessage::DirtyCommitCreated {
+                            operation_id,
+                            result,
+                        },
+                    )
+                },
+            )
+        }
+        DetailAction::ResumeRebase(action) => {
+            let Some(operation_id) = ctx.data.operations.begin_write() else {
+                return Task::none();
+            };
+            let repo = ctx.repository.clone();
+            let presenter = ctx.presenter.clone();
+            let tab_id = ctx.tab_id;
+            Task::perform(
+                git_write_work(move || {
+                    repo.resume_rebase(action)
+                        .map(|s| presenter.project_loaded(s))
+                }),
+                move |result| {
+                    Message::tab(
+                        tab_id,
+                        RepositoryMessage::WriteRepoLoaded {
                             operation_id,
                             result,
                         },
@@ -705,6 +728,7 @@ fn action_focuses_detail(action: &DetailAction) -> bool {
             | DetailAction::DiscardSelectedFilesRequested
             | DetailAction::DiscardFileRequested(_)
             | DetailAction::CommitConfirmed
+            | DetailAction::ResumeRebase(_)
             | DetailAction::AbortMergeConfirmed
             | DetailAction::CommitFileClicked { .. }
             | DetailAction::MergedFileClicked { .. }

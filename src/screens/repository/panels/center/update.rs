@@ -308,7 +308,6 @@ pub(in crate::screens::repository) fn update(
             source_branch,
             target_ref,
             target_display,
-            target_remote_ref: _,
         } => {
             ctx.data.branch_popout.close_context_menu();
             let Some(operation_id) = ctx.data.operations.begin_write() else {

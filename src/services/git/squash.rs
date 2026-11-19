@@ -1,96 +1,8 @@
-use git2::StashFlags;
-
-use super::checkout::workdir_has_changes;
-use super::helpers::{
-    command_dir, find_commit_or, find_reference_or, spawn_git_command, wrap_git2_error,
-};
+use super::autostash::{maybe_stash_workdir, restore_stash};
+use super::helpers::{find_commit_or, find_reference_or, wrap_git2_error};
+use super::hooks::{self, PostHook, RewriteCommand};
 use super::GitService;
 use crate::services::git_error::GitError;
-
-pub(super) fn maybe_stash_workdir(
-    service: &mut GitService,
-    context: &str,
-) -> Result<bool, GitError> {
-    if !workdir_has_changes(service)? {
-        return Ok(false);
-    }
-
-    let signature = service
-        .repo
-        .signature()
-        .or_else(|_| git2::Signature::now("Git Leviathan", "git-leviathan@example.invalid"))
-        .map_err(|e| GitError::StashFailed(format!("failed to create stash signature: {e}")))?;
-
-    let message = format!("Git Leviathan auto-stash {context}");
-    match service.repo.stash_save2(
-        &signature,
-        Some(&message),
-        Some(StashFlags::INCLUDE_UNTRACKED),
-    ) {
-        Ok(_) => Ok(true),
-        // libgit2 returns ENOTFOUND when its own diff sees no stashable content,
-        // even though `workdir_has_changes` flagged the tree (e.g. submodule
-        // state, mode-only differences). Treat as "no stash needed".
-        Err(e) if e.code() == git2::ErrorCode::NotFound => Ok(false),
-        Err(e) => Err(GitError::StashFailed(format!(
-            "failed to stash local changes {}: {e}",
-            context
-        ))),
-    }
-}
-
-fn wait_for_clean_workdir(service: &GitService) -> bool {
-    const POLL_INTERVAL_MS: u64 = 500;
-    const MAX_POLLS: u32 = 10;
-
-    for attempt in 0..MAX_POLLS {
-        if attempt > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(POLL_INTERVAL_MS));
-        }
-        if let Ok(false) = workdir_has_changes(service) {
-            return true;
-        }
-    }
-    false
-}
-
-pub(super) fn restore_stash(service: &mut GitService, created_stash: bool, context: &str) {
-    if !created_stash {
-        return;
-    }
-
-    if !wait_for_clean_workdir(service) {
-        eprintln!(
-            "git_leviathan: skipping stash pop after {}: working tree did not settle",
-            context
-        );
-        return;
-    }
-
-    let Ok(repo_dir) = command_dir(&service.repo) else {
-        return;
-    };
-
-    // Use git CLI for stash pop: git2's stash_pop skips conflicts silently when
-    // the working tree is clean (it fuzzy-applies rather than 3-way merging).
-    // The CLI performs a proper 3-way merge and exits non-zero on conflict while
-    // keeping the stash entry intact.
-    let popped = spawn_git_command(&repo_dir, &["stash", "pop"], "stash pop after restore")
-        .map(|out| out.status.success())
-        .unwrap_or(false);
-
-    if !popped {
-        eprintln!(
-            "git_leviathan: stash could not be applied after {}: keeping stash",
-            context
-        );
-        let _ = spawn_git_command(
-            &repo_dir,
-            &["reset", "--hard", "HEAD"],
-            "reset after failed stash restore",
-        );
-    }
-}
 
 pub(super) fn squash_commits(
     service: &mut GitService,
@@ -133,14 +45,24 @@ pub(super) fn squash_commits(
         &format!("squash on {}", branch_name),
     );
 
-    result
+    // Git reports a squash as a rebase that replaced every squashed commit
+    // with the new one.
+    result.map(|rewritten| {
+        hooks::run(
+            &service.repo,
+            PostHook::Rewrite {
+                command: RewriteCommand::Rebase,
+                rewritten,
+            },
+        );
+    })
 }
 
 fn squash_commits_inner(
     service: &mut GitService,
     hashes: Vec<String>,
     head_name: &str,
-) -> Result<(), GitError> {
+) -> Result<Vec<(git2::Oid, git2::Oid)>, GitError> {
     let repo = &service.repo;
 
     let commits: Vec<git2::Commit> = hashes
@@ -204,7 +126,7 @@ fn squash_commits_inner(
         )
         .map_err(|e| wrap_git2_error("move branch ref", e))?;
 
-    let result = (|| -> Result<(), GitError> {
+    let result = (|| -> Result<git2::Oid, GitError> {
         repo.checkout_head(Some(&mut git2::build::CheckoutBuilder::new().force()))
             .map_err(|e| wrap_git2_error("checkout after squash reset", e))?;
 
@@ -240,20 +162,21 @@ fn squash_commits_inner(
             .signature()
             .map_err(|e| wrap_git2_error("read git author identity", e))?;
 
-        repo.commit(
-            Some("HEAD"),
-            &signature,
-            &signature,
-            &combined_message,
-            &tree,
-            &[&parent_of_oldest],
-        )
-        .map_err(|e| wrap_git2_error("create squash commit", e))?;
+        let squashed = repo
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                &combined_message,
+                &tree,
+                &[&parent_of_oldest],
+            )
+            .map_err(|e| wrap_git2_error("create squash commit", e))?;
 
         repo.checkout_head(Some(&mut git2::build::CheckoutBuilder::new().force()))
             .map_err(|e| wrap_git2_error("update working tree after squash", e))?;
 
-        Ok(())
+        Ok(squashed)
     })();
 
     if result.is_err() {
@@ -261,7 +184,8 @@ fn squash_commits_inner(
         let _ = repo.checkout_head(Some(&mut git2::build::CheckoutBuilder::new().force()));
     }
 
-    result
+    // Oldest first, the order in which a rebase would have replayed them.
+    result.map(|squashed| commits.iter().rev().map(|c| (c.id(), squashed)).collect())
 }
 
 fn format_squash_message(commits: &[git2::Commit]) -> String {

@@ -8,6 +8,6 @@ pub mod commit;
 pub mod ids;
 pub mod worktree;
 
-pub use commit::{ChangeKind, ChangedFile, Commit, CommitKind};
+pub use commit::{ChangeKind, ChangedFile, Commit, CommitKind, WorkingTreeOperation};
 pub use ids::{RepoVersion, TabId, WorkspaceId};
 pub use worktree::WorktreeInfo;

@@ -696,7 +696,7 @@ fn root_checksum(files: &[PackageFile]) -> String {
         hasher.update(file.size.to_string().as_bytes());
         hasher.update([0]);
         hasher.update(file.sha256.as_bytes());
-        hasher.update([b'\n']);
+        hasher.update(b"\n");
     }
     hex_lower(&hasher.finalize())
 }

@@ -1010,6 +1010,7 @@ mod tests {
             commits: vec![commit_snapshot("aaaaaaaa")],
             refs: Vec::<RepoRef>::new(),
             dirty: Some(DirtySnapshot {
+                operation: crate::core::WorkingTreeOperation::None,
                 conflicted_files: vec![],
                 staged_files: vec![],
                 unstaged_files: vec![ChangedFile {
@@ -1029,6 +1030,29 @@ mod tests {
             worktrees: vec![],
             active_worktree_path: Default::default(),
         })
+    }
+
+    #[test]
+    fn stale_pagination_preserves_the_current_graph_and_current_errors_allow_retry() {
+        let (_temp, mut screen) = test_screen();
+        let version = screen.panels.center.repo_version;
+        let _ = screen.update(RepositoryMessage::RepoLoaded(Ok(
+            loaded_repo_with_dirty_commit(),
+        )));
+        let active_version = screen.panels.center.repo_version;
+        assert_ne!(version, active_version);
+        screen.panels.center.loading_more_commits = true;
+        let _ = screen.update(RepositoryMessage::MoreCommitsLoaded {
+            repo_version: version,
+            result: Ok(loaded_repo_with_first_parent_chain()),
+        });
+        assert_eq!(screen.data.snapshot.head_hash(), Some("aaaaaaaa"));
+        assert!(screen.panels.center.loading_more_commits);
+        let _ = screen.update(RepositoryMessage::MoreCommitsLoaded {
+            repo_version: active_version,
+            result: Err(crate::services::GitError::Other("read failed".into())),
+        });
+        assert!(!screen.panels.center.loading_more_commits);
     }
 
     #[test]

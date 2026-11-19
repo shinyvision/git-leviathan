@@ -2,14 +2,15 @@ use std::path::Path;
 
 use crate::core::WorktreeInfo;
 use crate::services::git::helpers::wrap_git2_error;
-use crate::services::git_error::GitError;
+use crate::services::{git_detect::primary_repository_path, git_error::GitError};
 
+use super::hooks::{self, PostHook};
 use super::GitService;
 
 pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, GitError> {
     let mut results = Vec::new();
 
-    let primary_path = primary_workdir(service)?;
+    let primary_path = primary_repository_path(&service.repo)?;
     let (primary_head, primary_branch) = head_info_for_workdir(&primary_path)?;
     results.push(WorktreeInfo {
         path: primary_path,
@@ -64,53 +65,32 @@ pub(super) fn list_worktrees(service: &GitService) -> Result<Vec<WorktreeInfo>, 
     Ok(results)
 }
 
-/// Resolve the PRIMARY workdir independently of what this service happens
-/// to have open. When a GitService is opened on a linked worktree,
-/// `repo.workdir()` returns that linked workdir — not the primary — and
-/// `repo.worktrees()` never lists the primary (git treats it specially).
-/// Without deriving it here, branches checked out in the primary would
-/// look "unowned" from a secondary, and clicking them would checkout on
-/// the current worktree instead of swapping focus.
-///
-/// Derivation: `repo.path()` is `.git/` for the primary and
-/// `<primary>/.git/worktrees/<name>/` for a linked worktree. Walk up to
-/// the common `.git` dir, then up one more for the primary workdir.
-fn primary_workdir(service: &GitService) -> Result<std::path::PathBuf, GitError> {
-    let workdir = if service.repo.is_worktree() {
-        service
-            .repo
-            .path()
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.parent())
-            .map(|p| p.to_path_buf())
-            .ok_or_else(|| {
-                GitError::Other("cannot derive primary workdir from linked worktree".to_string())
-            })?
-    } else {
-        service
-            .repo
-            .workdir()
-            .ok_or_else(|| GitError::Other("repository has no workdir (bare)".to_string()))?
-            .to_path_buf()
-    };
-    workdir
-        .canonicalize()
-        .map_err(|e| GitError::Other(format!("canonicalize primary workdir: {e}")))
-}
-
 fn head_info_for_workdir(path: &Path) -> Result<(String, String), GitError> {
     let repo = git2::Repository::open(path)
         .map_err(|e| wrap_git2_error(&format!("open workdir '{}'", path.display()), e))?;
+    if repo.is_bare() {
+        return Ok((String::new(), String::new()));
+    }
     let head = repo.head().ok();
     let head_hash = head
         .as_ref()
         .and_then(|h| h.target())
         .map(|oid| oid.to_string())
         .unwrap_or_default();
-    let branch_name = head
-        .as_ref()
-        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+    let branch_name = if super::rebase::in_progress(repo.state()) {
+        ["rebase-merge/head-name", "rebase-apply/head-name"]
+            .into_iter()
+            .find_map(|name| std::fs::read_to_string(repo.path().join(name)).ok())
+            .and_then(|name| {
+                name.trim_end()
+                    .strip_prefix("refs/heads/")
+                    .map(str::to_owned)
+            })
+    } else {
+        None
+    };
+    let branch_name = branch_name
+        .or_else(|| head.as_ref().and_then(|h| h.shorthand().map(str::to_owned)))
         .unwrap_or_default();
     Ok((head_hash, branch_name))
 }
@@ -254,6 +234,20 @@ pub(super) fn add_worktree(
         .worktree(name, path, Some(&opts))
         .map_err(|e| wrap_git2_error(&format!("add worktree '{name}'"), e))?;
 
+    // `git worktree add` runs post-checkout in the new worktree, coming from
+    // the null commit.
+    if let Ok(added) = git2::Repository::open(path) {
+        let current = hooks::head_commit(&added);
+        hooks::run(
+            &added,
+            PostHook::Checkout {
+                previous: git2::Oid::zero(),
+                current,
+                branch_checkout: true,
+            },
+        );
+    }
+
     Ok(())
 }
 
@@ -270,10 +264,8 @@ pub(super) fn remove_worktree(service: &GitService, path: &Path) -> Result<(), G
         .canonicalize()
         .map_err(|e| GitError::Other(format!("canonicalize '{}': {e}", path.display())))?;
 
-    if let Ok(primary) = primary_workdir(service) {
-        if primary == canonical {
-            return Ok(());
-        }
+    if primary_repository_path(&service.repo)? == canonical {
+        return Ok(());
     }
 
     let names = service
@@ -396,6 +388,63 @@ mod tests {
             temp.path.canonicalize().expect("canon primary"),
         );
         assert_eq!(primary_entry.branch_name, default_branch);
+    }
+
+    #[test]
+    fn local_branch_actions_preserve_a_branch_checked_out_in_another_worktree() {
+        use crate::services::test_support::{commit_all, write_file};
+        let (temp, repo) = init_test_repo("other_worktree_branch");
+        let head = repo.head().unwrap().shorthand().unwrap().to_owned();
+        let mut service = GitService::open(temp.path_str()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let linked = dir.path().join("linked");
+        add_worktree(&service, &linked, Some("linked"), &head).unwrap();
+        let original = repo.head().unwrap().target();
+        write_file(&temp.path, "tracked.txt", "primary edit");
+        commit_all(&repo, "advance primary");
+        assert!(service.checkout_branch("linked").is_err());
+        assert!(service
+            .fast_forward_branch_to_branch("linked", &head)
+            .is_err());
+        assert!(service.rename_branch("linked", "other", false).is_err());
+        assert!(service.delete_branch("linked", false, true).is_err());
+        assert_eq!(
+            git2::Repository::open(&linked)
+                .unwrap()
+                .head()
+                .unwrap()
+                .target(),
+            original
+        );
+        assert_eq!(
+            std::fs::read(linked.join("tracked.txt")).unwrap(),
+            b"base\n"
+        );
+    }
+
+    #[test]
+    fn rebasing_in_a_linked_worktree_keeps_its_original_branch_reserved() {
+        use crate::services::test_support::{commit_all, configure_test_signature, write_file};
+        let (temp, repo) = init_test_repo("worktree_rebase");
+        configure_test_signature(&repo);
+        let main = repo.head().unwrap().shorthand().unwrap().to_owned();
+        let mut primary = GitService::open(temp.path_str()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let linked = dir.path().join("linked");
+        add_worktree(&primary, &linked, Some("linked"), &main).unwrap();
+        let mut secondary = GitService::open(linked.to_str().unwrap()).unwrap();
+        write_file(&linked, "tracked.txt", "linked");
+        commit_all(&secondary.repo, "linked edits");
+        write_file(&temp.path, "tracked.txt", "primary");
+        commit_all(&repo, "primary edits");
+        secondary.rebase_current_onto("linked", &main).unwrap();
+        assert!(secondary.repo.head_detached().unwrap());
+        assert!(primary.checkout_branch("linked").is_err());
+        assert!(primary.delete_branch("linked", false, true).is_err());
+        secondary
+            .resume_rebase(crate::services::git::RebaseAction::Abort)
+            .unwrap();
+        assert_eq!(secondary.current_branch_name().as_deref(), Some("linked"));
     }
 
     #[test]

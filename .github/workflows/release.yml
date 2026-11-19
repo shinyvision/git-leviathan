@@ -13,6 +13,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -31,6 +32,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -57,11 +60,7 @@ jobs:
 
       - name: Build portable tarball (extract to / for system-wide install)
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
-            VERSION="${{ inputs.tag }}"
-            VERSION="${VERSION#v}"
-          fi
+          VERSION="${RELEASE_TAG#v}"
           STAGE="git-leviathan-${VERSION}-linux-${{ matrix.arch }}"
           ROOT="${STAGE}/usr"
           install -Dm755 target/release/git_leviathan "${ROOT}/bin/git_leviathan"
@@ -89,6 +88,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -120,20 +121,21 @@ jobs:
       - name: Package tarball
         run: |
           mkdir -p dist
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ -z "$VERSION" ] || [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
-            VERSION="${{ inputs.tag }}"
-            VERSION="${VERSION#v}"
-          fi
+          VERSION="${RELEASE_TAG#v}"
           STAGE="git-leviathan-${VERSION}-aarch64-apple-darwin"
           mkdir -p "$STAGE"
           APP_BUNDLE="target/release/bundle/osx/Git Leviathan.app"
           if [ ! -d "$APP_BUNDLE" ]; then
             APP_BUNDLE="target/release/bundle/osx/git_leviathan.app"
           fi
-          cp -R "$APP_BUNDLE" "$STAGE/Git Leviathan.app"
+          ditto "$APP_BUNDLE" "$STAGE/Git Leviathan.app"
+          codesign --force --sign - "$STAGE/Git Leviathan.app"
           cp README.md LICENSE "$STAGE/"
-          tar -czf "dist/${STAGE}.tar.gz" "$STAGE"
+          ARCHIVE="dist/${STAGE}.tar.gz"
+          tar -czf "$ARCHIVE" "$STAGE"
+          VERIFY_DIR=$(mktemp -d)
+          tar -xzf "$ARCHIVE" -C "$VERIFY_DIR"
+          codesign --verify --deep --strict --verbose=2 "$VERIFY_DIR/$STAGE/Git Leviathan.app"
           ls -la dist/
 
       - uses: actions/upload-artifact@v4
@@ -146,6 +148,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -159,8 +163,7 @@ jobs:
       - name: Package zip
         shell: pwsh
         run: |
-          $tag = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "${{ inputs.tag }}" }
-          $version = $tag -replace '^v', ''
+          $version = $env:RELEASE_TAG -replace '^v', ''
           $stage = "git-leviathan-$version-x86_64-pc-windows-msvc"
           New-Item -ItemType Directory -Force -Path dist, $stage | Out-Null
           Copy-Item "target/x86_64-pc-windows-msvc/release/git_leviathan.exe" "$stage/"
@@ -191,7 +194,7 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name != '' && github.ref_name || inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           prerelease: false
           generate_release_notes: true

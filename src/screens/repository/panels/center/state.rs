@@ -86,19 +86,13 @@ impl CenterPanel {
 
     pub(in crate::screens::repository) fn on_more_commits_loaded(
         &mut self,
-        repo_version: RepoVersion,
         commits: &[Commit],
         has_more: bool,
         branch_popout: &mut BranchPopoutController,
-    ) -> bool {
-        if repo_version != self.repo_version {
-            return false;
-        }
+    ) {
         branch_popout.sync_commit_indices(commits);
         branch_popout.invalidate_bounds();
         self.has_more_commits = has_more;
-        self.loading_more_commits = false;
-        true
     }
 
     pub(in crate::screens::repository) fn select_commit(

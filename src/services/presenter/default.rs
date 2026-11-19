@@ -115,13 +115,7 @@ impl Presenter for DefaultPresenter {
                 branch_name,
                 remote_name,
             },
-            PushGatewayOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            } => LoadedPushOutcome::BehindRemote {
-                branch_name,
-                remote_name,
-            },
+            PushGatewayOutcome::BehindRemote(target) => LoadedPushOutcome::BehindRemote(target),
         }
     }
 

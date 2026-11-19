@@ -1821,6 +1821,7 @@ dependencies = [
  "resvg",
  "rfd",
  "rusqlite",
+ "rustix 1.1.4",
  "semver",
  "serde",
  "serde_json",

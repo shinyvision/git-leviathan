@@ -83,94 +83,9 @@ pub(super) fn on_push_completed(
     screen.data.animation.clear_push();
     let task = match result {
         Ok(LoadedPushOutcome::Pushed(loaded)) => {
-            let branch_name = screen.data.snapshot.current_branch().to_string();
-            let task = super::helpers::handle_repo_loaded(screen, *loaded);
-            Task::batch(vec![
-                task,
-                Task::done(Message::show_toast(ToastData::push_succeeded(&branch_name))),
-            ])
-        }
-        Ok(LoadedPushOutcome::NeedsUpstream {
-            branch_name,
-            remote_name,
-        }) => {
-            screen
-                .overlay_manager
-                .open_toolbar_dialog(set_upstream::dialog(set_upstream_state(
-                    screen,
-                    branch_name,
-                    remote_name,
-                )));
-            Task::none()
-        }
-        Ok(LoadedPushOutcome::BehindRemote {
-            branch_name,
-            remote_name,
-        }) => {
-            screen
-                .overlay_manager
-                .open_toolbar_dialog(push_behind::dialog(push_behind::State {
-                    branch_name,
-                    remote_name,
-                }));
-            screen.panels.center.restore_center_list_scroll()
-        }
-        Err(e) => {
-            eprintln!("git_leviathan: push failed: {}", e);
-            Task::done(Message::show_toast(ToastData::error(
-                "Push Failed",
-                e.to_string(),
-            )))
-        }
-    };
-    super::helpers::pending_reload_task_after_write(screen, task)
-}
-
-pub(super) fn on_set_upstream_push_completed(
-    screen: &mut RepositoryScreen,
-    operation_id: Option<OperationId>,
-    result: Result<LoadedRepo, GitError>,
-) -> Task<Message> {
-    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
-        return Task::none();
-    }
-    match result {
-        Ok(loaded) => {
-            let branch_name = screen.data.snapshot.current_branch().to_string();
             if screen.overlay_manager.is_set_upstream_dialog_open() {
                 screen.overlay_manager.close();
             }
-            let task = super::helpers::handle_repo_loaded(screen, loaded);
-            let task = Task::batch(vec![
-                task,
-                Task::done(Message::show_toast(ToastData::push_succeeded(&branch_name))),
-            ]);
-            super::helpers::pending_reload_task_after_write(screen, task)
-        }
-        Err(e) => {
-            eprintln!("git_leviathan: push failed: {}", e);
-            screen.overlay_manager.reset_set_upstream_submitting();
-            super::helpers::pending_reload_task_after_write(
-                screen,
-                Task::done(Message::show_toast(ToastData::error(
-                    "Push Failed",
-                    e.to_string(),
-                ))),
-            )
-        }
-    }
-}
-
-pub(super) fn on_force_push_completed(
-    screen: &mut RepositoryScreen,
-    operation_id: Option<OperationId>,
-    result: Result<LoadedPushOutcome, GitError>,
-) -> Task<Message> {
-    if operation_id.is_some_and(|id| !screen.finish_git_write(id)) {
-        return Task::none();
-    }
-    let task = match result {
-        Ok(LoadedPushOutcome::Pushed(loaded)) => {
             let branch_name = screen.data.snapshot.current_branch().to_string();
             let task = super::helpers::handle_repo_loaded(screen, *loaded);
             Task::batch(vec![
@@ -191,16 +106,17 @@ pub(super) fn on_force_push_completed(
                 )));
             Task::none()
         }
-        Ok(LoadedPushOutcome::BehindRemote { .. }) => {
-            Task::done(Message::show_toast(ToastData::error(
-                "Force Push Failed",
-                "Branch is still behind remote".to_string(),
-            )))
+        Ok(LoadedPushOutcome::BehindRemote(target)) => {
+            screen
+                .overlay_manager
+                .open_toolbar_dialog(push_behind::dialog(target));
+            screen.panels.center.restore_center_list_scroll()
         }
         Err(e) => {
-            eprintln!("git_leviathan: force push failed: {}", e);
+            screen.overlay_manager.reset_set_upstream_submitting();
+            eprintln!("git_leviathan: push failed: {}", e);
             Task::done(Message::show_toast(ToastData::error(
-                "Force Push Failed",
+                "Push Failed",
                 e.to_string(),
             )))
         }
@@ -255,7 +171,7 @@ pub(super) fn on_pull_requested(screen: &mut RepositoryScreen) -> Task<Message> 
     let tab_id = screen.tab_id;
     Task::perform(
         git_write_work(move || {
-            repo.pull_current_branch()
+            repo.pull_current_branch(None)
                 .map(|s| presenter.project_loaded(s))
         }),
         move |result| {
@@ -280,7 +196,7 @@ pub(super) fn on_pull_completed(
     }
     screen.data.animation.clear_pull();
     let task = match result {
-        Ok(loaded) => super::helpers::handle_repo_loaded(screen, loaded),
+        Ok(loaded) => super::helpers::handle_integration_result(screen, loaded),
         Err(e) => {
             eprintln!("git_leviathan: pull failed: {}", e);
             Task::done(Message::show_toast(ToastData::error(

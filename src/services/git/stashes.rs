@@ -1,6 +1,7 @@
 use crate::services::{git_error::GitError, StashSnapshot};
 
-use super::helpers::{command_dir, spawn_git_command};
+use super::helpers::command_dir;
+use super::process::spawn_git_command;
 use super::GitService;
 
 pub(super) fn load_stashes(service: &GitService) -> Vec<StashSnapshot> {

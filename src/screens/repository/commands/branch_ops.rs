@@ -26,8 +26,14 @@ pub(super) fn on_remote_checkout_completed(
             super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
-            eprintln!("git_leviathan: remote branch checkout failed: {}", e);
-            super::helpers::pending_reload_task_after_write(screen, Task::none())
+            let task = Task::batch([
+                screen.reload_task(),
+                Task::done(Message::show_toast(ToastData::error(
+                    "Checkout Failed",
+                    e.to_string(),
+                ))),
+            ]);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
     }
 }
@@ -150,13 +156,14 @@ pub(super) fn on_branch_merged(
         }
         Err(e) => {
             eprintln!("git_leviathan: branch merge failed: {}", e);
-            super::helpers::pending_reload_task_after_write(
-                screen,
+            let task = Task::batch([
+                screen.reload_task(),
                 Task::done(Message::show_toast(ToastData::error(
                     format!("Merge Failed: {} into {}", source_branch, target_branch),
                     e.to_string(),
                 ))),
-            )
+            ]);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
     }
 }
@@ -173,18 +180,19 @@ pub(super) fn on_branch_rebased(
     }
     match result {
         Ok(loaded) => {
-            let task = super::helpers::handle_repo_loaded(screen, loaded);
+            let task = super::helpers::handle_integration_result(screen, loaded);
             super::helpers::pending_reload_task_after_write(screen, task)
         }
         Err(e) => {
             eprintln!("git_leviathan: branch rebase failed: {}", e);
-            super::helpers::pending_reload_task_after_write(
-                screen,
+            let task = Task::batch([
+                screen.reload_task(),
                 Task::done(Message::show_toast(ToastData::error(
                     format!("Rebase Failed: {} onto {}", source_branch, target_display),
                     e.to_string(),
                 ))),
-            )
+            ]);
+            super::helpers::pending_reload_task_after_write(screen, task)
         }
     }
 }

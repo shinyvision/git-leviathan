@@ -340,8 +340,9 @@ fn native_dialog_button_press_never_routes_plugin_callback() {
 #[test]
 fn push_behind_force_push_requested_opens_force_push_toolbar_dialog() {
     let mut m = OverlayManager::new();
-    m.open_toolbar_dialog(push_behind::dialog(push_behind::State {
-        branch_name: "main".into(),
+    m.open_toolbar_dialog(push_behind::dialog(crate::services::git::PushTarget {
+        local_branch: "main".into(),
+        remote_branch: "main".into(),
         remote_name: "origin".into(),
     }));
     let mut operations = OperationCoordinator::new();
@@ -363,8 +364,9 @@ fn push_behind_force_push_requested_opens_force_push_toolbar_dialog() {
 #[test]
 fn force_push_cancel_key_routes_to_native_cancel_button() {
     let mut m = OverlayManager::new();
-    m.open_toolbar_dialog(force_push::dialog(force_push::State {
-        branch_name: "main".into(),
+    m.open_toolbar_dialog(force_push::dialog(crate::services::git::PushTarget {
+        local_branch: "main".into(),
+        remote_branch: "main".into(),
         remote_name: "origin".into(),
     }));
 
@@ -391,8 +393,9 @@ fn force_push_cancel_key_routes_to_native_cancel_button() {
 #[test]
 fn force_push_confirm_button_starts_native_force_push() {
     let mut m = OverlayManager::new();
-    m.open_toolbar_dialog(force_push::dialog(force_push::State {
-        branch_name: "main".into(),
+    m.open_toolbar_dialog(force_push::dialog(crate::services::git::PushTarget {
+        local_branch: "main".into(),
+        remote_branch: "main".into(),
         remote_name: "origin".into(),
     }));
     let mut operations = OperationCoordinator::new();
@@ -843,8 +846,9 @@ fn migrated_complex_dialogs_open_as_toolbar_dialogs() {
             "origin".into(),
             vec!["origin".into()],
         )),
-        push_behind::dialog(push_behind::State {
-            branch_name: "main".into(),
+        push_behind::dialog(crate::services::git::PushTarget {
+            local_branch: "main".into(),
+            remote_branch: "main".into(),
             remote_name: "origin".into(),
         }),
         modify_delete_conflict::dialog(modify_delete_conflict::State {

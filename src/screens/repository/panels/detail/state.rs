@@ -1121,6 +1121,7 @@ mod tests {
         staged: Vec<&str>,
     ) -> DirtySnapshot {
         DirtySnapshot {
+            operation: crate::core::WorkingTreeOperation::None,
             conflicted_files: conflicted.into_iter().map(changed).collect(),
             staged_files: staged.into_iter().map(changed).collect(),
             unstaged_files: unstaged.into_iter().map(changed).collect(),
