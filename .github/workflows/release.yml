@@ -41,6 +41,13 @@ jobs:
         with:
           key: linux-${{ matrix.arch }}
 
+      - &release-version
+        name: Set the application version from the release tag
+        shell: bash
+        run: |
+          cargo install cargo-edit --version 0.13.14 --locked --no-default-features --features set-version
+          cargo set-version --package git_leviathan -- "${RELEASE_TAG#v}"
+
       - name: Install system deps
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libasound2-dev
 
@@ -85,7 +92,7 @@ jobs:
 
   macos:
     name: macOS arm64
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -94,6 +101,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      - *release-version
 
       - name: Generate .icns from PNG
         run: |
@@ -156,6 +165,8 @@ jobs:
           targets: x86_64-pc-windows-msvc
 
       - uses: Swatinem/rust-cache@v2
+
+      - *release-version
 
       - name: Build release binary
         run: cargo build --release --locked --target x86_64-pc-windows-msvc
