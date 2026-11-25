@@ -6,8 +6,8 @@
 //! voices fall back to a silent wall-clock so transport UI still works.
 
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, Ordering};
-use std::sync::{Arc, Mutex, OnceLock, Weak};
-use std::time::Instant;
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, OnceLock, Weak};
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
@@ -131,9 +131,8 @@ struct VoiceShared {
     rate: AtomicU32,
     ended: AtomicBool,
     starved: AtomicBool,
-    /// Silent fallback clock when no output device is available:
-    /// `(started_at, position_at_start)`.
-    wall: Mutex<Option<(Instant, f64)>>,
+    /// While output is unavailable, `position` is the frame at this instant.
+    wall: Mutex<Option<Instant>>,
 }
 
 impl VoiceShared {
@@ -144,6 +143,28 @@ impl VoiceShared {
     fn set_position_frames(&self, frames: f64) {
         self.position
             .store(frames.max(0.0).to_bits(), Ordering::Release);
+    }
+
+    fn wall_position(&self, started: Instant) -> f64 {
+        let source = self.source.lock().unwrap_or_else(|e| e.into_inner());
+        let rate = source.sample_rate() as f64 * self.rate() as f64;
+        let frames = self.position_frames() + started.elapsed().as_secs_f64() * rate;
+        match source.frame_count() {
+            Some(total) if frames >= total as f64 => {
+                if self.looping.load(Ordering::Relaxed) && total > 0 {
+                    frames % total as f64
+                } else {
+                    self.ended.store(true, Ordering::Release);
+                    self.state.store(STATE_STOPPED, Ordering::Release);
+                    total as f64
+                }
+            }
+            _ => frames,
+        }
+    }
+
+    fn save_wall_position(&self, started: Instant) {
+        self.set_position_frames(self.wall_position(started));
     }
 
     fn volume(&self) -> f32 {
@@ -180,25 +201,30 @@ impl Voice {
     }
 
     pub fn play(&self) {
-        engine().ensure_started();
-        self.shared.ended.store(false, Ordering::Release);
-        if self.uses_wall_clock() {
-            let pos = self.position_frames();
-            *self.shared.wall.lock().unwrap_or_else(|e| e.into_inner()) =
-                Some((Instant::now(), pos));
+        let engine = engine();
+        {
+            let output = engine.output();
+            // Keep the first sample queued while a new device is opening.
+            if matches!(output.status, EngineStatus::Unavailable(_)) {
+                let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
+                wall.get_or_insert_with(Instant::now);
+            }
+            self.shared.ended.store(false, Ordering::Release);
+            self.shared.state.store(STATE_PLAYING, Ordering::Release);
         }
-        self.shared.state.store(STATE_PLAYING, Ordering::Release);
+        engine.ensure_started();
     }
 
     pub fn pause(&self) {
-        self.freeze_wall_clock();
-        let state = self.shared.state.load(Ordering::Acquire);
-        if state == STATE_PLAYING {
-            if engine().is_ready() {
-                self.shared.state.store(STATE_STOPPING, Ordering::Release);
+        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
+        if self.is_playing() {
+            let state = if let Some(started) = wall.take() {
+                self.shared.save_wall_position(started);
+                STATE_STOPPED
             } else {
-                self.shared.state.store(STATE_STOPPED, Ordering::Release);
-            }
+                STATE_STOPPING
+            };
+            self.shared.state.store(state, Ordering::Release);
         }
     }
 
@@ -214,44 +240,15 @@ impl Voice {
         self.shared.state.load(Ordering::Acquire) == STATE_PLAYING
     }
 
-    fn uses_wall_clock(&self) -> bool {
-        !engine().is_ready()
-    }
-
-    fn freeze_wall_clock(&self) {
-        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((started, start_pos)) = wall.take() {
-            let rate = self.source_sample_rate() as f64 * self.shared.rate() as f64;
-            let pos = start_pos + started.elapsed().as_secs_f64() * rate;
-            let pos = self.clamp_to_duration(pos);
-            self.shared.set_position_frames(pos);
-        }
-    }
-
-    fn clamp_to_duration(&self, frames: f64) -> f64 {
-        match self.duration_frames() {
-            Some(total) if frames >= total as f64 => {
-                if self.shared.looping.load(Ordering::Relaxed) && total > 0 {
-                    frames % total as f64
-                } else {
-                    self.shared.ended.store(true, Ordering::Release);
-                    self.shared.state.store(STATE_STOPPED, Ordering::Release);
-                    total as f64
-                }
-            }
-            _ => frames,
-        }
-    }
-
     pub fn position_frames(&self) -> f64 {
-        let wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((started, start_pos)) = *wall {
-            if self.is_playing() {
-                let rate = self.source_sample_rate() as f64 * self.shared.rate() as f64;
-                let pos = start_pos + started.elapsed().as_secs_f64() * rate;
-                drop(wall);
-                return self.clamp_to_duration(pos);
+        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(started) = *wall {
+            let pos = self.shared.wall_position(started);
+            if self.shared.ended.load(Ordering::Acquire) {
+                self.shared.set_position_frames(pos);
+                *wall = None;
             }
+            return pos;
         }
         self.shared.position_frames()
     }
@@ -282,15 +279,15 @@ impl Voice {
     }
 
     pub fn seek_frames(&self, frames: f64) {
+        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
         let frames = match self.duration_frames() {
             Some(total) => frames.min(total as f64),
             None => frames,
         };
         self.shared.ended.store(false, Ordering::Release);
         self.shared.set_position_frames(frames.max(0.0));
-        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
         if wall.is_some() {
-            *wall = Some((Instant::now(), frames.max(0.0)));
+            *wall = Some(Instant::now());
         }
     }
 
@@ -298,6 +295,7 @@ impl Voice {
     /// Playback state is preserved; the playhead restarts at 0 frames of the
     /// new source.
     pub fn set_source(&self, source: VoiceSource) {
+        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
         {
             let mut current = self.shared.source.lock().unwrap_or_else(|e| e.into_inner());
             *current = source;
@@ -305,9 +303,8 @@ impl Voice {
         self.shared.set_position_frames(0.0);
         self.shared.ended.store(false, Ordering::Release);
         self.shared.starved.store(false, Ordering::Release);
-        let mut wall = self.shared.wall.lock().unwrap_or_else(|e| e.into_inner());
         if wall.is_some() {
-            *wall = Some((Instant::now(), 0.0));
+            *wall = Some(Instant::now());
         }
     }
 
@@ -358,116 +355,167 @@ impl std::fmt::Debug for Voice {
 // ---------------------------------------------------------------------------
 
 pub struct AudioEngine {
-    voices: Arc<Mutex<Vec<Weak<VoiceShared>>>>,
-    status: Mutex<EngineStatus>,
-    ready: AtomicBool,
-    start_once: OnceLock<()>,
+    output: Mutex<Output>,
+}
+
+struct Output {
+    status: EngineStatus,
+    voices: Vec<Weak<VoiceShared>>,
+    retry: Option<mpsc::SyncSender<()>>,
+}
+
+impl Output {
+    fn ready(&mut self, device: String, sample_rate: u32, channels: u16) {
+        // The mixer takes the same lock, so it starts from the exact position
+        // reached during silent playback, including any seeks or loop wraps.
+        for voice in self.voices.iter().filter_map(Weak::upgrade) {
+            let mut wall = voice.wall.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(started) = wall.take() {
+                voice.save_wall_position(started);
+            }
+        }
+        self.status = EngineStatus::Ready {
+            device,
+            sample_rate,
+            channels,
+        };
+    }
+
+    fn unavailable(&mut self, reason: String) -> bool {
+        let mut playing = false;
+        for voice in self.voices.iter().filter_map(Weak::upgrade) {
+            let mut wall = voice.wall.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(started) = wall.take() {
+                // The clip may have ended since the last retry, even when
+                // its preview is no longer polling the playhead.
+                voice.save_wall_position(started);
+            }
+            if voice.state.load(Ordering::Acquire) == STATE_PLAYING {
+                *wall = Some(Instant::now());
+                playing = true;
+            } else {
+                voice.state.store(STATE_STOPPED, Ordering::Release);
+            }
+            voice.starved.store(false, Ordering::Relaxed);
+            voice.gain.store(0f32.to_bits(), Ordering::Relaxed);
+        }
+        self.status = EngineStatus::Unavailable(reason);
+        playing
+    }
 }
 
 static ENGINE: OnceLock<AudioEngine> = OnceLock::new();
 
 pub fn engine() -> &'static AudioEngine {
     ENGINE.get_or_init(|| AudioEngine {
-        voices: Arc::new(Mutex::new(Vec::new())),
-        status: Mutex::new(EngineStatus::Idle),
-        ready: AtomicBool::new(false),
-        start_once: OnceLock::new(),
+        output: Mutex::new(Output {
+            status: EngineStatus::Idle,
+            voices: Vec::new(),
+            retry: None,
+        }),
     })
 }
 
 impl AudioEngine {
+    fn output(&self) -> MutexGuard<'_, Output> {
+        self.output.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     fn register(&self, voice: &Arc<VoiceShared>) {
-        let mut voices = self.voices.lock().unwrap_or_else(|e| e.into_inner());
-        voices.retain(|w| w.strong_count() > 0);
-        voices.push(Arc::downgrade(voice));
+        let mut output = self.output();
+        output.voices.retain(|w| w.strong_count() > 0);
+        output.voices.push(Arc::downgrade(voice));
     }
 
     pub fn status(&self) -> EngineStatus {
-        self.status
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.output().status.clone()
     }
 
-    pub fn is_ready(&self) -> bool {
-        self.ready.load(Ordering::Acquire)
-    }
-
-    /// Open the output stream (once). Safe to call from any thread; the
-    /// stream itself is owned by a dedicated parked thread. Blocks until the
-    /// device reports ready or unavailable so callers can immediately pick
-    /// the right clock.
-    pub fn ensure_started(&self) {
-        self.start_once.get_or_init(|| {
-            *self.status.lock().unwrap_or_else(|e| e.into_inner()) = EngineStatus::Starting;
-            let voices = self.voices.clone();
-            let (tx, rx) = std::sync::mpsc::channel::<Result<(String, u32, u16), String>>();
-            let spawned = std::thread::Builder::new()
+    /// Request the current default output without waiting on the device.
+    pub fn ensure_started(&'static self) {
+        let mut output = self.output();
+        if matches!(
+            output.status,
+            EngineStatus::Ready { .. } | EngineStatus::Starting
+        ) {
+            return;
+        }
+        if let Some(retry) = &output.retry {
+            let _ = retry.try_send(());
+        } else {
+            let (tx, rx) = mpsc::sync_channel(1);
+            match std::thread::Builder::new()
                 .name("leviathan-audio".into())
-                .spawn(move || run_output_thread(voices, tx));
-            let outcome = match spawned {
-                Ok(_) => rx
-                    .recv_timeout(std::time::Duration::from_secs(5))
-                    .unwrap_or_else(|_| Err("audio device did not respond".to_string())),
-                Err(e) => Err(format!("could not start audio thread: {e}")),
-            };
-            let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner());
-            match outcome {
-                Ok((device, sample_rate, channels)) => {
-                    *status = EngineStatus::Ready {
-                        device,
-                        sample_rate,
-                        channels,
-                    };
-                    self.ready.store(true, Ordering::Release);
-                }
-                Err(message) => {
-                    *status = EngineStatus::Unavailable(message);
-                    self.ready.store(false, Ordering::Release);
+                .spawn(move || self.run(rx))
+            {
+                Ok(_) => output.retry = Some(tx),
+                Err(e) => {
+                    output.unavailable(format!("could not start audio thread: {e}"));
+                    return;
                 }
             }
-        });
+        }
+        output.status = EngineStatus::Starting;
     }
 
-    fn mark_failed(&self, message: String) {
-        *self.status.lock().unwrap_or_else(|e| e.into_inner()) = EngineStatus::Unavailable(message);
-        self.ready.store(false, Ordering::Release);
+    fn run(&'static self, retry: mpsc::Receiver<()>) {
+        loop {
+            let reason = match open_output(self) {
+                Ok((stream, errors)) => {
+                    let error = errors.recv();
+                    drop(stream);
+                    match error {
+                        Ok(err) => format!("audio stream error: {err}"),
+                        Err(_) => "audio stream closed".to_string(),
+                    }
+                }
+                Err(err) => err,
+            };
+            let playing = self.output().unavailable(reason);
+            // Recover during playback. While idle, wait for another preview
+            // or Play request before probing the device again.
+            if playing {
+                let _ = retry.recv_timeout(Duration::from_secs(1));
+            } else {
+                let _ = retry.recv();
+            }
+            self.output().status = EngineStatus::Starting;
+        }
     }
 }
 
-fn run_output_thread(
-    voices: Arc<Mutex<Vec<Weak<VoiceShared>>>>,
-    ready_tx: std::sync::mpsc::Sender<Result<(String, u32, u16), String>>,
-) {
-    let host = cpal::default_host();
-    let Some(device) = host.default_output_device() else {
-        let _ = ready_tx.send(Err("no audio output device".to_string()));
-        return;
-    };
+fn open_output(
+    engine: &'static AudioEngine,
+) -> Result<(cpal::Stream, mpsc::Receiver<cpal::StreamError>), String> {
+    // CPAL can panic here if the platform backend itself fails to initialize.
+    let host = std::panic::catch_unwind(cpal::default_host)
+        .map_err(|_| "could not initialize the default audio host")?;
+    let device = host
+        .default_output_device()
+        .ok_or("no audio output device")?;
     let device_name = device
         .description()
         .map(|d| d.to_string())
         .unwrap_or_else(|_| "default output".to_string());
-    let supported = match device.default_output_config() {
-        Ok(cfg) => cfg,
-        Err(e) => {
-            let _ = ready_tx.send(Err(format!("no usable output configuration: {e}")));
-            return;
-        }
-    };
+    let supported = device
+        .default_output_config()
+        .map_err(|e| format!("no usable output configuration: {e}"))?;
     let sample_format = supported.sample_format();
     let config: cpal::StreamConfig = supported.config();
     let sample_rate: u32 = config.sample_rate;
     let channels = config.channels;
 
     let mixer = Mixer {
-        voices,
+        engine,
         device_rate: sample_rate.max(1),
         device_channels: channels.max(1),
         scratch: Vec::new(),
     };
-    let error_callback = |err: cpal::StreamError| {
-        engine().mark_failed(format!("audio stream error: {err}"));
+    let (failed, errors) = mpsc::sync_channel(1);
+    let error_callback = move |err| {
+        if err != cpal::StreamError::BufferUnderrun {
+            let _ = failed.try_send(err);
+        }
     };
     let stream = match sample_format {
         cpal::SampleFormat::F32 => build_stream::<f32>(&device, &config, mixer, error_callback),
@@ -477,23 +525,12 @@ fn run_output_thread(
         cpal::SampleFormat::U8 => build_stream::<u8>(&device, &config, mixer, error_callback),
         cpal::SampleFormat::F64 => build_stream::<f64>(&device, &config, mixer, error_callback),
         other => Err(format!("unsupported output sample format {other:?}")),
-    };
-    let stream = match stream {
-        Ok(stream) => stream,
-        Err(message) => {
-            let _ = ready_tx.send(Err(message));
-            return;
-        }
-    };
-    if let Err(e) = stream.play() {
-        let _ = ready_tx.send(Err(format!("could not start audio stream: {e}")));
-        return;
-    }
-    let _ = ready_tx.send(Ok((device_name, sample_rate, channels)));
-    // Keep the stream alive for the life of the process.
-    loop {
-        std::thread::park();
-    }
+    }?;
+    stream
+        .play()
+        .map_err(|e| format!("could not start audio stream: {e}"))?;
+    engine.output().ready(device_name, sample_rate, channels);
+    Ok((stream, errors))
 }
 
 fn build_stream<T>(
@@ -516,13 +553,15 @@ where
                 }
             },
             error_callback,
-            None,
+            // A disconnected ALSA/PipeWire stream can stop requesting data
+            // indefinitely. Have the backend report that stall to its owner.
+            Some(Duration::from_secs(2)),
         )
         .map_err(|e| format!("could not open audio output: {e}"))
 }
 
 struct Mixer {
-    voices: Arc<Mutex<Vec<Weak<VoiceShared>>>>,
+    engine: &'static AudioEngine,
     device_rate: u32,
     device_channels: u16,
     scratch: Vec<f32>,
@@ -536,10 +575,13 @@ impl Mixer {
 
         // Never block the audio thread: skip this buffer if the UI thread is
         // registering a voice right now.
-        let Ok(voices) = self.voices.try_lock() else {
+        let Ok(output) = self.engine.output.try_lock() else {
             return;
         };
-        for weak in voices.iter() {
+        if !matches!(output.status, EngineStatus::Ready { .. }) {
+            return;
+        }
+        for weak in &output.voices {
             let Some(voice) = weak.upgrade() else {
                 continue;
             };
@@ -752,6 +794,94 @@ mod tests {
             starved: AtomicBool::new(false),
             wall: Mutex::new(None),
         })
+    }
+
+    #[test]
+    fn reconnect_hands_the_current_playhead_back_to_the_mixer() {
+        let source = VoiceSource::Clip(clip(10_000, 1_000));
+        let playing = Voice {
+            shared: shared(source.clone()),
+        };
+        let paused = Voice {
+            shared: shared(source),
+        };
+        paused.shared.state.store(STATE_STOPPING, Ordering::Release);
+        paused.seek_frames(750.0);
+        let mut output = Output {
+            status: EngineStatus::Idle,
+            voices: vec![
+                Arc::downgrade(&playing.shared),
+                Arc::downgrade(&paused.shared),
+            ],
+            retry: None,
+        };
+
+        playing.seek_frames(300.0);
+        assert!(output.unavailable("device lost".into()));
+        assert!(playing.shared.wall.lock().unwrap().is_some());
+        assert_eq!(paused.shared.state.load(Ordering::Acquire), STATE_STOPPED);
+        assert!(paused.shared.wall.lock().unwrap().is_none());
+
+        playing.seek_frames(2_000.0);
+        *playing.shared.wall.lock().unwrap() = Some(Instant::now() - Duration::from_millis(500));
+        assert!(output.unavailable("still disconnected".into()));
+        let silent_position = playing.position_frames();
+        assert!(silent_position >= 2_500.0);
+        output.ready("new device".into(), 48_000, 2);
+        assert!(playing.shared.wall.lock().unwrap().is_none());
+        assert!(playing.position_frames() >= silent_position);
+        assert!(playing.is_playing());
+        assert_eq!(paused.position_frames(), 750.0);
+        assert!(!paused.is_playing());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn play_reopens_output_after_a_failed_preview() {
+        // ALSA configuration and the engine are process-wide. Give this test
+        // its own process so the virtual device is isolated from other tests.
+        const CHILD: &str = "GIT_LEVIATHAN_TEST_AUDIO_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let dir = tempfile::tempdir().unwrap();
+            let config = dir.path().join("asound.conf");
+            std::fs::write(&config, "# No default PCM yet\n").unwrap();
+            let result = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    std::thread::current().name().unwrap(),
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .env("ALSA_CONFIG_PATH", &config)
+                .output()
+                .unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            return;
+        }
+
+        fn wait_for(check: impl Fn(&EngineStatus) -> bool) {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let status = engine().status();
+                if check(&status) {
+                    return;
+                }
+                assert!(Instant::now() < deadline, "timed out with {status:?}");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+
+        engine().ensure_started();
+        wait_for(|s| matches!(s, EngineStatus::Unavailable(_)));
+        let config = std::env::var_os("ALSA_CONFIG_PATH").unwrap();
+        std::fs::write(config, "pcm.default { type null }\n").unwrap();
+        let voice = Voice::new(VoiceSource::Clip(clip(4_800, 48_000)));
+        voice.play();
+        wait_for(|s| matches!(s, EngineStatus::Ready { .. }));
     }
 
     #[test]
